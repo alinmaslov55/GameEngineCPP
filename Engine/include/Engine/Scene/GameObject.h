@@ -41,9 +41,9 @@ public:
         return nullptr;
     }
 
-    void Update() {
+    void Update(float deltaTime) {
         for (auto& component : m_Components) {
-            component->Update();
+            component->Update(deltaTime);
         }
     }
 

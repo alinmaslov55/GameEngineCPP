@@ -7,6 +7,8 @@ set(ENGINE_SOURCES
     src/Scene/Component.cpp
     src/Scene/Object.cpp
     src/Scene/GameObject.cpp
+    src/Scene/Scene.cpp
+    src/Scene/SceneManager.cpp
 )
 
 # Create the Engine as a static library

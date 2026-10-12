@@ -11,9 +11,8 @@ public:
     virtual void Awake() {}
     virtual void OnEnable() {}
     virtual void Start() {}
-    virtual void Update() {}
-    virtual void LateUpdate() {}
-    virtual void OnDisable() {}
+    virtual void Update(float deltaTime) {}
+    virtual void LateUpdate(float deltaTime) {}
     virtual void OnDestroy() {}
 
     GameObject* GetGameObject() const { return m_GameObject; }

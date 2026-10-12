@@ -1,4 +1,5 @@
 #include "Engine/Core/Application.h"
+#include "Engine/Scene/SceneManager.h"
 
 namespace Engine {
 
@@ -27,10 +28,13 @@ void Application::Run() {
 
 void Application::Update() {
     m_Window->Update();
+
+    float deltaTime = 0.016f;
+    SceneManager::Update(deltaTime);
 }
 
-// @todo Rendering logic
 void Application::Render() {
+    SceneManager::Render();
 }
 
 // @todo Cleanup logic
