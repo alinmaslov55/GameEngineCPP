@@ -1,5 +1,6 @@
 #include "Engine/Core/Application.h"
 #include "Engine/Scene/SceneManager.h"
+#include "Engine/Core/Time.h"
 
 namespace Engine {
 
@@ -13,6 +14,7 @@ Application::~Application() {
 
 void Application::Initialize() {
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
+    Time::Init();
 }
 
 void Application::Run() {
@@ -21,6 +23,7 @@ void Application::Run() {
             m_Running = false;
         }
 
+        Time::Update();
         Update();
         Render();
     }
@@ -29,8 +32,7 @@ void Application::Run() {
 void Application::Update() {
     m_Window->Update();
 
-    float deltaTime = 0.016f;
-    SceneManager::Update(deltaTime);
+    SceneManager::Update(Time::GetDeltaTime());
 }
 
 void Application::Render() {

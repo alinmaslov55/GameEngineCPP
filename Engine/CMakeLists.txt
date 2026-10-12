@@ -2,6 +2,7 @@
 set(ENGINE_SOURCES
     src/Core/Application.cpp
     src/Core/Window.cpp
+    src/Core/Time.cpp
 
     src/Scene/Transform.cpp
     src/Scene/Component.cpp
