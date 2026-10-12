@@ -12,9 +12,11 @@ public:
 
     void Update();
     bool ShouldClose() const { return m_ShouldClose; }
+    SDL_Window* GetNativeWindow() const { return m_Window; }
 
 private:
     SDL_Window* m_Window;
+    SDL_GLContext m_GLContext;
     bool m_ShouldClose{false};
 };
 } // Engine

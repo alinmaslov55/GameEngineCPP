@@ -4,6 +4,8 @@ set(ENGINE_SOURCES
     src/Core/Window.cpp
     src/Core/Time.cpp
 
+    src/Renderer/Renderer.cpp
+
     src/Scene/Transform.cpp
     src/Scene/Component.cpp
     src/Scene/Object.cpp

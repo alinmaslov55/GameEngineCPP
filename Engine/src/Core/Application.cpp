@@ -1,6 +1,7 @@
 #include "Engine/Core/Application.h"
-#include "Engine/Scene/SceneManager.h"
 #include "Engine/Core/Time.h"
+#include "Engine/Renderer/Renderer.h"
+#include "Engine/Scene/SceneManager.h"
 
 namespace Engine {
 
@@ -15,6 +16,7 @@ Application::~Application() {
 void Application::Initialize() {
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
     Time::Init();
+    Renderer::Init();
 }
 
 void Application::Run() {
@@ -36,6 +38,9 @@ void Application::Update() {
 }
 
 void Application::Render() {
+    Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
+    Renderer::Clear();
+
     SceneManager::Render();
 }
 
