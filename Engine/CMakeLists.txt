@@ -26,4 +26,5 @@ target_link_libraries(Engine PUBLIC
     box2d::box2d
     nlohmann_json::nlohmann_json
     spdlog::spdlog
+    glad::glad
 )

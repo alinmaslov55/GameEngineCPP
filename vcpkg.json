@@ -9,6 +9,7 @@
     "box2d",
     "nlohmann-json",
     "spdlog",
-    "gtest"
+    "gtest",
+    "glad"
   ]
 }

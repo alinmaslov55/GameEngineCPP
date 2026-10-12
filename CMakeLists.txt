@@ -13,6 +13,7 @@ find_package(imgui CONFIG REQUIRED)
 find_package(box2d CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
+find_package(glad CONFIG REQUIRED)
 
 # Sub-Projects
 add_subdirectory(Engine)
