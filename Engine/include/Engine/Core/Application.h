@@ -5,7 +5,6 @@
 #include "Engine/Core/Window.h"
 
 namespace Engine {
-namespace Core {
 class Application {
 public:
     Application();
@@ -22,7 +21,6 @@ private:
     std::unique_ptr<Window> m_Window;
     bool m_Running = true;
 };
-} // namespace Core
 } // namespace Engine
 
 #endif

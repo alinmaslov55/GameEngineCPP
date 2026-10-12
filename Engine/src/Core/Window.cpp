@@ -2,7 +2,6 @@
 #include <iostream>
 
 namespace Engine {
-namespace Core {
 Window::Window(const std::string& title, int width, int height) {
     if (!SDL_Init(SDL_INIT_VIDEO)) {
         std::cerr << "Failed to initialize SDL: " << SDL_GetError() << '\n';
@@ -30,5 +29,4 @@ void Window::Update() {
         }
     }
 }
-} // Core
 } // Engine

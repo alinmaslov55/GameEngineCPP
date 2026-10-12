@@ -1,7 +1,6 @@
 #include "Engine/Core/Application.h"
 
 namespace Engine {
-namespace Core {
 
 Application::Application() {
     Initialize();
@@ -37,5 +36,4 @@ void Application::Render() {
 // @todo Cleanup logic
 void Application::Shutdown() {
 }
-} // Core
 } // Engine
