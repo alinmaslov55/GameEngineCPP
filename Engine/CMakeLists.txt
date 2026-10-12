@@ -2,6 +2,11 @@
 set(ENGINE_SOURCES
     src/Core/Application.cpp
     src/Core/Window.cpp
+
+    src/Scene/Transform.cpp
+    src/Scene/Component.cpp
+    src/Scene/Object.cpp
+    src/Scene/GameObject.cpp
 )
 
 # Create the Engine as a static library
