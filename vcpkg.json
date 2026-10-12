@@ -1,0 +1,14 @@
+{
+  "name": "isometric-game-engine",
+  "version": "0.1.0",
+  "dependencies": [
+    "sdl3",
+    "glm",
+    "stb",
+    "imgui",
+    "box2d",
+    "nlohmann-json",
+    "spdlog",
+    "gtest"
+  ]
+}
