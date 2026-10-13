@@ -1,5 +1,8 @@
 #include "Engine/Renderer/Shader.h"
+
 #include <glad/glad.h>
+#include <glm/gtc/type_ptr.hpp>
+
 #include <iostream>
 
 namespace Engine {
@@ -38,4 +41,10 @@ void Shader::SetFloat4(const std::string& name, const glm::vec4& value) const {
     int location = glGetUniformLocation(m_RendererID, name.c_str());
     glUniform4f(location, value.x, value.y, value.z, value.w);
 }
+
+void Shader::SetMat4(const std::string& name, const glm::mat4& matrix) const {
+    int location = glGetUniformLocation(m_RendererID, name.c_str());
+    glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
 }
+
+} // namespace Engine

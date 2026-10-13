@@ -9,6 +9,7 @@ set(ENGINE_SOURCES
     src/Renderer/VertexArray.cpp
     src/Renderer/Shader.cpp
     src/Renderer/Texture.cpp
+    src/Renderer/OrthographicCamera.cpp
     src/Renderer/stb_image.cpp
 
     src/Scene/Transform.cpp

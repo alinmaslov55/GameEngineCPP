@@ -3,7 +3,7 @@
 #include <memory>
 #include <string>
 
-#include <glm/vec4.hpp>
+#include <glm/glm.hpp>
 
 namespace Engine {
 class Shader {
@@ -15,6 +15,7 @@ public:
     void Unbind() const;
     void SetInt(const std::string& name, int value) const;
     void SetFloat4(const std::string& name, const glm::vec4& value) const;
+    void SetMat4(const std::string& name, const glm::mat4& matrix) const;
 private:
     uint32_t m_RendererID;
 };
