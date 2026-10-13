@@ -1,23 +1,6 @@
-# Gather source files
-set(ENGINE_SOURCES
-    src/Core/Application.cpp
-    src/Core/Window.cpp
-    src/Core/Time.cpp
-
-    src/Renderer/Renderer.cpp
-    src/Renderer/Buffer.cpp
-    src/Renderer/VertexArray.cpp
-    src/Renderer/Shader.cpp
-    src/Renderer/Texture.cpp
-    src/Renderer/OrthographicCamera.cpp
-    src/Renderer/stb_image.cpp
-
-    src/Scene/Transform.cpp
-    src/Scene/Component.cpp
-    src/Scene/Object.cpp
-    src/Scene/GameObject.cpp
-    src/Scene/Scene.cpp
-    src/Scene/SceneManager.cpp
+# Automatically gather all C++ source files
+file(GLOB_RECURSE ENGINE_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
 # Create the Engine as a static library
