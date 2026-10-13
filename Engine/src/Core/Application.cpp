@@ -44,6 +44,10 @@ void Application::Render() {
     SceneManager::Render();
 }
 
+bool Application::IsRunning() const {
+    return !m_Window->ShouldClose(); 
+}
+
 // @todo Cleanup logic
 void Application::Shutdown() {
 }

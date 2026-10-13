@@ -5,6 +5,9 @@ set(ENGINE_SOURCES
     src/Core/Time.cpp
 
     src/Renderer/Renderer.cpp
+    src/Renderer/Buffer.cpp
+    src/Renderer/VertexArray.cpp
+    src/Renderer/Shader.cpp
 
     src/Scene/Transform.cpp
     src/Scene/Component.cpp

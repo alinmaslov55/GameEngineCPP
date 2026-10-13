@@ -12,9 +12,10 @@ public:
 
     void Run();
 
+    bool IsRunning() const;
+    void Update();
 private:
     void Initialize();
-    void Update();
     void Render();
     void Shutdown();
 
