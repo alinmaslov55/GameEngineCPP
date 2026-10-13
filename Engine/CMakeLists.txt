@@ -8,6 +8,8 @@ set(ENGINE_SOURCES
     src/Renderer/Buffer.cpp
     src/Renderer/VertexArray.cpp
     src/Renderer/Shader.cpp
+    src/Renderer/Texture.cpp
+    src/Renderer/stb_image.cpp
 
     src/Scene/Transform.cpp
     src/Scene/Component.cpp
