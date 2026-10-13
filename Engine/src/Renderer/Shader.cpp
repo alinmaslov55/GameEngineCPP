@@ -24,6 +24,18 @@ Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
 }
 
 Shader::~Shader() { glDeleteProgram(m_RendererID); }
+
 void Shader::Bind() const { glUseProgram(m_RendererID); }
+
 void Shader::Unbind() const { glUseProgram(0); }
+
+void Shader::SetInt(const std::string& name, int value) const {
+    int location = glGetUniformLocation(m_RendererID, name.c_str());
+    glUniform1i(location, value);
+}
+
+void Shader::SetFloat4(const std::string& name, const glm::vec4& value) const {
+    int location = glGetUniformLocation(m_RendererID, name.c_str());
+    glUniform4f(location, value.x, value.y, value.z, value.w);
+}
 }

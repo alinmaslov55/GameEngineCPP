@@ -3,6 +3,8 @@
 #include <memory>
 #include <string>
 
+#include <glm/vec4.hpp>
+
 namespace Engine {
 class Shader {
 public:
@@ -11,7 +13,8 @@ public:
 
     void Bind() const;
     void Unbind() const;
-
+    void SetInt(const std::string& name, int value) const;
+    void SetFloat4(const std::string& name, const glm::vec4& value) const;
 private:
     uint32_t m_RendererID;
 };
