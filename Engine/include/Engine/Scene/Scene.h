@@ -5,6 +5,7 @@
 #include <vector>
 #include <memory>
 #include "Engine/Scene/GameObject.h"
+#include "Engine/Renderer/OrthographicCamera.h"
 
 namespace Engine {
 class Scene {
@@ -19,10 +20,12 @@ public:
     void Render();
 
     const std::string& GetName() const { return m_Name; }
+    OrthographicCamera& GetCamera() { return m_Camera; }
 
 private:
     std::string m_Name;
     std::vector<std::unique_ptr<GameObject>> m_GameObjects;
+    OrthographicCamera m_Camera;
 };
 } // namespace Engine
 

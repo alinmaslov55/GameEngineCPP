@@ -4,6 +4,7 @@
 #include "Engine/Scene/Component.h"
 
 #include <glm/glm.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 
 namespace Engine {
 class Transform : public Component {
@@ -21,6 +22,16 @@ public:
 
     void Rotate(const glm::vec3& eulerAngles) {
         rotation += eulerAngles;
+    }
+
+    glm::mat4 GetTransformMatrix() const {
+        glm::mat4 rotMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(rotation.x), glm::vec3(1, 0, 0)) *
+                              glm::rotate(glm::mat4(1.0f), glm::radians(rotation.y), glm::vec3(0, 1, 0)) *
+                              glm::rotate(glm::mat4(1.0f), glm::radians(rotation.z), glm::vec3(0, 0, 1));
+
+        return glm::translate(glm::mat4(1.0f), position) *
+               rotMatrix *
+               glm::scale(glm::mat4(1.0f), scale);
     }
 };
 }

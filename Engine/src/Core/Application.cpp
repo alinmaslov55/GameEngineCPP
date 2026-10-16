@@ -1,6 +1,7 @@
 #include "Engine/Core/Application.h"
 #include "Engine/Core/Time.h"
 #include "Engine/Renderer/Renderer.h"
+#include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Scene/SceneManager.h"
 
 namespace Engine {
@@ -17,6 +18,7 @@ void Application::Initialize() {
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
     Time::Init();
     Renderer::Init();
+    Renderer2D::Init();
 }
 
 void Application::Run() {
@@ -48,7 +50,7 @@ bool Application::IsRunning() const {
     return !m_Window->ShouldClose(); 
 }
 
-// @todo Cleanup logic
 void Application::Shutdown() {
+    Renderer2D::Shutdown();
 }
 } // Engine

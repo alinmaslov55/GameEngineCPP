@@ -1,8 +1,12 @@
 #include "Engine/Scene/Scene.h"
+#include "Engine/Renderer/Renderer2D.h"
+#include "Engine/Renderer/SpriteRenderer.h"
+#include "Engine/Scene/Transform.h"
 #include <algorithm>
 
 namespace Engine {
-Scene::Scene(const std::string& name) : m_Name(name) {}
+Scene::Scene(const std::string& name)
+    : m_Name(name), m_Camera(-1.6f, 1.6f, -0.9f, 0.9f) {}
 
 GameObject* Scene::CreateGameObject(const std::string& name) {
     auto gameObject = std::make_unique<GameObject>(name);
@@ -27,7 +31,18 @@ void Scene::Update(float deltaTime) {
     }
 }
 
-// @todo Rendering logic will iterate over GameObjects
 void Scene::Render() {
+    Renderer2D::BeginScene(m_Camera);
+
+    for (auto& gameObject : m_GameObjects) {
+        auto* transform = gameObject->GetComponent<Transform>();
+        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
+
+        if (transform && sprite) {
+            Renderer2D::DrawQuad(transform->GetTransformMatrix(), sprite->GetTexture(), sprite->GetColor());
+        }
+    }
+
+    Renderer2D::EndScene();
 }
 } // namespace Engine
