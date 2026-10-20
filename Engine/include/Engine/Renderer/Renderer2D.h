@@ -3,18 +3,11 @@
 
 #include "Engine/Renderer/OrthographicCamera.h"
 #include "Engine/Renderer/Texture.h"
-#include "Engine/Renderer/VertexArray.h"
-#include "Engine/Renderer/Shader.h"
 
 #include <glm/glm.hpp>
 #include <memory>
 
 namespace Engine {
-
-struct Renderer2DStorage {
-    std::shared_ptr<VertexArray> QuadVertexArray;
-    std::shared_ptr<Shader> TextureShader;
-};
 
 class Renderer2D {
 public:
@@ -31,4 +24,3 @@ public:
 } // namespace Engine
 
 #endif // RENDERER_RENDERER2D_H
-

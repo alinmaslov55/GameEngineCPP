@@ -1,7 +1,11 @@
 #include "Engine/Scene/Scene.h"
-#include "Engine/Renderer/Renderer2D.h"
+#include "Engine/Scene/CameraComponent.h"
 #include "Engine/Renderer/SpriteRenderer.h"
+#include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Scene/Transform.h"
+
+#include <glm/gtc/matrix_transform.hpp>
+
 #include <algorithm>
 
 namespace Engine {
@@ -32,14 +36,28 @@ void Scene::Update(float deltaTime) {
 }
 
 void Scene::Render() {
-    Renderer2D::BeginScene(m_Camera);
+    CameraComponent* mainCamera = nullptr;
+    for (auto& go : m_GameObjects) {
+        if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
+            mainCamera = cameraComp;
+            break;
+        }
+    }
 
-    for (auto& gameObject : m_GameObjects) {
-        auto* transform = gameObject->GetComponent<Transform>();
-        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
+    if (!mainCamera) return;
 
-        if (transform && sprite) {
-            Renderer2D::DrawQuad(transform->GetTransformMatrix(), sprite->GetTexture(), sprite->GetColor());
+    Renderer2D::BeginScene(mainCamera->Camera);
+
+    for (auto& go : m_GameObjects) {
+        auto* sprite = go->GetComponent<SpriteRenderer>();
+        auto* transform = go->GetComponent<Transform>();
+
+        if (sprite && transform) {
+            glm::mat4 transformMatrix = glm::translate(glm::mat4(1.0f), transform->position) *
+                                        glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0, 0, 1)) *
+                                        glm::scale(glm::mat4(1.0f), transform->scale);
+
+            Renderer2D::DrawQuad(transformMatrix, sprite->GetTexture(), sprite->GetColor());
         }
     }
 

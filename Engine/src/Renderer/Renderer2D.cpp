@@ -1,7 +1,14 @@
 #include "Engine/Renderer/Renderer2D.h"
+#include "Engine/Renderer/VertexArray.h"
+#include "Engine/Renderer/Shader.h"
 #include "Engine/Renderer/Renderer.h"
 
 namespace Engine {
+
+struct Renderer2DStorage {
+    std::shared_ptr<VertexArray> QuadVertexArray;
+    std::shared_ptr<Shader> TextureShader;
+};
 
 static Renderer2DStorage* s_Data{nullptr};
 
@@ -10,8 +17,8 @@ void Renderer2D::Init() {
 
     float vertices[4 * 5] = {
         -0.5f, -0.5f, 0.0f,    0.0f, 0.0f,
-            0.5f, -0.5f, 0.0f,    1.0f, 0.0f,
-            0.5f,  0.5f, 0.0f,    1.0f, 1.0f,
+        0.5f, -0.5f, 0.0f,    1.0f, 0.0f,
+        0.5f,  0.5f, 0.0f,    1.0f, 1.0f,
         -0.5f,  0.5f, 0.0f,    0.0f, 1.0f
     };
     auto vertexBuffer = std::make_shared<VertexBuffer>(vertices, static_cast<uint32_t>(sizeof(vertices)));

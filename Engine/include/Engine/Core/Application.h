@@ -14,9 +14,9 @@ public:
 
     bool IsRunning() const;
     void Update();
+    void Render();
 private:
     void Initialize();
-    void Render();
     void Shutdown();
 
     std::unique_ptr<Window> m_Window;
