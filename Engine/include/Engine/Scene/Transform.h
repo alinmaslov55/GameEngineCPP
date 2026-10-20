@@ -2,6 +2,7 @@
 #define SCENE_TRANFORM_H
 
 #include "Engine/Scene/Component.h"
+#include "Engine/Utils/Logger.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -18,10 +19,14 @@ public:
 
     void Translate(const glm::vec3& translation) {
         position += translation;
+        ENGINE_CORE_TRACE("Transform::Translate by ({:.4f}, {:.4f}, {:.4f}) -> position: ({:.4f}, {:.4f}, {:.4f})",
+                          translation.x, translation.y, translation.z, position.x, position.y, position.z);
     }
 
     void Rotate(const glm::vec3& eulerAngles) {
         rotation += eulerAngles;
+        ENGINE_CORE_TRACE("Transform::Rotate by ({:.4f}, {:.4f}, {:.4f}) -> rotation: ({:.4f}, {:.4f}, {:.4f})",
+                          eulerAngles.x, eulerAngles.y, eulerAngles.z, rotation.x, rotation.y, rotation.z);
     }
 
     glm::mat4 GetTransformMatrix() const {

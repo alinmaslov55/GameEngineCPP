@@ -2,6 +2,7 @@
 #include "Engine/Renderer/VertexArray.h"
 #include "Engine/Renderer/Shader.h"
 #include "Engine/Renderer/Renderer.h"
+#include "Engine/Utils/Logger.h"
 
 namespace Engine {
 
@@ -13,6 +14,7 @@ struct Renderer2DStorage {
 static Renderer2DStorage* s_Data{nullptr};
 
 void Renderer2D::Init() {
+    ENGINE_CORE_INFO("Initializing Renderer2D...");
     s_Data = new Renderer2DStorage();
 
     float vertices[4 * 5] = {
@@ -62,23 +64,30 @@ void Renderer2D::Init() {
     s_Data->TextureShader = std::make_shared<Shader>(vertexSrc, fragmentSrc);
     s_Data->TextureShader->Bind();
     s_Data->TextureShader->SetInt("u_Texture", 0);
+
+    ENGINE_CORE_INFO("Renderer2D initialized successfully");
 }
 
 void Renderer2D::Shutdown() {
+    ENGINE_CORE_INFO("Shutting down Renderer2D...");
     delete s_Data;
     s_Data = nullptr;
+    ENGINE_CORE_INFO("Renderer2D shut down");
 }
 
 void Renderer2D::BeginScene(const OrthographicCamera& camera) {
+    ENGINE_CORE_TRACE("Renderer2D::BeginScene");
     s_Data->TextureShader->Bind();
     s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
 }
 
 void Renderer2D::EndScene() {
+    ENGINE_CORE_TRACE("Renderer2D::EndScene");
     // Placeholder for future batch rendering flush
 }
 
 void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor) {
+    ENGINE_CORE_TRACE("Renderer2D::DrawQuad");
     s_Data->TextureShader->SetFloat4("u_Color", tintColor);
     s_Data->TextureShader->SetMat4("u_Transform", transform);
 
@@ -91,4 +100,3 @@ void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<Text
 }
 
 } // namespace Engine
-

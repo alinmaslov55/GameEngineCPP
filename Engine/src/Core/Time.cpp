@@ -1,4 +1,5 @@
 #include "Engine/Core/Time.h"
+#include "Engine/Utils/Logger.h"
 #include <SDL3/SDL.h>
 
 namespace Engine {
@@ -8,6 +9,7 @@ uint64_t Time::s_LastFrameTime = 0;
 
 void Time::Init() {
     s_LastFrameTime = SDL_GetPerformanceCounter();
+    ENGINE_CORE_INFO("Time system initialized");
 }
 
 void Time::Update() {
@@ -21,5 +23,6 @@ void Time::Update() {
 
     s_LastFrameTime = currentFrameTime;
     s_TotalTime += s_DeltaTime;
+    ENGINE_CORE_TRACE("Time::Update - DeltaTime: {:.4f}s, TotalTime: {:.2f}s", s_DeltaTime, s_TotalTime);
 }
-}
+} // namespace Engine

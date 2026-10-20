@@ -3,10 +3,15 @@
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Core/Input.h>
+#include <Engine/Utils/Logger.h>
 
 class PlayerController : public Engine::Component {
 public:
     float moveSpeed = 2.0f;
+
+    void Awake() override {
+        ENGINE_INFO("PlayerController component initialized");
+    }
 
     void Update(float deltaTime) override {
         auto transform = GetGameObject()->GetComponent<Engine::Transform>();
@@ -34,6 +39,7 @@ public:
         if (glm::length(movement) > 0.0f) {
             // Normalize so diagonal movement isn't faster
             movement = glm::normalize(movement);
+            ENGINE_DEBUG("PlayerController moving: ({:.2f}, {:.2f}, {:.2f})", movement.x, movement.y, movement.z);
             transform->Translate(movement * moveSpeed * deltaTime);
         }
     }

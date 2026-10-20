@@ -9,6 +9,7 @@ namespace Engine {
 
         void SetProjection(float left, float right, float bottom, float top);
 
+        // TODO: Avoid redundant view matrix recalculation if position or rotation hasn't changed (check for changes before calling RecalculateViewMatrix)
         const glm::vec3& GetPosition() const { return m_Position; }
         void SetPosition(const glm::vec3& position) { m_Position = position; RecalculateViewMatrix(); }
 

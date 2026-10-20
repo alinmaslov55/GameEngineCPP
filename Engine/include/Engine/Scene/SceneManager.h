@@ -8,6 +8,7 @@ namespace Engine {
 class SceneManager {
 public:
     static void LoadScene(std::shared_ptr<Scene> scene);
+    static void Shutdown();
     static std::shared_ptr<Scene> GetActiveScene();
 
     static void Update(float deltaTime);

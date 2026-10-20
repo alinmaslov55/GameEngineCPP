@@ -11,7 +11,7 @@ namespace Engine {
 class Scene {
 public:
     Scene(const std::string& name = "Untitled Scene");
-    ~Scene() = default;
+    ~Scene();
 
     GameObject* CreateGameObject(const std::string& name);
     void DestroyGameObject(GameObject* gameObject);

@@ -4,6 +4,7 @@
 #include "Engine/Scene/Object.h"
 #include "Engine/Scene/Component.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Utils/Logger.h"
 
 #include <vector>
 #include <memory>
@@ -13,6 +14,7 @@ namespace Engine {
 class GameObject : public Object {
 public:
     GameObject(const std::string& name = "GameObject") : Object(name) {
+        ENGINE_CORE_DEBUG("GameObject '{}' created", GetName());
         AddComponent<Transform>();
     }
 
@@ -26,6 +28,7 @@ public:
         component->m_GameObject = this;
 
         m_Components.push_back(std::move(component));
+        ENGINE_CORE_DEBUG("GameObject '{}': Added component", GetName());
         rawPtr->Awake();
 
         return rawPtr;
@@ -42,6 +45,7 @@ public:
     }
 
     void Update(float deltaTime) {
+        ENGINE_CORE_TRACE("GameObject '{}': Updating components", GetName());
         for (auto& component : m_Components) {
             component->Update(deltaTime);
         }

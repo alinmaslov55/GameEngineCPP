@@ -1,48 +1,101 @@
 #include "Engine/Renderer/Shader.h"
+#include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
-
-#include <iostream>
+#include <vector>
 
 namespace Engine {
 Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
+    ENGINE_CORE_INFO("Compiling shader program...");
     uint32_t vertexShader = glCreateShader(GL_VERTEX_SHADER);
     const char* vSrc = vertexSrc.c_str();
     glShaderSource(vertexShader, 1, &vSrc, nullptr);
     glCompileShader(vertexShader);
+
+    GLint isCompiled = 0;
+    glGetShaderiv(vertexShader, GL_COMPILE_STATUS, &isCompiled);
+    if (isCompiled == GL_FALSE) {
+        GLint maxLength = 0;
+        glGetShaderiv(vertexShader, GL_INFO_LOG_LENGTH, &maxLength);
+        std::vector<GLchar> infoLog(maxLength);
+        glGetShaderInfoLog(vertexShader, maxLength, &maxLength, &infoLog[0]);
+        glDeleteShader(vertexShader);
+        ENGINE_CORE_ERROR("Vertex shader compilation failed: {}", infoLog.data());
+        return;
+    }
 
     uint32_t fragmentShader = glCreateShader(GL_FRAGMENT_SHADER);
     const char* fSrc = fragmentSrc.c_str();
     glShaderSource(fragmentShader, 1, &fSrc, nullptr);
     glCompileShader(fragmentShader);
 
+    glGetShaderiv(fragmentShader, GL_COMPILE_STATUS, &isCompiled);
+    if (isCompiled == GL_FALSE) {
+        GLint maxLength = 0;
+        glGetShaderiv(fragmentShader, GL_INFO_LOG_LENGTH, &maxLength);
+        std::vector<GLchar> infoLog(maxLength);
+        glGetShaderInfoLog(fragmentShader, maxLength, &maxLength, &infoLog[0]);
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+        ENGINE_CORE_ERROR("Fragment shader compilation failed: {}", infoLog.data());
+        return;
+    }
+
     m_RendererID = glCreateProgram();
     glAttachShader(m_RendererID, vertexShader);
     glAttachShader(m_RendererID, fragmentShader);
     glLinkProgram(m_RendererID);
 
+    GLint isLinked = 0;
+    glGetProgramiv(m_RendererID, GL_LINK_STATUS, &isLinked);
+    if (isLinked == GL_FALSE) {
+        GLint maxLength = 0;
+        glGetProgramiv(m_RendererID, GL_INFO_LOG_LENGTH, &maxLength);
+        std::vector<GLchar> infoLog(maxLength);
+        glGetProgramInfoLog(m_RendererID, maxLength, &maxLength, &infoLog[0]);
+        glDeleteProgram(m_RendererID);
+        glDeleteShader(vertexShader);
+        glDeleteShader(fragmentShader);
+        ENGINE_CORE_ERROR("Shader link failed: {}", infoLog.data());
+        return;
+    }
+
     glDeleteShader(vertexShader);
     glDeleteShader(fragmentShader);
+
+    ENGINE_CORE_INFO("Shader program created successfully with ID: {}", m_RendererID);
 }
 
-Shader::~Shader() { glDeleteProgram(m_RendererID); }
+Shader::~Shader() {
+    ENGINE_CORE_DEBUG("Shader program destroyed with ID: {}", m_RendererID);
+    glDeleteProgram(m_RendererID);
+}
 
-void Shader::Bind() const { glUseProgram(m_RendererID); }
+void Shader::Bind() const {
+    ENGINE_CORE_TRACE("Shader program ID {} bound", m_RendererID);
+    glUseProgram(m_RendererID);
+}
 
-void Shader::Unbind() const { glUseProgram(0); }
+void Shader::Unbind() const {
+    ENGINE_CORE_TRACE("Shader program ID {} unbound", m_RendererID);
+    glUseProgram(0);
+}
 
 void Shader::SetInt(const std::string& name, int value) const {
+    ENGINE_CORE_TRACE("Shader ID {} SetInt: {} = {}", m_RendererID, name, value);
     int location = glGetUniformLocation(m_RendererID, name.c_str());
     glUniform1i(location, value);
 }
 
 void Shader::SetFloat4(const std::string& name, const glm::vec4& value) const {
+    ENGINE_CORE_TRACE("Shader ID {} SetFloat4: {} = ({:.2f}, {:.2f}, {:.2f}, {:.2f})", m_RendererID, name, value.x, value.y, value.z, value.w);
     int location = glGetUniformLocation(m_RendererID, name.c_str());
     glUniform4f(location, value.x, value.y, value.z, value.w);
 }
 
 void Shader::SetMat4(const std::string& name, const glm::mat4& matrix) const {
+    ENGINE_CORE_TRACE("Shader ID {} SetMat4: {}", m_RendererID, name);
     int location = glGetUniformLocation(m_RendererID, name.c_str());
     glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
 }

@@ -1,11 +1,12 @@
 # add by dev
 build/
+logs/
+*.log
 
 # Prerequisites
 *.d
 
-# Compiled Object files
-*.slo
+# Compiled Object filesa
 *.lo
 *.o
 *.obj

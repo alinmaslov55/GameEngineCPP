@@ -1,25 +1,30 @@
 #include "Engine/Core/Input.h"
-#include <iostream>
+#include "Engine/Utils/Logger.h"
 
 namespace Engine {
 SDL_Gamepad* Input::s_Gamepad{nullptr};
 
 void Input::Init() {
+    ENGINE_CORE_INFO("Initializing Input system...");
     if (!SDL_InitSubSystem(SDL_INIT_GAMEPAD)) {
-        std::cerr << "Failed to initialize Gamepad subsystem: " << SDL_GetError() << '\n';
+        ENGINE_CORE_ERROR("Failed to initialize Gamepad subsystem: {}", SDL_GetError());
     }
     ConnectFirstGamepad();
+    ENGINE_CORE_INFO("Input system initialized");
 }
 
 void Input::Shutdown() {
+    ENGINE_CORE_INFO("Shutting down Input system...");
     if (s_Gamepad) {
         SDL_CloseGamepad(s_Gamepad);
         s_Gamepad = nullptr;
     }
     SDL_QuitSubSystem(SDL_INIT_GAMEPAD);
+    ENGINE_CORE_INFO("Input system shut down");
 }
 
 void Input::Update() {
+    ENGINE_CORE_TRACE("Input::Update");
     if (!s_Gamepad) {
         ConnectFirstGamepad();
     }
@@ -30,6 +35,9 @@ void Input::ConnectFirstGamepad() {
     SDL_JoystickID* joysticks = SDL_GetGamepads(&count);
     if (joysticks && count > 0) {
         s_Gamepad = SDL_OpenGamepad(joysticks[0]);
+        if (s_Gamepad) {
+            ENGINE_CORE_INFO("Connected gamepad: {}", SDL_GetGamepadName(s_Gamepad));
+        }
     }
     SDL_free(joysticks);
 }
