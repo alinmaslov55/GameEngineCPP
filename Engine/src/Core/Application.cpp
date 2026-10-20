@@ -1,5 +1,6 @@
 #include "Engine/Core/Application.h"
 #include "Engine/Core/Time.h"
+#include "Engine/Core/Input.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Scene/SceneManager.h"
@@ -17,6 +18,7 @@ Application::~Application() {
 void Application::Initialize() {
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
     Time::Init();
+    Input::Init();
     Renderer::Init();
     Renderer2D::Init();
 }
@@ -35,7 +37,7 @@ void Application::Run() {
 
 void Application::Update() {
     m_Window->Update();
-
+    Input::Update();
     SceneManager::Update(Time::GetDeltaTime());
 }
 
@@ -52,5 +54,6 @@ bool Application::IsRunning() const {
 
 void Application::Shutdown() {
     Renderer2D::Shutdown();
+    Input::Shutdown();
 }
 } // Engine
