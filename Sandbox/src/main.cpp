@@ -30,6 +30,22 @@ int main(int argc, char* argv[]) {
     auto bgSprite = background->AddComponent<Engine::SpriteRenderer>();
     bgSprite->SetColor({ 0.2f, 0.8f, 0.3f, 1.0f }); // Green square
 
+    // Obstacle 1
+    Engine::GameObject* tree1 = mainScene->CreateGameObject("Tree1");
+    auto t1Transform = tree1->GetComponent<Engine::Transform>();
+    t1Transform->position = glm::vec3(0.0f, 0.0f, 0.0f);
+    t1Transform->scale = glm::vec3(0.4f, 0.8f, 1.0f);
+    auto t1Sprite = tree1->AddComponent<Engine::SpriteRenderer>();
+    t1Sprite->SetColor({ 0.6f, 0.3f, 0.1f, 1.0f }); // Brown pillar
+
+    // Obstacle 2
+    Engine::GameObject* tree2 = mainScene->CreateGameObject("Tree2");
+    auto t2Transform = tree2->GetComponent<Engine::Transform>();
+    t2Transform->position = glm::vec3(0.8f, -0.3f, 0.0f);
+    t2Transform->scale = glm::vec3(0.4f, 0.8f, 1.0f);
+    auto t2Sprite = tree2->AddComponent<Engine::SpriteRenderer>();
+    t2Sprite->SetColor({ 0.6f, 0.3f, 0.1f, 1.0f }); // Brown pillar
+
     Engine::SceneManager::LoadScene(mainScene);
     app.Run();
 

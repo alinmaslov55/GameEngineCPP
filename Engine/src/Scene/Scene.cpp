@@ -7,6 +7,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <vector>
 
 namespace Engine {
 Scene::Scene(const std::string& name)
@@ -61,25 +62,48 @@ void Scene::Render() {
         }
     }
 
-    if (!mainCamera) {
-        ENGINE_CORE_WARN("Scene '{}': No CameraComponent found during render, falling back to default scene camera", m_Name);
-        Renderer2D::BeginScene(m_Camera);
-    } else {
+    if (mainCamera) {
         if (cameraTransform) {
             // TODO: Avoid redundant view matrix recalculation every frame if camera transform hasn't changed
             mainCamera->Camera.SetPosition(cameraTransform->position);
             mainCamera->Camera.SetRotation(cameraTransform->rotation.z);
         }
         Renderer2D::BeginScene(mainCamera->Camera);
+    } else {
+        Renderer2D::BeginScene(m_Camera);
     }
 
-    for (auto& go : m_GameObjects) {
-        auto* sprite = go->GetComponent<SpriteRenderer>();
-        auto* transform = go->GetComponent<Transform>();
-
-        if (sprite && transform) {
-            Renderer2D::DrawQuad(transform->GetTransformMatrix(), sprite->GetTexture(), sprite->GetColor());
+    // 1. Collect all GameObjects that have a SpriteRenderer
+    std::vector<GameObject*> renderQueue;
+    for (auto& gameObject : m_GameObjects) {
+        if (gameObject->GetComponent<SpriteRenderer>() && gameObject->GetComponent<Transform>()) {
+            renderQueue.push_back(gameObject.get());
         }
+    }
+
+    // 2. Sort the queue by Y-position (Descending)
+    std::sort(renderQueue.begin(), renderQueue.end(), [](GameObject* a, GameObject* b) {
+        auto transformA = a->GetComponent<Transform>();
+        auto transformB = b->GetComponent<Transform>();
+
+        // Higher Y means further back, so it should render first.
+        // If Y is exactly the same, we fallback to X to prevent Z-fighting flickering
+        if (transformA->position.y == transformB->position.y) {
+            return transformA->position.x < transformB->position.x;
+        }
+        return transformA->position.y > transformB->position.y;
+    });
+
+    // 3. Draw the sorted queue
+    for (GameObject* gameObject : renderQueue) {
+        auto spriteRenderer = gameObject->GetComponent<SpriteRenderer>();
+        auto transform = gameObject->GetComponent<Transform>();
+
+        glm::mat4 transformMatrix = glm::translate(glm::mat4(1.0f), transform->position) *
+                                    glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0, 0, 1)) *
+                                    glm::scale(glm::mat4(1.0f), transform->scale);
+
+        Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetTexture(), spriteRenderer->GetColor());
     }
 
     Renderer2D::EndScene();
