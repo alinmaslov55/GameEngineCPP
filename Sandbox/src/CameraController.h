@@ -5,6 +5,7 @@
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Renderer/OrthographicCamera.h>
+#include <Engine/Math/Isometric.h>
 #include <glm/glm.hpp>
 #include <algorithm>
 
@@ -21,21 +22,21 @@ public:
         if (!transform) return;
 
         glm::vec3 camPos = camera->GetPosition();
-        glm::vec3 playerPos = transform->position;
+        glm::vec2 playerScreenPos = Engine::Isometric::WorldToScreen(transform->position);
 
-        float dx = playerPos.x - camPos.x;
-        float dy = playerPos.y - camPos.y;
+        float dx = playerScreenPos.x - camPos.x;
+        float dy = playerScreenPos.y - camPos.y;
 
         if (dx > deadzone.x / 2.0f) {
-            camPos.x = playerPos.x - (deadzone.x / 2.0f);
+            camPos.x = playerScreenPos.x - (deadzone.x / 2.0f);
         } else if (dx < -deadzone.x / 2.0f) {
-            camPos.x = playerPos.x + (deadzone.x / 2.0f);
+            camPos.x = playerScreenPos.x + (deadzone.x / 2.0f);
         }
 
         if (dy > deadzone.y / 2.0f) {
-            camPos.y = playerPos.y - (deadzone.y / 2.0f);
+            camPos.y = playerScreenPos.y - (deadzone.y / 2.0f);
         } else if (dy < -deadzone.y / 2.0f) {
-            camPos.y = playerPos.y + (deadzone.y / 2.0f);
+            camPos.y = playerScreenPos.y + (deadzone.y / 2.0f);
         }
 
         camera->SetPosition(camPos);

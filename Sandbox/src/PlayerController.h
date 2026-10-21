@@ -19,20 +19,24 @@ public:
 
         glm::vec3 movement(0.0f);
 
-        // Keyboard Input
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_W)) movement.y += 1.0f;
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_S)) movement.y -= 1.0f;
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_A)) movement.x -= 1.0f;
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_D)) movement.x += 1.0f;
+        // Keyboard Input (Isometric directions mapped to Screen Up/Down/Left/Right)
+        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_W)) { movement.x += 1.0f; movement.z += 1.0f; } // Move Up (North)
+        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_S)) { movement.x -= 1.0f; movement.z -= 1.0f; } // Move Down (South)
+        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_A)) { movement.x -= 1.0f; movement.z += 1.0f; } // Move Left (West)
+        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_D)) { movement.x += 1.0f; movement.z -= 1.0f; } // Move Right (East)
+
+        // Add jumping on the Y axis
+        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_SPACE)) movement.y += 1.0f;
 
         // Gamepad Input (Left Stick)
         if (Engine::Input::IsGamepadConnected()) {
             float axisX = Engine::Input::GetGamepadAxis(SDL_GAMEPAD_AXIS_LEFTX);
-            float axisY = Engine::Input::GetGamepadAxis(SDL_GAMEPAD_AXIS_LEFTY);
+            float axisY = -Engine::Input::GetGamepadAxis(SDL_GAMEPAD_AXIS_LEFTY); // Invert so stick up is +1
             
-            // Invert Y axis because OpenGL Y goes up, but gamepad Y goes down
-            if (axisX != 0.0f) movement.x = axisX;
-            if (axisY != 0.0f) movement.y = -axisY; 
+            if (axisX != 0.0f || axisY != 0.0f) {
+                movement.x = axisY + axisX;
+                movement.z = axisY - axisX;
+            }
         }
 
         // Apply movement scaled by time and speed

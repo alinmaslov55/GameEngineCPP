@@ -3,6 +3,8 @@
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Scene/BoxCollider2D.h"
+#include "Engine/Math/Isometric.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -43,9 +45,68 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
 }
 
 void Scene::Update(float deltaTime) {
-    ENGINE_CORE_TRACE("Scene '{}': Update ({} objects, dt: {:.4f}s)", m_Name, m_GameObjects.size(), deltaTime);
     for (auto& gameObject : m_GameObjects) {
         gameObject->Update(deltaTime);
+    }
+
+    std::vector<GameObject*> colliders;
+    for (auto& gameObject : m_GameObjects) {
+        if (gameObject->GetComponent<BoxCollider2D>()) {
+            colliders.push_back(gameObject.get());
+        }
+    }
+
+    for (size_t i = 0; i < colliders.size(); i++) {
+        for (size_t j = i + 1; j < colliders.size(); j++) {
+            GameObject* a = colliders[i];
+            GameObject* b = colliders[j];
+
+            auto cA = a->GetComponent<BoxCollider2D>();
+            auto cB = b->GetComponent<BoxCollider2D>();
+
+            if (!cA->isDynamic && !cB->isDynamic) continue;
+
+            auto tA = a->GetComponent<Transform>();
+            auto tB = b->GetComponent<Transform>();
+
+            // Calculate AABB bounds on the XZ ground plane for Object A
+            float aLeft  = tA->position.x + cA->offset.x - (cA->size.x * tA->scale.x) / 2.0f;
+            float aRight = tA->position.x + cA->offset.x + (cA->size.x * tA->scale.x) / 2.0f;
+            float aBack  = tA->position.z + cA->offset.y - (cA->size.y * tA->scale.z) / 2.0f;
+            float aFront = tA->position.z + cA->offset.y + (cA->size.y * tA->scale.z) / 2.0f;
+
+            // Calculate AABB bounds on the XZ ground plane for Object B
+            float bLeft  = tB->position.x + cB->offset.x - (cB->size.x * tB->scale.x) / 2.0f;
+            float bRight = tB->position.x + cB->offset.x + (cB->size.x * tB->scale.x) / 2.0f;
+            float bBack  = tB->position.z + cB->offset.y - (cB->size.y * tB->scale.z) / 2.0f;
+            float bFront = tB->position.z + cB->offset.y + (cB->size.y * tB->scale.z) / 2.0f;
+
+            float overlapX = std::min(aRight, bRight) - std::max(aLeft, bLeft);
+            float overlapZ = std::min(aFront, bFront) - std::max(aBack, bBack);
+
+            if (overlapX > 0 && overlapZ > 0) {
+                glm::vec2 push(0.0f);
+
+                if (overlapX < overlapZ) {
+                    push.x = (tA->position.x < tB->position.x) ? -overlapX : overlapX;
+                } else {
+                    push.y = (tA->position.z < tB->position.z) ? -overlapZ : overlapZ;
+                }
+
+                if (cA->isDynamic && !cB->isDynamic) {
+                    tA->position.x += push.x;
+                    tA->position.z += push.y;
+                } else if (!cA->isDynamic && cB->isDynamic) {
+                    tB->position.x -= push.x;
+                    tB->position.z -= push.y;
+                } else {
+                    tA->position.x += push.x * 0.5f;
+                    tA->position.z += push.y * 0.5f;
+                    tB->position.x -= push.x * 0.5f;
+                    tB->position.z -= push.y * 0.5f;
+                }
+            }
+        }
     }
 }
 
@@ -81,17 +142,22 @@ void Scene::Render() {
         }
     }
 
-    // 2. Sort the queue by Y-position (Descending)
+    // 2. Sort the queue by isometric depth
     std::sort(renderQueue.begin(), renderQueue.end(), [](GameObject* a, GameObject* b) {
-        auto transformA = a->GetComponent<Transform>();
-        auto transformB = b->GetComponent<Transform>();
+        auto tA = a->GetComponent<Transform>();
+        auto tB = b->GetComponent<Transform>();
 
-        // Higher Y means further back, so it should render first.
-        // If Y is exactly the same, we fallback to X to prevent Z-fighting flickering
-        if (transformA->position.y == transformB->position.y) {
-            return transformA->position.x < transformB->position.x;
+        // In isometric 3D, depth is primarily calculated by X + Z.
+        // Higher (X + Z) means it is further back into the screen.
+        float depthA = tA->position.x + tA->position.z;
+        float depthB = tB->position.x + tB->position.z;
+
+        if (depthA == depthB) {
+            // Tie-breaker: object with higher physical Y (height) renders in front (later)
+            return tA->position.y > tB->position.y;
         }
-        return transformA->position.y > transformB->position.y;
+
+        return depthA > depthB;
     });
 
     // 3. Draw the sorted queue
@@ -99,7 +165,12 @@ void Scene::Render() {
         auto spriteRenderer = gameObject->GetComponent<SpriteRenderer>();
         auto transform = gameObject->GetComponent<Transform>();
 
-        glm::mat4 transformMatrix = glm::translate(glm::mat4(1.0f), transform->position) *
+        // --- NEW: Convert 3D world position to 2D isometric screen position ---
+        glm::vec2 screenPos = Isometric::WorldToScreen(transform->position);
+        glm::vec3 renderPos = { screenPos.x, screenPos.y, 0.0f }; // Z is 0 for 2D rendering
+
+        // Use renderPos instead of transform->position
+        glm::mat4 transformMatrix = glm::translate(glm::mat4(1.0f), renderPos) *
                                     glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0, 0, 1)) *
                                     glm::scale(glm::mat4(1.0f), transform->scale);
 
