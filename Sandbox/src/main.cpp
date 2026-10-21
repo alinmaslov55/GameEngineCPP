@@ -1,18 +1,13 @@
 #include <Engine/Core/Application.h>
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/GameObject.h>
-#include <Engine/Scene/CameraComponent.h>
 #include <Engine/Renderer/SpriteRenderer.h>
-#include <Engine/Utils/Logger.h>
 #include "PlayerController.h"
+#include "CameraController.h"
 
 int main(int argc, char* argv[]) {
-    ENGINE_INFO("Starting Sandbox Application...");
     Engine::Application app;
     auto mainScene = std::make_shared<Engine::Scene>("Main Level");
-
-    Engine::GameObject* camera = mainScene->CreateGameObject("Main Camera");
-    camera->AddComponent<Engine::CameraComponent>();
 
     Engine::GameObject* player = mainScene->CreateGameObject("Player");
     
@@ -25,10 +20,18 @@ int main(int argc, char* argv[]) {
 
     player->AddComponent<PlayerController>();
 
+    auto camController = player->AddComponent<CameraController>();
+    
+    camController->camera = &mainScene->GetCamera();
+
+    Engine::GameObject* background = mainScene->CreateGameObject("Background");
+    auto bgTransform = background->GetComponent<Engine::Transform>();
+    bgTransform->position = glm::vec3(2.0f, 1.0f, -0.1f); // Placed off to the top right
+    auto bgSprite = background->AddComponent<Engine::SpriteRenderer>();
+    bgSprite->SetColor({ 0.2f, 0.8f, 0.3f, 1.0f }); // Green square
+
     Engine::SceneManager::LoadScene(mainScene);
-    ENGINE_INFO("Sandbox setup complete. Entering application run loop...");
     app.Run();
-    ENGINE_INFO("Sandbox application exited gracefully");
 
     return 0;
 }
