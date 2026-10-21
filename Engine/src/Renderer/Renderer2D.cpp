@@ -36,14 +36,16 @@ void Renderer2D::Init() {
         #version 410 core
         layout(location = 0) in vec3 a_Position;
         layout(location = 1) in vec2 a_TexCoord;
-        
         out vec2 v_TexCoord;
-        
         uniform mat4 u_ViewProjection;
         uniform mat4 u_Transform;
-        
+        uniform vec4 u_TexBounds; // xy = min, zw = max
         void main() {
-            v_TexCoord = a_TexCoord;
+            // Mix interpolates between min and max based on the base 0-1 quad coordinates
+            v_TexCoord = vec2(
+                mix(u_TexBounds.x, u_TexBounds.z, a_TexCoord.x),
+                mix(u_TexBounds.y, u_TexBounds.w, a_TexCoord.y)
+            );
             gl_Position = u_ViewProjection * u_Transform * vec4(a_Position, 1.0);
         }
     )";
@@ -90,9 +92,28 @@ void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<Text
     ENGINE_CORE_TRACE("Renderer2D::DrawQuad");
     s_Data->TextureShader->SetFloat4("u_Color", tintColor);
     s_Data->TextureShader->SetMat4("u_Transform", transform);
-
+    s_Data->TextureShader->SetFloat4("u_TexBounds", glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+    
     if (texture) {
         texture->Bind(0);
+    }
+
+    s_Data->QuadVertexArray->Bind();
+    Renderer::DrawIndexed(s_Data->QuadVertexArray);
+}
+
+void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor) {
+    s_Data->TextureShader->SetFloat4("u_Color", tintColor);
+    s_Data->TextureShader->SetMat4("u_Transform", transform);
+    
+    if (subTexture) {
+        s_Data->TextureShader->SetFloat4("u_TexBounds", glm::vec4(
+            subTexture->GetMin().x, subTexture->GetMin().y, 
+            subTexture->GetMax().x, subTexture->GetMax().y
+        ));
+        subTexture->GetTexture()->Bind(0);
+    } else {
+        s_Data->TextureShader->SetFloat4("u_TexBounds", glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
     }
 
     s_Data->QuadVertexArray->Bind();

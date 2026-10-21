@@ -3,6 +3,7 @@
 
 #include "Engine/Renderer/OrthographicCamera.h"
 #include "Engine/Renderer/Texture.h"
+#include "Engine/Renderer/SubTexture2D.h"
 
 #include <glm/glm.hpp>
 #include <memory>
@@ -19,6 +20,7 @@ public:
 
     // Draw a quad using a transform matrix
     static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor = glm::vec4(1.0f));
+    static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor = glm::vec4(1.0f));
 };
 
 } // namespace Engine

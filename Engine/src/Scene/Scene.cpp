@@ -103,7 +103,11 @@ void Scene::Render() {
                                     glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0, 0, 1)) *
                                     glm::scale(glm::mat4(1.0f), transform->scale);
 
-        Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetTexture(), spriteRenderer->GetColor());
+        if (spriteRenderer->GetSubTexture()) {
+            Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetSubTexture(), spriteRenderer->GetColor());
+        } else {
+            Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetTexture(), spriteRenderer->GetColor());
+        }
     }
 
     Renderer2D::EndScene();

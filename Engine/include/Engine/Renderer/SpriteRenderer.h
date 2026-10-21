@@ -3,6 +3,7 @@
 
 #include "Engine/Scene/Component.h"
 #include "Engine/Renderer/Texture.h"
+#include "Engine/Renderer/SubTexture2D.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glm/glm.hpp>
@@ -25,9 +26,11 @@ public:
         ENGINE_CORE_DEBUG("SpriteRenderer: SetColor ({:.2f}, {:.2f}, {:.2f}, {:.2f})", color.r, color.g, color.b, color.a);
     }
     const glm::vec4& GetColor() const { return m_Color; }
-
+    void SetSubTexture(const std::shared_ptr<SubTexture2D>& subTexture) { m_SubTexture = subTexture; }
+    std::shared_ptr<SubTexture2D> GetSubTexture() const { return m_SubTexture; }
 private:
     std::shared_ptr<Texture> m_Texture = nullptr;
+    std::shared_ptr<SubTexture2D> m_SubTexture = nullptr;
     glm::vec4 m_Color{ 1.0f, 1.0f, 1.0f, 1.0f }; // white
 };
 } // namespace Engine
