@@ -2,8 +2,9 @@
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Renderer/Renderer2D.h"
-#include "Engine/Scene/Transform.h"
 #include "Engine/Scene/BoxCollider2D.h"
+#include "Engine/Scene/Tilemap.h"
+#include "Engine/Scene/Transform.h"
 #include "Engine/Math/Isometric.h"
 #include "Engine/Utils/Logger.h"
 
@@ -134,7 +135,37 @@ void Scene::Render() {
         Renderer2D::BeginScene(m_Camera);
     }
 
-    // 1. Collect all GameObjects that have a SpriteRenderer
+    // 1. Render Tilemaps (Ground Layer) first
+    for (auto& gameObject : m_GameObjects) {
+        auto tilemap = gameObject->GetComponent<Tilemap>();
+        if (tilemap) {
+            auto transform = gameObject->GetComponent<Transform>();
+            
+            for (uint32_t y = 0; y < tilemap->GetHeight(); y++) {
+                for (uint32_t x = 0; x < tilemap->GetWidth(); x++) {
+                    uint32_t tileId = tilemap->GetTile(x, y).id;
+                    if (tileId == 0) continue; // Skip empty tiles
+
+                    auto subTexture = tilemap->tileSet->GetTileTexture(tileId);
+                    if (!subTexture) continue;
+
+                    // Grid coordinates act as X and Z in the 3D world
+                    glm::vec3 worldPos = transform->position + glm::vec3(x, 0.0f, y);
+                    
+                    // Project to 2D Isometric Space
+                    glm::vec2 screenPos = Isometric::WorldToScreen(worldPos);
+                    glm::vec3 renderPos = { screenPos.x, screenPos.y, 0.0f };
+
+                    glm::mat4 transformMatrix = glm::translate(glm::mat4(1.0f), renderPos) *
+                                                glm::scale(glm::mat4(1.0f), transform->scale);
+
+                    Renderer2D::DrawQuad(transformMatrix, subTexture);
+                }
+            }
+        }
+    }
+
+    // 2. Collect all GameObjects that have a SpriteRenderer
     std::vector<GameObject*> renderQueue;
     for (auto& gameObject : m_GameObjects) {
         if (gameObject->GetComponent<SpriteRenderer>() && gameObject->GetComponent<Transform>()) {
@@ -142,7 +173,7 @@ void Scene::Render() {
         }
     }
 
-    // 2. Sort the queue by isometric depth
+    // 3. Sort the queue by isometric depth
     std::sort(renderQueue.begin(), renderQueue.end(), [](GameObject* a, GameObject* b) {
         auto tA = a->GetComponent<Transform>();
         auto tB = b->GetComponent<Transform>();
@@ -160,12 +191,12 @@ void Scene::Render() {
         return depthA > depthB;
     });
 
-    // 3. Draw the sorted queue
+    // 4. Draw the sorted queue
     for (GameObject* gameObject : renderQueue) {
         auto spriteRenderer = gameObject->GetComponent<SpriteRenderer>();
         auto transform = gameObject->GetComponent<Transform>();
 
-        // --- NEW: Convert 3D world position to 2D isometric screen position ---
+        // Convert 3D world position to 2D isometric screen position ---
         glm::vec2 screenPos = Isometric::WorldToScreen(transform->position);
         glm::vec3 renderPos = { screenPos.x, screenPos.y, 0.0f }; // Z is 0 for 2D rendering
 

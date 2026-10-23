@@ -1,9 +1,11 @@
 #include <Engine/Core/Application.h>
-#include <Engine/Scene/SceneManager.h>
-#include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/BoxCollider2D.h>
+#include <Engine/Scene/GameObject.h>
+#include <Engine/Scene/SceneManager.h>
+#include <Engine/Scene/Tilemap.h>
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/SubTexture2D.h>
+
 #include "PlayerController.h"
 #include "CameraController.h"
 
@@ -61,6 +63,32 @@ int main(int argc, char* argv[]) {
     auto t2Col = tree2->AddComponent<Engine::BoxCollider2D>();
     t2Col->size = { 0.6f, 0.3f };
     t2Col->offset = { 0.0f, 0.0f };
+
+    // Create the Environment/Map GameObject
+    Engine::GameObject* mapObject = mainScene->CreateGameObject("Map");
+    auto mapTransform = mapObject->GetComponent<Engine::Transform>();
+    
+    // Scale the tiles to match your art style
+    mapTransform->scale = glm::vec3(1.0f, 1.0f, 1.0f); 
+
+    // Initialize a 10x10 Tilemap component
+    auto tilemap = mapObject->AddComponent<Engine::Tilemap>(10, 10);
+
+    // Define the TileSet
+    // For now, we will reuse your test.png as a "grass" tile SubTexture
+    auto atlas = std::make_shared<Engine::Texture>("C:/DEV/GameEngineCPP/Sandbox/test.png");
+    auto grassTile = Engine::SubTexture2D::CreateFromCoords(atlas, {0, 0}, {atlas->GetWidth(), atlas->GetHeight()});
+    
+    // Register ID 1 as Grass
+    tilemap->tileSet->AddTile(1, grassTile);
+
+    // 4. Paint the Grid
+    for (uint32_t y = 0; y < tilemap->GetHeight(); y++) {
+        for (uint32_t x = 0; x < tilemap->GetWidth(); x++) {
+            // Paint a 10x10 square of grass
+            tilemap->SetTile(x, y, 1);
+        }
+    }
 
     Engine::SceneManager::LoadScene(mainScene);
     app.Run();
