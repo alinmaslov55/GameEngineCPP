@@ -1,6 +1,7 @@
 #include <Engine/Animation/Animator.h>
 #include <Engine/Animation/AnimationClip.h>
 #include <Engine/Core/Application.h>
+#include <Engine/Core/ResourceManager.h>
 #include <Engine/Scene/BoxCollider2D.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/SceneManager.h>
@@ -17,7 +18,7 @@ int main(int argc, char* argv[]) {
     Engine::Application app;
     auto mainScene = std::make_shared<Engine::Scene>("Main Level");
 
-    auto spriteSheet = std::make_shared<Engine::Texture>("C:/DEV/GameEngineCPP/Sandbox/test.png");
+    auto spriteSheet = Engine::ResourceManager::Load<Engine::Texture>("C:/DEV/GameEngineCPP/Sandbox/test.png");
     auto playerSubTex = Engine::SubTexture2D::CreateFromCoords(spriteSheet, { 1.0f, 1.0f }, { 128.0f, 128.0f });
     auto treeSubTex = Engine::SubTexture2D::CreateFromCoords(spriteSheet, { 2.0f, 1.0f }, { 128.0f, 128.0f }, { 1.0f, 2.0f });
 
@@ -40,7 +41,7 @@ int main(int argc, char* argv[]) {
     walkClip->AddFrame(Engine::SubTexture2D::CreateFromCoords(spriteSheet, { 1.0f, 1.0f }, { 128.0f, 128.0f }));
 
     auto audioSource = player->AddComponent<Engine::AudioSource>();
-    auto jumpSound = std::make_shared<Engine::AudioClip>("C:/DEV/GameEngineCPP/Sandbox/jump.wav");
+    auto jumpSound = Engine::ResourceManager::Load<Engine::AudioClip>("C:/DEV/GameEngineCPP/Sandbox/jump.wav");
     audioSource->SetClip(jumpSound);
 
     animator->AddClip(idleClip);
@@ -101,7 +102,7 @@ int main(int argc, char* argv[]) {
 
     // Define the TileSet
     // For now, we will reuse your test.png as a "grass" tile SubTexture
-    auto atlas = std::make_shared<Engine::Texture>("C:/DEV/GameEngineCPP/Sandbox/test.png");
+    auto atlas = Engine::ResourceManager::Load<Engine::Texture>("C:/DEV/GameEngineCPP/Sandbox/test.png");
     auto grassTile = Engine::SubTexture2D::CreateFromCoords(atlas, {0, 0}, {atlas->GetWidth(), atlas->GetHeight()});
     
     // Register ID 1 as Grass

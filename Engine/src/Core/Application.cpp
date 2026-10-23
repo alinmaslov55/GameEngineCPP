@@ -1,10 +1,13 @@
 #include "Engine/Core/Application.h"
 #include "Engine/Core/Time.h"
 #include "Engine/Core/Input.h"
+#include "Engine/Core/ResourceManager.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/Renderer2D.h"
+#include "Engine/Renderer/Texture.h"
 #include "Engine/Scene/SceneManager.h"
 #include "Engine/Audio/AudioManager.h"
+#include "Engine/Audio/AudioClip.h"
 #include "Engine/Utils/Logger.h"
 
 namespace Engine {
@@ -73,6 +76,11 @@ bool Application::IsRunning() const {
 void Application::Shutdown() {
     ENGINE_CORE_INFO("Shutting down Isometric Engine...");
     SceneManager::Shutdown();
+
+    // Clear caches to gracefully destroy OpenGL textures and SDL Audio buffers
+    ResourceManager::ClearType<Texture>();
+    ResourceManager::ClearType<AudioClip>();
+
     Renderer2D::Shutdown();
     AudioManager::Shutdown();
     Input::Shutdown();
