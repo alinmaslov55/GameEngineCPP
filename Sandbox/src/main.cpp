@@ -1,3 +1,5 @@
+#include <Engine/Animation/Animator.h>
+#include <Engine/Animation/AnimationClip.h>
 #include <Engine/Core/Application.h>
 #include <Engine/Scene/BoxCollider2D.h>
 #include <Engine/Scene/GameObject.h>
@@ -21,6 +23,23 @@ int main(int argc, char* argv[]) {
     
     auto spriteRenderer = player->AddComponent<Engine::SpriteRenderer>();
     spriteRenderer->SetSubTexture(playerSubTex);
+
+    // Create the Animator
+    auto animator = player->AddComponent<Engine::Animator>();
+
+    // Setup an Idle Clip (using column 0 of your atlas)
+    auto idleClip = std::make_shared<Engine::AnimationClip>("Idle", 0.5f, true);
+    idleClip->AddFrame(Engine::SubTexture2D::CreateFromCoords(spriteSheet, { 0.0f, 0.0f }, { 128.0f, 128.0f }));
+    idleClip->AddFrame(Engine::SubTexture2D::CreateFromCoords(spriteSheet, { 0.0f, 1.0f }, { 128.0f, 128.0f }));
+    
+    // Setup a Walk Clip (using column 1 of your atlas, faster frame rate)
+    auto walkClip = std::make_shared<Engine::AnimationClip>("Walk", 0.15f, true);
+    walkClip->AddFrame(Engine::SubTexture2D::CreateFromCoords(spriteSheet, { 1.0f, 0.0f }, { 128.0f, 128.0f }));
+    walkClip->AddFrame(Engine::SubTexture2D::CreateFromCoords(spriteSheet, { 1.0f, 1.0f }, { 128.0f, 128.0f }));
+
+    animator->AddClip(idleClip);
+    animator->AddClip(walkClip);
+    animator->Play("Idle"); // Set default state
 
     auto transform = player->GetComponent<Engine::Transform>();
     transform->scale = glm::vec3(0.5f, 0.5f, 1.0f);

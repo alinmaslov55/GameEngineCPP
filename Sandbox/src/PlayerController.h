@@ -1,8 +1,9 @@
 #pragma once
+#include <Engine/Animation/Animator.h>
+#include <Engine/Core/Input.h>
 #include <Engine/Scene/Component.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Transform.h>
-#include <Engine/Core/Input.h>
 #include <Engine/Utils/Logger.h>
 
 class PlayerController : public Engine::Component {
@@ -15,6 +16,7 @@ public:
 
     void Update(float deltaTime) override {
         auto transform = GetGameObject()->GetComponent<Engine::Transform>();
+        auto animator = GetGameObject()->GetComponent<Engine::Animator>();
         if (!transform) return;
 
         glm::vec3 movement(0.0f);
@@ -39,12 +41,18 @@ public:
             }
         }
 
+        bool isMoving = glm::length(movement) > 0.0f;
+
         // Apply movement scaled by time and speed
-        if (glm::length(movement) > 0.0f) {
+        if (isMoving) {
             // Normalize so diagonal movement isn't faster
             movement = glm::normalize(movement);
             ENGINE_DEBUG("PlayerController moving: ({:.2f}, {:.2f}, {:.2f})", movement.x, movement.y, movement.z);
             transform->Translate(movement * moveSpeed * deltaTime);
+
+            if (animator) animator->Play("Walk");
+        } else {
+            if (animator) animator->Play("Idle");
         }
     }
 };
