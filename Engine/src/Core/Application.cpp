@@ -4,6 +4,7 @@
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Scene/SceneManager.h"
+#include "Engine/Audio/AudioManager.h"
 #include "Engine/Utils/Logger.h"
 
 namespace Engine {
@@ -25,6 +26,7 @@ void Application::Initialize() {
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
     Time::Init();
     Input::Init();
+    AudioManager::Init();
     Renderer::Init();
     Renderer2D::Init();
     ENGINE_CORE_INFO("Isometric Engine initialized successfully");
@@ -72,6 +74,7 @@ void Application::Shutdown() {
     ENGINE_CORE_INFO("Shutting down Isometric Engine...");
     SceneManager::Shutdown();
     Renderer2D::Shutdown();
+    AudioManager::Shutdown();
     Input::Shutdown();
     m_Window.reset();
     ENGINE_CORE_INFO("Isometric Engine shutdown complete");

@@ -1,6 +1,7 @@
 #pragma once
 #include <Engine/Animation/Animator.h>
 #include <Engine/Core/Input.h>
+#include <Engine/Audio/AudioSource.h>
 #include <Engine/Scene/Component.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Transform.h>
@@ -17,6 +18,7 @@ public:
     void Update(float deltaTime) override {
         auto transform = GetGameObject()->GetComponent<Engine::Transform>();
         auto animator = GetGameObject()->GetComponent<Engine::Animator>();
+        auto audioSource = GetGameObject()->GetComponent<Engine::AudioSource>();
         if (!transform) return;
 
         glm::vec3 movement(0.0f);
@@ -28,8 +30,12 @@ public:
         if (Engine::Input::IsKeyPressed(SDL_SCANCODE_D)) { movement.x += 1.0f; movement.z -= 1.0f; } // Move Right (East)
 
         // Add jumping on the Y axis
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_SPACE)) movement.y += 1.0f;
-
+        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_SPACE)){
+            movement.y += 1.0f;
+            if (audioSource) {
+                audioSource->Play();
+            }
+        }
         // Gamepad Input (Left Stick)
         if (Engine::Input::IsGamepadConnected()) {
             float axisX = Engine::Input::GetGamepadAxis(SDL_GAMEPAD_AXIS_LEFTX);

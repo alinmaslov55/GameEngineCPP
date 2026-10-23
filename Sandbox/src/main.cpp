@@ -7,6 +7,8 @@
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/SubTexture2D.h>
+#include <Engine/Audio/AudioClip.h>
+#include <Engine/Audio/AudioSource.h>
 
 #include "PlayerController.h"
 #include "CameraController.h"
@@ -36,6 +38,10 @@ int main(int argc, char* argv[]) {
     auto walkClip = std::make_shared<Engine::AnimationClip>("Walk", 0.15f, true);
     walkClip->AddFrame(Engine::SubTexture2D::CreateFromCoords(spriteSheet, { 1.0f, 0.0f }, { 128.0f, 128.0f }));
     walkClip->AddFrame(Engine::SubTexture2D::CreateFromCoords(spriteSheet, { 1.0f, 1.0f }, { 128.0f, 128.0f }));
+
+    auto audioSource = player->AddComponent<Engine::AudioSource>();
+    auto jumpSound = std::make_shared<Engine::AudioClip>("C:/DEV/GameEngineCPP/Sandbox/jump.wav");
+    audioSource->SetClip(jumpSound);
 
     animator->AddClip(idleClip);
     animator->AddClip(walkClip);
