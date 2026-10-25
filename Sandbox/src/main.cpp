@@ -6,6 +6,7 @@
 #include <Engine/UI/UIPanel.h>
 #include <Engine/UI/UILabel.h>
 #include <Engine/UI/Font.h>
+#include <Engine/Particles/ParticleSystem.h>
 
 int main(int argc, char* argv[]) {
     Engine::Application app;
@@ -16,6 +17,7 @@ int main(int argc, char* argv[]) {
     auto transform = player->GetComponent<Engine::Transform>();
     transform->position = glm::vec3(5.0f, 0.0f, 2.0f);
     player->AddComponent<Engine::SpriteRenderer>();
+    player->AddComponent<Engine::ParticleSystem>(500); // Pool of 500 particles
 
     // Create a generic UI Canvas GameObject
     Engine::GameObject* hud = mainScene->CreateGameObject("HUD");

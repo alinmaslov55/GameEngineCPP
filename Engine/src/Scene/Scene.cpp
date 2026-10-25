@@ -9,8 +9,13 @@
 #include "Engine/Utils/Logger.h"
 #include "Engine/UI/UIPanel.h"
 #include "Engine/UI/UILabel.h"
+#include "Engine/Particles/ParticleSystem.h"
 
+#ifndef GLM_ENABLE_EXPERIMENTAL
+#define GLM_ENABLE_EXPERIMENTAL
+#endif
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtx/compatibility.hpp>
 #include <algorithm>
 #include <vector>
 
@@ -211,6 +216,34 @@ void Scene::Render() {
             Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetSubTexture(), spriteRenderer->GetColor());
         } else {
             Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetTexture(), spriteRenderer->GetColor());
+        }
+    }
+
+    // 2.5 Render Particles (in 3D Isometric Space)
+    for (auto& gameObject : m_GameObjects) {
+        auto particleSystem = gameObject->GetComponent<ParticleSystem>();
+        if (particleSystem) {
+            for (const auto& particle : particleSystem->GetParticles()) {
+                if (!particle.active) continue;
+
+                // Calculate lifecycle ratio (0.0 = dead, 1.0 = just spawned)
+                float lifeRatio = particle.lifeRemaining / particle.lifeTime;
+                
+                // Interpolate size and color over time
+                float size = glm::mix(particle.sizeEnd, particle.sizeBegin, lifeRatio);
+                glm::vec4 color = glm::mix(particle.colorEnd, particle.colorBegin, lifeRatio);
+
+                // Convert 3D world position to 2D isometric screen space
+                glm::vec2 screenPos = Isometric::WorldToScreen(particle.position);
+                glm::vec3 renderPos = { screenPos.x, screenPos.y, 0.0f };
+
+                glm::mat4 transform = glm::translate(glm::mat4(1.0f), renderPos) *
+                                      glm::rotate(glm::mat4(1.0f), particle.rotation, glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                      glm::scale(glm::mat4(1.0f), glm::vec3(size));
+
+                // Draw the particle as a flat colored quad (or you can bind a subtexture here)
+                Renderer2D::DrawQuad(transform, color);
+            }
         }
     }
 

@@ -119,5 +119,3 @@ bool SceneSerializer::Deserialize(const std::string& filepath) {
     return true;
 }
 } // namespace Engine
-
-} // namespace Engine
