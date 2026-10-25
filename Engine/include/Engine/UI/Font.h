@@ -3,6 +3,7 @@
 
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/SubTexture2D.h"
+#include "Engine/Utils/Logger.h"
 #include <glm/glm.hpp>
 #include <unordered_map>
 #include <memory>
@@ -21,6 +22,7 @@ public:
     std::shared_ptr<Texture> atlasTexture{nullptr};
 
     void AddCharacter(char c, const Character& characterData) {
+        ENGINE_CORE_DEBUG("Font: Added character '{}' (ASCII {})", c, static_cast<int>(c));
         m_Characters[c] = characterData;
     }
 
@@ -33,10 +35,11 @@ public:
         // Fallback to '?' if character is missing
         auto fallback = m_Characters.find('?');
         if (fallback != m_Characters.end()) {
+            ENGINE_CORE_WARN("Font: Character '{}' (ASCII {}) not found, falling back to '?'", c, static_cast<int>(c));
             return fallback->second;
         }
 
-        // Fallback to empty character if neither exists
+        ENGINE_CORE_WARN("Font: Character '{}' (ASCII {}) and fallback '?' not found", c, static_cast<int>(c));
         static const Character s_EmptyCharacter{};
         return s_EmptyCharacter;
     }
@@ -47,4 +50,3 @@ private:
 } // namespace Engine
 
 #endif // UI_FONT_H
-

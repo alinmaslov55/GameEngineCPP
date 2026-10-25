@@ -26,8 +26,13 @@ public:
         ENGINE_CORE_DEBUG("SpriteRenderer: SetColor ({:.2f}, {:.2f}, {:.2f}, {:.2f})", color.r, color.g, color.b, color.a);
     }
     const glm::vec4& GetColor() const { return m_Color; }
-    void SetSubTexture(const std::shared_ptr<SubTexture2D>& subTexture) { m_SubTexture = subTexture; }
+
+    void SetSubTexture(const std::shared_ptr<SubTexture2D>& subTexture) {
+        m_SubTexture = subTexture;
+        ENGINE_CORE_DEBUG("SpriteRenderer: SetSubTexture {}", subTexture ? "assigned" : "nullptr");
+    }
     std::shared_ptr<SubTexture2D> GetSubTexture() const { return m_SubTexture; }
+
 private:
     std::shared_ptr<Texture> m_Texture = nullptr;
     std::shared_ptr<SubTexture2D> m_SubTexture = nullptr;

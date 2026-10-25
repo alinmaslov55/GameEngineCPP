@@ -27,6 +27,7 @@ namespace Engine {
 
             // Check if the asset is already loaded
             if (cache.find(filepath) != cache.end()) {
+                ENGINE_CORE_TRACE("ResourceManager: Returning cached asset: '{}'", filepath);
                 return cache[filepath];
             }
 
@@ -34,7 +35,7 @@ namespace Engine {
             std::shared_ptr<T> asset = std::make_shared<T>(filepath);
             cache[filepath] = asset;
 
-            ENGINE_CORE_INFO("Loaded new asset into cache: {}", filepath);
+            ENGINE_CORE_INFO("ResourceManager: Loaded new asset into cache: '{}'", filepath);
             return asset;
         }
 
@@ -43,18 +44,21 @@ namespace Engine {
         static std::shared_ptr<T> Get(const std::string& filepath) {
             auto& cache = AssetCache<T>::data;
             if (cache.find(filepath) != cache.end()) {
+                ENGINE_CORE_TRACE("ResourceManager::Get: Found asset '{}'", filepath);
                 return cache[filepath];
             }
+            ENGINE_CORE_DEBUG("ResourceManager::Get: Asset '{}' not found in cache", filepath);
             return nullptr;
         }
 
         // Clears all loaded assets of a specific type to free memory
         template<typename T>
         static void ClearType() {
-            AssetCache<T>::data.clear();
+            auto& cache = AssetCache<T>::data;
+            ENGINE_CORE_INFO("ResourceManager: Cleared cache (freed {} entries)", cache.size());
+            cache.clear();
         }
     };
 } // namespace Engine
 
 #endif // CORE_RESOURCEMANAGER_H
-

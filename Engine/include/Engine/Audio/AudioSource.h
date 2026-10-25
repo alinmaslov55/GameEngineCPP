@@ -12,6 +12,7 @@ public:
     
     ~AudioSource() {
         if (m_Stream) {
+            ENGINE_CORE_DEBUG("AudioSource destroyed, closing audio stream");
             SDL_DestroyAudioStream(m_Stream);
         }
     }
@@ -27,24 +28,34 @@ public:
             m_Stream = nullptr;
         }
 
-        if (!m_Clip || !m_Clip->IsValid()) return;
+        if (!m_Clip || !m_Clip->IsValid()) {
+            ENGINE_CORE_WARN("AudioSource: SetClip called with invalid or empty clip");
+            return;
+        }
 
         m_Stream = SDL_OpenAudioDeviceStream(SDL_AUDIO_DEVICE_DEFAULT_PLAYBACK, &m_Clip->GetSpec(), nullptr, nullptr);
         if (!m_Stream) {
             ENGINE_CORE_ERROR("Failed to open audio stream: {}", SDL_GetError());
+        } else {
+            ENGINE_CORE_DEBUG("AudioSource: Audio stream opened successfully");
         }
     }
 
     void Play() {
-        if (!m_Clip || !m_Clip->IsValid() || !m_Stream) return;
+        if (!m_Clip || !m_Clip->IsValid() || !m_Stream) {
+            ENGINE_CORE_WARN("AudioSource::Play failed: No valid clip or audio stream");
+            return;
+        }
         if (SDL_GetAudioStreamAvailable(m_Stream) > 0) return;
         
+        ENGINE_CORE_TRACE("AudioSource: Playing audio");
         SDL_PutAudioStreamData(m_Stream, m_Clip->GetBuffer(), m_Clip->GetLength());
         SDL_ResumeAudioStreamDevice(m_Stream);
     }
 
     void Stop() {
         if (m_Stream) {
+            ENGINE_CORE_TRACE("AudioSource: Stopping audio stream");
             SDL_ClearAudioStream(m_Stream);
             SDL_PauseAudioStreamDevice(m_Stream);
         }

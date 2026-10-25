@@ -5,6 +5,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Animation/AnimationClip.h"
+#include "Engine/Utils/Logger.h"
 #include <unordered_map>
 #include <string>
 
@@ -12,13 +13,26 @@ namespace Engine {
 class Animator : public Component {
 public:
     void AddClip(const std::shared_ptr<AnimationClip>& clip) {
+        if (!clip) {
+            ENGINE_CORE_WARN("Animator: Attempted to add null AnimationClip");
+            return;
+        }
+        ENGINE_CORE_DEBUG("Animator: Added clip '{}' ({} frames, duration: {:.2f}s, loop: {})",
+                          clip->name, clip->frames.size(), clip->frameDuration, clip->loop);
         m_Clips[clip->name] = clip;
     }
 
     void Play(const std::string& clipName) {
-        if (m_CurrentClipName == clipName || m_Clips.find(clipName) == m_Clips.end()) 
+        if (m_CurrentClipName == clipName) {
             return;
+        }
 
+        if (m_Clips.find(clipName) == m_Clips.end()) {
+            ENGINE_CORE_WARN("Animator: Clip '{}' not found", clipName);
+            return;
+        }
+
+        ENGINE_CORE_TRACE("Animator: Playing clip '{}'", clipName);
         m_CurrentClipName = clipName;
         m_CurrentClip = m_Clips[clipName];
         m_CurrentTime = 0.0f;

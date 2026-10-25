@@ -2,9 +2,9 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Renderer/SpriteRenderer.h"
+#include "Engine/Utils/Logger.h"
 #include <nlohmann/json.hpp>
 #include <fstream>
-#include <iostream>
 
 using json = nlohmann::json;
 
@@ -13,6 +13,13 @@ SceneSerializer::SceneSerializer(const std::shared_ptr<Scene>& scene)
     : m_Scene(scene) {}
 
 bool SceneSerializer::Serialize(const std::string& filepath) {
+    if (!m_Scene) {
+        ENGINE_CORE_ERROR("SceneSerializer::Serialize failed: Scene pointer is null");
+        return false;
+    }
+
+    ENGINE_CORE_INFO("Serializing scene '{}' to '{}'", m_Scene->GetName(), filepath);
+
     json sceneJson;
     sceneJson["SceneName"] = m_Scene->GetName();
     sceneJson["GameObjects"] = json::array();
@@ -44,28 +51,46 @@ bool SceneSerializer::Serialize(const std::string& filepath) {
     }
 
     std::ofstream file(filepath);
-    if (file.is_open()) {
-        // 4 spaces of indentation
-        file << sceneJson.dump(4);
-        file.close();
-        return true;
+    if (!file.is_open()) {
+        ENGINE_CORE_ERROR("Failed to open file for scene serialization: '{}'", filepath);
+        return false;
     }
-    return false;
+
+    // 4 spaces of indentation
+    file << sceneJson.dump(4);
+    file.close();
+    ENGINE_CORE_INFO("Scene serialized successfully to '{}' ({} GameObjects)", filepath, sceneJson["GameObjects"].size());
+    return true;
 }
 
 bool SceneSerializer::Deserialize(const std::string& filepath) {
+    if (!m_Scene) {
+        ENGINE_CORE_ERROR("SceneSerializer::Deserialize failed: Scene pointer is null");
+        return false;
+    }
+
+    ENGINE_CORE_INFO("Deserializing scene from '{}'", filepath);
+
     std::ifstream file(filepath);
-    if (!file.is_open()) return false;
+    if (!file.is_open()) {
+        ENGINE_CORE_ERROR("Failed to open file for scene deserialization: '{}'", filepath);
+        return false;
+    }
 
     json sceneJson;
-    file >> sceneJson;
+    try {
+        file >> sceneJson;
+    } catch (const std::exception& e) {
+        ENGINE_CORE_ERROR("Failed to parse scene JSON from '{}': {}", filepath, e.what());
+        return false;
+    }
 
-    // In a real scenario, you might want to clear the current scene first
-    
+    size_t loadedCount = 0;
     if (sceneJson.contains("GameObjects")) {
         for (const auto& entityJson : sceneJson["GameObjects"]) {
             std::string name = entityJson["Name"].get<std::string>();
             GameObject* go = m_Scene->CreateGameObject(name);
+            loadedCount++;
 
             auto components = entityJson["Components"];
 
@@ -89,6 +114,10 @@ bool SceneSerializer::Deserialize(const std::string& filepath) {
             }
         }
     }
+
+    ENGINE_CORE_INFO("Scene deserialized successfully from '{}' ({} GameObjects loaded)", filepath, loadedCount);
     return true;
 }
+} // namespace Engine
+
 } // namespace Engine

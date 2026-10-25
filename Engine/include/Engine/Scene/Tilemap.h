@@ -2,6 +2,7 @@
 #define SCENE_TILEMAP_H
 #include "Engine/Scene/Component.h"
 #include "Engine/Renderer/SubTexture2D.h"
+#include "Engine/Utils/Logger.h"
 #include <vector>
 #include <unordered_map>
 #include <memory>
@@ -15,6 +16,7 @@ struct Tile {
 class TileSet {
 public:
     void AddTile(uint32_t id, const std::shared_ptr<SubTexture2D>& texture) {
+        ENGINE_CORE_DEBUG("TileSet: Added tile with ID {}", id);
         m_Tiles[id] = texture;
     }
     
@@ -28,12 +30,15 @@ private:
 class Tilemap : public Component {
 public:
     Tilemap(uint32_t width, uint32_t height) : m_Width(width), m_Height(height) {
+        ENGINE_CORE_INFO("Tilemap created with dimensions: {}x{} ({} total tiles)", width, height, width * height);
         m_Grid.resize(width * height);
     }
 
     void SetTile(uint32_t x, uint32_t y, uint32_t tileId) {
         if (x < m_Width && y < m_Height) {
             m_Grid[y * m_Width + x].id = tileId;
+        } else {
+            ENGINE_CORE_WARN("Tilemap::SetTile: Coordinates ({}, {}) out of bounds ({}x{})", x, y, m_Width, m_Height);
         }
     }
 
