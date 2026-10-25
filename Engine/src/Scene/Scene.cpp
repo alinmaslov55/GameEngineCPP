@@ -8,6 +8,7 @@
 #include "Engine/Math/Isometric.h"
 #include "Engine/Utils/Logger.h"
 #include "Engine/UI/UIPanel.h"
+#include "Engine/UI/UILabel.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -226,8 +227,7 @@ void Scene::Render() {
     Renderer2D::BeginScene(uiProjection); 
 
     for (auto& gameObject : m_GameObjects) {
-        auto uiPanel = gameObject->GetComponent<UIPanel>();
-        if (uiPanel) {
+        for (auto* uiPanel : gameObject->GetComponents<UIPanel>()) {
             // UI elements don't use the standard Transform component.
             // We construct a simple model matrix using the screen-space pixel coordinates.
             glm::mat4 uiTransform = glm::translate(glm::mat4(1.0f), glm::vec3(uiPanel->position, 0.0f)) *
@@ -237,6 +237,38 @@ void Scene::Render() {
                 Renderer2D::DrawQuad(uiTransform, uiPanel->texture, uiPanel->color);
             } else {
                 Renderer2D::DrawQuad(uiTransform, uiPanel->color);
+            }
+        }
+    }
+
+    for (auto& gameObject : m_GameObjects) {
+        for (auto* uiLabel : gameObject->GetComponents<UILabel>()) {
+            if (uiLabel->font) {
+                // Track the baseline starting position
+                float cursorX = uiLabel->position.x;
+                float cursorY = uiLabel->position.y;
+
+                for (char c : uiLabel->text) {
+                    const Character& ch = uiLabel->font->GetCharacter(c);
+
+                    // Calculate the exact screen position of this specific character quad
+                    float xPos = cursorX + (ch.bearing.x * uiLabel->scale);
+                    
+                    // Subtract (size.y - bearing.y) to align characters with hanging tails (like 'g' or 'p')
+                    float yPos = cursorY - ((ch.size.y - ch.bearing.y) * uiLabel->scale);
+
+                    glm::vec2 currentSize = ch.size * uiLabel->scale;
+
+                    // Build the transform matrix
+                    glm::mat4 charTransform = glm::translate(glm::mat4(1.0f), glm::vec3(xPos, yPos, 0.0f)) *
+                                              glm::scale(glm::mat4(1.0f), glm::vec3(currentSize, 1.0f));
+
+                    // Draw the character
+                    Renderer2D::DrawQuad(charTransform, ch.subTexture, uiLabel->color);
+
+                    // Advance the cursor for the next character
+                    cursorX += (ch.advance * uiLabel->scale);
+                }
             }
         }
     }

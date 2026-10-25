@@ -44,6 +44,17 @@ public:
         return nullptr;
     }
 
+    template<typename T>
+    std::vector<T*> GetComponents() {
+        std::vector<T*> result;
+        for (auto& component : m_Components) {
+            if (T* casted = dynamic_cast<T*>(component.get())) {
+                result.push_back(casted);
+            }
+        }
+        return result;
+    }
+
     void Update(float deltaTime) {
         ENGINE_CORE_TRACE("GameObject '{}': Updating components", GetName());
         for (auto& component : m_Components) {
