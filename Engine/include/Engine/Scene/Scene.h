@@ -21,6 +21,7 @@ public:
 
     const std::string& GetName() const { return m_Name; }
     OrthographicCamera& GetCamera() { return m_Camera; }
+    const std::vector<std::unique_ptr<GameObject>>& GetGameObjects() const { return m_GameObjects; }
 
 private:
     std::string m_Name;

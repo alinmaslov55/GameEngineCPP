@@ -1,0 +1,35 @@
+{
+    "GameObjects": [
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "Transform": {
+                    "Position": [
+                        5.0,
+                        0.0,
+                        2.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Player"
+        }
+    ],
+    "SceneName": "Village"
+}
