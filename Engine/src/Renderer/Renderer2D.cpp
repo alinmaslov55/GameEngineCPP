@@ -3,12 +3,14 @@
 #include "Engine/Renderer/Shader.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Utils/Logger.h"
+#include <glad/glad.h>
 
 namespace Engine {
 
 struct Renderer2DStorage {
     std::shared_ptr<VertexArray> QuadVertexArray;
     std::shared_ptr<Shader> TextureShader;
+    uint32_t WhiteTexture = 0;
 };
 
 static Renderer2DStorage* s_Data{nullptr};
@@ -67,11 +69,25 @@ void Renderer2D::Init() {
     s_Data->TextureShader->Bind();
     s_Data->TextureShader->SetInt("u_Texture", 0);
 
+    // Create 1x1 white texture for solid color rendering
+    glGenTextures(1, &s_Data->WhiteTexture);
+    glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+    uint32_t whiteData = 0xffffffff;
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, &whiteData);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
     ENGINE_CORE_INFO("Renderer2D initialized successfully");
 }
 
 void Renderer2D::Shutdown() {
     ENGINE_CORE_INFO("Shutting down Renderer2D...");
+    if (s_Data->WhiteTexture) {
+        glDeleteTextures(1, &s_Data->WhiteTexture);
+    }
     delete s_Data;
     s_Data = nullptr;
     ENGINE_CORE_INFO("Renderer2D shut down");
@@ -83,9 +99,19 @@ void Renderer2D::BeginScene(const OrthographicCamera& camera) {
     s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
 }
 
+void Renderer2D::BeginScene(const glm::mat4& projectionMatrix) {
+    ENGINE_CORE_TRACE("Renderer2D::BeginScene (Projection Matrix)");
+    s_Data->TextureShader->Bind();
+    s_Data->TextureShader->SetMat4("u_ViewProjection", projectionMatrix);
+}
+
 void Renderer2D::EndScene() {
     ENGINE_CORE_TRACE("Renderer2D::EndScene");
     // Placeholder for future batch rendering flush
+}
+
+void Renderer2D::DrawQuad(const glm::mat4& transform, const glm::vec4& color) {
+    DrawQuad(transform, std::shared_ptr<Texture>(nullptr), color);
 }
 
 void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor) {
@@ -96,6 +122,9 @@ void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<Text
     
     if (texture) {
         texture->Bind(0);
+    } else {
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
     }
 
     s_Data->QuadVertexArray->Bind();
@@ -114,6 +143,8 @@ void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubT
         subTexture->GetTexture()->Bind(0);
     } else {
         s_Data->TextureShader->SetFloat4("u_TexBounds", glm::vec4(0.0f, 0.0f, 1.0f, 1.0f));
+        glActiveTexture(GL_TEXTURE0);
+        glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
     }
 
     s_Data->QuadVertexArray->Bind();

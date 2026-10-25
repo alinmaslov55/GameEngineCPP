@@ -7,6 +7,7 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Math/Isometric.h"
 #include "Engine/Utils/Logger.h"
+#include "Engine/UI/UIPanel.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -209,6 +210,34 @@ void Scene::Render() {
             Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetSubTexture(), spriteRenderer->GetColor());
         } else {
             Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetTexture(), spriteRenderer->GetColor());
+        }
+    }
+
+    Renderer2D::EndScene();
+
+    // ==========================================
+    // 3. UI RENDERING PASS (Screen Space)
+    // ==========================================
+    
+    // Create an orthographic projection matching your window size (e.g., 1280x720)
+    // (0,0) at bottom-left, (1280, 720) at top-right
+    glm::mat4 uiProjection = glm::ortho(0.0f, 1280.0f, 0.0f, 720.0f, -1.0f, 1.0f);
+    
+    Renderer2D::BeginScene(uiProjection); 
+
+    for (auto& gameObject : m_GameObjects) {
+        auto uiPanel = gameObject->GetComponent<UIPanel>();
+        if (uiPanel) {
+            // UI elements don't use the standard Transform component.
+            // We construct a simple model matrix using the screen-space pixel coordinates.
+            glm::mat4 uiTransform = glm::translate(glm::mat4(1.0f), glm::vec3(uiPanel->position, 0.0f)) *
+                                    glm::scale(glm::mat4(1.0f), glm::vec3(uiPanel->size, 1.0f));
+
+            if (uiPanel->texture) {
+                Renderer2D::DrawQuad(uiTransform, uiPanel->texture, uiPanel->color);
+            } else {
+                Renderer2D::DrawQuad(uiTransform, uiPanel->color);
+            }
         }
     }
 

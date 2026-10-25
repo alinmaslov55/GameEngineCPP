@@ -16,9 +16,11 @@ public:
     static void Shutdown();
 
     static void BeginScene(const OrthographicCamera& camera);
+    static void BeginScene(const glm::mat4& projectionMatrix);
     static void EndScene();
 
     // Draw a quad using a transform matrix
+    static void DrawQuad(const glm::mat4& transform, const glm::vec4& color);
     static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor = glm::vec4(1.0f));
     static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor = glm::vec4(1.0f));
 };
