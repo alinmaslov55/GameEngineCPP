@@ -38,8 +38,9 @@ void Renderer::Clear() {
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 
-void Renderer::DrawIndexed(const std::shared_ptr<VertexArray>& vertexArray) {
-    ENGINE_CORE_TRACE("Renderer DrawIndexed (IndexCount: {})", vertexArray->GetIndexBuffer()->GetCount());
-    glDrawElements(GL_TRIANGLES, vertexArray->GetIndexBuffer()->GetCount(), GL_UNSIGNED_INT, nullptr);
+void Renderer::DrawIndexed(const std::shared_ptr<VertexArray>& vertexArray, uint32_t indexCount) {
+    uint32_t count = indexCount ? indexCount : vertexArray->GetIndexBuffer()->GetCount();
+    ENGINE_CORE_TRACE("Renderer DrawIndexed (IndexCount: {})", count);
+    glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(count), GL_UNSIGNED_INT, nullptr);
 }
 } // namespace Engine

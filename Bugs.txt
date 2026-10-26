@@ -1,30 +1,3 @@
-1. Bugs & Subtle Correctness Issues
-
-Tile Painting Coordinate Space Mismatch
-
-In Sandbox/src/main.cpp, relativeMouse is in pixel coordinates (e.g., 0..1280, 0..720) and is passed directly into Isometric::ScreenToWorld, where tile half-sizes are 0.5 and 0.25 world units. Meanwhile, Scene::m_Camera views orthographic world bounds (-1.6..1.6, -0.9..0.9).
-Fix: Convert relativeMouse from viewport pixels to Normalized Device Coordinates (-1.0 to +1.0), multiply by glm::inverse(camera.GetViewProjectionMatrix()) to get isometric world/screen coordinates, and pass that into Isometric::ScreenToWorld.
-
-Rotation Units Mismatch (Degrees vs. Radians)
-
-Transform::GetTransformMatrix and Scene::Render call glm::radians(transform->rotation), treating Transform::rotation as degrees.
-However, the Inspector in Sandbox/src/main.cpp calls glm::degrees(transform->rotation) and writes back glm::radians(...), treating Transform::rotation as radians.
-Fix: Standardize Transform::rotation in degrees (matching OrthographicCamera) and edit &transform->rotation.x directly in ImGui::DragFloat3.
-
-Isometric Y-Height Sort Tie-Breaker & Depth Buffer Conflict
-
-In Scene::Render, when two objects have the same X + Z depth, return tA->position.y > tB->position.y; draws the higher object first (behind the lower object) instead of in front (<).
-Additionally, Renderer::Init enables GL_DEPTH_TEST, while all 2D quads render at z = 0.0f. Transparent sprites or particles writing to the depth buffer at z = 0 can clip overlapping semi-transparent quads.
-
-Viewport Aspect Ratio Stretching & Non-Resizable Window
-
-Window::Window creates the SDL window without SDL_WINDOW_RESIZABLE.
-When the ImGui "Scene" panel is resized in Sandbox/src/main.cpp, framebuffer->Resize(...) updates the texture resolution, but Scene::m_Camera and the hardcoded 1280x720 UI projection in Scene.cpp never update their bounds, causing aspect-ratio distortion.
-
-Hierarchy Selection Race Condition & Duplicate ImGui IDs
-
-In Sandbox/src/main.cpp, if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered()) clears selectedContext = nullptr on mouse-down even when clicking an entity row. Checking ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() prevents accidental deselection.
-Creating two "New GameObject" items causes an ImGui ID collision (label.c_str()). Adding a 64-bit UUID to Object and calling ImGui::PushID(...) fixes this.
 2. Rendering & Logging Performance
 
 Implement Batch Rendering in Renderer2D

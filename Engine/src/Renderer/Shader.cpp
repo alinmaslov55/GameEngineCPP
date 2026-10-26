@@ -82,22 +82,38 @@ void Shader::Unbind() const {
     glUseProgram(0);
 }
 
+int Shader::GetUniformLocation(const std::string& name) const {
+    auto it = m_UniformLocationCache.find(name);
+    if (it != m_UniformLocationCache.end()) {
+        return it->second;
+    }
+
+    int location = glGetUniformLocation(m_RendererID, name.c_str());
+    if (location == -1) {
+        ENGINE_CORE_WARN("Shader ID {}: Uniform '{}' not found or unused", m_RendererID, name);
+    }
+    m_UniformLocationCache[name] = location;
+    return location;
+}
+
 void Shader::SetInt(const std::string& name, int value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetInt: {} = {}", m_RendererID, name, value);
-    int location = glGetUniformLocation(m_RendererID, name.c_str());
-    glUniform1i(location, value);
+    glUniform1i(GetUniformLocation(name), value);
+}
+
+void Shader::SetIntArray(const std::string& name, const int* values, uint32_t count) const {
+    ENGINE_CORE_TRACE("Shader ID {} SetIntArray: {} (count: {})", m_RendererID, name, count);
+    glUniform1iv(GetUniformLocation(name), static_cast<GLsizei>(count), values);
 }
 
 void Shader::SetFloat4(const std::string& name, const glm::vec4& value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloat4: {} = ({:.2f}, {:.2f}, {:.2f}, {:.2f})", m_RendererID, name, value.x, value.y, value.z, value.w);
-    int location = glGetUniformLocation(m_RendererID, name.c_str());
-    glUniform4f(location, value.x, value.y, value.z, value.w);
+    glUniform4f(GetUniformLocation(name), value.x, value.y, value.z, value.w);
 }
 
 void Shader::SetMat4(const std::string& name, const glm::mat4& matrix) const {
     ENGINE_CORE_TRACE("Shader ID {} SetMat4: {}", m_RendererID, name);
-    int location = glGetUniformLocation(m_RendererID, name.c_str());
-    glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
+    glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, glm::value_ptr(matrix));
 }
 
 } // namespace Engine

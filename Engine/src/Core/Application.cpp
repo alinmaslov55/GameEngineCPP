@@ -61,6 +61,7 @@ void Application::Run() {
         Renderer::Clear();
 
         // 4. Render Engine Scene (The game world)
+        Renderer2D::ResetStats();
         SceneManager::Render();
 
         // 5. Render UI Layer

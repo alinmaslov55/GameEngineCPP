@@ -4,6 +4,14 @@
 #include <glad/glad.h>
 
 namespace Engine {
+
+VertexBuffer::VertexBuffer(uint32_t size) {
+    glGenBuffers(1, &m_RendererID);
+    glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
+    glBufferData(GL_ARRAY_BUFFER, size, nullptr, GL_DYNAMIC_DRAW);
+    ENGINE_CORE_DEBUG("Dynamic VertexBuffer created with ID: {} (capacity: {} bytes)", m_RendererID, size);
+}
+
 VertexBuffer::VertexBuffer(float* vertices, uint32_t size) {
     glGenBuffers(1, &m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
@@ -24,6 +32,12 @@ void VertexBuffer::Bind() const {
 void VertexBuffer::Unbind() const {
     ENGINE_CORE_TRACE("VertexBuffer ID {} unbound", m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
+}
+
+void VertexBuffer::SetData(const void* data, uint32_t size) {
+    ENGINE_CORE_TRACE("VertexBuffer ID {} SetData ({} bytes)", m_RendererID, size);
+    glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, size, data);
 }
 
 IndexBuffer::IndexBuffer(uint32_t* indices, uint32_t count) : m_Count(count) {
@@ -47,4 +61,5 @@ void IndexBuffer::Unbind() const {
     ENGINE_CORE_TRACE("IndexBuffer ID {} unbound", m_RendererID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
+
 } // namespace Engine

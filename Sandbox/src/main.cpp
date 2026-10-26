@@ -6,6 +6,7 @@
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Math/Isometric.h>
 #include <Engine/Renderer/Renderer.h>
+#include <Engine/Renderer/Renderer2D.h>
 #include <Engine/Renderer/Framebuffer.h>
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/UI/UIPanel.h>
@@ -140,6 +141,7 @@ int main(int argc, char* argv[]) {
         }
 
         // 3. Render Game Scene into Framebuffer
+        Engine::Renderer2D::ResetStats();
         framebuffer->Bind();
         Engine::Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
         Engine::Renderer::Clear(); 
@@ -430,7 +432,9 @@ int main(int argc, char* argv[]) {
             auto particleSystem = selectedContext->GetComponent<Engine::ParticleSystem>();
             if (particleSystem) {
                 if (ImGui::CollapsingHeader("Particle System", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    ImGui::Text("Active Particles: %zu", particleSystem->GetParticles().size());
+                    ImGui::Text("Active Particles: %u / %zu",
+                                particleSystem->GetActiveParticleCount(),
+                                particleSystem->GetParticles().size());
                     if (ImGui::Button("Emit Test Particles")) {
                         Engine::ParticleProps props;
                         if (transform) props.position = transform->position;
@@ -544,10 +548,75 @@ int main(int argc, char* argv[]) {
 
         ImGui::End();
 
-        // Panel 4: Performance Profiler
+        // ==========================================
+        // PROFILER PANEL
+        // ==========================================
         ImGui::Begin("Profiler");
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 
                     1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        ImGui::Separator();
+        auto stats = Engine::Renderer2D::GetStats();
+        ImGui::Text("Renderer2D Stats:");
+        ImGui::Text("  Draw Calls: %u", stats.DrawCalls);
+        ImGui::Text("  Quads:      %u", stats.QuadCount);
+        ImGui::Text("  Vertices:   %u", stats.GetTotalVertexCount());
+        ImGui::Text("  Indices:    %u", stats.GetTotalIndexCount());
+        ImGui::End();
+
+        // ==========================================
+        // CONSOLE PANEL (Ring-Buffer Log Sink)
+        // ==========================================
+        ImGui::Begin("Console");
+        {
+            static ImGuiTextFilter logFilter;
+            static bool autoScroll = true;
+
+            if (ImGui::Button("Clear")) {
+                Engine::Logger::ClearLogs();
+            }
+            ImGui::SameLine();
+
+            const char* levelNames[] = { "Trace", "Debug", "Info", "Warn", "Error", "Critical", "Off" };
+            int currentLevel = static_cast<int>(Engine::Logger::GetLevel());
+            ImGui::SetNextItemWidth(110.0f);
+            if (ImGui::Combo("Level", &currentLevel, levelNames, IM_ARRAYSIZE(levelNames))) {
+                Engine::Logger::SetLevel(static_cast<spdlog::level::level_enum>(currentLevel));
+            }
+            ImGui::SameLine();
+
+            logFilter.Draw("Filter", 180.0f);
+            ImGui::SameLine();
+            ImGui::Checkbox("Auto-scroll", &autoScroll);
+            ImGui::Separator();
+
+            ImGui::BeginChild("ConsoleScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+            auto logs = Engine::Logger::GetRecentLogs();
+            for (const auto& entry : logs) {
+                if (!logFilter.PassFilter(entry.Message.c_str())) {
+                    continue;
+                }
+
+                ImVec4 color = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+                switch (entry.Level) {
+                    case spdlog::level::trace:    color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); break;
+                    case spdlog::level::debug:    color = ImVec4(0.4f, 0.8f, 1.0f, 1.0f); break;
+                    case spdlog::level::info:     color = ImVec4(0.5f, 1.0f, 0.5f, 1.0f); break;
+                    case spdlog::level::warn:     color = ImVec4(1.0f, 0.85f, 0.2f, 1.0f); break;
+                    case spdlog::level::err:      color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f); break;
+                    case spdlog::level::critical: color = ImVec4(1.0f, 0.1f, 0.5f, 1.0f); break;
+                    default: break;
+                }
+
+                ImGui::PushStyleColor(ImGuiCol_Text, color);
+                ImGui::TextUnformatted(entry.Message.c_str());
+                ImGui::PopStyleColor();
+            }
+
+            if (autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+                ImGui::SetScrollHereY(1.0f);
+            }
+            ImGui::EndChild();
+        }
         ImGui::End();
 
         Engine::ImGuiLayer::EndDockspace();

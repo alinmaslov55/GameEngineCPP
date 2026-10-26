@@ -43,12 +43,13 @@ namespace Engine {
         };
 
         const std::vector<Particle>& GetParticles() const { return m_ParticlePool; }
+        uint32_t GetActiveParticleCount() const { return m_ActiveParticleCount; }
 
     private:
         std::vector<Particle> m_ParticlePool;
         uint32_t m_PoolIndex;
+        uint32_t m_ActiveParticleCount = 0;
     };
 } // namespace Engine
 
 #endif // PARTICLES_PARTICLESYSTEM_H
-

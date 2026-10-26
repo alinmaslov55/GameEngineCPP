@@ -2,6 +2,8 @@
 #define UTILS_LOGGER_H
 
 #include <memory>
+#include <string>
+#include <vector>
 #include <spdlog/spdlog.h>
 #include <spdlog/fmt/ostr.h>
 
@@ -9,8 +11,19 @@ namespace Engine {
 
 class Logger {
 public:
+    struct LogEntry {
+        spdlog::level::level_enum Level = spdlog::level::info;
+        std::string Message;
+    };
+
     static void Init();
     static void Shutdown();
+
+    static void SetLevel(spdlog::level::level_enum level);
+    static spdlog::level::level_enum GetLevel();
+
+    static std::vector<LogEntry> GetRecentLogs();
+    static void ClearLogs();
 
     static std::shared_ptr<spdlog::logger>& GetCoreLogger() {
         if (!s_CoreLogger) Init();
@@ -59,16 +72,21 @@ private:
 
 } // namespace Engine
 
-// Core Engine Logging Macros
-#define ENGINE_CORE_TRACE(...)    ::Engine::Logger::GetCoreLogger()->trace(__VA_ARGS__)
+// Core Engine & Client Logging Macros (Strip TRACE in Release builds)
+#ifdef NDEBUG
+    #define ENGINE_CORE_TRACE(...)    ((void)0)
+    #define ENGINE_TRACE(...)         ((void)0)
+#else
+    #define ENGINE_CORE_TRACE(...)    ::Engine::Logger::GetCoreLogger()->trace(__VA_ARGS__)
+    #define ENGINE_TRACE(...)         ::Engine::Logger::GetClientLogger()->trace(__VA_ARGS__)
+#endif
+
 #define ENGINE_CORE_DEBUG(...)    ::Engine::Logger::GetCoreLogger()->debug(__VA_ARGS__)
 #define ENGINE_CORE_INFO(...)     ::Engine::Logger::GetCoreLogger()->info(__VA_ARGS__)
 #define ENGINE_CORE_WARN(...)     ::Engine::Logger::GetCoreLogger()->warn(__VA_ARGS__)
 #define ENGINE_CORE_ERROR(...)    ::Engine::Logger::GetCoreLogger()->error(__VA_ARGS__)
 #define ENGINE_CORE_CRITICAL(...) ::Engine::Logger::GetCoreLogger()->critical(__VA_ARGS__)
 
-// Client / Sandbox Logging Macros
-#define ENGINE_TRACE(...)         ::Engine::Logger::GetClientLogger()->trace(__VA_ARGS__)
 #define ENGINE_DEBUG(...)         ::Engine::Logger::GetClientLogger()->debug(__VA_ARGS__)
 #define ENGINE_INFO(...)          ::Engine::Logger::GetClientLogger()->info(__VA_ARGS__)
 #define ENGINE_WARN(...)          ::Engine::Logger::GetClientLogger()->warn(__VA_ARGS__)
