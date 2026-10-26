@@ -4,7 +4,7 @@
 #include "Engine/Math/Isometric.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Renderer/EditorCamera.h"
-#include "Engine/Scene/BoxCollider2D.h"
+#include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/Component.h"
 #include "Engine/Scene/GameObject.h"
@@ -242,6 +242,55 @@ TEST(IsometricPhysicsTest, NonWalkableTileBlocksDynamicColliderWhileWalkableAllo
 }
 
 // ==========================================
+// 4b. Box2D 2D RigidBody & Collision Physics Tests
+// ==========================================
+TEST(Box2DPhysicsTest, DynamicBodyFallsUnderGravityDuringRuntime) {
+    Engine::Scene scene("Box2DScene");
+
+    auto* ground = scene.CreateGameObject("Ground");
+    ground->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* groundRb = ground->AddComponent<Engine::Rigidbody2D>();
+    groundRb->Type = Engine::Rigidbody2D::BodyType::Static;
+    auto* groundBox = ground->AddComponent<Engine::BoxCollider2D>();
+    groundBox->size = { 10.0f, 1.0f };
+
+    auto* ball = scene.CreateGameObject("Ball");
+    ball->GetTransform()->position = { 0.0f, 10.0f, 0.0f };
+    auto* ballRb = ball->AddComponent<Engine::Rigidbody2D>();
+    ballRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    ballRb->FixedRotation = true;
+    auto* ballBox = ball->AddComponent<Engine::BoxCollider2D>();
+    ballBox->size = { 1.0f, 1.0f };
+    ballBox->density = 1.0f;
+    ballBox->restitution = 0.5f;
+
+    // Prior to OnRuntimeStart, Box2D body handles are nullptr
+    EXPECT_EQ(ballRb->RuntimeBody, nullptr);
+    EXPECT_EQ(groundRb->RuntimeBody, nullptr);
+
+    scene.OnRuntimeStart();
+    EXPECT_NE(ballRb->RuntimeBody, nullptr);
+    EXPECT_NE(groundRb->RuntimeBody, nullptr);
+    EXPECT_NE(ballBox->RuntimeFixture, nullptr);
+
+    const float initialY = ball->GetTransform()->position.y;
+    EXPECT_FLOAT_EQ(initialY, 10.0f);
+
+    // Step the physics simulation
+    for (int step = 0; step < 20; ++step) {
+        scene.UpdateRuntime(0.016f);
+    }
+
+    // Ball should have accelerated and fallen downward
+    EXPECT_LT(ball->GetTransform()->position.y, initialY);
+
+    scene.OnRuntimeStop();
+    EXPECT_EQ(ballRb->RuntimeBody, nullptr);
+    EXPECT_EQ(groundRb->RuntimeBody, nullptr);
+    EXPECT_EQ(ballBox->RuntimeFixture, nullptr);
+}
+
+// ==========================================
 // 5. SceneSerializer In-Memory & File Round-Trip Tests
 // ==========================================
 TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndComponents) {
@@ -263,9 +312,16 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     hero->GetTransform()->rotation = {0.0f, 45.0f, 15.0f};
     hero->GetTransform()->scale = {1.5f, 2.0f, 1.25f};
 
+    auto* rb = hero->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->FixedRotation = true;
+
     auto* box = hero->AddComponent<Engine::BoxCollider2D>();
     box->size = {0.8f, 0.9f};
     box->offset = {0.1f, -0.2f};
+    box->density = 2.5f;
+    box->friction = 0.4f;
+    box->restitution = 0.75f;
     box->isDynamic = true;
     box->useGravity = true;
     box->gravity = -14.5f;
@@ -317,8 +373,16 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     EXPECT_NEAR(clonedHero->GetTransform()->rotation.y, 45.0f, 1e-5f);
     EXPECT_NEAR(clonedHero->GetTransform()->scale.y, 2.0f, 1e-5f);
 
+    auto* clonedRb = clonedHero->GetComponent<Engine::Rigidbody2D>();
+    ASSERT_NE(clonedRb, nullptr);
+    EXPECT_EQ(clonedRb->Type, Engine::Rigidbody2D::BodyType::Dynamic);
+    EXPECT_TRUE(clonedRb->FixedRotation);
+
     auto* clonedBox = clonedHero->GetComponent<Engine::BoxCollider2D>();
     ASSERT_NE(clonedBox, nullptr);
+    EXPECT_NEAR(clonedBox->density, 2.5f, 1e-5f);
+    EXPECT_NEAR(clonedBox->friction, 0.4f, 1e-5f);
+    EXPECT_NEAR(clonedBox->restitution, 0.75f, 1e-5f);
     EXPECT_TRUE(clonedBox->isDynamic);
     EXPECT_TRUE(clonedBox->useGravity);
     EXPECT_NEAR(clonedBox->gravity, -14.5f, 1e-5f);

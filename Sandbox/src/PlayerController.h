@@ -3,7 +3,7 @@
 #include <Engine/Core/Input.h>
 #include <Engine/Audio/AudioSource.h>
 #include <Engine/Particles/ParticleSystem.h>
-#include <Engine/Scene/BoxCollider2D.h>
+#include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Scene/Component.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Transform.h>

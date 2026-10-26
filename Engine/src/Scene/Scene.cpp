@@ -2,7 +2,7 @@
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Renderer/Renderer2D.h"
-#include "Engine/Scene/BoxCollider2D.h"
+#include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Math/Isometric.h"
@@ -10,6 +10,9 @@
 #include "Engine/UI/UIPanel.h"
 #include "Engine/UI/UILabel.h"
 #include "Engine/Particles/ParticleSystem.h"
+
+#include <box2d/box2d.h>
+#include <box2d/math_functions.h>
 
 #ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL
@@ -27,6 +30,9 @@ Scene::Scene(const std::string& name)
 }
 
 Scene::~Scene() {
+    if (m_IsRuntimeRunning) {
+        OnRuntimeStop();
+    }
     ENGINE_CORE_INFO("Scene destroyed: '{}'", m_Name);
 }
 
@@ -252,6 +258,118 @@ void Scene::Update(float deltaTime) {
             }
         }
     }
+}
+
+void Scene::OnRuntimeStart() {
+    if (m_IsRuntimeRunning) {
+        ENGINE_CORE_WARN("Scene '{}': OnRuntimeStart called while already running", m_Name);
+        return;
+    }
+
+    ENGINE_CORE_INFO("Scene '{}': Starting Box2D runtime physics", m_Name);
+
+    b2WorldDef worldDef = b2DefaultWorldDef();
+    worldDef.gravity = b2Vec2{ 0.0f, -9.8f };
+    b2WorldId worldId = b2CreateWorld(&worldDef);
+    memcpy(&m_PhysicsWorldId, &worldId, sizeof(worldId));
+    m_IsRuntimeRunning = true;
+
+    for (auto& go : m_GameObjects) {
+        auto* transform = go->GetTransform();
+        auto* rb2d = go->GetComponent<Rigidbody2D>();
+
+        if (rb2d && transform) {
+            b2BodyDef bodyDef = b2DefaultBodyDef();
+            if (rb2d->Type == Rigidbody2D::BodyType::Static) {
+                bodyDef.type = b2_staticBody;
+            } else if (rb2d->Type == Rigidbody2D::BodyType::Dynamic) {
+                bodyDef.type = b2_dynamicBody;
+            } else if (rb2d->Type == Rigidbody2D::BodyType::Kinematic) {
+                bodyDef.type = b2_kinematicBody;
+            }
+
+            bodyDef.position = b2Vec2{ transform->position.x, transform->position.y };
+            bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.z));
+            bodyDef.fixedRotation = rb2d->FixedRotation;
+            bodyDef.name = go->GetName().c_str();
+
+            b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
+            memset(&rb2d->RuntimeBody, 0, sizeof(void*));
+            memcpy(&rb2d->RuntimeBody, &bodyId, sizeof(bodyId));
+
+            if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
+                b2ShapeDef shapeDef = b2DefaultShapeDef();
+                shapeDef.density = bc2d->density;
+                shapeDef.material.friction = bc2d->friction;
+                shapeDef.material.restitution = bc2d->restitution;
+
+                b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
+                b2Rot rot = b2MakeRot(0.0f);
+                float halfW = std::max(0.001f, bc2d->size.x * std::abs(transform->scale.x) * 0.5f);
+                float halfH = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.y) * 0.5f);
+                b2Polygon box = b2MakeOffsetBox(halfW, halfH, center, rot);
+
+                b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
+                memset(&bc2d->RuntimeFixture, 0, sizeof(void*));
+                memcpy(&bc2d->RuntimeFixture, &shapeId, sizeof(shapeId));
+            }
+        }
+    }
+}
+
+void Scene::OnRuntimeStop() {
+    if (!m_IsRuntimeRunning) {
+        return;
+    }
+
+    ENGINE_CORE_INFO("Scene '{}': Stopping Box2D runtime physics", m_Name);
+
+    b2WorldId worldId;
+    memcpy(&worldId, &m_PhysicsWorldId, sizeof(worldId));
+    if (b2World_IsValid(worldId)) {
+        b2DestroyWorld(worldId);
+    }
+    m_PhysicsWorldId = 0;
+    m_IsRuntimeRunning = false;
+
+    for (auto& go : m_GameObjects) {
+        if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
+            rb2d->RuntimeBody = nullptr;
+        }
+        if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
+            bc2d->RuntimeFixture = nullptr;
+        }
+    }
+}
+
+void Scene::UpdateRuntime(float deltaTime) {
+    if (m_IsRuntimeRunning) {
+        b2WorldId worldId;
+        memcpy(&worldId, &m_PhysicsWorldId, sizeof(worldId));
+        if (b2World_IsValid(worldId)) {
+            b2World_Step(worldId, deltaTime, 4);
+        }
+
+        // Sync Box2D physics simulation results back to Engine Transform
+        for (auto& go : m_GameObjects) {
+            auto* transform = go->GetTransform();
+            auto* rb2d = go->GetComponent<Rigidbody2D>();
+
+            if (rb2d && transform && rb2d->RuntimeBody) {
+                b2BodyId bodyId;
+                memcpy(&bodyId, &rb2d->RuntimeBody, sizeof(bodyId));
+                if (b2Body_IsValid(bodyId)) {
+                    b2Vec2 pos = b2Body_GetPosition(bodyId);
+                    b2Rot rot = b2Body_GetRotation(bodyId);
+                    transform->position.x = pos.x;
+                    transform->position.y = pos.y;
+                    transform->rotation.z = glm::degrees(b2Rot_GetAngle(rot));
+                }
+            }
+        }
+    }
+
+    Update(deltaTime);
 }
 
 void Scene::Render(const OrthographicCamera* overrideCamera) {

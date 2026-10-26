@@ -5,7 +5,7 @@
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/SceneSerializer.h>
 #include <Engine/Scene/Tilemap.h>
-#include <Engine/Scene/BoxCollider2D.h>
+#include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Math/Isometric.h>
 #include <Engine/Renderer/Renderer.h>
 #include <Engine/Renderer/Renderer2D.h>
@@ -199,6 +199,7 @@ int main(int argc, char* argv[]) {
 
         activeScene = runtimeScene;
         Engine::SceneManager::LoadScene(activeScene);
+        activeScene->OnRuntimeStart();
         selectedContext = FindEntityByUUID(activeScene, selectedUUID);
         sceneState = SceneState::Play;
         ENGINE_INFO("Entered PLAY mode");
@@ -208,6 +209,10 @@ int main(int argc, char* argv[]) {
         if (sceneState == SceneState::Edit) return;
 
         uint64_t selectedUUID = selectedContext ? selectedContext->GetUUID() : 0;
+
+        if (runtimeScene && runtimeScene->IsRuntimeRunning()) {
+            runtimeScene->OnRuntimeStop();
+        }
 
         activeScene = editorScene;
         if (viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
@@ -240,8 +245,9 @@ int main(int argc, char* argv[]) {
 
         Engine::Time::Update();
         if (sceneState == SceneState::Play) {
-            // Run input + gameplay scripts, physics, gravity, and particles
-            app.Update();
+            // Run input + Box2D physics simulation, gameplay scripts, and particles
+            Engine::Input::Update();
+            activeScene->UpdateRuntime(Engine::Time::GetDeltaTime());
         } else {
             // Edit mode: poll input devices without stepping gameplay or physics
             Engine::Input::Update();
@@ -650,7 +656,41 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            // 5. BoxCollider2D Component
+            // 5. Rigidbody2D Component
+            if (auto* rb2d = selectedContext->GetComponent<Engine::Rigidbody2D>()) {
+                bool removeComp = false;
+                bool open = ImGui::CollapsingHeader("Rigidbody 2D", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+                if (ImGui::BeginPopupContextItem("Rigidbody2DContext")) {
+                    if (ImGui::MenuItem("Remove Component")) removeComp = true;
+                    ImGui::EndPopup();
+                }
+                ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 24.0f);
+                if (ImGui::SmallButton("X##RemoveRigidbody2D")) removeComp = true;
+
+                if (open && !removeComp) {
+                    const char* bodyTypeStrings[] = { "Static", "Dynamic", "Kinematic" };
+                    const char* currentBodyTypeString = bodyTypeStrings[(int)rb2d->Type];
+
+                    if (ImGui::BeginCombo("Body Type", currentBodyTypeString)) {
+                        for (int i = 0; i < 3; i++) {
+                            bool isSelected = currentBodyTypeString == bodyTypeStrings[i];
+                            if (ImGui::Selectable(bodyTypeStrings[i], isSelected)) {
+                                rb2d->Type = static_cast<Engine::Rigidbody2D::BodyType>(i);
+                            }
+                            if (isSelected) ImGui::SetItemDefaultFocus();
+                        }
+                        ImGui::EndCombo();
+                    }
+                    ImGui::Checkbox("Fixed Rotation", &rb2d->FixedRotation);
+                }
+
+                if (removeComp) {
+                    selectedContext->RemoveComponent<Engine::Rigidbody2D>();
+                    ENGINE_INFO("Inspector: Removed Rigidbody2D from '{}'", selectedContext->GetName());
+                }
+            }
+
+            // 6. BoxCollider2D Component
             if (auto* boxCollider = selectedContext->GetComponent<Engine::BoxCollider2D>()) {
                 bool removeComp = false;
                 bool open = ImGui::CollapsingHeader("Box Collider 2D", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
@@ -664,7 +704,11 @@ int main(int argc, char* argv[]) {
                 if (open && !removeComp) {
                     ImGui::DragFloat2("Size", &boxCollider->size.x, 0.05f, 0.01f, 100.0f);
                     ImGui::DragFloat2("Offset", &boxCollider->offset.x, 0.05f);
-                    ImGui::Checkbox("Is Dynamic", &boxCollider->isDynamic);
+                    ImGui::DragFloat("Density", &boxCollider->density, 0.01f, 0.0f, 100.0f);
+                    ImGui::DragFloat("Friction", &boxCollider->friction, 0.01f, 0.0f, 1.0f);
+                    ImGui::DragFloat("Restitution", &boxCollider->restitution, 0.01f, 0.0f, 1.0f);
+                    ImGui::Separator();
+                    ImGui::Checkbox("Is Dynamic (Isometric)", &boxCollider->isDynamic);
                     if (boxCollider->isDynamic) {
                         ImGui::Checkbox("Use Gravity", &boxCollider->useGravity);
                         ImGui::DragFloat("Gravity", &boxCollider->gravity, 0.1f, -50.0f, 0.0f);
@@ -678,7 +722,7 @@ int main(int argc, char* argv[]) {
                 }
             }
 
-            // 6. Tilemap Component
+            // 7. Tilemap Component
             if (auto* tilemapComp = selectedContext->GetComponent<Engine::Tilemap>()) {
                 bool removeComp = false;
                 bool open = ImGui::CollapsingHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
@@ -728,6 +772,15 @@ int main(int argc, char* argv[]) {
                         ENGINE_INFO("Inspector: Added ParticleSystem to '{}'", selectedContext->GetName());
                     } else {
                         ENGINE_WARN("Inspector: '{}' already has a ParticleSystem", selectedContext->GetName());
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                if (ImGui::MenuItem("Rigidbody 2D")) {
+                    if (!selectedContext->GetComponent<Engine::Rigidbody2D>()) {
+                        selectedContext->AddComponent<Engine::Rigidbody2D>();
+                        ENGINE_INFO("Inspector: Added Rigidbody2D to '{}'", selectedContext->GetName());
+                    } else {
+                        ENGINE_WARN("Inspector: '{}' already has a Rigidbody2D", selectedContext->GetName());
                     }
                     ImGui::CloseCurrentPopup();
                 }

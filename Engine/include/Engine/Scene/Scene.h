@@ -22,6 +22,12 @@ public:
     void Render(const OrthographicCamera* overrideCamera = nullptr);
     void OnViewportResize(uint32_t width, uint32_t height);
 
+    // Box2D physics simulation lifecycle
+    void OnRuntimeStart();
+    void OnRuntimeStop();
+    void UpdateRuntime(float deltaTime);
+    bool IsRuntimeRunning() const { return m_IsRuntimeRunning; }
+
     const std::string& GetName() const { return m_Name; }
     void SetName(const std::string& name) { m_Name = name; }
     OrthographicCamera& GetCamera() { return m_Camera; }
@@ -39,6 +45,9 @@ private:
     uint32_t m_ViewportWidth = 1280;
     uint32_t m_ViewportHeight = 720;
     float m_OrthographicSize = 1.8f;
+
+    bool m_IsRuntimeRunning = false;
+    uint32_t m_PhysicsWorldId = 0;
 };
 } // namespace Engine
 

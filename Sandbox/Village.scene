@@ -6,6 +6,8 @@
                     "ClipPath": "jump.wav"
                 },
                 "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
                     "Gravity": -9.800000190734863,
                     "GroundLevel": 0.0,
                     "IsDynamic": true,
@@ -13,6 +15,8 @@
                         0.0,
                         0.0
                     ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
                     "Size": [
                         0.6000000238418579,
                         0.6000000238418579
@@ -49,7 +53,7 @@
                 }
             },
             "Name": "Player",
-            "UUID": 8768262624361464658
+            "UUID": 14270552350388055082
         },
         {
             "Components": {
@@ -310,7 +314,7 @@
                 }
             },
             "Name": "Map",
-            "UUID": 10081333345389212486
+            "UUID": 4413001146503965479
         },
         {
             "Components": {
@@ -457,7 +461,7 @@
                 ]
             },
             "Name": "HUD",
-            "UUID": 634681811403134330
+            "UUID": 3689004763681445470
         }
     ],
     "OrthographicSize": 5.0,

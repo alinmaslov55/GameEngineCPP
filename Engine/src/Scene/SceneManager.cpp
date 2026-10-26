@@ -16,6 +16,9 @@ void SceneManager::LoadScene(std::shared_ptr<Scene> scene) {
 void SceneManager::Shutdown() {
     if (s_ActiveScene) {
         ENGINE_CORE_INFO("SceneManager: Unloading active scene '{}'", s_ActiveScene->GetName());
+        if (s_ActiveScene->IsRuntimeRunning()) {
+            s_ActiveScene->OnRuntimeStop();
+        }
         s_ActiveScene.reset();
     }
 }
@@ -28,6 +31,25 @@ void SceneManager::Update(float deltaTime) {
     ENGINE_CORE_TRACE("SceneManager::Update");
     if (s_ActiveScene) {
         s_ActiveScene->Update(deltaTime);
+    }
+}
+
+void SceneManager::UpdateRuntime(float deltaTime) {
+    ENGINE_CORE_TRACE("SceneManager::UpdateRuntime");
+    if (s_ActiveScene) {
+        s_ActiveScene->UpdateRuntime(deltaTime);
+    }
+}
+
+void SceneManager::OnRuntimeStart() {
+    if (s_ActiveScene) {
+        s_ActiveScene->OnRuntimeStart();
+    }
+}
+
+void SceneManager::OnRuntimeStop() {
+    if (s_ActiveScene) {
+        s_ActiveScene->OnRuntimeStop();
     }
 }
 

@@ -3,7 +3,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/Tilemap.h"
-#include "Engine/Scene/BoxCollider2D.h"
+#include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Particles/ParticleSystem.h"
@@ -156,11 +156,23 @@ std::string SceneSerializer::SerializeToString() const {
             };
         }
 
-        // 5. BoxCollider2D
+        // 5. Rigidbody2D
+        if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
+            compsJson["Rigidbody2D"] = {
+                {"BodyType", static_cast<int>(rb2d->Type)},
+                {"FixedRotation", rb2d->FixedRotation}
+            };
+        }
+
+        // 6. BoxCollider2D
         if (auto* collider = go->GetComponent<BoxCollider2D>()) {
             compsJson["BoxCollider2D"] = {
                 {"Size", {collider->size.x, collider->size.y}},
                 {"Offset", {collider->offset.x, collider->offset.y}},
+                {"Density", collider->density},
+                {"Friction", collider->friction},
+                {"Restitution", collider->restitution},
+                {"RestitutionThreshold", collider->restitutionThreshold},
                 {"IsDynamic", collider->isDynamic},
                 {"UseGravity", collider->useGravity},
                 {"Gravity", collider->gravity},
@@ -435,7 +447,15 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 go->AddComponent<ParticleSystem>(poolSize);
             }
 
-            // 5. BoxCollider2D
+            // 5. Rigidbody2D
+            if (components.contains("Rigidbody2D")) {
+                const auto& rbJson = components["Rigidbody2D"];
+                auto* rb2d = go->AddComponent<Rigidbody2D>();
+                rb2d->Type = static_cast<Rigidbody2D::BodyType>(rbJson.value("BodyType", 1));
+                rb2d->FixedRotation = rbJson.value("FixedRotation", false);
+            }
+
+            // 6. BoxCollider2D
             if (components.contains("BoxCollider2D")) {
                 const auto& bcJson = components["BoxCollider2D"];
                 auto* collider = go->AddComponent<BoxCollider2D>();
@@ -445,6 +465,10 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 if (bcJson.contains("Offset")) {
                     collider->offset = { bcJson["Offset"][0].get<float>(), bcJson["Offset"][1].get<float>() };
                 }
+                collider->density = bcJson.value("Density", 1.0f);
+                collider->friction = bcJson.value("Friction", 0.5f);
+                collider->restitution = bcJson.value("Restitution", 0.0f);
+                collider->restitutionThreshold = bcJson.value("RestitutionThreshold", 0.5f);
                 collider->isDynamic = bcJson.value("IsDynamic", false);
                 collider->useGravity = bcJson.value("UseGravity", true);
                 collider->gravity = bcJson.value("Gravity", -9.8f);
