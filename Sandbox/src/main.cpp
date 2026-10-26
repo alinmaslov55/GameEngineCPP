@@ -1,12 +1,16 @@
 #include <Engine/Core/Application.h>
+#include <Engine/Core/Time.h>
 #include <Engine/Core/ResourceManager.h>
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/SceneSerializer.h>
+#include <Engine/Renderer/Renderer.h>
+#include <Engine/Renderer/Framebuffer.h>
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/UI/UIPanel.h>
 #include <Engine/UI/UILabel.h>
 #include <Engine/UI/Font.h>
 #include <Engine/Particles/ParticleSystem.h>
+#include <Engine/ImGui/ImGuiLayer.h>
 #include <imgui.h>
 
 int main(int argc, char* argv[]) {
@@ -67,8 +71,50 @@ int main(int argc, char* argv[]) {
     // Load into the game loop
     Engine::SceneManager::LoadScene(mainScene);
 
-    // Editor UI panels registered to render within the dockspace
-    app.SetImGuiRenderCallback([&]() {
+    // Framebuffer setup for offscreen Scene rendering into ImGui viewport
+    Engine::FramebufferSpecification fbSpec;
+    fbSpec.Width = 1280;
+    fbSpec.Height = 720;
+    auto framebuffer = std::make_shared<Engine::Framebuffer>(fbSpec);
+    glm::vec2 viewportSize = { 1280.0f, 720.0f };
+
+    Engine::Time::Init();
+
+    while (app.IsRunning()) {
+        // 1. Process Events & Update Scene
+        app.GetWindow().PollEvents();
+        if (app.GetWindow().ShouldClose()) {
+            app.Close();
+            break;
+        }
+
+        Engine::Time::Update();
+        app.Update();
+
+        // 2. Resize Framebuffer if the ImGui window changed size
+        if (Engine::FramebufferSpecification spec = framebuffer->GetSpecification();
+            viewportSize.x > 0.0f && viewportSize.y > 0.0f && // Zero sized framebuffer is invalid
+            (spec.Width != (uint32_t)viewportSize.x || spec.Height != (uint32_t)viewportSize.y))
+        {
+            framebuffer->Resize((uint32_t)viewportSize.x, (uint32_t)viewportSize.y);
+            // Optional: Update your orthographic camera bounds here based on new viewportSize
+        }
+
+        // 3. Render Game Scene into Framebuffer
+        framebuffer->Bind();
+        Engine::Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
+        Engine::Renderer::Clear(); 
+        
+        // --- YOUR SCENE RENDER CODE GOES HERE ---
+        Engine::SceneManager::Render();
+        // ----------------------------------------
+        
+        framebuffer->Unbind();
+
+        // 4. Render UI / Editor
+        Engine::ImGuiLayer::Begin();
+        Engine::ImGuiLayer::BeginDockspace();
+
         // Menu Bar
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("File")) {
@@ -77,6 +123,23 @@ int main(int argc, char* argv[]) {
             }
             ImGui::EndMenuBar();
         }
+
+        // Scene Viewport Panel
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 }); // Remove borders inside panel
+        ImGui::Begin("Scene");
+        
+        // Read the available panel space
+        ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
+        viewportSize = { viewportPanelSize.x, viewportPanelSize.y };
+
+        // Draw the Framebuffer texture using ImGui::Image
+        // Cast the renderer ID to void* (required by ImGui API)
+        // OpenGL textures are flipped vertically by default, so we invert the UV coordinates (0, 1) to (1, 0)
+        uint32_t textureID = framebuffer->GetColorAttachmentRendererID();
+        ImGui::Image(reinterpret_cast<void*>((uintptr_t)textureID), ImVec2{ viewportSize.x, viewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
+        
+        ImGui::End();
+        ImGui::PopStyleVar();
 
         // Panel 1: Hierarchy (List of GameObjects)
         ImGui::Begin("Hierarchy");
@@ -99,9 +162,12 @@ int main(int argc, char* argv[]) {
         ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 
                     1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
         ImGui::End();
-    });
 
-    app.Run();
+        Engine::ImGuiLayer::EndDockspace();
+        Engine::ImGuiLayer::End();
+
+        app.GetWindow().SwapBuffers();
+    }
 
     return 0;
 }
