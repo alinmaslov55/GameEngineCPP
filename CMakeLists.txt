@@ -14,7 +14,11 @@ find_package(box2d CONFIG REQUIRED)
 find_package(nlohmann_json CONFIG REQUIRED)
 find_package(spdlog CONFIG REQUIRED)
 find_package(glad CONFIG REQUIRED)
+find_package(GTest CONFIG REQUIRED)
+
+enable_testing()
 
 # Sub-Projects
 add_subdirectory(Engine)
 add_subdirectory(Sandbox)
+add_subdirectory(Tests)

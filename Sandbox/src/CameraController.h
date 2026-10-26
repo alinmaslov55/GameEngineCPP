@@ -23,7 +23,7 @@ public:
     void Update(float deltaTime) override {
         if (!camera) return;
 
-        auto transform = GetGameObject()->GetComponent<Engine::Transform>();
+        auto* transform = GetGameObject()->GetTransform();
         if (!transform) return;
 
         glm::vec3 camPos = camera->GetPosition();

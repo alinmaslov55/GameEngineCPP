@@ -1,4 +1,5 @@
 #include <Engine/Core/Application.h>
+#include <Engine/Core/Input.h>
 #include <Engine/Core/Time.h>
 #include <Engine/Core/ResourceManager.h>
 #include <Engine/Scene/SceneManager.h>
@@ -8,35 +9,87 @@
 #include <Engine/Math/Isometric.h>
 #include <Engine/Renderer/Renderer.h>
 #include <Engine/Renderer/Renderer2D.h>
+#include <Engine/Renderer/EditorCamera.h>
 #include <Engine/Renderer/Framebuffer.h>
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/UI/UIPanel.h>
 #include <Engine/UI/UILabel.h>
 #include <Engine/UI/Font.h>
+#include <Engine/Audio/AudioClip.h>
+#include <Engine/Audio/AudioSource.h>
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/ImGui/ImGuiLayer.h>
 #include <Engine/Utils/Logger.h>
+
+#include "PlayerController.h"
+#include "CameraController.h"
+
 #include <glm/glm.hpp>
 #include <imgui.h>
+#include <cstdio>
+#include <cstring>
 #include <filesystem>
 #include <iostream>
 #include <cmath>
+
+namespace {
+enum class SceneState {
+    Edit = 0,
+    Play = 1
+};
+
+Engine::GameObject* FindEntityByUUID(const std::shared_ptr<Engine::Scene>& scene, uint64_t uuid) {
+    if (!scene || uuid == 0) return nullptr;
+    for (const auto& go : scene->GetGameObjects()) {
+        if (go->GetUUID() == uuid) {
+            return go.get();
+        }
+    }
+    return nullptr;
+}
+
+void BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Scene>& runtimeScene) {
+    if (!runtimeScene) return;
+    for (const auto& goPtr : runtimeScene->GetGameObjects()) {
+        if (goPtr->GetName() == "Player") {
+            if (!goPtr->GetComponent<PlayerController>()) {
+                goPtr->AddComponent<PlayerController>();
+            }
+            if (!goPtr->GetComponent<CameraController>()) {
+                auto* camCtrl = goPtr->AddComponent<CameraController>();
+                camCtrl->camera = &runtimeScene->GetCamera();
+                glm::vec2 isoPos = Engine::Isometric::WorldToScreen(goPtr->GetTransform()->position);
+                runtimeScene->GetCamera().SetPosition({ isoPos.x, isoPos.y, 0.0f });
+            }
+        }
+    }
+}
+} // namespace
 
 int main(int argc, char* argv[]) {
     Engine::Application app;
     Engine::ResourceManager::DiscoverAssetRoot("Sandbox");
 
-    auto mainScene = std::make_shared<Engine::Scene>("Village");
+    auto editorScene = std::make_shared<Engine::Scene>("Village");
+    editorScene->SetOrthographicSize(5.0f);
 
-    // 1. Hardcode a scene once
-    Engine::GameObject* player = mainScene->CreateGameObject("Player");
-    auto transform = player->GetComponent<Engine::Transform>();
-    transform->position = glm::vec3(5.0f, 0.0f, 2.0f);
+    // 1. Setup initial scene
+    Engine::GameObject* player = editorScene->CreateGameObject("Player");
+    auto* playerTransform = player->GetTransform();
+    playerTransform->position = glm::vec3(5.0f, 0.0f, 2.0f);
     player->AddComponent<Engine::SpriteRenderer>();
     player->AddComponent<Engine::ParticleSystem>(500); // Pool of 500 particles
 
+    auto* playerCollider = player->AddComponent<Engine::BoxCollider2D>();
+    playerCollider->size = { 0.6f, 0.6f };
+    playerCollider->isDynamic = true;
+    playerCollider->useGravity = true;
+
+    auto* playerAudio = player->AddComponent<Engine::AudioSource>();
+    playerAudio->SetClip(Engine::ResourceManager::Load<Engine::AudioClip>("jump.wav"));
+
     // Create the Environment/Map GameObject
-    Engine::GameObject* mapObject = mainScene->CreateGameObject("Map");
+    Engine::GameObject* mapObject = editorScene->CreateGameObject("Map");
     auto tilemapComponent = mapObject->AddComponent<Engine::Tilemap>(10, 10);
     auto atlas = Engine::ResourceManager::Load<Engine::Texture>("test.png");
     auto grassTile = Engine::SubTexture2D::CreateFromCoords(atlas, {0, 0}, {128.0f, 128.0f});
@@ -46,15 +99,17 @@ int main(int argc, char* argv[]) {
 
     for (uint32_t y = 0; y < tilemapComponent->GetHeight(); y++) {
         for (uint32_t x = 0; x < tilemapComponent->GetWidth(); x++) {
-            tilemapComponent->SetTile(x, y, 1);
+            tilemapComponent->SetTile(x, y, 1, true);
         }
     }
+    // Add a couple of non-walkable Stone obstacle tiles to demonstrate Tilemap collision
+    tilemapComponent->SetTile(4, 3, 2, false);
+    tilemapComponent->SetTile(6, 3, 2, false);
 
     // Create a generic UI Canvas GameObject
-    Engine::GameObject* hud = mainScene->CreateGameObject("HUD");
+    Engine::GameObject* hud = editorScene->CreateGameObject("HUD");
 
     // Create a Health Bar Background (Dark Gray)
-    // Anchored at the top left of a 1280x720 screen
     auto hpBg = hud->AddComponent<Engine::UIPanel>(
         glm::vec2(50.0f, 650.0f),  // Position (X, Y)
         glm::vec2(200.0f, 20.0f),  // Size (Width, Height)
@@ -68,13 +123,12 @@ int main(int argc, char* argv[]) {
         glm::vec4(0.8f, 0.1f, 0.1f, 1.0f)
     );
 
-    // 1. Setup a basic Font (using a pre-made texture atlas with letters)
+    // Setup a basic Font (using a pre-made texture atlas with letters)
     auto fontTexture = Engine::ResourceManager::Load<Engine::Texture>("font_atlas.png");
     auto mainFont = std::make_shared<Engine::Font>();
     mainFont->atlasTexture = fontTexture;
 
-    // 2. Map 'H', 'P', and ':' (Assuming a 16x16 pixel grid for each letter on the atlas)
-    // In a real engine, stb_truetype calculates these UVs and sizes for you.
+    // Map 'H', 'P', and ':' (Assuming a 16x16 pixel grid for each letter on the atlas)
     Engine::Character charH = { Engine::SubTexture2D::CreateFromCoords(fontTexture, {0, 0}, {16, 16}), {16.0f, 16.0f}, {0.0f, 16.0f}, 16.0f };
     Engine::Character charP = { Engine::SubTexture2D::CreateFromCoords(fontTexture, {1, 0}, {16, 16}), {16.0f, 16.0f}, {0.0f, 16.0f}, 16.0f };
     Engine::Character charColon = { Engine::SubTexture2D::CreateFromCoords(fontTexture, {2, 0}, {16, 16}), {16.0f, 16.0f}, {0.0f, 16.0f}, 16.0f };
@@ -83,19 +137,26 @@ int main(int argc, char* argv[]) {
     mainFont->AddCharacter('P', charP);
     mainFont->AddCharacter(':', charColon);
 
-    // 3. Attach the Label to the HUD GameObject
+    // Attach the Label to the HUD GameObject
     hud->AddComponent<Engine::UILabel>(
         "HP:", 
         mainFont, 
-        glm::vec2(60.0f, 652.0f) // Positioned slightly inside the health bar panel
+        glm::vec2(60.0f, 652.0f)
     );
 
-    // 2. Serialize it to disk
-    Engine::SceneSerializer serializer(mainScene);
+    // Serialize initial scene to disk
+    Engine::SceneSerializer serializer(editorScene);
     serializer.Serialize("Village.scene");
 
-    // Load into the game loop
-    Engine::SceneManager::LoadScene(mainScene);
+    // Active scene tracking for Edit vs Play mode
+    std::shared_ptr<Engine::Scene> activeScene = editorScene;
+    std::shared_ptr<Engine::Scene> runtimeScene = nullptr;
+    SceneState sceneState = SceneState::Edit;
+
+    Engine::SceneManager::LoadScene(activeScene);
+
+    // Editor Camera for free pan & zoom in Edit mode
+    Engine::EditorCamera editorCamera(1280.0f / 720.0f, 3.5f);
 
     // Framebuffer setup for offscreen Scene rendering into ImGui viewport
     Engine::FramebufferSpecification fbSpec;
@@ -108,11 +169,57 @@ int main(int argc, char* argv[]) {
 
     Engine::GameObject* selectedContext = nullptr;
     uint32_t s_SelectedTileID = 1; // Default to Grass
+    bool s_SelectedTileWalkable = true;
 
     // State variables for our ImGui file popups (relative to AssetRoot)
     bool openSavePopup = false;
     bool openLoadPopup = false;
     char filepathBuffer[256] = "assets/level.scene";
+
+    // Helper lambdas for Play / Stop transitions
+    auto onScenePlay = [&]() {
+        if (sceneState == SceneState::Play) return;
+
+        uint64_t selectedUUID = selectedContext ? selectedContext->GetUUID() : 0;
+
+        // Snapshot editorScene in memory and clone into runtimeScene
+        std::string snapshot = Engine::SceneSerializer(editorScene).SerializeToString();
+        runtimeScene = std::make_shared<Engine::Scene>(editorScene->GetName());
+        if (!Engine::SceneSerializer(runtimeScene).DeserializeFromString(snapshot)) {
+            ENGINE_ERROR("Failed to clone scene for Play Mode!");
+            runtimeScene.reset();
+            return;
+        }
+
+        if (viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
+            runtimeScene->OnViewportResize(static_cast<uint32_t>(viewportSize.x), static_cast<uint32_t>(viewportSize.y));
+        }
+
+        BindRuntimeGameplayScripts(runtimeScene);
+
+        activeScene = runtimeScene;
+        Engine::SceneManager::LoadScene(activeScene);
+        selectedContext = FindEntityByUUID(activeScene, selectedUUID);
+        sceneState = SceneState::Play;
+        ENGINE_INFO("Entered PLAY mode");
+    };
+
+    auto onSceneStop = [&]() {
+        if (sceneState == SceneState::Edit) return;
+
+        uint64_t selectedUUID = selectedContext ? selectedContext->GetUUID() : 0;
+
+        activeScene = editorScene;
+        if (viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
+            activeScene->OnViewportResize(static_cast<uint32_t>(viewportSize.x), static_cast<uint32_t>(viewportSize.y));
+        }
+        Engine::SceneManager::LoadScene(activeScene);
+        runtimeScene.reset();
+
+        selectedContext = FindEntityByUUID(activeScene, selectedUUID);
+        sceneState = SceneState::Edit;
+        ENGINE_INFO("Stopped PLAY mode and restored pre-play Editor scene");
+    };
 
     // Define the root asset directory relative to the discovered AssetRoot
     std::filesystem::path s_AssetDirectory = Engine::ResourceManager::GetAssetRoot() / "assets";
@@ -132,15 +239,24 @@ int main(int argc, char* argv[]) {
         }
 
         Engine::Time::Update();
-        app.Update();
+        if (sceneState == SceneState::Play) {
+            // Run input + gameplay scripts, physics, gravity, and particles
+            app.Update();
+        } else {
+            // Edit mode: poll input devices without stepping gameplay or physics
+            Engine::Input::Update();
+        }
 
-        // 2. Resize Framebuffer and Scene Camera/UI projection if the ImGui viewport changed size
+        // 2. Resize Framebuffer and Cameras/UI projection if the ImGui viewport changed size
         if (Engine::FramebufferSpecification spec = framebuffer->GetSpecification();
             viewportSize.x > 0.0f && viewportSize.y > 0.0f && // Zero sized framebuffer is invalid
             (spec.Width != (uint32_t)viewportSize.x || spec.Height != (uint32_t)viewportSize.y))
         {
-            framebuffer->Resize((uint32_t)viewportSize.x, (uint32_t)viewportSize.y);
-            mainScene->OnViewportResize((uint32_t)viewportSize.x, (uint32_t)viewportSize.y);
+            uint32_t vpW = static_cast<uint32_t>(viewportSize.x);
+            uint32_t vpH = static_cast<uint32_t>(viewportSize.y);
+            framebuffer->Resize(vpW, vpH);
+            editorCamera.OnViewportResize(vpW, vpH);
+            activeScene->OnViewportResize(vpW, vpH);
         }
 
         // 3. Render Game Scene into Framebuffer
@@ -148,11 +264,13 @@ int main(int argc, char* argv[]) {
         framebuffer->Bind();
         Engine::Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
         Engine::Renderer::Clear(); 
-        
-        // --- YOUR SCENE RENDER CODE GOES HERE ---
-        Engine::SceneManager::Render();
-        // ----------------------------------------
-        
+
+        if (sceneState == SceneState::Edit) {
+            Engine::SceneManager::Render(&editorCamera.GetCamera());
+        } else {
+            Engine::SceneManager::Render(nullptr);
+        }
+
         framebuffer->Unbind();
         Engine::Renderer::SetViewport(
             0, 0,
@@ -169,10 +287,16 @@ int main(int argc, char* argv[]) {
         // ==========================================
         if (ImGui::BeginMenuBar()) {
             if (ImGui::BeginMenu("File")) {
-                if (ImGui::MenuItem("Save Scene As...")) { openSavePopup = true; }
-                if (ImGui::MenuItem("Load Scene..."))    { openLoadPopup = true; }
+                if (ImGui::MenuItem("Save Scene As...", nullptr, false, sceneState == SceneState::Edit)) {
+                    openSavePopup = true;
+                }
+                if (ImGui::MenuItem("Load Scene...")) {
+                    openLoadPopup = true;
+                }
                 ImGui::Separator();
-                if (ImGui::MenuItem("Exit"))             { app.Close(); }
+                if (ImGui::MenuItem("Exit")) {
+                    app.Close();
+                }
                 ImGui::EndMenu();
             }
             ImGui::EndMenuBar();
@@ -188,13 +312,12 @@ int main(int argc, char* argv[]) {
             ImGui::InputText("##savepath", filepathBuffer, sizeof(filepathBuffer));
             
             if (ImGui::Button("Save", ImVec2(120, 0))) {
-                Engine::SceneSerializer serializer(mainScene);
-                if (serializer.Serialize(filepathBuffer)) {
+                Engine::SceneSerializer saveSerializer(editorScene);
+                if (saveSerializer.Serialize(filepathBuffer)) {
                     ENGINE_INFO("Saved scene to: '{}'", filepathBuffer);
                 } else {
                     ENGINE_ERROR("Failed to save scene to: '{}'", filepathBuffer);
                 }
-                std::cout << "Saved scene to: " << filepathBuffer << '\n';
                 ImGui::CloseCurrentPopup();
             }
             ImGui::SetItemDefaultFocus();
@@ -213,27 +336,23 @@ int main(int argc, char* argv[]) {
             ImGui::InputText("##loadpath", filepathBuffer, sizeof(filepathBuffer));
             
             if (ImGui::Button("Load", ImVec2(120, 0))) {
-                // 1. Create a brand new empty scene
+                if (sceneState == SceneState::Play) {
+                    onSceneStop();
+                }
+
                 auto loadedScene = std::make_shared<Engine::Scene>("Loaded Level");
-                
-                // 2. Attempt to deserialize the JSON file into it
                 Engine::SceneSerializer deserializer(loadedScene);
                 if (deserializer.Deserialize(filepathBuffer)) {
-                    // 3. Swap the active scene in the engine
-                    mainScene = loadedScene;
+                    editorScene = loadedScene;
+                    activeScene = editorScene;
                     if (viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
-                        mainScene->OnViewportResize((uint32_t)viewportSize.x, (uint32_t)viewportSize.y);
+                        activeScene->OnViewportResize(static_cast<uint32_t>(viewportSize.x), static_cast<uint32_t>(viewportSize.y));
                     }
-                    Engine::SceneManager::LoadScene(mainScene);
-                    
-                    // 4. CRITICAL: Clear the inspector so it doesn't read dead memory!
-                    selectedContext = nullptr; 
-                    
+                    Engine::SceneManager::LoadScene(activeScene);
+                    selectedContext = nullptr;
                     ENGINE_INFO("Loaded scene from: '{}'", filepathBuffer);
-                    std::cout << "Loaded scene from: " << filepathBuffer << '\n';
                 } else {
                     ENGINE_ERROR("Failed to load scene from: '{}'", filepathBuffer);
-                    std::cerr << "Failed to load scene!\n";
                 }
                 ImGui::CloseCurrentPopup();
             }
@@ -242,41 +361,83 @@ int main(int argc, char* argv[]) {
             ImGui::EndPopup();
         }
 
-        // --- Scene Viewport Panel ---
-        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 }); // Remove borders inside panel
+        // ==========================================
+        // EDIT / PLAY TOOLBAR PANEL
+        // ==========================================
+        ImGui::Begin("Toolbar", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        {
+            if (sceneState == SceneState::Edit) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.55f, 0.25f, 1.0f));
+                if (ImGui::Button("Play", ImVec2(80.0f, 0.0f))) {
+                    onScenePlay();
+                }
+                ImGui::PopStyleColor();
+            } else {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.75f, 0.20f, 0.20f, 1.0f));
+                if (ImGui::Button("Stop", ImVec2(80.0f, 0.0f))) {
+                    onSceneStop();
+                }
+                ImGui::PopStyleColor();
+            }
+
+            ImGui::SameLine();
+            if (sceneState == SceneState::Edit) {
+                ImGui::TextColored(ImVec4(0.5f, 0.85f, 1.0f, 1.0f), "[EDIT MODE]");
+                ImGui::SameLine();
+                if (ImGui::SmallButton("Reset Camera")) {
+                    editorCamera.Reset();
+                }
+                ImGui::SameLine();
+                ImGui::TextDisabled("| MMB/RMB Drag: Pan | Scroll: Zoom (%.2fx)", editorCamera.GetZoomLevel());
+            } else {
+                ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[PLAY MODE]");
+                ImGui::SameLine();
+                ImGui::TextDisabled("| WASD: Move | SPACE: Jump | Changes revert on Stop");
+            }
+        }
+        ImGui::End();
+
+        // ==========================================
+        // SCENE VIEWPORT PANEL
+        // ==========================================
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0, 0 });
         ImGui::Begin("Scene");
-        
-        // Read the available panel space
+
         ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
         viewportSize = { viewportPanelSize.x, viewportPanelSize.y };
 
-        // Draw the Framebuffer texture using ImGui::Image
-        // Cast the renderer ID to void* (required by ImGui API)
-        // OpenGL textures are flipped vertically by default, so we invert the UV coordinates (0, 1) to (1, 0)
         uint32_t textureID = framebuffer->GetColorAttachmentRendererID();
         ImGui::Image(reinterpret_cast<void*>((uintptr_t)textureID), ImVec2{ viewportSize.x, viewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
         ImVec2 imageMin = ImGui::GetItemRectMin();
 
-        // ==========================================
-        // TILE PAINTING LOGIC
-        // ==========================================
-        // Only paint if the mouse is hovering over the Scene panel, not blocking other UI
-        if (ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+        const bool viewportHovered = ImGui::IsWindowHovered();
+        ImGuiIO& io = ImGui::GetIO();
+
+        // --- EDITOR CAMERA PAN & ZOOM (Edit Mode) ---
+        if (sceneState == SceneState::Edit && viewportHovered) {
+            if (io.MouseWheel != 0.0f) {
+                editorCamera.OnMouseScroll(io.MouseWheel);
+            }
+            if (ImGui::IsMouseDragging(ImGuiMouseButton_Middle, 0.0f) ||
+                ImGui::IsMouseDragging(ImGuiMouseButton_Right, 0.0f)) {
+                editorCamera.Pan({ io.MouseDelta.x, io.MouseDelta.y }, viewportSize);
+            }
+        }
+
+        // --- TILE PAINTING LOGIC ---
+        if (viewportHovered && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
             viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
-            // Get mouse position relative to the actual rendered image inside the panel
             ImVec2 mousePos = ImGui::GetMousePos();
             glm::vec2 relativeMouse = {
                 mousePos.x - imageMin.x,
                 mousePos.y - imageMin.y
             };
 
-            // OpenGL Framebuffers have (0,0) at the bottom left, but ImGui puts (0,0) at the top left.
-            // Invert the Y axis to match OpenGL's coordinate system.
+            // Flip Y from ImGui top-left origin to OpenGL bottom-left origin
             relativeMouse.y = viewportSize.y - relativeMouse.y;
 
             if (relativeMouse.x >= 0.0f && relativeMouse.x <= viewportSize.x &&
                 relativeMouse.y >= 0.0f && relativeMouse.y <= viewportSize.y) {
-                // Convert viewport pixel coordinates to Normalized Device Coordinates (-1.0 to +1.0)
                 glm::vec4 ndc = {
                     (relativeMouse.x / viewportSize.x) * 2.0f - 1.0f,
                     (relativeMouse.y / viewportSize.y) * 2.0f - 1.0f,
@@ -284,39 +445,33 @@ int main(int argc, char* argv[]) {
                     1.0f
                 };
 
-                // Unproject NDC through the active camera's inverse ViewProjection matrix into 2D isometric space
-                const Engine::OrthographicCamera& activeCamera = mainScene->GetActiveCamera();
-                glm::vec4 isoScreenPos = glm::inverse(activeCamera.GetViewProjectionMatrix()) * ndc;
+                const Engine::OrthographicCamera& viewCamera = (sceneState == SceneState::Edit)
+                    ? editorCamera.GetCamera()
+                    : activeScene->GetActiveCamera();
+                glm::vec4 isoScreenPos = glm::inverse(viewCamera.GetViewProjectionMatrix()) * ndc;
 
-                // Check if the currently selected Hierarchy object has a Tilemap
                 if (selectedContext) {
-                    auto tilemap = selectedContext->GetComponent<Engine::Tilemap>();
-                    if (tilemap) {
-                        glm::vec3 mapOffset(0.0f);
-                        if (auto mapTransform = selectedContext->GetComponent<Engine::Transform>()) {
-                            mapOffset = mapTransform->position;
-                        }
+                    if (auto* tilemap = selectedContext->GetComponent<Engine::Tilemap>()) {
+                        glm::vec3 mapOffset = selectedContext->GetTransform()
+                            ? selectedContext->GetTransform()->position
+                            : glm::vec3(0.0f);
 
-                        // Convert 2D isometric coordinates (adjusted for map elevation) back to 3D World/Grid coordinates
                         glm::vec3 worldPos = Engine::Isometric::ScreenToWorld({
                             isoScreenPos.x,
                             isoScreenPos.y - mapOffset.y
                         }) - glm::vec3(mapOffset.x, 0.0f, mapOffset.z);
 
-                        // Round to nearest integer to get the exact Grid Cell index
                         int gridX = static_cast<int>(std::round(worldPos.x));
                         int gridY = static_cast<int>(std::round(worldPos.z));
 
-                        // Prevent out-of-bounds array crashes
                         if (gridX >= 0 && gridX < (int)tilemap->GetWidth() && gridY >= 0 && gridY < (int)tilemap->GetHeight()) {
-                            // Paint the tile!
-                            tilemap->SetTile(gridX, gridY, s_SelectedTileID);
+                            tilemap->SetTile(gridX, gridY, s_SelectedTileID, s_SelectedTileWalkable);
                         }
                     }
                 }
             }
         }
-        
+
         ImGui::End();
         ImGui::PopStyleVar();
 
@@ -324,38 +479,62 @@ int main(int argc, char* argv[]) {
         // HIERARCHY PANEL
         // ==========================================
         ImGui::Begin("Hierarchy");
+        {
+            Engine::GameObject* entityToDelete = nullptr;
 
-        // Iterate through every GameObject in the active scene
-        for (const auto& gameObjectPtr : mainScene->GetGameObjects()) {
-            Engine::GameObject* go = gameObjectPtr.get();
+            for (const auto& gameObjectPtr : activeScene->GetGameObjects()) {
+                Engine::GameObject* go = gameObjectPtr.get();
 
-            std::string uuidStr = std::to_string(go->GetUUID());
-            ImGui::PushID(uuidStr.c_str());
+                std::string uuidStr = std::to_string(go->GetUUID());
+                ImGui::PushID(uuidStr.c_str());
 
-            bool isSelected = (selectedContext == go);
-            if (ImGui::Selectable(go->GetName().c_str(), isSelected)) {
-                selectedContext = go;
-                ENGINE_DEBUG("Hierarchy: Selected GameObject '{}' (UUID: {})", go->GetName(), go->GetUUID());
+                bool isSelected = (selectedContext == go);
+                if (ImGui::Selectable(go->GetName().c_str(), isSelected)) {
+                    selectedContext = go;
+                    ENGINE_DEBUG("Hierarchy: Selected GameObject '{}' (UUID: {})", go->GetName(), go->GetUUID());
+                }
+
+                // Right-click on an entity row to delete it
+                if (ImGui::BeginPopupContextItem("EntityContextMenu")) {
+                    if (ImGui::MenuItem("Delete GameObject")) {
+                        entityToDelete = go;
+                    }
+                    ImGui::EndPopup();
+                }
+
+                ImGui::PopID();
             }
 
-            ImGui::PopID();
-        }
-
-        // Click in the empty space of the window (not on an item) to deselect
-        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered()) {
-            selectedContext = nullptr;
-        }
-
-        // Optional: Right-click context menu to create new GameObjects
-        if (ImGui::BeginPopupContextWindow("HierarchyContextMenu", 1 | ImGuiPopupFlags_NoOpenOverItems)) {
-            if (ImGui::MenuItem("Create Empty GameObject")) {
-                auto newGo = mainScene->CreateGameObject("New GameObject");
-                selectedContext = newGo; // Auto-select the newly created object
-                ENGINE_INFO("Hierarchy: Created new GameObject '{}'", newGo->GetName());
+            // Support Delete key when Hierarchy window is focused
+            if (!entityToDelete && selectedContext && ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+                entityToDelete = selectedContext;
             }
-            ImGui::EndPopup();
-        }
 
+            // Click in empty space to deselect
+            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered()) {
+                selectedContext = nullptr;
+            }
+
+            // Right-click in empty space to create new GameObjects
+            if (ImGui::BeginPopupContextWindow("HierarchyContextMenu", 1 | ImGuiPopupFlags_NoOpenOverItems)) {
+                if (ImGui::MenuItem("Create Empty GameObject")) {
+                    auto* newGo = activeScene->CreateGameObject("New GameObject");
+                    selectedContext = newGo;
+                    ENGINE_INFO("Hierarchy: Created new GameObject '{}'", newGo->GetName());
+                }
+                ImGui::EndPopup();
+            }
+
+            // Perform deferred entity deletion safely outside iteration loop
+            if (entityToDelete) {
+                std::string deletedName = entityToDelete->GetName();
+                if (selectedContext == entityToDelete) {
+                    selectedContext = nullptr;
+                }
+                activeScene->DestroyGameObject(entityToDelete);
+                ENGINE_INFO("Hierarchy: Deleted GameObject '{}'", deletedName);
+            }
+        }
         ImGui::End();
 
         // ==========================================
@@ -364,37 +543,41 @@ int main(int argc, char* argv[]) {
         ImGui::Begin("Inspector");
 
         if (selectedContext) {
-            // 1. Entity Name
-            // In a full implementation, you would use ImGui::InputText here to allow renaming.
-            ImGui::TextDisabled("Name:");
-            ImGui::SameLine();
-            ImGui::Text("%s", selectedContext->GetName().c_str());
+            // 1. Editable Entity Name wired to Object::SetName
+            char nameBuffer[256];
+            std::snprintf(nameBuffer, sizeof(nameBuffer), "%s", selectedContext->GetName().c_str());
+            if (ImGui::InputText("Name", nameBuffer, sizeof(nameBuffer))) {
+                if (nameBuffer[0] != '\0') {
+                    selectedContext->SetName(nameBuffer);
+                }
+            }
+            ImGui::TextDisabled("UUID: %llu", static_cast<unsigned long long>(selectedContext->GetUUID()));
             ImGui::Separator();
 
-            // 2. Transform Component
-            // Every GameObject has a Transform by default in this engine
-            auto transform = selectedContext->GetComponent<Engine::Transform>();
-            if (transform) {
-                // ImGuiTreeNodeFlags_DefaultOpen ensures the menu is expanded by default
+            // 2. Transform Component (cached O(1) pointer, mandatory)
+            if (auto* transform = selectedContext->GetTransform()) {
                 if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-                    // DragFloat3 creates an X,Y,Z slider. The 0.1f is the speed/sensitivity.
                     ImGui::DragFloat3("Position", &transform->position.x, 0.1f);
-                    
-                    // Transform::rotation is stored in degrees
                     ImGui::DragFloat3("Rotation", &transform->rotation.x, 1.0f);
-                    
                     ImGui::DragFloat3("Scale", &transform->scale.x, 0.1f);
                 }
             }
 
-            // 3. Sprite Renderer Component (Updated for Drag & Drop)
-            auto spriteRenderer = selectedContext->GetComponent<Engine::SpriteRenderer>();
-            if (spriteRenderer) {
-                if (ImGui::CollapsingHeader("Sprite Renderer", ImGuiTreeNodeFlags_DefaultOpen)) {
+            // 3. Sprite Renderer Component (with Remove Component & Drag-and-Drop)
+            if (auto* spriteRenderer = selectedContext->GetComponent<Engine::SpriteRenderer>()) {
+                bool removeComp = false;
+                bool open = ImGui::CollapsingHeader("Sprite Renderer", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+                if (ImGui::BeginPopupContextItem("SpriteRendererContext")) {
+                    if (ImGui::MenuItem("Remove Component")) removeComp = true;
+                    ImGui::EndPopup();
+                }
+                ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 24.0f);
+                if (ImGui::SmallButton("X##RemoveSpriteRenderer")) removeComp = true;
+
+                if (open && !removeComp) {
                     glm::vec4 color = spriteRenderer->GetColor();
                     if (ImGui::ColorEdit4("Color", &color.x)) spriteRenderer->SetColor(color);
-                    
-                    // Display the current texture filename or a placeholder
+
                     std::string texLabel = "None";
                     auto currentTex = spriteRenderer->GetTexture();
                     if (currentTex && !currentTex->GetFilepath().empty()) {
@@ -403,7 +586,6 @@ int main(int argc, char* argv[]) {
                         texLabel = std::to_string(currentTex->GetRendererID());
                     }
 
-                    // Create a visual drop zone
                     ImGui::Button(texLabel.c_str(), ImVec2(140.0f, 0.0f));
                     if (currentTex && ImGui::IsItemHovered()) {
                         ImGui::SetTooltip("Path: %s\nRenderer ID: %u (%dx%d)",
@@ -415,68 +597,109 @@ int main(int argc, char* argv[]) {
                     ImGui::SameLine();
                     ImGui::TextDisabled("<- Drop Texture Here");
 
-                    // --- DRAG AND DROP TARGET ---
                     if (ImGui::BeginDragDropTarget()) {
-                        // Check if the incoming payload matches our specific identifier
                         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
-                            
-                            // Extract the string from the payload
-                            const char* path = (const char*)payload->Data;
+                            const char* path = static_cast<const char*>(payload->Data);
                             std::string filepath(path);
 
-                            // Simple validation to ensure it's an image file
                             if (filepath.find(".png") != std::string::npos || filepath.find(".jpg") != std::string::npos) {
-                                // Load it via your centralized cache!
                                 auto newTexture = Engine::ResourceManager::Load<Engine::Texture>(filepath);
                                 spriteRenderer->SetTexture(newTexture);
                                 ENGINE_INFO("Inspector: Assigned texture '{}' to '{}'", filepath, selectedContext->GetName());
                             } else {
-                                // In a real engine, trigger an ImGui error modal or log warning here
                                 ENGINE_WARN("Invalid file type dropped on SpriteRenderer: '{}'", filepath);
-                                std::cout << "Invalid file type dropped on SpriteRenderer!\n";
                             }
                         }
                         ImGui::EndDragDropTarget();
                     }
                 }
+
+                if (removeComp) {
+                    selectedContext->RemoveComponent<Engine::SpriteRenderer>();
+                    ENGINE_INFO("Inspector: Removed SpriteRenderer from '{}'", selectedContext->GetName());
+                }
             }
 
             // 4. Particle System Component
-            auto particleSystem = selectedContext->GetComponent<Engine::ParticleSystem>();
-            if (particleSystem) {
-                if (ImGui::CollapsingHeader("Particle System", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (auto* particleSystem = selectedContext->GetComponent<Engine::ParticleSystem>()) {
+                bool removeComp = false;
+                bool open = ImGui::CollapsingHeader("Particle System", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+                if (ImGui::BeginPopupContextItem("ParticleSystemContext")) {
+                    if (ImGui::MenuItem("Remove Component")) removeComp = true;
+                    ImGui::EndPopup();
+                }
+                ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 24.0f);
+                if (ImGui::SmallButton("X##RemoveParticleSystem")) removeComp = true;
+
+                if (open && !removeComp) {
                     ImGui::Text("Active Particles: %u / %zu",
                                 particleSystem->GetActiveParticleCount(),
                                 particleSystem->GetParticles().size());
                     if (ImGui::Button("Emit Test Particles")) {
                         Engine::ParticleProps props;
-                        if (transform) props.position = transform->position;
+                        if (auto* t = selectedContext->GetTransform()) props.position = t->position;
                         props.velocity = { 0.0f, 1.0f, 0.0f };
                         particleSystem->Emit(props);
                         ENGINE_DEBUG("Inspector: Emitted test particle on '{}'", selectedContext->GetName());
                     }
                 }
+
+                if (removeComp) {
+                    selectedContext->RemoveComponent<Engine::ParticleSystem>();
+                    ENGINE_INFO("Inspector: Removed ParticleSystem from '{}'", selectedContext->GetName());
+                }
             }
 
             // 5. BoxCollider2D Component
-            auto boxCollider = selectedContext->GetComponent<Engine::BoxCollider2D>();
-            if (boxCollider) {
-                if (ImGui::CollapsingHeader("Box Collider 2D", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (auto* boxCollider = selectedContext->GetComponent<Engine::BoxCollider2D>()) {
+                bool removeComp = false;
+                bool open = ImGui::CollapsingHeader("Box Collider 2D", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+                if (ImGui::BeginPopupContextItem("BoxColliderContext")) {
+                    if (ImGui::MenuItem("Remove Component")) removeComp = true;
+                    ImGui::EndPopup();
+                }
+                ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 24.0f);
+                if (ImGui::SmallButton("X##RemoveBoxCollider")) removeComp = true;
+
+                if (open && !removeComp) {
                     ImGui::DragFloat2("Size", &boxCollider->size.x, 0.05f, 0.01f, 100.0f);
                     ImGui::DragFloat2("Offset", &boxCollider->offset.x, 0.05f);
                     ImGui::Checkbox("Is Dynamic", &boxCollider->isDynamic);
+                    if (boxCollider->isDynamic) {
+                        ImGui::Checkbox("Use Gravity", &boxCollider->useGravity);
+                        ImGui::DragFloat("Gravity", &boxCollider->gravity, 0.1f, -50.0f, 0.0f);
+                        ImGui::DragFloat("Ground Y", &boxCollider->groundLevel, 0.05f);
+                    }
+                }
+
+                if (removeComp) {
+                    selectedContext->RemoveComponent<Engine::BoxCollider2D>();
+                    ENGINE_INFO("Inspector: Removed BoxCollider2D from '{}'", selectedContext->GetName());
                 }
             }
 
             // 6. Tilemap Component
-            auto tilemapComp = selectedContext->GetComponent<Engine::Tilemap>();
-            if (tilemapComp) {
-                if (ImGui::CollapsingHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen)) {
+            if (auto* tilemapComp = selectedContext->GetComponent<Engine::Tilemap>()) {
+                bool removeComp = false;
+                bool open = ImGui::CollapsingHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+                if (ImGui::BeginPopupContextItem("TilemapContext")) {
+                    if (ImGui::MenuItem("Remove Component")) removeComp = true;
+                    ImGui::EndPopup();
+                }
+                ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 24.0f);
+                if (ImGui::SmallButton("X##RemoveTilemap")) removeComp = true;
+
+                if (open && !removeComp) {
                     ImGui::Text("Dimensions: %u x %u (%u tiles)",
                                 tilemapComp->GetWidth(),
                                 tilemapComp->GetHeight(),
                                 tilemapComp->GetWidth() * tilemapComp->GetHeight());
                     ImGui::TextDisabled("Select a brush in Tile Palette and click in Scene to paint.");
+                }
+
+                if (removeComp) {
+                    selectedContext->RemoveComponent<Engine::Tilemap>();
+                    ENGINE_INFO("Inspector: Removed Tilemap from '{}'", selectedContext->GetName());
                 }
             }
 
@@ -533,14 +756,27 @@ int main(int argc, char* argv[]) {
         ImGui::Text("Select a brush:");
         ImGui::Separator();
 
-        // In a full implementation, you'd loop over tilemap->tileSet and draw ImGui::ImageButtons using their textures.
-        // For now, we map them directly to standard UI buttons.
-        if (ImGui::Button("Eraser (ID 0)", ImVec2(120, 30))) { s_SelectedTileID = 0; ENGINE_DEBUG("Tile Palette: Selected Eraser (ID 0)"); }
-        if (ImGui::Button("Grass (ID 1)", ImVec2(120, 30)))  { s_SelectedTileID = 1; ENGINE_DEBUG("Tile Palette: Selected Grass (ID 1)"); }
-        if (ImGui::Button("Stone (ID 2)", ImVec2(120, 30)))  { s_SelectedTileID = 2; ENGINE_DEBUG("Tile Palette: Selected Stone (ID 2)"); } // (Assuming you add a stone texture)
-        
+        if (ImGui::Button("Eraser (ID 0)", ImVec2(140, 30))) {
+            s_SelectedTileID = 0;
+            s_SelectedTileWalkable = false;
+            ENGINE_DEBUG("Tile Palette: Selected Eraser (ID 0, Non-walkable)");
+        }
+        if (ImGui::Button("Grass (ID 1)", ImVec2(140, 30))) {
+            s_SelectedTileID = 1;
+            s_SelectedTileWalkable = true;
+            ENGINE_DEBUG("Tile Palette: Selected Grass (ID 1, Walkable)");
+        }
+        if (ImGui::Button("Stone Wall (ID 2)", ImVec2(140, 30))) {
+            s_SelectedTileID = 2;
+            s_SelectedTileWalkable = false;
+            ENGINE_DEBUG("Tile Palette: Selected Stone Wall (ID 2, Non-walkable)");
+        }
+
         ImGui::Spacing();
-        ImGui::TextDisabled("Current Tool: ID %u", s_SelectedTileID);
+        ImGui::Checkbox("Walkable Tile", &s_SelectedTileWalkable);
+        ImGui::TextDisabled("Current Brush: ID %u (%s)",
+                            s_SelectedTileID,
+                            s_SelectedTileWalkable ? "Walkable" : "Blocked");
         ImGui::End();
 
         // ==========================================
@@ -548,7 +784,6 @@ int main(int argc, char* argv[]) {
         // ==========================================
         ImGui::Begin("Asset Browser");
 
-        // Back Button
         if (s_CurrentDirectory != s_AssetDirectory) {
             if (ImGui::Button("<- Back")) {
                 s_CurrentDirectory = s_CurrentDirectory.parent_path();
@@ -557,33 +792,23 @@ int main(int argc, char* argv[]) {
             ImGui::Separator();
         }
 
-        // Iterate over the current directory
         if (std::filesystem::exists(s_CurrentDirectory)) {
             for (auto& directoryEntry : std::filesystem::directory_iterator(s_CurrentDirectory)) {
                 const auto& path = directoryEntry.path();
                 std::string filenameString = path.filename().string();
 
                 if (directoryEntry.is_directory()) {
-                    // Render folders as clickable buttons to navigate deeper
                     if (ImGui::Button(filenameString.c_str())) {
                         s_CurrentDirectory /= path.filename();
                         ENGINE_DEBUG("Asset Browser: Opened directory '{}'", s_CurrentDirectory.string());
                     }
                 } else {
-                    // Render files as selectable items
                     ImGui::Selectable(filenameString.c_str());
 
-                    // --- DRAG AND DROP SOURCE ---
                     if (ImGui::BeginDragDropSource()) {
                         std::string itemPath = path.string();
-                        
-                        // Package the filepath string into the ImGui payload
-                        // +1 ensures we include the null-terminator in the payload size
                         ImGui::SetDragDropPayload("CONTENT_BROWSER_ITEM", itemPath.c_str(), itemPath.size() + 1);
-                        
-                        // Render a tooltip next to the mouse cursor while dragging
                         ImGui::Text("Drag %s", filenameString.c_str());
-                        
                         ImGui::EndDragDropSource();
                     }
                 }

@@ -56,19 +56,10 @@ std::shared_ptr<SubTexture2D> DeserializeSubTexture(const json& subTexJson) {
 SceneSerializer::SceneSerializer(const std::shared_ptr<Scene>& scene)
     : m_Scene(scene) {}
 
-bool SceneSerializer::Serialize(const std::string& filepath) {
+std::string SceneSerializer::SerializeToString() const {
     if (!m_Scene) {
-        ENGINE_CORE_ERROR("SceneSerializer::Serialize failed: Scene pointer is null");
-        return false;
-    }
-
-    std::string resolvedPath = ResourceManager::ResolvePath(filepath);
-    ENGINE_CORE_INFO("Serializing scene '{}' to '{}'", m_Scene->GetName(), resolvedPath);
-
-    std::error_code ec;
-    auto parentDir = std::filesystem::path(resolvedPath).parent_path();
-    if (!parentDir.empty() && !std::filesystem::exists(parentDir, ec)) {
-        std::filesystem::create_directories(parentDir, ec);
+        ENGINE_CORE_ERROR("SceneSerializer::SerializeToString failed: Scene pointer is null");
+        return {};
     }
 
     json sceneJson;
@@ -83,7 +74,7 @@ bool SceneSerializer::Serialize(const std::string& filepath) {
         json& compsJson = entityJson["Components"];
 
         // 1. Transform
-        if (auto* transform = go->GetComponent<Transform>()) {
+        if (auto* transform = go->GetTransform()) {
             compsJson["Transform"] = {
                 {"Position", {transform->position.x, transform->position.y, transform->position.z}},
                 {"Rotation", {transform->rotation.x, transform->rotation.y, transform->rotation.z}},
@@ -170,7 +161,10 @@ bool SceneSerializer::Serialize(const std::string& filepath) {
             compsJson["BoxCollider2D"] = {
                 {"Size", {collider->size.x, collider->size.y}},
                 {"Offset", {collider->offset.x, collider->offset.y}},
-                {"IsDynamic", collider->isDynamic}
+                {"IsDynamic", collider->isDynamic},
+                {"UseGravity", collider->useGravity},
+                {"Gravity", collider->gravity},
+                {"GroundLevel", collider->groundLevel}
             };
         }
 
@@ -286,39 +280,52 @@ bool SceneSerializer::Serialize(const std::string& filepath) {
         sceneJson["GameObjects"].push_back(std::move(entityJson));
     }
 
+    return sceneJson.dump(4);
+}
+
+bool SceneSerializer::Serialize(const std::string& filepath) {
+    if (!m_Scene) {
+        ENGINE_CORE_ERROR("SceneSerializer::Serialize failed: Scene pointer is null");
+        return false;
+    }
+
+    std::string resolvedPath = ResourceManager::ResolvePath(filepath);
+    ENGINE_CORE_INFO("Serializing scene '{}' to '{}'", m_Scene->GetName(), resolvedPath);
+
+    std::error_code ec;
+    auto parentDir = std::filesystem::path(resolvedPath).parent_path();
+    if (!parentDir.empty() && !std::filesystem::exists(parentDir, ec)) {
+        std::filesystem::create_directories(parentDir, ec);
+    }
+
+    std::string serializedData = SerializeToString();
+    if (serializedData.empty()) {
+        return false;
+    }
+
     std::ofstream file(resolvedPath);
     if (!file.is_open()) {
         ENGINE_CORE_ERROR("Failed to open file for scene serialization: '{}'", resolvedPath);
         return false;
     }
 
-    // 4 spaces of indentation
-    file << sceneJson.dump(4);
+    file << serializedData;
     file.close();
-    ENGINE_CORE_INFO("Scene serialized successfully to '{}' ({} GameObjects)", resolvedPath, sceneJson["GameObjects"].size());
+    ENGINE_CORE_INFO("Scene serialized successfully to '{}' ({} GameObjects)", resolvedPath, m_Scene->GetGameObjects().size());
     return true;
 }
 
-bool SceneSerializer::Deserialize(const std::string& filepath) {
+bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
     if (!m_Scene) {
-        ENGINE_CORE_ERROR("SceneSerializer::Deserialize failed: Scene pointer is null");
-        return false;
-    }
-
-    std::string resolvedPath = ResourceManager::ResolvePath(filepath);
-    ENGINE_CORE_INFO("Deserializing scene from '{}'", resolvedPath);
-
-    std::ifstream file(resolvedPath);
-    if (!file.is_open()) {
-        ENGINE_CORE_ERROR("Failed to open file for scene deserialization: '{}'", resolvedPath);
+        ENGINE_CORE_ERROR("SceneSerializer::DeserializeFromString failed: Scene pointer is null");
         return false;
     }
 
     json sceneJson;
     try {
-        file >> sceneJson;
+        sceneJson = json::parse(jsonString);
     } catch (const std::exception& e) {
-        ENGINE_CORE_ERROR("Failed to parse scene JSON from '{}': {}", resolvedPath, e.what());
+        ENGINE_CORE_ERROR("Failed to parse scene JSON string: {}", e.what());
         return false;
     }
 
@@ -345,7 +352,7 @@ bool SceneSerializer::Deserialize(const std::string& filepath) {
 
             // 1. Transform
             if (components.contains("Transform")) {
-                auto* transform = go->GetComponent<Transform>();
+                auto* transform = go->GetTransform();
                 const auto& tJson = components["Transform"];
                 if (tJson.contains("Position")) {
                     const auto& pos = tJson["Position"];
@@ -439,6 +446,9 @@ bool SceneSerializer::Deserialize(const std::string& filepath) {
                     collider->offset = { bcJson["Offset"][0].get<float>(), bcJson["Offset"][1].get<float>() };
                 }
                 collider->isDynamic = bcJson.value("IsDynamic", false);
+                collider->useGravity = bcJson.value("UseGravity", true);
+                collider->gravity = bcJson.value("Gravity", -9.8f);
+                collider->groundLevel = bcJson.value("GroundLevel", 0.0f);
             }
 
             // 6. CameraComponent
@@ -572,7 +582,35 @@ bool SceneSerializer::Deserialize(const std::string& filepath) {
         }
     }
 
-    ENGINE_CORE_INFO("Scene deserialized successfully from '{}' ({} GameObjects loaded)", resolvedPath, loadedCount);
+    ENGINE_CORE_DEBUG("Scene deserialized from JSON ({} GameObjects loaded)", loadedCount);
+    return true;
+}
+
+bool SceneSerializer::Deserialize(const std::string& filepath) {
+    if (!m_Scene) {
+        ENGINE_CORE_ERROR("SceneSerializer::Deserialize failed: Scene pointer is null");
+        return false;
+    }
+
+    std::string resolvedPath = ResourceManager::ResolvePath(filepath);
+    ENGINE_CORE_INFO("Deserializing scene from '{}'", resolvedPath);
+
+    std::ifstream file(resolvedPath);
+    if (!file.is_open()) {
+        ENGINE_CORE_ERROR("Failed to open file for scene deserialization: '{}'", resolvedPath);
+        return false;
+    }
+
+    std::string content((std::istreambuf_iterator<char>(file)), std::istreambuf_iterator<char>());
+    file.close();
+
+    if (!DeserializeFromString(content)) {
+        ENGINE_CORE_ERROR("Failed to deserialize scene from '{}'", resolvedPath);
+        return false;
+    }
+
+    ENGINE_CORE_INFO("Scene deserialized successfully from '{}' ({} GameObjects loaded)",
+                     resolvedPath, m_Scene->GetGameObjects().size());
     return true;
 }
 

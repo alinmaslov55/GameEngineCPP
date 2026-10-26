@@ -2,6 +2,23 @@
     "GameObjects": [
         {
             "Components": {
+                "AudioSource": {
+                    "ClipPath": "jump.wav"
+                },
+                "BoxCollider2D": {
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": true,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Size": [
+                        0.6000000238418579,
+                        0.6000000238418579
+                    ],
+                    "UseGravity": true
+                },
                 "ParticleSystem": {
                     "PoolSize": 500
                 },
@@ -32,7 +49,7 @@
                 }
             },
             "Name": "Player",
-            "UUID": 16498273603483403101
+            "UUID": 8768262624361464658
         },
         {
             "Components": {
@@ -103,9 +120,9 @@
                         1,
                         1,
                         1,
+                        2,
                         1,
-                        1,
-                        1,
+                        2,
                         1,
                         1,
                         1,
@@ -170,6 +187,108 @@
                         1,
                         1
                     ],
+                    "Walkable": [
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        false,
+                        true,
+                        false,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true,
+                        true
+                    ],
                     "Width": 10
                 },
                 "Transform": {
@@ -191,7 +310,7 @@
                 }
             },
             "Name": "Map",
-            "UUID": 3762420778742614135
+            "UUID": 10081333345389212486
         },
         {
             "Components": {
@@ -338,9 +457,9 @@
                 ]
             },
             "Name": "HUD",
-            "UUID": 5172238635136867585
+            "UUID": 634681811403134330
         }
     ],
-    "OrthographicSize": 1.7999999523162842,
+    "OrthographicSize": 5.0,
     "SceneName": "Village"
 }

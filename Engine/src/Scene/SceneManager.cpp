@@ -31,10 +31,10 @@ void SceneManager::Update(float deltaTime) {
     }
 }
 
-void SceneManager::Render() {
+void SceneManager::Render(const OrthographicCamera* overrideCamera) {
     ENGINE_CORE_TRACE("SceneManager::Render");
     if (s_ActiveScene) {
-        s_ActiveScene->Render();
+        s_ActiveScene->Render(overrideCamera);
     }
 }
 } // namespace Engine

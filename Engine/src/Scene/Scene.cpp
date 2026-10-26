@@ -111,12 +111,28 @@ void Scene::Update(float deltaTime) {
     }
 
     std::vector<GameObject*> colliders;
+    std::vector<GameObject*> tilemapObjects;
     for (auto& gameObject : m_GameObjects) {
-        if (gameObject->GetComponent<BoxCollider2D>()) {
+        if (auto* collider = gameObject->GetComponent<BoxCollider2D>()) {
             colliders.push_back(gameObject.get());
+
+            // Apply vertical isometric gravity & ground clamping for dynamic bodies
+            if (collider->isDynamic && collider->useGravity) {
+                auto* transform = gameObject->GetTransform();
+                collider->verticalVelocity += collider->gravity * deltaTime;
+                transform->position.y += collider->verticalVelocity * deltaTime;
+                if (transform->position.y <= collider->groundLevel) {
+                    transform->position.y = collider->groundLevel;
+                    collider->verticalVelocity = 0.0f;
+                }
+            }
+        }
+        if (gameObject->GetComponent<Tilemap>()) {
+            tilemapObjects.push_back(gameObject.get());
         }
     }
 
+    // 1. Entity-vs-Entity AABB Collision on XZ Ground Plane
     for (size_t i = 0; i < colliders.size(); i++) {
         for (size_t j = i + 1; j < colliders.size(); j++) {
             GameObject* a = colliders[i];
@@ -127,8 +143,8 @@ void Scene::Update(float deltaTime) {
 
             if (!cA->isDynamic && !cB->isDynamic) continue;
 
-            auto tA = a->GetComponent<Transform>();
-            auto tB = b->GetComponent<Transform>();
+            auto* tA = a->GetTransform();
+            auto* tB = b->GetTransform();
 
             // Calculate AABB bounds on the XZ ground plane for Object A
             float aLeft  = tA->position.x + cA->offset.x - (cA->size.x * tA->scale.x) / 2.0f;
@@ -171,37 +187,106 @@ void Scene::Update(float deltaTime) {
             }
         }
     }
-}
 
-void Scene::Render() {
-    ENGINE_CORE_TRACE("Scene '{}': Render", m_Name);
-    CameraComponent* mainCamera = nullptr;
-    Transform* cameraTransform = nullptr;
+    // 2. Dynamic Entity-vs-Tilemap Non-Walkable Tile Collision on XZ Ground Plane
+    for (GameObject* a : colliders) {
+        auto* cA = a->GetComponent<BoxCollider2D>();
+        if (!cA->isDynamic) continue;
 
-    for (auto& go : m_GameObjects) {
-        if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
-            mainCamera = cameraComp;
-            cameraTransform = go->GetComponent<Transform>();
-            break;
+        auto* tA = a->GetTransform();
+        float halfW = (cA->size.x * tA->scale.x) * 0.5f;
+        float halfD = (cA->size.y * tA->scale.z) * 0.5f;
+
+        for (GameObject* mapObj : tilemapObjects) {
+            auto* tilemap = mapObj->GetComponent<Tilemap>();
+            auto* mapTransform = mapObj->GetTransform();
+            if (!tilemap || tilemap->GetWidth() == 0 || tilemap->GetHeight() == 0) continue;
+
+            float aLeft  = tA->position.x + cA->offset.x - halfW;
+            float aRight = tA->position.x + cA->offset.x + halfW;
+            float aBack  = tA->position.z + cA->offset.y - halfD;
+            float aFront = tA->position.z + cA->offset.y + halfD;
+
+            int minGridX = std::max(0, static_cast<int>(std::floor(aLeft - mapTransform->position.x + 0.5f)));
+            int maxGridX = std::min(static_cast<int>(tilemap->GetWidth()) - 1,
+                                    static_cast<int>(std::floor(aRight - mapTransform->position.x + 0.5f)));
+            int minGridZ = std::max(0, static_cast<int>(std::floor(aBack - mapTransform->position.z + 0.5f)));
+            int maxGridZ = std::min(static_cast<int>(tilemap->GetHeight()) - 1,
+                                    static_cast<int>(std::floor(aFront - mapTransform->position.z + 0.5f)));
+
+            for (int gz = minGridZ; gz <= maxGridZ; ++gz) {
+                for (int gx = minGridX; gx <= maxGridX; ++gx) {
+                    if (tilemap->GetTile(static_cast<uint32_t>(gx), static_cast<uint32_t>(gz)).walkable) {
+                        continue;
+                    }
+
+                    // Recompute dynamic AABB in case a neighboring tile already adjusted tA->position
+                    aLeft  = tA->position.x + cA->offset.x - halfW;
+                    aRight = tA->position.x + cA->offset.x + halfW;
+                    aBack  = tA->position.z + cA->offset.y - halfD;
+                    aFront = tA->position.z + cA->offset.y + halfD;
+
+                    float tileCenterX = mapTransform->position.x + static_cast<float>(gx);
+                    float tileCenterZ = mapTransform->position.z + static_cast<float>(gz);
+                    float tileHalfX   = 0.5f * mapTransform->scale.x;
+                    float tileHalfZ   = 0.5f * mapTransform->scale.z;
+
+                    float tLeft  = tileCenterX - tileHalfX;
+                    float tRight = tileCenterX + tileHalfX;
+                    float tBack  = tileCenterZ - tileHalfZ;
+                    float tFront = tileCenterZ + tileHalfZ;
+
+                    float overlapX = std::min(aRight, tRight) - std::max(aLeft, tLeft);
+                    float overlapZ = std::min(aFront, tFront) - std::max(aBack, tBack);
+
+                    if (overlapX > 0.0f && overlapZ > 0.0f) {
+                        float centerAX = tA->position.x + cA->offset.x;
+                        float centerAZ = tA->position.z + cA->offset.y;
+                        if (overlapX < overlapZ) {
+                            tA->position.x += (centerAX < tileCenterX) ? -overlapX : overlapX;
+                        } else {
+                            tA->position.z += (centerAZ < tileCenterZ) ? -overlapZ : overlapZ;
+                        }
+                    }
+                }
+            }
         }
     }
+}
 
-    if (mainCamera) {
-        if (cameraTransform) {
-            // TODO: Avoid redundant view matrix recalculation every frame if camera transform hasn't changed
-            mainCamera->Camera.SetPosition(cameraTransform->position);
-            mainCamera->Camera.SetRotation(cameraTransform->rotation.z);
-        }
-        Renderer2D::BeginScene(mainCamera->Camera);
+void Scene::Render(const OrthographicCamera* overrideCamera) {
+    ENGINE_CORE_TRACE("Scene '{}': Render", m_Name);
+
+    if (overrideCamera) {
+        Renderer2D::BeginScene(*overrideCamera);
     } else {
-        Renderer2D::BeginScene(m_Camera);
+        CameraComponent* mainCamera = nullptr;
+        Transform* cameraTransform = nullptr;
+
+        for (auto& go : m_GameObjects) {
+            if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
+                mainCamera = cameraComp;
+                cameraTransform = go->GetTransform();
+                break;
+            }
+        }
+
+        if (mainCamera) {
+            if (cameraTransform) {
+                mainCamera->Camera.SetPosition(cameraTransform->position);
+                mainCamera->Camera.SetRotation(cameraTransform->rotation.z);
+            }
+            Renderer2D::BeginScene(mainCamera->Camera);
+        } else {
+            Renderer2D::BeginScene(m_Camera);
+        }
     }
 
     // 1. Render Tilemaps (Ground Layer) first
     for (auto& gameObject : m_GameObjects) {
         auto tilemap = gameObject->GetComponent<Tilemap>();
         if (tilemap) {
-            auto transform = gameObject->GetComponent<Transform>();
+            auto* transform = gameObject->GetTransform();
             
             for (uint32_t y = 0; y < tilemap->GetHeight(); y++) {
                 for (uint32_t x = 0; x < tilemap->GetWidth(); x++) {
@@ -230,15 +315,15 @@ void Scene::Render() {
     // 2. Collect all GameObjects that have a SpriteRenderer
     std::vector<GameObject*> renderQueue;
     for (auto& gameObject : m_GameObjects) {
-        if (gameObject->GetComponent<SpriteRenderer>() && gameObject->GetComponent<Transform>()) {
+        if (gameObject->GetComponent<SpriteRenderer>() && gameObject->GetTransform()) {
             renderQueue.push_back(gameObject.get());
         }
     }
 
     // 3. Sort the queue by isometric depth
     std::sort(renderQueue.begin(), renderQueue.end(), [](GameObject* a, GameObject* b) {
-        auto tA = a->GetComponent<Transform>();
-        auto tB = b->GetComponent<Transform>();
+        auto* tA = a->GetTransform();
+        auto* tB = b->GetTransform();
 
         // In isometric 3D, depth is primarily calculated by X + Z.
         // Higher (X + Z) means it is further back into the screen.
@@ -256,7 +341,7 @@ void Scene::Render() {
     // 4. Draw the sorted queue
     for (GameObject* gameObject : renderQueue) {
         auto spriteRenderer = gameObject->GetComponent<SpriteRenderer>();
-        auto transform = gameObject->GetComponent<Transform>();
+        auto* transform = gameObject->GetTransform();
 
         // Convert 3D world position to 2D isometric screen position ---
         glm::vec2 screenPos = Isometric::WorldToScreen(transform->position);

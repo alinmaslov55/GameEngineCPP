@@ -12,7 +12,7 @@ public:
     static std::shared_ptr<Scene> GetActiveScene();
 
     static void Update(float deltaTime);
-    static void Render();
+    static void Render(const OrthographicCamera* overrideCamera = nullptr);
 
 private:
     static std::shared_ptr<Scene> s_ActiveScene;
