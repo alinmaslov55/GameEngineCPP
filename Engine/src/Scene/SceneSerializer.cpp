@@ -1,14 +1,58 @@
 #include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Core/ResourceManager.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Scene/Tilemap.h"
+#include "Engine/Scene/BoxCollider2D.h"
+#include "Engine/Scene/CameraComponent.h"
 #include "Engine/Renderer/SpriteRenderer.h"
+#include "Engine/Particles/ParticleSystem.h"
+#include "Engine/UI/UIPanel.h"
+#include "Engine/UI/UILabel.h"
+#include "Engine/Audio/AudioSource.h"
+#include "Engine/Animation/Animator.h"
 #include "Engine/Utils/Logger.h"
+
 #include <nlohmann/json.hpp>
+#include <algorithm>
+#include <filesystem>
 #include <fstream>
+#include <vector>
 
 using json = nlohmann::json;
 
 namespace Engine {
+
+namespace {
+json SerializeSubTexture(const std::shared_ptr<SubTexture2D>& subTex) {
+    if (!subTex || !subTex->GetTexture()) {
+        return nullptr;
+    }
+    return {
+        {"TexturePath", ResourceManager::ToRelativePath(subTex->GetTexture()->GetFilepath())},
+        {"MinUV", {subTex->GetMin().x, subTex->GetMin().y}},
+        {"MaxUV", {subTex->GetMax().x, subTex->GetMax().y}}
+    };
+}
+
+std::shared_ptr<SubTexture2D> DeserializeSubTexture(const json& subTexJson) {
+    if (!subTexJson.is_object() || !subTexJson.contains("TexturePath")) {
+        return nullptr;
+    }
+    std::string texPath = subTexJson["TexturePath"].get<std::string>();
+    if (texPath.empty()) {
+        return nullptr;
+    }
+    auto tex = ResourceManager::Load<Texture>(texPath);
+    if (!tex) {
+        return nullptr;
+    }
+    glm::vec2 minUV = { subTexJson["MinUV"][0].get<float>(), subTexJson["MinUV"][1].get<float>() };
+    glm::vec2 maxUV = { subTexJson["MaxUV"][0].get<float>(), subTexJson["MaxUV"][1].get<float>() };
+    return std::make_shared<SubTexture2D>(tex, minUV, maxUV);
+}
+} // namespace
+
 SceneSerializer::SceneSerializer(const std::shared_ptr<Scene>& scene)
     : m_Scene(scene) {}
 
@@ -18,49 +62,240 @@ bool SceneSerializer::Serialize(const std::string& filepath) {
         return false;
     }
 
-    ENGINE_CORE_INFO("Serializing scene '{}' to '{}'", m_Scene->GetName(), filepath);
+    std::string resolvedPath = ResourceManager::ResolvePath(filepath);
+    ENGINE_CORE_INFO("Serializing scene '{}' to '{}'", m_Scene->GetName(), resolvedPath);
+
+    std::error_code ec;
+    auto parentDir = std::filesystem::path(resolvedPath).parent_path();
+    if (!parentDir.empty() && !std::filesystem::exists(parentDir, ec)) {
+        std::filesystem::create_directories(parentDir, ec);
+    }
 
     json sceneJson;
     sceneJson["SceneName"] = m_Scene->GetName();
+    sceneJson["OrthographicSize"] = m_Scene->GetOrthographicSize();
     sceneJson["GameObjects"] = json::array();
 
     for (const auto& go : m_Scene->GetGameObjects()) {
         json entityJson;
         entityJson["UUID"] = go->GetUUID();
         entityJson["Name"] = go->GetName();
+        json& compsJson = entityJson["Components"];
 
-        // Serialize Transform
-        auto transform = go->GetComponent<Transform>();
-        if (transform) {
-            entityJson["Components"]["Transform"] = {
+        // 1. Transform
+        if (auto* transform = go->GetComponent<Transform>()) {
+            compsJson["Transform"] = {
                 {"Position", {transform->position.x, transform->position.y, transform->position.z}},
                 {"Rotation", {transform->rotation.x, transform->rotation.y, transform->rotation.z}},
                 {"Scale",    {transform->scale.x, transform->scale.y, transform->scale.z}}
             };
         }
 
-        // Serialize SpriteRenderer
-        auto spriteRenderer = go->GetComponent<SpriteRenderer>();
-        if (spriteRenderer) {
-            // In a production engine, you would save the Asset Handle / Path here, not the raw texture data
-            entityJson["Components"]["SpriteRenderer"] = {
-                {"Color", {spriteRenderer->GetColor().r, spriteRenderer->GetColor().g, spriteRenderer->GetColor().b, spriteRenderer->GetColor().a}}
+        // 2. SpriteRenderer
+        if (auto* spriteRenderer = go->GetComponent<SpriteRenderer>()) {
+            json spriteJson;
+            const auto& col = spriteRenderer->GetColor();
+            spriteJson["Color"] = { col.r, col.g, col.b, col.a };
+
+            if (auto tex = spriteRenderer->GetTexture()) {
+                spriteJson["TexturePath"] = ResourceManager::ToRelativePath(tex->GetFilepath());
+            }
+            if (auto subTex = spriteRenderer->GetSubTexture()) {
+                spriteJson["SubTexture"] = SerializeSubTexture(subTex);
+            }
+            compsJson["SpriteRenderer"] = std::move(spriteJson);
+        }
+
+        // 3. Tilemap
+        if (auto* tilemap = go->GetComponent<Tilemap>()) {
+            json tilemapJson;
+            tilemapJson["Width"] = tilemap->GetWidth();
+            tilemapJson["Height"] = tilemap->GetHeight();
+
+            // Serialize TileSet definitions sorted by ID for deterministic JSON output
+            json tileSetJson = json::array();
+            if (tilemap->tileSet) {
+                std::vector<uint32_t> sortedIds;
+                sortedIds.reserve(tilemap->tileSet->GetTiles().size());
+                for (const auto& [id, _] : tilemap->tileSet->GetTiles()) {
+                    sortedIds.push_back(id);
+                }
+                std::sort(sortedIds.begin(), sortedIds.end());
+
+                for (uint32_t id : sortedIds) {
+                    auto subTex = tilemap->tileSet->GetTiles().at(id);
+                    json subTexJson = SerializeSubTexture(subTex);
+                    if (!subTexJson.is_null()) {
+                        tileSetJson.push_back({
+                            {"ID", id},
+                            {"SubTexture", std::move(subTexJson)}
+                        });
+                    }
+                }
+            }
+            tilemapJson["TileSet"] = std::move(tileSetJson);
+
+            // Serialize Grid IDs and Walkable flags
+            json tilesArray = json::array();
+            json walkableArray = json::array();
+            bool hasNonWalkable = false;
+
+            for (uint32_t y = 0; y < tilemap->GetHeight(); y++) {
+                for (uint32_t x = 0; x < tilemap->GetWidth(); x++) {
+                    const Tile& t = tilemap->GetTile(x, y);
+                    tilesArray.push_back(t.id);
+                    walkableArray.push_back(t.walkable);
+                    if (!t.walkable) {
+                        hasNonWalkable = true;
+                    }
+                }
+            }
+            tilemapJson["Tiles"] = std::move(tilesArray);
+            if (hasNonWalkable) {
+                tilemapJson["Walkable"] = std::move(walkableArray);
+            }
+
+            compsJson["Tilemap"] = std::move(tilemapJson);
+        }
+
+        // 4. ParticleSystem
+        if (auto* particleSystem = go->GetComponent<ParticleSystem>()) {
+            compsJson["ParticleSystem"] = {
+                {"PoolSize", particleSystem->GetParticles().size()}
             };
         }
 
-        sceneJson["GameObjects"].push_back(entityJson);
+        // 5. BoxCollider2D
+        if (auto* collider = go->GetComponent<BoxCollider2D>()) {
+            compsJson["BoxCollider2D"] = {
+                {"Size", {collider->size.x, collider->size.y}},
+                {"Offset", {collider->offset.x, collider->offset.y}},
+                {"IsDynamic", collider->isDynamic}
+            };
+        }
+
+        // 6. CameraComponent
+        if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
+            compsJson["CameraComponent"] = {
+                {"OrthographicSize", cameraComp->OrthographicSize},
+                {"FixedAspectRatio", cameraComp->FixedAspectRatio}
+            };
+        }
+
+        // 7. UIPanel (supports multiple UIPanels per GameObject)
+        auto uiPanels = go->GetComponents<UIPanel>();
+        if (!uiPanels.empty()) {
+            json panelsJson = json::array();
+            for (const auto* panel : uiPanels) {
+                json panelJson = {
+                    {"Position", {panel->position.x, panel->position.y}},
+                    {"Size",     {panel->size.x, panel->size.y}},
+                    {"Color",    {panel->color.r, panel->color.g, panel->color.b, panel->color.a}}
+                };
+                if (panel->texture) {
+                    panelJson["TexturePath"] = ResourceManager::ToRelativePath(panel->texture->GetFilepath());
+                }
+                panelsJson.push_back(std::move(panelJson));
+            }
+            compsJson["UIPanels"] = std::move(panelsJson);
+        }
+
+        // 8. UILabel (supports multiple UILabels per GameObject)
+        auto uiLabels = go->GetComponents<UILabel>();
+        if (!uiLabels.empty()) {
+            json labelsJson = json::array();
+            for (const auto* label : uiLabels) {
+                json labelJson = {
+                    {"Text",     label->text},
+                    {"Position", {label->position.x, label->position.y}},
+                    {"Scale",    label->scale},
+                    {"Color",    {label->color.r, label->color.g, label->color.b, label->color.a}}
+                };
+
+                if (label->font) {
+                    json fontJson;
+                    if (label->font->atlasTexture) {
+                        fontJson["AtlasTexturePath"] = ResourceManager::ToRelativePath(label->font->atlasTexture->GetFilepath());
+                    }
+
+                    std::vector<char> sortedChars;
+                    sortedChars.reserve(label->font->GetCharacters().size());
+                    for (const auto& [chKey, _] : label->font->GetCharacters()) {
+                        sortedChars.push_back(chKey);
+                    }
+                    std::sort(sortedChars.begin(), sortedChars.end());
+
+                    json charsJson = json::array();
+                    for (char chKey : sortedChars) {
+                        const Character& chData = label->font->GetCharacters().at(chKey);
+                        json charEntry = {
+                            {"Char",    std::string(1, chKey)},
+                            {"Size",    {chData.size.x, chData.size.y}},
+                            {"Bearing", {chData.bearing.x, chData.bearing.y}},
+                            {"Advance", chData.advance}
+                        };
+                        if (chData.subTexture) {
+                            charEntry["SubTexture"] = SerializeSubTexture(chData.subTexture);
+                        }
+                        charsJson.push_back(std::move(charEntry));
+                    }
+                    fontJson["Characters"] = std::move(charsJson);
+                    labelJson["Font"] = std::move(fontJson);
+                }
+
+                labelsJson.push_back(std::move(labelJson));
+            }
+            compsJson["UILabels"] = std::move(labelsJson);
+        }
+
+        // 9. AudioSource
+        if (auto* audioSource = go->GetComponent<AudioSource>()) {
+            json audioJson = json::object();
+            if (auto clip = audioSource->GetClip()) {
+                audioJson["ClipPath"] = ResourceManager::ToRelativePath(clip->GetFilepath());
+            }
+            compsJson["AudioSource"] = std::move(audioJson);
+        }
+
+        // 10. Animator
+        if (auto* animator = go->GetComponent<Animator>()) {
+            json animJson;
+            animJson["CurrentClip"] = animator->GetCurrentClipName();
+            json clipsJson = json::array();
+
+            for (const auto& [clipName, clipPtr] : animator->GetClips()) {
+                if (!clipPtr) continue;
+                json framesJson = json::array();
+                for (const auto& frame : clipPtr->frames) {
+                    json fJson = SerializeSubTexture(frame);
+                    if (!fJson.is_null()) {
+                        framesJson.push_back(std::move(fJson));
+                    }
+                }
+                clipsJson.push_back({
+                    {"Name", clipPtr->name},
+                    {"FrameDuration", clipPtr->frameDuration},
+                    {"Loop", clipPtr->loop},
+                    {"Frames", std::move(framesJson)}
+                });
+            }
+            animJson["Clips"] = std::move(clipsJson);
+            compsJson["Animator"] = std::move(animJson);
+        }
+
+        sceneJson["GameObjects"].push_back(std::move(entityJson));
     }
 
-    std::ofstream file(filepath);
+    std::ofstream file(resolvedPath);
     if (!file.is_open()) {
-        ENGINE_CORE_ERROR("Failed to open file for scene serialization: '{}'", filepath);
+        ENGINE_CORE_ERROR("Failed to open file for scene serialization: '{}'", resolvedPath);
         return false;
     }
 
     // 4 spaces of indentation
     file << sceneJson.dump(4);
     file.close();
-    ENGINE_CORE_INFO("Scene serialized successfully to '{}' ({} GameObjects)", filepath, sceneJson["GameObjects"].size());
+    ENGINE_CORE_INFO("Scene serialized successfully to '{}' ({} GameObjects)", resolvedPath, sceneJson["GameObjects"].size());
     return true;
 }
 
@@ -70,11 +305,12 @@ bool SceneSerializer::Deserialize(const std::string& filepath) {
         return false;
     }
 
-    ENGINE_CORE_INFO("Deserializing scene from '{}'", filepath);
+    std::string resolvedPath = ResourceManager::ResolvePath(filepath);
+    ENGINE_CORE_INFO("Deserializing scene from '{}'", resolvedPath);
 
-    std::ifstream file(filepath);
+    std::ifstream file(resolvedPath);
     if (!file.is_open()) {
-        ENGINE_CORE_ERROR("Failed to open file for scene deserialization: '{}'", filepath);
+        ENGINE_CORE_ERROR("Failed to open file for scene deserialization: '{}'", resolvedPath);
         return false;
     }
 
@@ -82,43 +318,262 @@ bool SceneSerializer::Deserialize(const std::string& filepath) {
     try {
         file >> sceneJson;
     } catch (const std::exception& e) {
-        ENGINE_CORE_ERROR("Failed to parse scene JSON from '{}': {}", filepath, e.what());
+        ENGINE_CORE_ERROR("Failed to parse scene JSON from '{}': {}", resolvedPath, e.what());
         return false;
     }
 
+    if (sceneJson.contains("SceneName") && sceneJson["SceneName"].is_string()) {
+        m_Scene->SetName(sceneJson["SceneName"].get<std::string>());
+    }
+    if (sceneJson.contains("OrthographicSize") && sceneJson["OrthographicSize"].is_number()) {
+        m_Scene->SetOrthographicSize(sceneJson["OrthographicSize"].get<float>());
+    }
+
     size_t loadedCount = 0;
-    if (sceneJson.contains("GameObjects")) {
+    if (sceneJson.contains("GameObjects") && sceneJson["GameObjects"].is_array()) {
         for (const auto& entityJson : sceneJson["GameObjects"]) {
-            std::string name = entityJson["Name"].get<std::string>();
+            std::string name = entityJson.value("Name", "GameObject");
             GameObject* go = entityJson.contains("UUID")
                 ? m_Scene->CreateGameObjectWithUUID(entityJson["UUID"].get<uint64_t>(), name)
                 : m_Scene->CreateGameObject(name);
             loadedCount++;
 
-            auto components = entityJson["Components"];
+            if (!entityJson.contains("Components") || !entityJson["Components"].is_object()) {
+                continue;
+            }
+            const auto& components = entityJson["Components"];
 
-            // Deserialize Transform
+            // 1. Transform
             if (components.contains("Transform")) {
-                auto transform = go->GetComponent<Transform>(); // Transform is attached by default
-                auto pos = components["Transform"]["Position"];
-                auto rot = components["Transform"]["Rotation"];
-                auto scale = components["Transform"]["Scale"];
-
-                transform->position = {pos[0], pos[1], pos[2]};
-                transform->rotation = {rot[0], rot[1], rot[2]};
-                transform->scale    = {scale[0], scale[1], scale[2]};
+                auto* transform = go->GetComponent<Transform>();
+                const auto& tJson = components["Transform"];
+                if (tJson.contains("Position")) {
+                    const auto& pos = tJson["Position"];
+                    transform->position = { pos[0].get<float>(), pos[1].get<float>(), pos[2].get<float>() };
+                }
+                if (tJson.contains("Rotation")) {
+                    const auto& rot = tJson["Rotation"];
+                    transform->rotation = { rot[0].get<float>(), rot[1].get<float>(), rot[2].get<float>() };
+                }
+                if (tJson.contains("Scale")) {
+                    const auto& scale = tJson["Scale"];
+                    transform->scale = { scale[0].get<float>(), scale[1].get<float>(), scale[2].get<float>() };
+                }
             }
 
-            // Deserialize SpriteRenderer
+            // 2. SpriteRenderer
             if (components.contains("SpriteRenderer")) {
-                auto sprite = go->AddComponent<SpriteRenderer>();
-                auto color = components["SpriteRenderer"]["Color"];
-                sprite->SetColor({color[0], color[1], color[2], color[3]});
+                auto* sprite = go->AddComponent<SpriteRenderer>();
+                const auto& srJson = components["SpriteRenderer"];
+                if (srJson.contains("Color")) {
+                    const auto& color = srJson["Color"];
+                    sprite->SetColor({ color[0].get<float>(), color[1].get<float>(), color[2].get<float>(), color[3].get<float>() });
+                }
+                if (srJson.contains("TexturePath") && srJson["TexturePath"].is_string()) {
+                    std::string texPath = srJson["TexturePath"].get<std::string>();
+                    if (!texPath.empty()) {
+                        sprite->SetTexture(ResourceManager::Load<Texture>(texPath));
+                    }
+                }
+                if (srJson.contains("SubTexture")) {
+                    if (auto subTex = DeserializeSubTexture(srJson["SubTexture"])) {
+                        sprite->SetSubTexture(subTex);
+                    }
+                }
+            }
+
+            // 3. Tilemap
+            if (components.contains("Tilemap")) {
+                const auto& tmJson = components["Tilemap"];
+                uint32_t width = tmJson.value("Width", 10u);
+                uint32_t height = tmJson.value("Height", 10u);
+                auto* tilemap = go->AddComponent<Tilemap>(width, height);
+
+                if (tmJson.contains("TileSet") && tmJson["TileSet"].is_array()) {
+                    for (const auto& entry : tmJson["TileSet"]) {
+                        uint32_t id = entry.value("ID", 0u);
+                        if (id != 0 && entry.contains("SubTexture")) {
+                            if (auto subTex = DeserializeSubTexture(entry["SubTexture"])) {
+                                tilemap->tileSet->AddTile(id, subTex);
+                            }
+                        }
+                    }
+                }
+
+                if (tmJson.contains("Tiles") && tmJson["Tiles"].is_array()) {
+                    const auto& tilesArr = tmJson["Tiles"];
+                    bool hasWalkable = tmJson.contains("Walkable") && tmJson["Walkable"].is_array();
+                    const json* walkableArr = hasWalkable ? &tmJson["Walkable"] : nullptr;
+
+                    size_t idx = 0;
+                    for (uint32_t y = 0; y < height; y++) {
+                        for (uint32_t x = 0; x < width; x++) {
+                            if (idx < tilesArr.size()) {
+                                uint32_t tileId = tilesArr[idx].get<uint32_t>();
+                                bool walkable = (walkableArr && idx < walkableArr->size())
+                                    ? (*walkableArr)[idx].get<bool>()
+                                    : true;
+                                tilemap->SetTile(x, y, tileId, walkable);
+                            }
+                            ++idx;
+                        }
+                    }
+                }
+            }
+
+            // 4. ParticleSystem
+            if (components.contains("ParticleSystem")) {
+                const auto& psJson = components["ParticleSystem"];
+                uint32_t poolSize = psJson.value("PoolSize", 1000u);
+                go->AddComponent<ParticleSystem>(poolSize);
+            }
+
+            // 5. BoxCollider2D
+            if (components.contains("BoxCollider2D")) {
+                const auto& bcJson = components["BoxCollider2D"];
+                auto* collider = go->AddComponent<BoxCollider2D>();
+                if (bcJson.contains("Size")) {
+                    collider->size = { bcJson["Size"][0].get<float>(), bcJson["Size"][1].get<float>() };
+                }
+                if (bcJson.contains("Offset")) {
+                    collider->offset = { bcJson["Offset"][0].get<float>(), bcJson["Offset"][1].get<float>() };
+                }
+                collider->isDynamic = bcJson.value("IsDynamic", false);
+            }
+
+            // 6. CameraComponent
+            if (components.contains("CameraComponent")) {
+                const auto& camJson = components["CameraComponent"];
+                auto* camComp = go->AddComponent<CameraComponent>();
+                camComp->OrthographicSize = camJson.value("OrthographicSize", 1.8f);
+                camComp->FixedAspectRatio = camJson.value("FixedAspectRatio", false);
+                camComp->SetViewportSize(1280, 720);
+            }
+
+            // 7. UIPanels
+            auto deserializePanel = [&](const json& panelJson) {
+                glm::vec2 pos = { panelJson["Position"][0].get<float>(), panelJson["Position"][1].get<float>() };
+                glm::vec2 sz  = { panelJson["Size"][0].get<float>(), panelJson["Size"][1].get<float>() };
+                glm::vec4 col = {
+                    panelJson["Color"][0].get<float>(),
+                    panelJson["Color"][1].get<float>(),
+                    panelJson["Color"][2].get<float>(),
+                    panelJson["Color"][3].get<float>()
+                };
+                auto* panel = go->AddComponent<UIPanel>(pos, sz, col);
+                if (panelJson.contains("TexturePath") && panelJson["TexturePath"].is_string()) {
+                    std::string texPath = panelJson["TexturePath"].get<std::string>();
+                    if (!texPath.empty()) {
+                        panel->texture = ResourceManager::Load<Texture>(texPath);
+                    }
+                }
+            };
+            if (components.contains("UIPanels") && components["UIPanels"].is_array()) {
+                for (const auto& panelJson : components["UIPanels"]) {
+                    deserializePanel(panelJson);
+                }
+            } else if (components.contains("UIPanel") && components["UIPanel"].is_object()) {
+                deserializePanel(components["UIPanel"]);
+            }
+
+            // 8. UILabels
+            auto deserializeLabel = [&](const json& labelJson) {
+                std::string text = labelJson.value("Text", "");
+                glm::vec2 pos = { labelJson["Position"][0].get<float>(), labelJson["Position"][1].get<float>() };
+
+                std::shared_ptr<Font> font = nullptr;
+                if (labelJson.contains("Font") && labelJson["Font"].is_object()) {
+                    const auto& fontJson = labelJson["Font"];
+                    font = std::make_shared<Font>();
+                    if (fontJson.contains("AtlasTexturePath") && fontJson["AtlasTexturePath"].is_string()) {
+                        std::string atlasPath = fontJson["AtlasTexturePath"].get<std::string>();
+                        if (!atlasPath.empty()) {
+                            font->atlasTexture = ResourceManager::Load<Texture>(atlasPath);
+                        }
+                    }
+                    if (fontJson.contains("Characters") && fontJson["Characters"].is_array()) {
+                        for (const auto& chJson : fontJson["Characters"]) {
+                            std::string chStr = chJson.value("Char", "");
+                            if (chStr.empty()) continue;
+
+                            Character ch{};
+                            if (chJson.contains("SubTexture")) {
+                                ch.subTexture = DeserializeSubTexture(chJson["SubTexture"]);
+                            }
+                            if (chJson.contains("Size")) {
+                                ch.size = { chJson["Size"][0].get<float>(), chJson["Size"][1].get<float>() };
+                            }
+                            if (chJson.contains("Bearing")) {
+                                ch.bearing = { chJson["Bearing"][0].get<float>(), chJson["Bearing"][1].get<float>() };
+                            }
+                            ch.advance = chJson.value("Advance", 0.0f);
+                            font->AddCharacter(chStr[0], ch);
+                        }
+                    }
+                }
+
+                auto* label = go->AddComponent<UILabel>(text, font, pos);
+                label->scale = labelJson.value("Scale", 1.0f);
+                if (labelJson.contains("Color")) {
+                    label->color = {
+                        labelJson["Color"][0].get<float>(),
+                        labelJson["Color"][1].get<float>(),
+                        labelJson["Color"][2].get<float>(),
+                        labelJson["Color"][3].get<float>()
+                    };
+                }
+            };
+            if (components.contains("UILabels") && components["UILabels"].is_array()) {
+                for (const auto& labelJson : components["UILabels"]) {
+                    deserializeLabel(labelJson);
+                }
+            } else if (components.contains("UILabel") && components["UILabel"].is_object()) {
+                deserializeLabel(components["UILabel"]);
+            }
+
+            // 9. AudioSource
+            if (components.contains("AudioSource")) {
+                const auto& audioJson = components["AudioSource"];
+                auto* audioSource = go->AddComponent<AudioSource>();
+                if (audioJson.contains("ClipPath") && audioJson["ClipPath"].is_string()) {
+                    std::string clipPath = audioJson["ClipPath"].get<std::string>();
+                    if (!clipPath.empty()) {
+                        audioSource->SetClip(ResourceManager::Load<AudioClip>(clipPath));
+                    }
+                }
+            }
+
+            // 10. Animator
+            if (components.contains("Animator")) {
+                const auto& animJson = components["Animator"];
+                auto* animator = go->AddComponent<Animator>();
+                if (animJson.contains("Clips") && animJson["Clips"].is_array()) {
+                    for (const auto& clipJson : animJson["Clips"]) {
+                        std::string clipName = clipJson.value("Name", "");
+                        float duration = clipJson.value("FrameDuration", 0.1f);
+                        bool loop = clipJson.value("Loop", true);
+                        auto clip = std::make_shared<AnimationClip>(clipName, duration, loop);
+
+                        if (clipJson.contains("Frames") && clipJson["Frames"].is_array()) {
+                            for (const auto& frameJson : clipJson["Frames"]) {
+                                if (auto frameSubTex = DeserializeSubTexture(frameJson)) {
+                                    clip->AddFrame(frameSubTex);
+                                }
+                            }
+                        }
+                        animator->AddClip(clip);
+                    }
+                }
+                std::string currentClip = animJson.value("CurrentClip", "");
+                if (!currentClip.empty()) {
+                    animator->Play(currentClip);
+                }
             }
         }
     }
 
-    ENGINE_CORE_INFO("Scene deserialized successfully from '{}' ({} GameObjects loaded)", filepath, loadedCount);
+    ENGINE_CORE_INFO("Scene deserialized successfully from '{}' ({} GameObjects loaded)", resolvedPath, loadedCount);
     return true;
 }
+
 } // namespace Engine

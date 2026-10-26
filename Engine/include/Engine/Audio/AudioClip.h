@@ -1,5 +1,6 @@
 #ifndef AUDIO_AUDIOCLIP_H
 #define AUDIO_AUDIOCLIP_H
+
 #include <SDL3/SDL.h>
 #include <string>
 #include "Engine/Utils/Logger.h"
@@ -7,7 +8,8 @@
 namespace Engine {
 class AudioClip {
 public:
-    AudioClip(const std::string& filepath) {
+    AudioClip(const std::string& filepath)
+        : m_Filepath(filepath) {
         ENGINE_CORE_INFO("Loading AudioClip from: '{}'", filepath);
         if (!SDL_LoadWAV(filepath.c_str(), &m_Spec, &m_AudioBuffer, &m_AudioLength)) {
             ENGINE_CORE_ERROR("Failed to load WAV '{}': {}", filepath, SDL_GetError());
@@ -31,8 +33,10 @@ public:
     const SDL_AudioSpec& GetSpec() const { return m_Spec; }
     Uint8* GetBuffer() const { return m_AudioBuffer; }
     Uint32 GetLength() const { return m_AudioLength; }
+    const std::string& GetFilepath() const { return m_Filepath; }
 
 private:
+    std::string m_Filepath;
     SDL_AudioSpec m_Spec{};
     Uint8* m_AudioBuffer = nullptr;
     Uint32 m_AudioLength = 0;

@@ -2,6 +2,7 @@
 #define CORE_RESOURCEMANAGER_H
 
 #include "Engine/Utils/Logger.h"
+#include <filesystem>
 #include <unordered_map>
 #include <string>
 #include <memory>
@@ -20,34 +21,61 @@ namespace Engine {
 
     class ResourceManager {
     public:
+        // Configures the root directory used to resolve relative asset paths
+        static void SetAssetRoot(const std::filesystem::path& rootPath);
+        static const std::filesystem::path& GetAssetRoot();
+
+        // Automatically discovers the asset root relative to working directory or executable location
+        static std::filesystem::path DiscoverAssetRoot(const std::string& projectSubdir = "Sandbox");
+
+        // Resolves a relative or absolute asset path against the configured AssetRoot
+        static std::string ResolvePath(const std::string& filepath);
+
+        // Converts an absolute or resolved path into a portable forward-slash path relative to AssetRoot
+        static std::string ToRelativePath(const std::string& filepath);
+
         // Loads an asset from disk, or returns the cached version if it already exists
         template<typename T>
         static std::shared_ptr<T> Load(const std::string& filepath) {
+            if (filepath.empty()) {
+                return nullptr;
+            }
+
+            std::string resolvedPath = ResolvePath(filepath);
+            std::string cacheKey = ToRelativePath(resolvedPath);
+
             auto& cache = AssetCache<T>::data;
 
             // Check if the asset is already loaded
-            if (cache.find(filepath) != cache.end()) {
-                ENGINE_CORE_TRACE("ResourceManager: Returning cached asset: '{}'", filepath);
-                return cache[filepath];
+            auto it = cache.find(cacheKey);
+            if (it != cache.end()) {
+                ENGINE_CORE_TRACE("ResourceManager: Returning cached asset: '{}' (resolved: '{}')", cacheKey, resolvedPath);
+                return it->second;
             }
 
-            // If not, instantiate it, cache it, and return it
-            std::shared_ptr<T> asset = std::make_shared<T>(filepath);
-            cache[filepath] = asset;
+            // Instantiate using the resolved path, cache under normalized relative key, and return
+            std::shared_ptr<T> asset = std::make_shared<T>(resolvedPath);
+            cache[cacheKey] = asset;
 
-            ENGINE_CORE_INFO("ResourceManager: Loaded new asset into cache: '{}'", filepath);
+            ENGINE_CORE_INFO("ResourceManager: Loaded new asset into cache: '{}' (from '{}')", cacheKey, resolvedPath);
             return asset;
         }
 
         // Retrieves an asset without attempting to load it (returns nullptr if missing)
         template<typename T>
         static std::shared_ptr<T> Get(const std::string& filepath) {
-            auto& cache = AssetCache<T>::data;
-            if (cache.find(filepath) != cache.end()) {
-                ENGINE_CORE_TRACE("ResourceManager::Get: Found asset '{}'", filepath);
-                return cache[filepath];
+            if (filepath.empty()) {
+                return nullptr;
             }
-            ENGINE_CORE_DEBUG("ResourceManager::Get: Asset '{}' not found in cache", filepath);
+
+            std::string cacheKey = ToRelativePath(ResolvePath(filepath));
+            auto& cache = AssetCache<T>::data;
+            auto it = cache.find(cacheKey);
+            if (it != cache.end()) {
+                ENGINE_CORE_TRACE("ResourceManager::Get: Found asset '{}'", cacheKey);
+                return it->second;
+            }
+            ENGINE_CORE_DEBUG("ResourceManager::Get: Asset '{}' not found in cache", cacheKey);
             return nullptr;
         }
 

@@ -61,6 +61,9 @@ public:
         }
     }
 
+    const std::unordered_map<std::string, std::shared_ptr<AnimationClip>>& GetClips() const { return m_Clips; }
+    const std::string& GetCurrentClipName() const { return m_CurrentClipName; }
+
 private:
     void UpdateSpriteRenderer() {
         auto spriteRenderer = GetGameObject()->GetComponent<SpriteRenderer>();

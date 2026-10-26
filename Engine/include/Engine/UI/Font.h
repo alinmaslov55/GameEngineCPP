@@ -44,6 +44,8 @@ public:
         return s_EmptyCharacter;
     }
 
+    const std::unordered_map<char, Character>& GetCharacters() const { return m_Characters; }
+
 private:
     std::unordered_map<char, Character> m_Characters;
 };

@@ -61,6 +61,8 @@ public:
         }
     }
 
+    const std::shared_ptr<AudioClip>& GetClip() const { return m_Clip; }
+
 private:
     std::shared_ptr<AudioClip> m_Clip{nullptr};
     SDL_AudioStream* m_Stream{nullptr};

@@ -23,6 +23,7 @@ public:
     void OnViewportResize(uint32_t width, uint32_t height);
 
     const std::string& GetName() const { return m_Name; }
+    void SetName(const std::string& name) { m_Name = name; }
     OrthographicCamera& GetCamera() { return m_Camera; }
     const OrthographicCamera& GetActiveCamera() const;
 

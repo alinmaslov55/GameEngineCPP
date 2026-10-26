@@ -16,9 +16,11 @@ public:
     int GetWidth() const { return m_Width; }
     int GetHeight() const { return m_Height; }
     uint32_t GetRendererID() const { return m_RendererID; }
+    const std::string& GetFilepath() const { return m_Filepath; }
 
 private:
     uint32_t m_RendererID;
+    std::string m_Filepath;
     // BPP = Bits Per Pixel (Channels)
     int m_Width, m_Height, m_BPP;
 };

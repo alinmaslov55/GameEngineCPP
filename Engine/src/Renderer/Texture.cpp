@@ -5,7 +5,7 @@
 
 namespace Engine {
 Texture::Texture(const std::string& path)
-    : m_RendererID(0), m_Width(0), m_Height(0), m_BPP(0) {
+    : m_RendererID(0), m_Filepath(path), m_Width(0), m_Height(0), m_BPP(0) {
     
     ENGINE_CORE_INFO("Loading texture from: '{}'", path);
     stbi_set_flip_vertically_on_load(1);

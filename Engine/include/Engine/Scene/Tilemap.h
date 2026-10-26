@@ -28,6 +28,8 @@ public:
         ENGINE_CORE_WARN("TileSet::GetTileTexture: Tile ID {} not found in TileSet", id);
         return nullptr;
     }
+
+    const std::unordered_map<uint32_t, std::shared_ptr<SubTexture2D>>& GetTiles() const { return m_Tiles; }
 private:
     std::unordered_map<uint32_t, std::shared_ptr<SubTexture2D>> m_Tiles;
 };
@@ -39,9 +41,11 @@ public:
         m_Grid.resize(width * height);
     }
 
-    void SetTile(uint32_t x, uint32_t y, uint32_t tileId) {
+    void SetTile(uint32_t x, uint32_t y, uint32_t tileId, bool walkable = true) {
         if (x < m_Width && y < m_Height) {
-            m_Grid[y * m_Width + x].id = tileId;
+            auto& tile = m_Grid[y * m_Width + x];
+            tile.id = tileId;
+            tile.walkable = walkable;
         } else {
             ENGINE_CORE_WARN("Tilemap::SetTile: Coordinates ({}, {}) out of bounds ({}x{})", x, y, m_Width, m_Height);
         }

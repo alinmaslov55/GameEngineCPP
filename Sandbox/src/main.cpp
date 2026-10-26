@@ -4,6 +4,7 @@
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/SceneSerializer.h>
 #include <Engine/Scene/Tilemap.h>
+#include <Engine/Scene/BoxCollider2D.h>
 #include <Engine/Math/Isometric.h>
 #include <Engine/Renderer/Renderer.h>
 #include <Engine/Renderer/Renderer2D.h>
@@ -23,6 +24,8 @@
 
 int main(int argc, char* argv[]) {
     Engine::Application app;
+    Engine::ResourceManager::DiscoverAssetRoot("Sandbox");
+
     auto mainScene = std::make_shared<Engine::Scene>("Village");
 
     // 1. Hardcode a scene once
@@ -35,7 +38,7 @@ int main(int argc, char* argv[]) {
     // Create the Environment/Map GameObject
     Engine::GameObject* mapObject = mainScene->CreateGameObject("Map");
     auto tilemapComponent = mapObject->AddComponent<Engine::Tilemap>(10, 10);
-    auto atlas = Engine::ResourceManager::Load<Engine::Texture>("C:/DEV/GameEngineCPP/Sandbox/test.png");
+    auto atlas = Engine::ResourceManager::Load<Engine::Texture>("test.png");
     auto grassTile = Engine::SubTexture2D::CreateFromCoords(atlas, {0, 0}, {128.0f, 128.0f});
     auto stoneTile = Engine::SubTexture2D::CreateFromCoords(atlas, {1, 0}, {128.0f, 128.0f});
     tilemapComponent->tileSet->AddTile(1, grassTile);
@@ -66,7 +69,7 @@ int main(int argc, char* argv[]) {
     );
 
     // 1. Setup a basic Font (using a pre-made texture atlas with letters)
-    auto fontTexture = Engine::ResourceManager::Load<Engine::Texture>("C:/DEV/GameEngineCPP/Sandbox/font_atlas.png");
+    auto fontTexture = Engine::ResourceManager::Load<Engine::Texture>("font_atlas.png");
     auto mainFont = std::make_shared<Engine::Font>();
     mainFont->atlasTexture = fontTexture;
 
@@ -89,7 +92,7 @@ int main(int argc, char* argv[]) {
 
     // 2. Serialize it to disk
     Engine::SceneSerializer serializer(mainScene);
-    serializer.Serialize("C:/DEV/GameEngineCPP/Sandbox/Village.scene");
+    serializer.Serialize("Village.scene");
 
     // Load into the game loop
     Engine::SceneManager::LoadScene(mainScene);
@@ -106,13 +109,13 @@ int main(int argc, char* argv[]) {
     Engine::GameObject* selectedContext = nullptr;
     uint32_t s_SelectedTileID = 1; // Default to Grass
 
-    // State variables for our ImGui file popups
+    // State variables for our ImGui file popups (relative to AssetRoot)
     bool openSavePopup = false;
     bool openLoadPopup = false;
-    char filepathBuffer[256] = "C:/DEV/GameEngineCPP/Sandbox/assets/level.scene";
+    char filepathBuffer[256] = "assets/level.scene";
 
-    // Define the root asset directory (Create an 'assets' folder next to your executable or in your project)
-    std::filesystem::path s_AssetDirectory = "C:/DEV/GameEngineCPP/Sandbox/assets";
+    // Define the root asset directory relative to the discovered AssetRoot
+    std::filesystem::path s_AssetDirectory = Engine::ResourceManager::GetAssetRoot() / "assets";
     if (!std::filesystem::exists(s_AssetDirectory)) {
         ENGINE_INFO("Creating missing asset directory: '{}'", s_AssetDirectory.string());
         std::filesystem::create_directories(s_AssetDirectory);
@@ -391,14 +394,24 @@ int main(int argc, char* argv[]) {
                     glm::vec4 color = spriteRenderer->GetColor();
                     if (ImGui::ColorEdit4("Color", &color.x)) spriteRenderer->SetColor(color);
                     
-                    // Display the current texture or a placeholder
+                    // Display the current texture filename or a placeholder
                     std::string texLabel = "None";
-                    if (auto tex = spriteRenderer->GetTexture()) {
-                        texLabel = std::to_string(tex->GetRendererID()); // Or store the filepath in the Texture class
+                    auto currentTex = spriteRenderer->GetTexture();
+                    if (currentTex && !currentTex->GetFilepath().empty()) {
+                        texLabel = std::filesystem::path(currentTex->GetFilepath()).filename().string();
+                    } else if (currentTex) {
+                        texLabel = std::to_string(currentTex->GetRendererID());
                     }
 
                     // Create a visual drop zone
-                    ImGui::Button(texLabel.c_str(), ImVec2(100.0f, 0.0f));
+                    ImGui::Button(texLabel.c_str(), ImVec2(140.0f, 0.0f));
+                    if (currentTex && ImGui::IsItemHovered()) {
+                        ImGui::SetTooltip("Path: %s\nRenderer ID: %u (%dx%d)",
+                                          Engine::ResourceManager::ToRelativePath(currentTex->GetFilepath()).c_str(),
+                                          currentTex->GetRendererID(),
+                                          currentTex->GetWidth(),
+                                          currentTex->GetHeight());
+                    }
                     ImGui::SameLine();
                     ImGui::TextDisabled("<- Drop Texture Here");
 
@@ -445,11 +458,33 @@ int main(int argc, char* argv[]) {
                 }
             }
 
+            // 5. BoxCollider2D Component
+            auto boxCollider = selectedContext->GetComponent<Engine::BoxCollider2D>();
+            if (boxCollider) {
+                if (ImGui::CollapsingHeader("Box Collider 2D", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::DragFloat2("Size", &boxCollider->size.x, 0.05f, 0.01f, 100.0f);
+                    ImGui::DragFloat2("Offset", &boxCollider->offset.x, 0.05f);
+                    ImGui::Checkbox("Is Dynamic", &boxCollider->isDynamic);
+                }
+            }
+
+            // 6. Tilemap Component
+            auto tilemapComp = selectedContext->GetComponent<Engine::Tilemap>();
+            if (tilemapComp) {
+                if (ImGui::CollapsingHeader("Tilemap", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::Text("Dimensions: %u x %u (%u tiles)",
+                                tilemapComp->GetWidth(),
+                                tilemapComp->GetHeight(),
+                                tilemapComp->GetWidth() * tilemapComp->GetHeight());
+                    ImGui::TextDisabled("Select a brush in Tile Palette and click in Scene to paint.");
+                }
+            }
+
             ImGui::Spacing();
             ImGui::Separator();
             ImGui::Spacing();
 
-            // 5. Add Component Button
+            // 7. Add Component Button
             if (ImGui::Button("Add Component")) {
                 ImGui::OpenPopup("AddComponentPopup");
             }
@@ -470,6 +505,15 @@ int main(int argc, char* argv[]) {
                         ENGINE_INFO("Inspector: Added ParticleSystem to '{}'", selectedContext->GetName());
                     } else {
                         ENGINE_WARN("Inspector: '{}' already has a ParticleSystem", selectedContext->GetName());
+                    }
+                    ImGui::CloseCurrentPopup();
+                }
+                if (ImGui::MenuItem("Box Collider 2D")) {
+                    if (!selectedContext->GetComponent<Engine::BoxCollider2D>()) {
+                        selectedContext->AddComponent<Engine::BoxCollider2D>();
+                        ENGINE_INFO("Inspector: Added BoxCollider2D to '{}'", selectedContext->GetName());
+                    } else {
+                        ENGINE_WARN("Inspector: '{}' already has a BoxCollider2D", selectedContext->GetName());
                     }
                     ImGui::CloseCurrentPopup();
                 }
