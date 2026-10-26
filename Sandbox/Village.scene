@@ -50,6 +50,28 @@
                     ]
                 }
             },
+            "Name": "Map"
+        },
+        {
+            "Components": {
+                "Transform": {
+                    "Position": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                }
+            },
             "Name": "HUD"
         }
     ],

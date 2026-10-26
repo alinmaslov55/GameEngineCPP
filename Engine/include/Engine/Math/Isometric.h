@@ -7,20 +7,22 @@ class Isometric {
 public:
     static constexpr float TILE_WIDTH = 1.0f;
     static constexpr float TILE_HEIGHT = 0.5f;
+    static constexpr float TILE_W_HALF = TILE_WIDTH / 2.0f;
+    static constexpr float TILE_H_HALF = TILE_HEIGHT / 2.0f;
 
-    static glm::vec2 WorldToScreen(const glm::vec3& worldPos) {
-        float screenX = (worldPos.x - worldPos.z) * (TILE_WIDTH / 2.0f);
-        
-        float screenY = (worldPos.x + worldPos.z) * (TILE_HEIGHT / 2.0f) + worldPos.y;
-        
-        return { screenX, screenY };
+    static inline glm::vec2 WorldToScreen(const glm::vec3& worldPos) {
+        return {
+            (worldPos.x - worldPos.z) * TILE_W_HALF,
+            (worldPos.x + worldPos.z) * TILE_H_HALF + worldPos.y
+        };
     }
 
-    static glm::vec3 ScreenToWorld(const glm::vec2& screenPos) {
-        float worldX = (screenPos.x / (TILE_WIDTH / 2.0f) + screenPos.y / (TILE_HEIGHT / 2.0f)) / 2.0f;
-        float worldZ = (screenPos.y / (TILE_HEIGHT / 2.0f) - (screenPos.x / (TILE_WIDTH / 2.0f))) / 2.0f;
-        
-        return { worldX, 0.0f, worldZ };
+    static inline glm::vec3 ScreenToWorld(const glm::vec2& screenPos) {
+        return {
+            (screenPos.x / TILE_W_HALF + screenPos.y / TILE_H_HALF) / 2.0f,
+            0.0f, // Y is up, grid is flat on XZ plane
+            (screenPos.y / TILE_H_HALF - screenPos.x / TILE_W_HALF) / 2.0f
+        };
     }
 };
 } // namespace Engine
