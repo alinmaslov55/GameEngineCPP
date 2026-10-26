@@ -99,6 +99,11 @@ bool Application::IsRunning() const {
     return m_Running && !m_Window->ShouldClose(); 
 }
 
+void Application::Close() {
+    ENGINE_CORE_INFO("Application close requested");
+    m_Running = false;
+}
+
 void Application::Shutdown() {
     ENGINE_CORE_INFO("Shutting down Isometric Engine...");
     SceneManager::Shutdown();

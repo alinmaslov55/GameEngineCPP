@@ -8,13 +8,18 @@ namespace Engine {
 class AudioClip {
 public:
     AudioClip(const std::string& filepath) {
+        ENGINE_CORE_INFO("Loading AudioClip from: '{}'", filepath);
         if (!SDL_LoadWAV(filepath.c_str(), &m_Spec, &m_AudioBuffer, &m_AudioLength)) {
             ENGINE_CORE_ERROR("Failed to load WAV '{}': {}", filepath, SDL_GetError());
+        } else {
+            ENGINE_CORE_INFO("AudioClip loaded successfully: '{}' ({} bytes, {} Hz, {} channels)",
+                             filepath, m_AudioLength, m_Spec.freq, m_Spec.channels);
         }
     }
 
     ~AudioClip() {
         if (m_AudioBuffer) {
+            ENGINE_CORE_DEBUG("AudioClip destroyed ({} bytes freed)", m_AudioLength);
             SDL_free(m_AudioBuffer);
         }
     }

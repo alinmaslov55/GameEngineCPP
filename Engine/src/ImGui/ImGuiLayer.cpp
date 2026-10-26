@@ -1,10 +1,12 @@
 #include "Engine/ImGui/ImGuiLayer.h"
+#include "Engine/Utils/Logger.h"
 #include <imgui.h>
 #include <imgui_impl_sdl3.h>
 #include <imgui_impl_opengl3.h>
 
 namespace Engine {
 void ImGuiLayer::Init(SDL_Window* window, SDL_GLContext glContext) {
+    ENGINE_CORE_INFO("Initializing ImGuiLayer...");
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
     ImGuiIO& io = ImGui::GetIO(); (void)io;
@@ -18,28 +20,39 @@ void ImGuiLayer::Init(SDL_Window* window, SDL_GLContext glContext) {
     ImGui::StyleColorsDark();
 
     // Setup Platform/Renderer backends
-    ImGui_ImplSDL3_InitForOpenGL(window, glContext);
-    ImGui_ImplOpenGL3_Init("#version 410 core");
+    if (!ImGui_ImplSDL3_InitForOpenGL(window, glContext)) {
+        ENGINE_CORE_ERROR("Failed to initialize ImGui SDL3 backend for OpenGL");
+    }
+    if (!ImGui_ImplOpenGL3_Init("#version 410 core")) {
+        ENGINE_CORE_ERROR("Failed to initialize ImGui OpenGL3 backend");
+    }
+
+    ENGINE_CORE_INFO("ImGuiLayer initialized successfully (Keyboard Nav & Docking enabled)");
 }
 
 void ImGuiLayer::Shutdown() {
+    ENGINE_CORE_INFO("Shutting down ImGuiLayer...");
     ImGui_ImplOpenGL3_Shutdown();
     ImGui_ImplSDL3_Shutdown();
     ImGui::DestroyContext();
+    ENGINE_CORE_INFO("ImGuiLayer shut down");
 }
 
 void ImGuiLayer::Begin() {
+    ENGINE_CORE_TRACE("ImGuiLayer::Begin");
     ImGui_ImplOpenGL3_NewFrame();
     ImGui_ImplSDL3_NewFrame();
     ImGui::NewFrame();
 }
 
 void ImGuiLayer::End() {
+    ENGINE_CORE_TRACE("ImGuiLayer::End");
     ImGui::Render();
     ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 }
 
 void ImGuiLayer::BeginDockspace() {
+    ENGINE_CORE_TRACE("ImGuiLayer::BeginDockspace");
     // Create a fullscreen window with no title bar or borders to act as the dockspace host
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
     const ImGuiViewport* viewport = ImGui::GetMainViewport();
@@ -63,6 +76,7 @@ void ImGuiLayer::BeginDockspace() {
 }
 
 void ImGuiLayer::EndDockspace() {
+    ENGINE_CORE_TRACE("ImGuiLayer::EndDockspace");
     ImGui::End();
 }
 } // namespace Engine

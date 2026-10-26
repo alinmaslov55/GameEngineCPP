@@ -132,6 +132,7 @@ void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<Text
 }
 
 void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor) {
+    ENGINE_CORE_TRACE("Renderer2D::DrawQuad (SubTexture2D)");
     s_Data->TextureShader->SetFloat4("u_Color", tintColor);
     s_Data->TextureShader->SetMat4("u_Transform", transform);
     

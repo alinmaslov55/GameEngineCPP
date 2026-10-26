@@ -14,7 +14,7 @@ public:
     void Run();
 
     bool IsRunning() const;
-    void Close() { m_Running = false; }
+    void Close();
     void Update();
     void Render();
 

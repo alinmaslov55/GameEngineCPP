@@ -21,7 +21,12 @@ public:
     }
     
     std::shared_ptr<SubTexture2D> GetTileTexture(uint32_t id) {
-        return m_Tiles.count(id) ? m_Tiles[id] : nullptr;
+        auto it = m_Tiles.find(id);
+        if (it != m_Tiles.end()) {
+            return it->second;
+        }
+        ENGINE_CORE_WARN("TileSet::GetTileTexture: Tile ID {} not found in TileSet", id);
+        return nullptr;
     }
 private:
     std::unordered_map<uint32_t, std::shared_ptr<SubTexture2D>> m_Tiles;

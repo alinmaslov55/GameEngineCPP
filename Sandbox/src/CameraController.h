@@ -6,6 +6,7 @@
 #include <Engine/Scene/Transform.h>
 #include <Engine/Renderer/OrthographicCamera.h>
 #include <Engine/Math/Isometric.h>
+#include <Engine/Utils/Logger.h>
 #include <glm/glm.hpp>
 #include <algorithm>
 
@@ -14,6 +15,10 @@ public:
     Engine::OrthographicCamera* camera = nullptr;
 
     glm::vec2 deadzone = { 1.5f, 0.8f }; 
+
+    void Awake() override {
+        ENGINE_INFO("CameraController component initialized (deadzone: {:.2f}x{:.2f})", deadzone.x, deadzone.y);
+    }
 
     void Update(float deltaTime) override {
         if (!camera) return;

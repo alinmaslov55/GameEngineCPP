@@ -18,6 +18,7 @@ Framebuffer::~Framebuffer() {
 
 void Framebuffer::Invalidate() {
     if (m_RendererID) {
+        ENGINE_CORE_TRACE("Invalidating existing Framebuffer ID: {}", m_RendererID);
         glDeleteFramebuffers(1, &m_RendererID);
         glDeleteTextures(1, &m_ColorAttachment);
         glDeleteTextures(1, &m_DepthAttachment);
@@ -50,16 +51,22 @@ void Framebuffer::Invalidate() {
 }
 
 void Framebuffer::Bind() {
+    ENGINE_CORE_TRACE("Framebuffer ID {} bound ({}x{})", m_RendererID, m_Specification.Width, m_Specification.Height);
     glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
     glViewport(0, 0, m_Specification.Width, m_Specification.Height);
 }
 
 void Framebuffer::Unbind() {
+    ENGINE_CORE_TRACE("Framebuffer ID {} unbound", m_RendererID);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 
 void Framebuffer::Resize(uint32_t width, uint32_t height) {
-    if (width == 0 || height == 0 || (m_Specification.Width == width && m_Specification.Height == height))
+    if (width == 0 || height == 0) {
+        ENGINE_CORE_WARN("Attempted to resize Framebuffer ID {} to invalid dimensions: {}x{}", m_RendererID, width, height);
+        return;
+    }
+    if (m_Specification.Width == width && m_Specification.Height == height)
         return;
     
     ENGINE_CORE_DEBUG("Resizing Framebuffer ID {} to {}x{}", m_RendererID, width, height);

@@ -3,6 +3,7 @@
 
 #include "Engine/Scene/Component.h"
 #include "Engine/UI/Font.h"
+#include "Engine/Utils/Logger.h"
 #include <string>
 #include <memory>
 #include <glm/glm.hpp>
@@ -18,7 +19,9 @@ public:
     glm::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
 
     UILabel(const std::string& str, const std::shared_ptr<Font>& f, const glm::vec2& pos)
-        : text(str), font(f), position(pos) {}
+        : text(str), font(f), position(pos) {
+        ENGINE_CORE_DEBUG("UILabel created with text '{}' at ({:.1f}, {:.1f})", str, pos.x, pos.y);
+    }
 };
 } // namespace Engine
 

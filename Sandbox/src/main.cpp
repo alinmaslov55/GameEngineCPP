@@ -13,6 +13,7 @@
 #include <Engine/UI/Font.h>
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/ImGui/ImGuiLayer.h>
+#include <Engine/Utils/Logger.h>
 #include <imgui.h>
 #include <filesystem>
 #include <iostream>
@@ -111,10 +112,12 @@ int main(int argc, char* argv[]) {
     // Define the root asset directory (Create an 'assets' folder next to your executable or in your project)
     std::filesystem::path s_AssetDirectory = "C:/DEV/GameEngineCPP/Sandbox/assets";
     if (!std::filesystem::exists(s_AssetDirectory)) {
+        ENGINE_INFO("Creating missing asset directory: '{}'", s_AssetDirectory.string());
         std::filesystem::create_directories(s_AssetDirectory);
     }
     std::filesystem::path s_CurrentDirectory = s_AssetDirectory;
 
+    ENGINE_INFO("Entering Sandbox main loop");
     while (app.IsRunning()) {
         // 1. Process Events & Update Scene
         app.GetWindow().PollEvents();
@@ -175,7 +178,11 @@ int main(int argc, char* argv[]) {
             
             if (ImGui::Button("Save", ImVec2(120, 0))) {
                 Engine::SceneSerializer serializer(mainScene);
-                serializer.Serialize(filepathBuffer);
+                if (serializer.Serialize(filepathBuffer)) {
+                    ENGINE_INFO("Saved scene to: '{}'", filepathBuffer);
+                } else {
+                    ENGINE_ERROR("Failed to save scene to: '{}'", filepathBuffer);
+                }
                 std::cout << "Saved scene to: " << filepathBuffer << '\n';
                 ImGui::CloseCurrentPopup();
             }
@@ -208,8 +215,10 @@ int main(int argc, char* argv[]) {
                     // 4. CRITICAL: Clear the inspector so it doesn't read dead memory!
                     selectedContext = nullptr; 
                     
+                    ENGINE_INFO("Loaded scene from: '{}'", filepathBuffer);
                     std::cout << "Loaded scene from: " << filepathBuffer << '\n';
                 } else {
+                    ENGINE_ERROR("Failed to load scene from: '{}'", filepathBuffer);
                     std::cerr << "Failed to load scene!\n";
                 }
                 ImGui::CloseCurrentPopup();
@@ -296,6 +305,7 @@ int main(int argc, char* argv[]) {
             
             if (ImGui::Selectable(label.c_str(), isSelected)) {
                 selectedContext = go;
+                ENGINE_DEBUG("Hierarchy: Selected GameObject '{}'", go->GetName());
             }
         }
 
@@ -309,6 +319,7 @@ int main(int argc, char* argv[]) {
             if (ImGui::MenuItem("Create Empty GameObject")) {
                 auto newGo = mainScene->CreateGameObject("New GameObject");
                 selectedContext = newGo; // Auto-select the newly created object
+                ENGINE_INFO("Hierarchy: Created new GameObject '{}'", newGo->GetName());
             }
             ImGui::EndPopup();
         }
@@ -380,8 +391,10 @@ int main(int argc, char* argv[]) {
                                 // Load it via your centralized cache!
                                 auto newTexture = Engine::ResourceManager::Load<Engine::Texture>(filepath);
                                 spriteRenderer->SetTexture(newTexture);
+                                ENGINE_INFO("Inspector: Assigned texture '{}' to '{}'", filepath, selectedContext->GetName());
                             } else {
                                 // In a real engine, trigger an ImGui error modal or log warning here
+                                ENGINE_WARN("Invalid file type dropped on SpriteRenderer: '{}'", filepath);
                                 std::cout << "Invalid file type dropped on SpriteRenderer!\n";
                             }
                         }
@@ -400,6 +413,7 @@ int main(int argc, char* argv[]) {
                         if (transform) props.position = transform->position;
                         props.velocity = { 0.0f, 1.0f, 0.0f };
                         particleSystem->Emit(props);
+                        ENGINE_DEBUG("Inspector: Emitted test particle on '{}'", selectedContext->GetName());
                     }
                 }
             }
@@ -415,13 +429,21 @@ int main(int argc, char* argv[]) {
 
             if (ImGui::BeginPopup("AddComponentPopup")) {
                 if (ImGui::MenuItem("Sprite Renderer")) {
-                    if (!selectedContext->GetComponent<Engine::SpriteRenderer>())
+                    if (!selectedContext->GetComponent<Engine::SpriteRenderer>()) {
                         selectedContext->AddComponent<Engine::SpriteRenderer>();
+                        ENGINE_INFO("Inspector: Added SpriteRenderer to '{}'", selectedContext->GetName());
+                    } else {
+                        ENGINE_WARN("Inspector: '{}' already has a SpriteRenderer", selectedContext->GetName());
+                    }
                     ImGui::CloseCurrentPopup();
                 }
                 if (ImGui::MenuItem("Particle System")) {
-                    if (!selectedContext->GetComponent<Engine::ParticleSystem>())
+                    if (!selectedContext->GetComponent<Engine::ParticleSystem>()) {
                         selectedContext->AddComponent<Engine::ParticleSystem>();
+                        ENGINE_INFO("Inspector: Added ParticleSystem to '{}'", selectedContext->GetName());
+                    } else {
+                        ENGINE_WARN("Inspector: '{}' already has a ParticleSystem", selectedContext->GetName());
+                    }
                     ImGui::CloseCurrentPopup();
                 }
                 ImGui::EndPopup();
@@ -442,9 +464,9 @@ int main(int argc, char* argv[]) {
 
         // In a full implementation, you'd loop over tilemap->tileSet and draw ImGui::ImageButtons using their textures.
         // For now, we map them directly to standard UI buttons.
-        if (ImGui::Button("Eraser (ID 0)", ImVec2(120, 30))) s_SelectedTileID = 0;
-        if (ImGui::Button("Grass (ID 1)", ImVec2(120, 30)))  s_SelectedTileID = 1;
-        if (ImGui::Button("Stone (ID 2)", ImVec2(120, 30)))  s_SelectedTileID = 2; // (Assuming you add a stone texture)
+        if (ImGui::Button("Eraser (ID 0)", ImVec2(120, 30))) { s_SelectedTileID = 0; ENGINE_DEBUG("Tile Palette: Selected Eraser (ID 0)"); }
+        if (ImGui::Button("Grass (ID 1)", ImVec2(120, 30)))  { s_SelectedTileID = 1; ENGINE_DEBUG("Tile Palette: Selected Grass (ID 1)"); }
+        if (ImGui::Button("Stone (ID 2)", ImVec2(120, 30)))  { s_SelectedTileID = 2; ENGINE_DEBUG("Tile Palette: Selected Stone (ID 2)"); } // (Assuming you add a stone texture)
         
         ImGui::Spacing();
         ImGui::TextDisabled("Current Tool: ID %u", s_SelectedTileID);
@@ -459,6 +481,7 @@ int main(int argc, char* argv[]) {
         if (s_CurrentDirectory != s_AssetDirectory) {
             if (ImGui::Button("<- Back")) {
                 s_CurrentDirectory = s_CurrentDirectory.parent_path();
+                ENGINE_DEBUG("Asset Browser: Navigated back to '{}'", s_CurrentDirectory.string());
             }
             ImGui::Separator();
         }
@@ -473,6 +496,7 @@ int main(int argc, char* argv[]) {
                     // Render folders as clickable buttons to navigate deeper
                     if (ImGui::Button(filenameString.c_str())) {
                         s_CurrentDirectory /= path.filename();
+                        ENGINE_DEBUG("Asset Browser: Opened directory '{}'", s_CurrentDirectory.string());
                     }
                 } else {
                     // Render files as selectable items

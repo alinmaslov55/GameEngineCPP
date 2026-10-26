@@ -3,6 +3,7 @@
 
 #include "Engine/Scene/Component.h"
 #include "Engine/Renderer/Texture.h"
+#include "Engine/Utils/Logger.h"
 #include <glm/glm.hpp>
 #include <memory>
 
@@ -19,7 +20,9 @@ public:
     std::shared_ptr<Texture> texture = nullptr;
 
     UIPanel(const glm::vec2& pos, const glm::vec2& sz, const glm::vec4& col)
-        : position(pos), size(sz), color(col) {}
+        : position(pos), size(sz), color(col) {
+        ENGINE_CORE_DEBUG("UIPanel created at ({:.1f}, {:.1f}) with size ({:.1f}, {:.1f})", pos.x, pos.y, sz.x, sz.y);
+    }
 };
 } // namespace Engine
 

@@ -53,6 +53,7 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
 }
 
 void Scene::Update(float deltaTime) {
+    ENGINE_CORE_TRACE("Scene '{}': Update (deltaTime: {:.4f}s, {} GameObjects)", m_Name, deltaTime, m_GameObjects.size());
     for (auto& gameObject : m_GameObjects) {
         gameObject->Update(deltaTime);
     }
@@ -93,6 +94,8 @@ void Scene::Update(float deltaTime) {
             float overlapZ = std::min(aFront, bFront) - std::max(aBack, bBack);
 
             if (overlapX > 0 && overlapZ > 0) {
+                ENGINE_CORE_TRACE("Scene '{}': Collision resolved between '{}' and '{}' (overlap: {:.3f}, {:.3f})",
+                                  m_Name, a->GetName(), b->GetName(), overlapX, overlapZ);
                 glm::vec2 push(0.0f);
 
                 if (overlapX < overlapZ) {
