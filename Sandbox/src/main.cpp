@@ -7,6 +7,7 @@
 #include <Engine/UI/UILabel.h>
 #include <Engine/UI/Font.h>
 #include <Engine/Particles/ParticleSystem.h>
+#include <imgui.h>
 
 int main(int argc, char* argv[]) {
     Engine::Application app;
@@ -65,6 +66,41 @@ int main(int argc, char* argv[]) {
 
     // Load into the game loop
     Engine::SceneManager::LoadScene(mainScene);
+
+    // Editor UI panels registered to render within the dockspace
+    app.SetImGuiRenderCallback([&]() {
+        // Menu Bar
+        if (ImGui::BeginMenuBar()) {
+            if (ImGui::BeginMenu("File")) {
+                if (ImGui::MenuItem("Exit")) { app.Close(); }
+                ImGui::EndMenu();
+            }
+            ImGui::EndMenuBar();
+        }
+
+        // Panel 1: Hierarchy (List of GameObjects)
+        ImGui::Begin("Hierarchy");
+        ImGui::Text("Player");
+        ImGui::Text("Tree 1");
+        ImGui::Text("Map");
+        ImGui::End();
+
+        // Panel 2: Inspector (Properties of selected object)
+        ImGui::Begin("Inspector");
+        float pos[3] = { 5.0f, 0.0f, 2.0f };
+        ImGui::DragFloat3("Position", pos, 0.1f);
+        if (auto sprite = player->GetComponent<Engine::SpriteRenderer>()) {
+            ImGui::ColorEdit4("Sprite Color", (float*)&sprite->GetColor());
+        }
+        ImGui::End();
+
+        // Panel 3: Performance Profiler
+        ImGui::Begin("Profiler");
+        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 
+                    1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+        ImGui::End();
+    });
+
     app.Run();
 
     return 0;

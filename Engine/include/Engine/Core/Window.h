@@ -16,6 +16,8 @@ public:
 
     bool ShouldClose() const { return m_ShouldClose; }
     SDL_Window* GetNativeWindow() const { return m_Window; }
+    SDL_Window* GetSDLWindow() const { return m_Window; }
+    SDL_GLContext GetGLContext() const { return m_GLContext; }
 
 private:
     SDL_Window* m_Window;

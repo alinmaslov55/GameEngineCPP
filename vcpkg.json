@@ -5,7 +5,14 @@
     "sdl3",
     "glm",
     "stb",
-    "imgui",
+    {
+      "name": "imgui",
+      "features": [
+        "docking-experimental",
+        "sdl3-binding",
+        "opengl3-binding"
+      ]
+    },
     "box2d",
     "nlohmann-json",
     "spdlog",

@@ -26,6 +26,7 @@ public:
         ENGINE_CORE_DEBUG("SpriteRenderer: SetColor ({:.2f}, {:.2f}, {:.2f}, {:.2f})", color.r, color.g, color.b, color.a);
     }
     const glm::vec4& GetColor() const { return m_Color; }
+    glm::vec4& GetColor() { return m_Color; }
 
     void SetSubTexture(const std::shared_ptr<SubTexture2D>& subTexture) {
         m_SubTexture = subTexture;

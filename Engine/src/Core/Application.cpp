@@ -9,6 +9,7 @@
 #include "Engine/Audio/AudioManager.h"
 #include "Engine/Audio/AudioClip.h"
 #include "Engine/Utils/Logger.h"
+#include "Engine/ImGui/ImGuiLayer.h"
 
 namespace Engine {
 
@@ -32,6 +33,9 @@ void Application::Initialize() {
     AudioManager::Init();
     Renderer::Init();
     Renderer2D::Init();
+
+    ImGuiLayer::Init(m_Window->GetSDLWindow(), m_Window->GetGLContext());
+
     ENGINE_CORE_INFO("Isometric Engine initialized successfully");
 }
 
@@ -40,6 +44,7 @@ void Application::Run() {
     Time::Init();
 
     while (m_Running) {
+        // 1. Process Events
         m_Window->PollEvents();
         if (m_Window->ShouldClose()) {
             ENGINE_CORE_INFO("Window close requested, terminating run loop");
@@ -47,9 +52,30 @@ void Application::Run() {
             break;
         }
 
+        // 2. Update Engine/Scene
         Time::Update();
         Update();
-        Render();
+
+        // 3. Clear Screen
+        Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
+        Renderer::Clear();
+
+        // 4. Render Engine Scene (The game world)
+        SceneManager::Render();
+
+        // 5. Render UI Layer
+        ImGuiLayer::Begin();
+        ImGuiLayer::BeginDockspace();
+
+        if (m_ImGuiRenderCallback) {
+            m_ImGuiRenderCallback();
+        }
+
+        ImGuiLayer::EndDockspace();
+        ImGuiLayer::End();
+
+        // 6. Swap Buffers
+        m_Window->SwapBuffers();
     }
     ENGINE_CORE_INFO("Application run loop finished");
 }
@@ -70,7 +96,7 @@ void Application::Render() {
 }
 
 bool Application::IsRunning() const {
-    return !m_Window->ShouldClose(); 
+    return m_Running && !m_Window->ShouldClose(); 
 }
 
 void Application::Shutdown() {
@@ -80,6 +106,8 @@ void Application::Shutdown() {
     // Clear caches to gracefully destroy OpenGL textures and SDL Audio buffers
     ResourceManager::ClearType<Texture>();
     ResourceManager::ClearType<AudioClip>();
+
+    ImGuiLayer::Shutdown();
 
     Renderer2D::Shutdown();
     AudioManager::Shutdown();
