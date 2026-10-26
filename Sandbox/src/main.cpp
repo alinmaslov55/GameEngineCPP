@@ -80,6 +80,8 @@ int main(int argc, char* argv[]) {
 
     Engine::Time::Init();
 
+    Engine::GameObject* selectedContext = nullptr;
+
     while (app.IsRunning()) {
         // 1. Process Events & Update Scene
         app.GetWindow().PollEvents();
@@ -141,20 +143,140 @@ int main(int argc, char* argv[]) {
         ImGui::End();
         ImGui::PopStyleVar();
 
-        // Panel 1: Hierarchy (List of GameObjects)
+        // ==========================================
+        // HIERARCHY PANEL
+        // ==========================================
         ImGui::Begin("Hierarchy");
-        ImGui::Text("Player");
-        ImGui::Text("Tree 1");
-        ImGui::Text("Map");
+
+        // Iterate through every GameObject in the active scene
+        for (const auto& gameObjectPtr : mainScene->GetGameObjects()) {
+            Engine::GameObject* go = gameObjectPtr.get();
+            
+            // ImGui::Selectable requires a unique string ID. 
+            // If two objects have the same name, ImGui might get confused. 
+            // In a production engine, you would append a UUID to the string, e.g., "Player##12345"
+            std::string label = go->GetName();
+            
+            // The second parameter determines if this item is currently highlighted
+            bool isSelected = (selectedContext == go);
+            
+            if (ImGui::Selectable(label.c_str(), isSelected)) {
+                selectedContext = go;
+            }
+        }
+
+        // Optional: Click in the empty space of the window to deselect
+        if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered()) {
+            selectedContext = nullptr;
+        }
+
+        // Optional: Right-click context menu to create new GameObjects
+        if (ImGui::BeginPopupContextWindow("HierarchyContextMenu", 1 | ImGuiPopupFlags_NoOpenOverItems)) {
+            if (ImGui::MenuItem("Create Empty GameObject")) {
+                auto newGo = mainScene->CreateGameObject("New GameObject");
+                selectedContext = newGo; // Auto-select the newly created object
+            }
+            ImGui::EndPopup();
+        }
+
         ImGui::End();
 
-        // Panel 2: Inspector (Properties of selected object)
+        // ==========================================
+        // INSPECTOR PANEL
+        // ==========================================
         ImGui::Begin("Inspector");
-        float pos[3] = { 5.0f, 0.0f, 2.0f };
-        ImGui::DragFloat3("Position", pos, 0.1f);
-        if (auto sprite = player->GetComponent<Engine::SpriteRenderer>()) {
-            ImGui::ColorEdit4("Sprite Color", (float*)&sprite->GetColor());
+
+        if (selectedContext) {
+            // 1. Entity Name
+            // In a full implementation, you would use ImGui::InputText here to allow renaming.
+            ImGui::TextDisabled("Name:");
+            ImGui::SameLine();
+            ImGui::Text("%s", selectedContext->GetName().c_str());
+            ImGui::Separator();
+
+            // 2. Transform Component
+            // Every GameObject has a Transform by default in this engine
+            auto transform = selectedContext->GetComponent<Engine::Transform>();
+            if (transform) {
+                // ImGuiTreeNodeFlags_DefaultOpen ensures the menu is expanded by default
+                if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    // DragFloat3 creates an X,Y,Z slider. The 0.1f is the speed/sensitivity.
+                    ImGui::DragFloat3("Position", &transform->position.x, 0.1f);
+                    
+                    // Rotation is often stored in radians internally, but users expect degrees in the UI
+                    glm::vec3 rotationDegrees = glm::degrees(transform->rotation);
+                    if (ImGui::DragFloat3("Rotation", &rotationDegrees.x, 1.0f)) {
+                        // Convert back to radians if the user dragged the slider
+                        transform->rotation = glm::radians(rotationDegrees);
+                    }
+                    
+                    ImGui::DragFloat3("Scale", &transform->scale.x, 0.1f);
+                }
+            }
+
+            // 3. Sprite Renderer Component
+            auto spriteRenderer = selectedContext->GetComponent<Engine::SpriteRenderer>();
+            if (spriteRenderer) {
+                if (ImGui::CollapsingHeader("Sprite Renderer", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    // Retrieve the current color
+                    glm::vec4 color = spriteRenderer->GetColor();
+                    
+                    // ColorEdit4 provides a clickable color swatch that opens a color picker wheel
+                    if (ImGui::ColorEdit4("Color", &color.x)) {
+                        // Apply the new color back to the component if it was changed
+                        spriteRenderer->SetColor(color);
+                    }
+                    
+                    // Optional: Display the attached Texture ID if it exists
+                    if (auto tex = spriteRenderer->GetTexture()) {
+                        ImGui::Text("Texture Bound: ID %u", tex->GetRendererID());
+                    } else {
+                        ImGui::TextDisabled("No Texture Bound");
+                    }
+                }
+            }
+
+            // 4. Particle System Component
+            auto particleSystem = selectedContext->GetComponent<Engine::ParticleSystem>();
+            if (particleSystem) {
+                if (ImGui::CollapsingHeader("Particle System", ImGuiTreeNodeFlags_DefaultOpen)) {
+                    ImGui::Text("Active Particles: %zu", particleSystem->GetParticles().size());
+                    if (ImGui::Button("Emit Test Particles")) {
+                        Engine::ParticleProps props;
+                        if (transform) props.position = transform->position;
+                        props.velocity = { 0.0f, 1.0f, 0.0f };
+                        particleSystem->Emit(props);
+                    }
+                }
+            }
+
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Spacing();
+
+            // 5. Add Component Button
+            if (ImGui::Button("Add Component")) {
+                ImGui::OpenPopup("AddComponentPopup");
+            }
+
+            if (ImGui::BeginPopup("AddComponentPopup")) {
+                if (ImGui::MenuItem("Sprite Renderer")) {
+                    if (!selectedContext->GetComponent<Engine::SpriteRenderer>())
+                        selectedContext->AddComponent<Engine::SpriteRenderer>();
+                    ImGui::CloseCurrentPopup();
+                }
+                if (ImGui::MenuItem("Particle System")) {
+                    if (!selectedContext->GetComponent<Engine::ParticleSystem>())
+                        selectedContext->AddComponent<Engine::ParticleSystem>();
+                    ImGui::CloseCurrentPopup();
+                }
+                ImGui::EndPopup();
+            }
+
+        } else {
+            ImGui::TextDisabled("Select an entity to view its properties.");
         }
+
         ImGui::End();
 
         // Panel 3: Performance Profiler
