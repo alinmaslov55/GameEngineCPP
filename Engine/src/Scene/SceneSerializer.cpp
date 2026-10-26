@@ -26,6 +26,7 @@ bool SceneSerializer::Serialize(const std::string& filepath) {
 
     for (const auto& go : m_Scene->GetGameObjects()) {
         json entityJson;
+        entityJson["UUID"] = go->GetUUID();
         entityJson["Name"] = go->GetName();
 
         // Serialize Transform
@@ -89,7 +90,9 @@ bool SceneSerializer::Deserialize(const std::string& filepath) {
     if (sceneJson.contains("GameObjects")) {
         for (const auto& entityJson : sceneJson["GameObjects"]) {
             std::string name = entityJson["Name"].get<std::string>();
-            GameObject* go = m_Scene->CreateGameObject(name);
+            GameObject* go = entityJson.contains("UUID")
+                ? m_Scene->CreateGameObjectWithUUID(entityJson["UUID"].get<uint64_t>(), name)
+                : m_Scene->CreateGameObject(name);
             loadedCount++;
 
             auto components = entityJson["Components"];

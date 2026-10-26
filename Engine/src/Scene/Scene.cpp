@@ -17,6 +17,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtx/compatibility.hpp>
 #include <algorithm>
+#include <cmath>
 #include <vector>
 
 namespace Engine {
@@ -35,6 +36,57 @@ GameObject* Scene::CreateGameObject(const std::string& name) {
     GameObject* rawPtr = gameObject.get();
     m_GameObjects.push_back(std::move(gameObject));
     return rawPtr;
+}
+
+GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& name) {
+    ENGINE_CORE_DEBUG("Scene '{}': Creating GameObject '{}' with UUID {}", m_Name, name, uuid);
+    auto gameObject = std::make_unique<GameObject>(uuid, name);
+    GameObject* rawPtr = gameObject.get();
+    m_GameObjects.push_back(std::move(gameObject));
+    return rawPtr;
+}
+
+void Scene::OnViewportResize(uint32_t width, uint32_t height) {
+    if (width == 0 || height == 0) {
+        return;
+    }
+
+    m_ViewportWidth = width;
+    m_ViewportHeight = height;
+
+    float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+    float orthoLeft   = -m_OrthographicSize * aspectRatio * 0.5f;
+    float orthoRight  =  m_OrthographicSize * aspectRatio * 0.5f;
+    float orthoBottom = -m_OrthographicSize * 0.5f;
+    float orthoTop    =  m_OrthographicSize * 0.5f;
+    m_Camera.SetProjection(orthoLeft, orthoRight, orthoBottom, orthoTop);
+
+    for (auto& go : m_GameObjects) {
+        if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
+            if (!cameraComp->FixedAspectRatio) {
+                cameraComp->SetViewportSize(width, height);
+            }
+        }
+    }
+
+    ENGINE_CORE_DEBUG("Scene '{}': Viewport resized to {}x{} (aspect: {:.3f})", m_Name, width, height, aspectRatio);
+}
+
+const OrthographicCamera& Scene::GetActiveCamera() const {
+    for (const auto& go : m_GameObjects) {
+        if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
+            return cameraComp->Camera;
+        }
+    }
+    return m_Camera;
+}
+
+void Scene::SetOrthographicSize(float size) {
+    if (size <= 0.0f) {
+        return;
+    }
+    m_OrthographicSize = size;
+    OnViewportResize(m_ViewportWidth, m_ViewportHeight);
 }
 
 void Scene::DestroyGameObject(GameObject* gameObject) {
@@ -193,9 +245,9 @@ void Scene::Render() {
         float depthA = tA->position.x + tA->position.z;
         float depthB = tB->position.x + tB->position.z;
 
-        if (depthA == depthB) {
-            // Tie-breaker: object with higher physical Y (height) renders in front (later)
-            return tA->position.y > tB->position.y;
+        if (std::abs(depthA - depthB) < 1e-5f) {
+            // Tie-breaker: lower physical Y renders first (behind), higher physical Y renders later (in front)
+            return tA->position.y < tB->position.y;
         }
 
         return depthA > depthB;
@@ -256,9 +308,13 @@ void Scene::Render() {
     // 3. UI RENDERING PASS (Screen Space)
     // ==========================================
     
-    // Create an orthographic projection matching your window size (e.g., 1280x720)
-    // (0,0) at bottom-left, (1280, 720) at top-right
-    glm::mat4 uiProjection = glm::ortho(0.0f, 1280.0f, 0.0f, 720.0f, -1.0f, 1.0f);
+    // Create an orthographic projection matching the active viewport size
+    // (0,0) at bottom-left, (m_ViewportWidth, m_ViewportHeight) at top-right
+    glm::mat4 uiProjection = glm::ortho(
+        0.0f, static_cast<float>(m_ViewportWidth),
+        0.0f, static_cast<float>(m_ViewportHeight),
+        -1.0f, 1.0f
+    );
     
     Renderer2D::BeginScene(uiProjection); 
 

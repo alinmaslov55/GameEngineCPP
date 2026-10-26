@@ -95,12 +95,14 @@ void Renderer2D::Shutdown() {
 
 void Renderer2D::BeginScene(const OrthographicCamera& camera) {
     ENGINE_CORE_TRACE("Renderer2D::BeginScene");
+    Renderer::SetDepthTest(false);
     s_Data->TextureShader->Bind();
     s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
 }
 
 void Renderer2D::BeginScene(const glm::mat4& projectionMatrix) {
     ENGINE_CORE_TRACE("Renderer2D::BeginScene (Projection Matrix)");
+    Renderer::SetDepthTest(false);
     s_Data->TextureShader->Bind();
     s_Data->TextureShader->SetMat4("u_ViewProjection", projectionMatrix);
 }

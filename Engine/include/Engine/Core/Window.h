@@ -14,14 +14,19 @@ public:
     void SwapBuffers();
     void Update();
 
+    int GetWidth() const { return m_Width; }
+    int GetHeight() const { return m_Height; }
+
     bool ShouldClose() const { return m_ShouldClose; }
     SDL_Window* GetNativeWindow() const { return m_Window; }
     SDL_Window* GetSDLWindow() const { return m_Window; }
     SDL_GLContext GetGLContext() const { return m_GLContext; }
 
 private:
-    SDL_Window* m_Window;
-    SDL_GLContext m_GLContext;
+    SDL_Window* m_Window{nullptr};
+    SDL_GLContext m_GLContext{nullptr};
+    int m_Width{0};
+    int m_Height{0};
     bool m_ShouldClose{false};
 };
 } // namespace Engine

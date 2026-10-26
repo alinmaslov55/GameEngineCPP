@@ -1,0 +1,88 @@
+1. Bugs & Subtle Correctness Issues
+
+Tile Painting Coordinate Space Mismatch
+
+In Sandbox/src/main.cpp, relativeMouse is in pixel coordinates (e.g., 0..1280, 0..720) and is passed directly into Isometric::ScreenToWorld, where tile half-sizes are 0.5 and 0.25 world units. Meanwhile, Scene::m_Camera views orthographic world bounds (-1.6..1.6, -0.9..0.9).
+Fix: Convert relativeMouse from viewport pixels to Normalized Device Coordinates (-1.0 to +1.0), multiply by glm::inverse(camera.GetViewProjectionMatrix()) to get isometric world/screen coordinates, and pass that into Isometric::ScreenToWorld.
+
+Rotation Units Mismatch (Degrees vs. Radians)
+
+Transform::GetTransformMatrix and Scene::Render call glm::radians(transform->rotation), treating Transform::rotation as degrees.
+However, the Inspector in Sandbox/src/main.cpp calls glm::degrees(transform->rotation) and writes back glm::radians(...), treating Transform::rotation as radians.
+Fix: Standardize Transform::rotation in degrees (matching OrthographicCamera) and edit &transform->rotation.x directly in ImGui::DragFloat3.
+
+Isometric Y-Height Sort Tie-Breaker & Depth Buffer Conflict
+
+In Scene::Render, when two objects have the same X + Z depth, return tA->position.y > tB->position.y; draws the higher object first (behind the lower object) instead of in front (<).
+Additionally, Renderer::Init enables GL_DEPTH_TEST, while all 2D quads render at z = 0.0f. Transparent sprites or particles writing to the depth buffer at z = 0 can clip overlapping semi-transparent quads.
+
+Viewport Aspect Ratio Stretching & Non-Resizable Window
+
+Window::Window creates the SDL window without SDL_WINDOW_RESIZABLE.
+When the ImGui "Scene" panel is resized in Sandbox/src/main.cpp, framebuffer->Resize(...) updates the texture resolution, but Scene::m_Camera and the hardcoded 1280x720 UI projection in Scene.cpp never update their bounds, causing aspect-ratio distortion.
+
+Hierarchy Selection Race Condition & Duplicate ImGui IDs
+
+In Sandbox/src/main.cpp, if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered()) clears selectedContext = nullptr on mouse-down even when clicking an entity row. Checking ImGui::IsMouseClicked(0) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered() prevents accidental deselection.
+Creating two "New GameObject" items causes an ImGui ID collision (label.c_str()). Adding a 64-bit UUID to Object and calling ImGui::PushID(...) fixes this.
+2. Rendering & Logging Performance
+
+Implement Batch Rendering in Renderer2D
+
+Currently, every single tile, sprite, particle, and UI character glyph triggers its own uniform uploads, VAO bind, and glDrawElements call (600+ draw calls per frame).
+Improvement: Allocate a dynamic vertex buffer for N quads (e.g., 10,000 quads) + a texture slot array (0..15), push vertex data in DrawQuad, and issue a single glDrawElements call in Renderer2D::EndScene.
+
+Cache Uniform Locations in Shader
+
+glGetUniformLocation is queried on the GPU driver multiple times per quad every frame. Caching locations in an std::unordered_map<std::string, int> inside Shader avoids repeated string lookups.
+
+Reduce Per-Frame Synchronous Log Flushing
+
+Logger::Init sets both set_level(trace) and flush_on(trace). Because DrawQuad, Shader::Set*, and Buffer::Bind emit TRACE logs, the engine performs thousands of synchronous disk flushes per second.
+Improvement:
+Default log level to info or debug and flush_on(spdlog::level::warn).
+Strip TRACE macros in Release builds (#ifdef NDEBUG).
+Add a custom ring-buffer sink to display logs directly inside an ImGui Console Panel.
+
+Track Active Particle Count
+
+In Sandbox/src/main.cpp, Active Particles prints particleSystem->GetParticles().size(), which always equals the pool capacity (500). Adding GetActiveParticleCount() to ParticleSystem will report the real live count.
+3. Scene Serialization & Asset Management
+
+Complete Component & Asset Serialization (SceneSerializer.cpp)
+
+Currently, saving a scene only saves Transform and SpriteRenderer::Color. Painted Tilemap data, assigned SpriteRenderer textures, ParticleSystem, BoxCollider2D, UIPanel, UILabel, and CameraComponent are lost when reloading a scene.
+Improvement:
+Store m_Filepath in Texture and AudioClip (this also allows the Inspector to display "test.png" instead of raw OpenGL ID "1").
+Serialize Tilemap dimensions, tile grid array, and remaining components in SceneSerializer.
+
+Remove Hardcoded Absolute Paths (C:/DEV/GameEngineCPP/...)
+
+Sandbox/src/main.cpp uses machine-specific absolute paths. Adding a configurable asset root in ResourceManager (or setting CMake's working directory / post-build asset copy) makes the project portable.
+4. Editor UX, Gameplay & Architecture
+
+Edit / Play Mode Toolbar & Editor Camera
+
+Add an Edit / Play / Stop toolbar:
+Edit Mode: Pan and zoom freely with an EditorCamera (middle-mouse drag + scroll wheel) and paint tiles / move entities without running gameplay scripts or physics.
+Play Mode: Serialize/clone the active scene in memory, run gameplay (Scene::Update), and restore the pre-play state on Stop.
+
+Entity Renaming, Deletion & Component Removal
+
+Replace read-only ImGui::Text in the Inspector with ImGui::InputText wired to Object::SetName.
+Add "Delete GameObject" to the Hierarchy context menu (calling Scene::DestroyGameObject) and "Remove Component" to GameObject + Inspector headers.
+
+Physics, Tile Walkability & Gravity
+
+Tile::walkable in Tilemap.h is currently unused, and pressing SPACE in PlayerController.h increases Y indefinitely with no gravity returning the player to Y = 0.
+Either wire up the already-linked box2d dependency (in CMakeLists.txt) or add tilemap walkability checks + simple vertical velocity/gravity to the isometric physics step.
+
+Cache Transform on GameObject & Add Unit Tests (GTest)
+
+Every GameObject always owns a Transform, yet GetComponent<Transform>() performs a linear scan + dynamic_cast every frame across rendering, physics, and scripts. Storing a direct Transform* m_Transform pointer makes GetTransform() 
+𝑂
+(
+1
+)
+O(1) with zero RTTI overhead.
+gtest is already in vcpkg.json — adding a Tests/ target for Isometric math, SceneSerializer round-trips, and ResourceManager caching will safeguard future changes.

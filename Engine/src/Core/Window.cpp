@@ -4,7 +4,8 @@
 #include <imgui_impl_sdl3.h>
 
 namespace Engine {
-Window::Window(const std::string& title, int width, int height) {
+Window::Window(const std::string& title, int width, int height)
+    : m_Width(width), m_Height(height) {
     ENGINE_CORE_INFO("Creating window '{}' ({}x{})", title, width, height);
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -16,7 +17,7 @@ Window::Window(const std::string& title, int width, int height) {
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 4);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 1);
 
-    m_Window = SDL_CreateWindow(title.c_str(), width, height, SDL_WINDOW_OPENGL);
+    m_Window = SDL_CreateWindow(title.c_str(), width, height, SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE);
     if (!m_Window) {
         ENGINE_CORE_CRITICAL("Failed to create window: {}", SDL_GetError());
         return;
@@ -60,6 +61,12 @@ void Window::PollEvents() {
         if (event.type == SDL_EVENT_QUIT) {
             ENGINE_CORE_INFO("Window close event received");
             m_ShouldClose = true;
+        } else if (event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event.type == SDL_EVENT_WINDOW_RESIZED) {
+            if (event.window.data1 > 0 && event.window.data2 > 0) {
+                m_Width = event.window.data1;
+                m_Height = event.window.data2;
+                ENGINE_CORE_DEBUG("Window resized to {}x{}", m_Width, m_Height);
+            }
         }
     }
 }

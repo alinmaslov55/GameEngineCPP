@@ -14,6 +14,7 @@
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/ImGui/ImGuiLayer.h>
 #include <Engine/Utils/Logger.h>
+#include <glm/glm.hpp>
 #include <imgui.h>
 #include <filesystem>
 #include <iostream>
@@ -129,13 +130,13 @@ int main(int argc, char* argv[]) {
         Engine::Time::Update();
         app.Update();
 
-        // 2. Resize Framebuffer if the ImGui window changed size
+        // 2. Resize Framebuffer and Scene Camera/UI projection if the ImGui viewport changed size
         if (Engine::FramebufferSpecification spec = framebuffer->GetSpecification();
             viewportSize.x > 0.0f && viewportSize.y > 0.0f && // Zero sized framebuffer is invalid
             (spec.Width != (uint32_t)viewportSize.x || spec.Height != (uint32_t)viewportSize.y))
         {
             framebuffer->Resize((uint32_t)viewportSize.x, (uint32_t)viewportSize.y);
-            // Optional: Update your orthographic camera bounds here based on new viewportSize
+            mainScene->OnViewportResize((uint32_t)viewportSize.x, (uint32_t)viewportSize.y);
         }
 
         // 3. Render Game Scene into Framebuffer
@@ -148,6 +149,11 @@ int main(int argc, char* argv[]) {
         // ----------------------------------------
         
         framebuffer->Unbind();
+        Engine::Renderer::SetViewport(
+            0, 0,
+            static_cast<uint32_t>(app.GetWindow().GetWidth()),
+            static_cast<uint32_t>(app.GetWindow().GetHeight())
+        );
 
         // 4. Render UI / Editor
         Engine::ImGuiLayer::Begin();
@@ -210,6 +216,9 @@ int main(int argc, char* argv[]) {
                 if (deserializer.Deserialize(filepathBuffer)) {
                     // 3. Swap the active scene in the engine
                     mainScene = loadedScene;
+                    if (viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
+                        mainScene->OnViewportResize((uint32_t)viewportSize.x, (uint32_t)viewportSize.y);
+                    }
                     Engine::SceneManager::LoadScene(mainScene);
                     
                     // 4. CRITICAL: Clear the inspector so it doesn't read dead memory!
@@ -241,43 +250,63 @@ int main(int argc, char* argv[]) {
         // OpenGL textures are flipped vertically by default, so we invert the UV coordinates (0, 1) to (1, 0)
         uint32_t textureID = framebuffer->GetColorAttachmentRendererID();
         ImGui::Image(reinterpret_cast<void*>((uintptr_t)textureID), ImVec2{ viewportSize.x, viewportSize.y }, ImVec2{ 0, 1 }, ImVec2{ 1, 0 });
+        ImVec2 imageMin = ImGui::GetItemRectMin();
 
         // ==========================================
         // TILE PAINTING LOGIC
         // ==========================================
         // Only paint if the mouse is hovering over the Scene panel, not blocking other UI
-        if (ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left)) {
+        if (ImGui::IsWindowHovered() && ImGui::IsMouseDown(ImGuiMouseButton_Left) &&
+            viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
             // Get mouse position relative to the actual rendered image inside the panel
             ImVec2 mousePos = ImGui::GetMousePos();
-            ImVec2 windowPos = ImGui::GetWindowPos();
-            ImVec2 viewportBoundsMin = ImGui::GetWindowContentRegionMin();
-            
-            glm::vec2 relativeMouse = { 
-                mousePos.x - (windowPos.x + viewportBoundsMin.x), 
-                mousePos.y - (windowPos.y + viewportBoundsMin.y) 
+            glm::vec2 relativeMouse = {
+                mousePos.x - imageMin.x,
+                mousePos.y - imageMin.y
             };
 
             // OpenGL Framebuffers have (0,0) at the bottom left, but ImGui puts (0,0) at the top left.
-            // We must invert the Y axis to match the camera's coordinate system.
-            relativeMouse.y = viewportSize.y - relativeMouse.y; 
+            // Invert the Y axis to match OpenGL's coordinate system.
+            relativeMouse.y = viewportSize.y - relativeMouse.y;
 
-            // NOTE: If you implemented a movable Camera, you must ADD the camera's screen-space offset to relativeMouse here.
+            if (relativeMouse.x >= 0.0f && relativeMouse.x <= viewportSize.x &&
+                relativeMouse.y >= 0.0f && relativeMouse.y <= viewportSize.y) {
+                // Convert viewport pixel coordinates to Normalized Device Coordinates (-1.0 to +1.0)
+                glm::vec4 ndc = {
+                    (relativeMouse.x / viewportSize.x) * 2.0f - 1.0f,
+                    (relativeMouse.y / viewportSize.y) * 2.0f - 1.0f,
+                    0.0f,
+                    1.0f
+                };
 
-            // Convert to World Space
-            glm::vec3 worldPos = Engine::Isometric::ScreenToWorld(relativeMouse);
-            
-            // Round to nearest integer to get the exact Grid Cell index
-            int gridX = static_cast<int>(std::round(worldPos.x));
-            int gridY = static_cast<int>(std::round(worldPos.z));
+                // Unproject NDC through the active camera's inverse ViewProjection matrix into 2D isometric space
+                const Engine::OrthographicCamera& activeCamera = mainScene->GetActiveCamera();
+                glm::vec4 isoScreenPos = glm::inverse(activeCamera.GetViewProjectionMatrix()) * ndc;
 
-            // Check if the currently selected Hierarchy object has a Tilemap
-            if (selectedContext) {
-                auto tilemap = selectedContext->GetComponent<Engine::Tilemap>();
-                if (tilemap) {
-                    // Prevent out-of-bounds array crashes
-                    if (gridX >= 0 && gridX < (int)tilemap->GetWidth() && gridY >= 0 && gridY < (int)tilemap->GetHeight()) {
-                        // Paint the tile!
-                        tilemap->SetTile(gridX, gridY, s_SelectedTileID);
+                // Check if the currently selected Hierarchy object has a Tilemap
+                if (selectedContext) {
+                    auto tilemap = selectedContext->GetComponent<Engine::Tilemap>();
+                    if (tilemap) {
+                        glm::vec3 mapOffset(0.0f);
+                        if (auto mapTransform = selectedContext->GetComponent<Engine::Transform>()) {
+                            mapOffset = mapTransform->position;
+                        }
+
+                        // Convert 2D isometric coordinates (adjusted for map elevation) back to 3D World/Grid coordinates
+                        glm::vec3 worldPos = Engine::Isometric::ScreenToWorld({
+                            isoScreenPos.x,
+                            isoScreenPos.y - mapOffset.y
+                        }) - glm::vec3(mapOffset.x, 0.0f, mapOffset.z);
+
+                        // Round to nearest integer to get the exact Grid Cell index
+                        int gridX = static_cast<int>(std::round(worldPos.x));
+                        int gridY = static_cast<int>(std::round(worldPos.z));
+
+                        // Prevent out-of-bounds array crashes
+                        if (gridX >= 0 && gridX < (int)tilemap->GetWidth() && gridY >= 0 && gridY < (int)tilemap->GetHeight()) {
+                            // Paint the tile!
+                            tilemap->SetTile(gridX, gridY, s_SelectedTileID);
+                        }
                     }
                 }
             }
@@ -294,23 +323,21 @@ int main(int argc, char* argv[]) {
         // Iterate through every GameObject in the active scene
         for (const auto& gameObjectPtr : mainScene->GetGameObjects()) {
             Engine::GameObject* go = gameObjectPtr.get();
-            
-            // ImGui::Selectable requires a unique string ID. 
-            // If two objects have the same name, ImGui might get confused. 
-            // In a production engine, you would append a UUID to the string, e.g., "Player##12345"
-            std::string label = go->GetName();
-            
-            // The second parameter determines if this item is currently highlighted
+
+            std::string uuidStr = std::to_string(go->GetUUID());
+            ImGui::PushID(uuidStr.c_str());
+
             bool isSelected = (selectedContext == go);
-            
-            if (ImGui::Selectable(label.c_str(), isSelected)) {
+            if (ImGui::Selectable(go->GetName().c_str(), isSelected)) {
                 selectedContext = go;
-                ENGINE_DEBUG("Hierarchy: Selected GameObject '{}'", go->GetName());
+                ENGINE_DEBUG("Hierarchy: Selected GameObject '{}' (UUID: {})", go->GetName(), go->GetUUID());
             }
+
+            ImGui::PopID();
         }
 
-        // Optional: Click in the empty space of the window to deselect
-        if (ImGui::IsMouseDown(0) && ImGui::IsWindowHovered()) {
+        // Click in the empty space of the window (not on an item) to deselect
+        if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered()) {
             selectedContext = nullptr;
         }
 
@@ -348,12 +375,8 @@ int main(int argc, char* argv[]) {
                     // DragFloat3 creates an X,Y,Z slider. The 0.1f is the speed/sensitivity.
                     ImGui::DragFloat3("Position", &transform->position.x, 0.1f);
                     
-                    // Rotation is often stored in radians internally, but users expect degrees in the UI
-                    glm::vec3 rotationDegrees = glm::degrees(transform->rotation);
-                    if (ImGui::DragFloat3("Rotation", &rotationDegrees.x, 1.0f)) {
-                        // Convert back to radians if the user dragged the slider
-                        transform->rotation = glm::radians(rotationDegrees);
-                    }
+                    // Transform::rotation is stored in degrees
+                    ImGui::DragFloat3("Rotation", &transform->rotation.x, 1.0f);
                     
                     ImGui::DragFloat3("Scale", &transform->scale.x, 0.1f);
                 }

@@ -14,7 +14,12 @@ namespace Engine {
 class GameObject : public Object {
 public:
     GameObject(const std::string& name = "GameObject") : Object(name) {
-        ENGINE_CORE_DEBUG("GameObject '{}' created", GetName());
+        ENGINE_CORE_DEBUG("GameObject '{}' created (UUID: {})", GetName(), GetUUID());
+        AddComponent<Transform>();
+    }
+
+    GameObject(uint64_t uuid, const std::string& name) : Object(uuid, name) {
+        ENGINE_CORE_DEBUG("GameObject '{}' created with UUID: {}", GetName(), GetUUID());
         AddComponent<Transform>();
     }
 
@@ -35,8 +40,8 @@ public:
     }
 
     template<typename T>
-    T* GetComponent() {
-        for (auto& component : m_Components) {
+    T* GetComponent() const {
+        for (const auto& component : m_Components) {
             if (T* casted = dynamic_cast<T*>(component.get())) {
                 return casted;
             }
