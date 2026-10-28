@@ -11,6 +11,7 @@
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/SubTexture2D.h>
 #include <Engine/Renderer/Texture.h>
+#include <Engine/Scene/LightComponents.h>
 #include <Engine/Scene/SceneSerializer.h>
 #include <Engine/Scene/TerrainComponent.h>
 #include <Engine/Scene/Tilemap.h>
@@ -42,6 +43,19 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     cam.SetYawDegrees(0.0f);
     cam.SetDistance(15.0f);
     cam.SetFocalPoint({ 6.5f, 0.0f, 7.0f });
+
+    // 0. Golden-Hour 2.5D Directional Sun & Cool Indigo Shadow Fill
+    Engine::GameObject* sunObject = editorScene->CreateGameObject("Sun Light");
+    sunObject->GetTransform()->position = { 6.5f, 8.0f, 6.5f };
+    auto* sunLight = sunObject->AddComponent<Engine::DirectionalLightComponent>();
+    sunLight->ElevationDegrees = 40.0f;
+    sunLight->AzimuthDegrees = -42.0f;
+    sunLight->SunColor = { 1.0f, 0.91f, 0.74f };
+    sunLight->SunIntensity = 1.05f;
+    sunLight->AmbientColor = { 0.36f, 0.41f, 0.62f };
+    sunLight->AmbientIntensity = 0.62f;
+    sunLight->CastShadows = true;
+    sunLight->ShadowSoftness = 1.35f;
 
     // 1A. Organic 4-Layer Splatmap Terrain Clearing ([-1.5, 14.5] x [-1.5, 14.5])
     Engine::GameObject* terrainObject = editorScene->CreateGameObject("Terrain");
@@ -127,7 +141,7 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     auto* playerAudio = player->AddComponent<Engine::AudioSource>();
     playerAudio->SetClip(Engine::ResourceManager::Load<Engine::AudioClip>("jump.wav"));
 
-    // 3. Central Cult Shrine Centerpiece
+    // 3. Central Cult Shrine Centerpiece (with Subtle Crimson Rune Glow)
     auto shrineTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/cult_shrine.png");
     Engine::GameObject* shrine = editorScene->CreateGameObject("Cult Shrine");
     shrine->GetTransform()->position = { 6.5f, 0.0f, 5.5f };
@@ -135,9 +149,65 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     auto* shrineSprite = shrine->AddComponent<Engine::SpriteRenderer>();
     shrineSprite->SetTexture(shrineTex);
     shrineSprite->SetAlphaCutoff(0.18f);
+    shrineSprite->SetEmissive(0.16f);
     auto* shrineCollider = shrine->AddComponent<Engine::BoxCollider2D>();
     shrineCollider->size = { 1.15f, 0.65f };
     shrineCollider->isDynamic = false;
+    auto* shrineLight = shrine->AddComponent<Engine::PointLightComponent>();
+    shrineLight->Color = { 0.95f, 0.22f, 0.18f };
+    shrineLight->Intensity = 0.95f;
+    shrineLight->Radius = 3.2f;
+    shrineLight->Falloff = 1.9f;
+    shrineLight->HeightOffset = 1.1f;
+    shrineLight->Flicker = true;
+    shrineLight->FlickerSpeed = 4.2f;
+    shrineLight->FlickerAmount = 0.12f;
+
+    // 3b. Flanking Ritual Braziers (Wrought-Iron Cutout Shadows + Flickering Firelight + Glowing Embers)
+    auto brazierTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/ritual_brazier.png");
+    const glm::vec3 brazierPositions[] = {
+        { 4.6f, 0.0f, 6.2f },
+        { 8.4f, 0.0f, 6.2f }
+    };
+    int brazierIdx = 1;
+    for (const auto& bPos : brazierPositions) {
+        Engine::GameObject* brazier = editorScene->CreateGameObject("Ritual Brazier " + std::to_string(brazierIdx++));
+        brazier->GetTransform()->position = bPos;
+        brazier->GetTransform()->scale = { 0.95f, 1.35f, 1.0f };
+
+        auto* bSprite = brazier->AddComponent<Engine::SpriteRenderer>();
+        bSprite->SetTexture(brazierTex);
+        bSprite->SetAlphaCutoff(0.18f);
+        bSprite->SetEmissive(0.55f);
+
+        auto* bCollider = brazier->AddComponent<Engine::BoxCollider2D>();
+        bCollider->size = { 0.55f, 0.45f };
+        bCollider->isDynamic = false;
+
+        auto* bLight = brazier->AddComponent<Engine::PointLightComponent>();
+        bLight->Color = { 1.0f, 0.58f, 0.20f };
+        bLight->Intensity = 1.85f;
+        bLight->Radius = 4.8f;
+        bLight->Falloff = 1.75f;
+        bLight->HeightOffset = 0.95f;
+        bLight->Flicker = true;
+        bLight->FlickerSpeed = 8.2f;
+        bLight->FlickerAmount = 0.18f;
+
+        auto* embers = brazier->AddComponent<Engine::ParticleSystem>(120);
+        embers->AutoEmit = true;
+        embers->EmitRate = 7.0f;
+        embers->SpawnOffset = { 0.0f, 1.02f, 0.0f };
+        embers->EmissiveParticles = true;
+        embers->TemplateProps.velocity = { 0.0f, 1.05f, 0.0f };
+        embers->TemplateProps.velocityVariation = { 0.28f, 0.30f, 0.28f };
+        embers->TemplateProps.colorBegin = { 1.0f, 0.76f, 0.24f, 0.95f };
+        embers->TemplateProps.colorEnd = { 0.92f, 0.16f, 0.08f, 0.0f };
+        embers->TemplateProps.sizeBegin = 0.09f;
+        embers->TemplateProps.sizeEnd = 0.015f;
+        embers->TemplateProps.sizeVariation = 0.03f;
+        embers->TemplateProps.lifeTime = 1.15f;
+    }
 
     // 4. Storybook Pine Trees
     auto pineTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/pine_tree.png");

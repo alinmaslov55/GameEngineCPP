@@ -2,6 +2,7 @@
 #define RENDERER_TERRAINRENDERER_H
 
 #include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Renderer/SceneLighting.h"
 #include "Engine/Scene/TerrainComponent.h"
 
 #include <glm/glm.hpp>
@@ -22,10 +23,10 @@ public:
     static void RenderTerrain(TerrainComponent& terrain,
                               const glm::vec3& origin,
                               const glm::vec3& scale,
-                              const PerspectiveCamera& camera);
+                              const PerspectiveCamera& camera,
+                              const SceneLightingData* lighting = nullptr);
 };
 
 } // namespace Engine
 
 #endif // RENDERER_TERRAINRENDERER_H
-

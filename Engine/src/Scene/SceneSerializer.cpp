@@ -6,6 +6,7 @@
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/CameraComponent.h"
+#include "Engine/Scene/LightComponents.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/UI/UIPanel.h"
@@ -99,6 +100,9 @@ std::string SceneSerializer::SerializeToString() const {
             spriteJson["Color"] = { col.r, col.g, col.b, col.a };
             spriteJson["BillboardMode"] = static_cast<int>(spriteRenderer->GetBillboardMode());
             spriteJson["AlphaCutoff"] = spriteRenderer->GetAlphaCutoff();
+            spriteJson["CastShadows"] = spriteRenderer->GetCastShadows();
+            spriteJson["ReceiveLighting"] = spriteRenderer->GetReceiveLighting();
+            spriteJson["Emissive"] = spriteRenderer->GetEmissive();
 
             if (auto tex = spriteRenderer->GetTexture()) {
                 spriteJson["TexturePath"] = ResourceManager::ToRelativePath(tex->GetFilepath());
@@ -195,8 +199,52 @@ std::string SceneSerializer::SerializeToString() const {
 
         // 4. ParticleSystem
         if (auto* particleSystem = go->GetComponent<ParticleSystem>()) {
+            const auto& tp = particleSystem->TemplateProps;
             compsJson["ParticleSystem"] = {
-                {"PoolSize", particleSystem->GetParticles().size()}
+                {"PoolSize", particleSystem->GetParticles().size()},
+                {"AutoEmit", particleSystem->AutoEmit},
+                {"EmitRate", particleSystem->EmitRate},
+                {"SpawnOffset", {particleSystem->SpawnOffset.x, particleSystem->SpawnOffset.y, particleSystem->SpawnOffset.z}},
+                {"EmissiveParticles", particleSystem->EmissiveParticles},
+                {"TemplateProps", {
+                    {"Velocity", {tp.velocity.x, tp.velocity.y, tp.velocity.z}},
+                    {"VelocityVariation", {tp.velocityVariation.x, tp.velocityVariation.y, tp.velocityVariation.z}},
+                    {"ColorBegin", {tp.colorBegin.r, tp.colorBegin.g, tp.colorBegin.b, tp.colorBegin.a}},
+                    {"ColorEnd", {tp.colorEnd.r, tp.colorEnd.g, tp.colorEnd.b, tp.colorEnd.a}},
+                    {"SizeBegin", tp.sizeBegin},
+                    {"SizeEnd", tp.sizeEnd},
+                    {"SizeVariation", tp.sizeVariation},
+                    {"LifeTime", tp.lifeTime}
+                }}
+            };
+        }
+
+        // 4b. DirectionalLightComponent
+        if (auto* dirLight = go->GetComponent<DirectionalLightComponent>()) {
+            compsJson["DirectionalLight"] = {
+                {"Elevation", dirLight->ElevationDegrees},
+                {"Azimuth", dirLight->AzimuthDegrees},
+                {"SunColor", {dirLight->SunColor.r, dirLight->SunColor.g, dirLight->SunColor.b}},
+                {"SunIntensity", dirLight->SunIntensity},
+                {"AmbientColor", {dirLight->AmbientColor.r, dirLight->AmbientColor.g, dirLight->AmbientColor.b}},
+                {"AmbientIntensity", dirLight->AmbientIntensity},
+                {"CastShadows", dirLight->CastShadows},
+                {"ShadowSoftness", dirLight->ShadowSoftness},
+                {"ShadowBias", dirLight->ShadowBias}
+            };
+        }
+
+        // 4c. PointLightComponent
+        if (auto* pointLight = go->GetComponent<PointLightComponent>()) {
+            compsJson["PointLight"] = {
+                {"Color", {pointLight->Color.r, pointLight->Color.g, pointLight->Color.b}},
+                {"Intensity", pointLight->Intensity},
+                {"Radius", pointLight->Radius},
+                {"Falloff", pointLight->Falloff},
+                {"HeightOffset", pointLight->HeightOffset},
+                {"Flicker", pointLight->Flicker},
+                {"FlickerSpeed", pointLight->FlickerSpeed},
+                {"FlickerAmount", pointLight->FlickerAmount}
             };
         }
 
@@ -471,6 +519,9 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 }
                 sprite->SetBillboardMode(static_cast<SpriteRenderer::BillboardMode>(srJson.value("BillboardMode", 0)));
                 sprite->SetAlphaCutoff(srJson.value("AlphaCutoff", 0.15f));
+                sprite->SetCastShadows(srJson.value("CastShadows", true));
+                sprite->SetReceiveLighting(srJson.value("ReceiveLighting", true));
+                sprite->SetEmissive(srJson.value("Emissive", 0.0f));
                 if (srJson.contains("TexturePath") && srJson["TexturePath"].is_string()) {
                     std::string texPath = srJson["TexturePath"].get<std::string>();
                     if (!texPath.empty()) {
@@ -569,7 +620,84 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
             if (components.contains("ParticleSystem")) {
                 const auto& psJson = components["ParticleSystem"];
                 uint32_t poolSize = psJson.value("PoolSize", 1000u);
-                go->AddComponent<ParticleSystem>(poolSize);
+                auto* ps = go->AddComponent<ParticleSystem>(poolSize);
+                ps->AutoEmit = psJson.value("AutoEmit", false);
+                ps->EmitRate = psJson.value("EmitRate", 8.0f);
+                if (psJson.contains("SpawnOffset") && psJson["SpawnOffset"].is_array() && psJson["SpawnOffset"].size() == 3) {
+                    ps->SpawnOffset = {
+                        psJson["SpawnOffset"][0].get<float>(),
+                        psJson["SpawnOffset"][1].get<float>(),
+                        psJson["SpawnOffset"][2].get<float>()
+                    };
+                }
+                ps->EmissiveParticles = psJson.value("EmissiveParticles", false);
+                if (psJson.contains("TemplateProps") && psJson["TemplateProps"].is_object()) {
+                    const auto& tpJson = psJson["TemplateProps"];
+                    auto& tp = ps->TemplateProps;
+                    if (tpJson.contains("Velocity") && tpJson["Velocity"].size() == 3) {
+                        tp.velocity = { tpJson["Velocity"][0].get<float>(), tpJson["Velocity"][1].get<float>(), tpJson["Velocity"][2].get<float>() };
+                    }
+                    if (tpJson.contains("VelocityVariation") && tpJson["VelocityVariation"].size() == 3) {
+                        tp.velocityVariation = { tpJson["VelocityVariation"][0].get<float>(), tpJson["VelocityVariation"][1].get<float>(), tpJson["VelocityVariation"][2].get<float>() };
+                    }
+                    if (tpJson.contains("ColorBegin") && tpJson["ColorBegin"].size() == 4) {
+                        tp.colorBegin = { tpJson["ColorBegin"][0].get<float>(), tpJson["ColorBegin"][1].get<float>(), tpJson["ColorBegin"][2].get<float>(), tpJson["ColorBegin"][3].get<float>() };
+                    }
+                    if (tpJson.contains("ColorEnd") && tpJson["ColorEnd"].size() == 4) {
+                        tp.colorEnd = { tpJson["ColorEnd"][0].get<float>(), tpJson["ColorEnd"][1].get<float>(), tpJson["ColorEnd"][2].get<float>(), tpJson["ColorEnd"][3].get<float>() };
+                    }
+                    tp.sizeBegin = tpJson.value("SizeBegin", tp.sizeBegin);
+                    tp.sizeEnd = tpJson.value("SizeEnd", tp.sizeEnd);
+                    tp.sizeVariation = tpJson.value("SizeVariation", tp.sizeVariation);
+                    tp.lifeTime = tpJson.value("LifeTime", tp.lifeTime);
+                }
+            }
+
+            // 4b. DirectionalLightComponent
+            if (components.contains("DirectionalLight") && components["DirectionalLight"].is_object()) {
+                const auto& dlJson = components["DirectionalLight"];
+                auto* dirLight = go->AddComponent<DirectionalLightComponent>();
+                dirLight->ElevationDegrees = dlJson.value("Elevation", 42.0f);
+                dirLight->AzimuthDegrees = dlJson.value("Azimuth", -38.0f);
+                if (dlJson.contains("SunColor") && dlJson["SunColor"].size() == 3) {
+                    dirLight->SunColor = {
+                        dlJson["SunColor"][0].get<float>(),
+                        dlJson["SunColor"][1].get<float>(),
+                        dlJson["SunColor"][2].get<float>()
+                    };
+                }
+                dirLight->SunIntensity = dlJson.value("SunIntensity", 1.05f);
+                if (dlJson.contains("AmbientColor") && dlJson["AmbientColor"].size() == 3) {
+                    dirLight->AmbientColor = {
+                        dlJson["AmbientColor"][0].get<float>(),
+                        dlJson["AmbientColor"][1].get<float>(),
+                        dlJson["AmbientColor"][2].get<float>()
+                    };
+                }
+                dirLight->AmbientIntensity = dlJson.value("AmbientIntensity", 0.62f);
+                dirLight->CastShadows = dlJson.value("CastShadows", true);
+                dirLight->ShadowSoftness = dlJson.value("ShadowSoftness", 1.35f);
+                dirLight->ShadowBias = dlJson.value("ShadowBias", 0.0018f);
+            }
+
+            // 4c. PointLightComponent
+            if (components.contains("PointLight") && components["PointLight"].is_object()) {
+                const auto& plJson = components["PointLight"];
+                auto* pointLight = go->AddComponent<PointLightComponent>();
+                if (plJson.contains("Color") && plJson["Color"].size() == 3) {
+                    pointLight->Color = {
+                        plJson["Color"][0].get<float>(),
+                        plJson["Color"][1].get<float>(),
+                        plJson["Color"][2].get<float>()
+                    };
+                }
+                pointLight->Intensity = plJson.value("Intensity", 1.75f);
+                pointLight->Radius = plJson.value("Radius", 4.5f);
+                pointLight->Falloff = plJson.value("Falloff", 1.8f);
+                pointLight->HeightOffset = plJson.value("HeightOffset", 0.85f);
+                pointLight->Flicker = plJson.value("Flicker", true);
+                pointLight->FlickerSpeed = plJson.value("FlickerSpeed", 7.5f);
+                pointLight->FlickerAmount = plJson.value("FlickerAmount", 0.14f);
             }
 
             // 5. Rigidbody2D

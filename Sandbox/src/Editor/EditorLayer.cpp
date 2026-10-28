@@ -6,6 +6,7 @@
 #include <Engine/Core/Input.h>
 #include <Engine/Core/ResourceManager.h>
 #include <Engine/ImGui/ImGuiLayer.h>
+#include <Engine/Particles/ParticleSystem.h>
 #include <Engine/Renderer/Renderer.h>
 #include <Engine/Renderer/Renderer2D.h>
 #include <Engine/Renderer/TerrainRenderer.h>
@@ -68,10 +69,16 @@ void EditorLayer::OnUpdate(float deltaTime) {
         }
     }
 
-    // 2. Poll Input & Step Runtime Simulation (when in Play Mode)
+    // 2. Poll Input & Step Runtime Simulation (when in Play Mode) or Ambient Particles (in Edit Mode)
     Engine::Input::Update();
     if (m_SceneState == SceneState::Play && m_ActiveScene) {
         m_ActiveScene->UpdateRuntime(deltaTime);
+    } else if (m_SceneState == SceneState::Edit && m_ActiveScene) {
+        for (const auto& go : m_ActiveScene->GetGameObjects()) {
+            if (auto* ps = go->GetComponent<Engine::ParticleSystem>()) {
+                ps->Update(deltaTime);
+            }
+        }
     }
 
     // 3. Render Scene into Offscreen Framebuffer

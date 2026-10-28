@@ -1,8 +1,12 @@
 #include "Engine/Scene/Scene.h"
+#include "Engine/Core/Time.h"
 #include "Engine/Scene/CameraComponent.h"
+#include "Engine/Scene/LightComponents.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Renderer/Renderer2D.h"
+#include "Engine/Renderer/SceneLighting.h"
+#include "Engine/Renderer/ShadowMap.h"
 #include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/TerrainComponent.h"
@@ -391,6 +395,123 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         }
     }
 
+    // Gather upright 2.5D cutout standees once for both Pass 0 (Shadow Capture) and Pass 2 (Camera View)
+    std::vector<GameObject*> standeeQueue;
+    standeeQueue.reserve(m_GameObjects.size());
+
+    // Gather dynamic 2.5D scene lighting (Directional Sun + up to 8 flickering 3D Point Lights)
+    SceneLightingData lighting;
+    const DirectionalLightComponent* dirLight = nullptr;
+    const float totalTime = Time::GetTotalTime();
+
+    for (auto& gameObject : m_GameObjects) {
+        if (!dirLight) {
+            dirLight = gameObject->GetComponent<DirectionalLightComponent>();
+        }
+
+        if (auto* pl = gameObject->GetComponent<PointLightComponent>()) {
+            if (lighting.PointLightCount < SceneLightingData::MaxPointLights) {
+                auto* t = gameObject->GetTransform();
+                const glm::vec3 basePos = t ? t->position : glm::vec3(0.0f);
+                const glm::vec3 lightWorldPos = basePos + glm::vec3(0.0f, pl->HeightOffset, 0.0f);
+                const float effectiveIntensity = pl->EvaluateEffectiveIntensity(
+                    totalTime,
+                    static_cast<uint32_t>(gameObject->GetUUID())
+                );
+
+                PointLightUniform& uniformSlot = lighting.PointLights[lighting.PointLightCount++];
+                uniformSlot.PositionAndRadius = { lightWorldPos.x, lightWorldPos.y, lightWorldPos.z, std::max(0.05f, pl->Radius) };
+                uniformSlot.ColorAndIntensity = { pl->Color.r, pl->Color.g, pl->Color.b, effectiveIntensity };
+                uniformSlot.Falloff = std::max(0.1f, pl->Falloff);
+            }
+        }
+
+        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
+        if (sprite && gameObject->GetTransform() &&
+            sprite->GetBillboardMode() != SpriteRenderer::BillboardMode::FlatGround) {
+            standeeQueue.push_back(gameObject.get());
+        }
+    }
+
+    if (dirLight) {
+        lighting.LightingActive = true;
+        lighting.SunDirection = dirLight->GetLightDirection();
+        lighting.SunColor = dirLight->SunColor;
+        lighting.SunIntensity = std::max(0.0f, dirLight->SunIntensity);
+        lighting.AmbientColor = dirLight->AmbientColor;
+        lighting.AmbientIntensity = std::max(0.0f, dirLight->AmbientIntensity);
+        lighting.ShadowSoftness = std::max(0.0f, dirLight->ShadowSoftness);
+        lighting.ShadowBias = std::clamp(dirLight->ShadowBias, 0.0001f, 0.05f);
+    } else if (lighting.PointLightCount > 0) {
+        lighting.LightingActive = true;
+        lighting.AmbientColor = { 0.55f, 0.55f, 0.62f };
+        lighting.AmbientIntensity = 1.0f;
+        lighting.SunIntensity = 0.0f;
+    }
+
+    // ==========================================
+    // PASS 0: DIRECTIONAL CUTOUT SHADOW MAP CAPTURE (2048x2048 24-bit Depth FBO)
+    // ==========================================
+    if (dirLight && dirLight->CastShadows && dirLight->SunIntensity > 0.001f && ShadowMap::IsValid()) {
+        const float orthoRadius = std::clamp(activeCam->GetDistance() * 0.95f, 10.0f, 35.0f);
+        lighting.LightSpaceMatrix = dirLight->ComputeLightSpaceMatrix(
+            activeCam->GetFocalPoint(),
+            orthoRadius,
+            ShadowMap::GetResolution()
+        );
+
+        Renderer2D::BeginShadowPass(lighting.LightSpaceMatrix, 0.15f);
+        ShadowMap::BeginCapture();
+
+        const glm::vec3 sunRightXZ = dirLight->GetSunRightXZ();
+        const glm::vec3 worldUp = { 0.0f, 1.0f, 0.0f };
+
+        for (GameObject* gameObject : standeeQueue) {
+            auto* sprite = gameObject->GetComponent<SpriteRenderer>();
+            if (!sprite->GetCastShadows()) {
+                continue;
+            }
+
+            auto* transform = gameObject->GetTransform();
+            const float cutoff = std::max(0.05f, sprite->GetAlphaCutoff());
+            const glm::vec2 standeeSize = { transform->scale.x, transform->scale.y };
+
+            if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane ||
+                sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::CylindricalY) {
+                // Orient cutout standee perpendicular to the sun's horizontal azimuth at its Y=0 anchor
+                // so silhouette shadows remain crisp and un-foreshortened across 360° sun angles
+                if (sprite->GetSubTexture()) {
+                    Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
+                                              transform->rotation.z, sprite->GetSubTexture(), glm::vec4(1.0f),
+                                              cutoff, -1.0f, 0.0f);
+                } else {
+                    Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
+                                              transform->rotation.z, sprite->GetTexture(), glm::vec4(1.0f),
+                                              cutoff, -1.0f, 0.0f);
+                }
+            } else {
+                const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * transform->scale.y, 0.0f);
+                const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
+                                              glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                              glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
+                                              glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                              glm::scale(glm::mat4(1.0f), transform->scale);
+                if (sprite->GetSubTexture()) {
+                    Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
+                } else {
+                    Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
+                }
+            }
+        }
+
+        Renderer2D::EndScene();
+        ShadowMap::EndCapture();
+
+        lighting.ShadowsEnabled = true;
+        lighting.ShadowMapTextureID = ShadowMap::GetDepthTextureID();
+        lighting.ShadowMapTexelSize = 1.0f / static_cast<float>(ShadowMap::GetResolution());
+    }
+
     // ==========================================
     // PASS 1: 3D GROUND PLANE (Splatmap Terrain -> Tilemaps -> Flat Decals)
     // ==========================================
@@ -405,14 +526,14 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
             auto* transform = gameObject->GetTransform();
             const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
             const glm::vec3 scale  = transform ? transform->scale    : glm::vec3(1.0f);
-            TerrainRenderer::RenderTerrain(*terrain, origin, scale, *activeCam);
+            TerrainRenderer::RenderTerrain(*terrain, origin, scale, *activeCam, &lighting);
             hasSplatTerrain = true;
         }
     }
 
     // 1B. Discrete XZ Tilemaps (layered cleanly at +0.002f above splatmap when coexisting)
     Renderer::SetPolygonOffset(true, hasSplatTerrain ? 0.5f : 1.0f, hasSplatTerrain ? 0.5f : 1.0f);
-    Renderer2D::BeginScene(*activeCam, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
+    Renderer2D::BeginScene(*activeCam, lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
 
     const glm::mat4 groundFlatRotation = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     const float tileOverlayLift = hasSplatTerrain ? 0.002f : 0.0f;
@@ -441,7 +562,7 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
                                                  groundFlatRotation *
                                                  glm::scale(glm::mat4(1.0f), glm::vec3(mapScale.x, mapScale.z, 1.0f));
 
-                    Renderer2D::DrawQuad(tileMatrix, subTexture, glm::vec4(1.0f), 0.0f);
+                    Renderer2D::DrawQuad(tileMatrix, subTexture, glm::vec4(1.0f), 0.0f, 0.0f, 0.02f);
                 }
             }
         }
@@ -462,10 +583,13 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
                                       groundFlatRotation *
                                       glm::scale(glm::mat4(1.0f), glm::vec3(transform->scale.x, transform->scale.z, 1.0f));
 
+        const float decalEmissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
         if (sprite->GetSubTexture()) {
-            Renderer2D::DrawQuad(decalMatrix, sprite->GetSubTexture(), sprite->GetColor(), sprite->GetAlphaCutoff());
+            Renderer2D::DrawQuad(decalMatrix, sprite->GetSubTexture(), sprite->GetColor(),
+                                 sprite->GetAlphaCutoff(), decalEmissive, 0.02f);
         } else {
-            Renderer2D::DrawQuad(decalMatrix, sprite->GetTexture(), sprite->GetColor(), sprite->GetAlphaCutoff());
+            Renderer2D::DrawQuad(decalMatrix, sprite->GetTexture(), sprite->GetColor(),
+                                 sprite->GetAlphaCutoff(), decalEmissive, 0.02f);
         }
     }
 
@@ -473,18 +597,8 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     Renderer::SetPolygonOffset(false);
 
     // ==========================================
-    // PASS 2: UPRIGHT 2.5D CUTOUT STANDEES (Depth Test + Alpha Discard)
+    // PASS 2: UPRIGHT 2.5D CUTOUT STANDEES (Depth Test + Alpha Discard + Soft Shadow Receiving)
     // ==========================================
-    std::vector<GameObject*> standeeQueue;
-    standeeQueue.reserve(m_GameObjects.size());
-    for (auto& gameObject : m_GameObjects) {
-        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
-        if (sprite && gameObject->GetTransform() &&
-            sprite->GetBillboardMode() != SpriteRenderer::BillboardMode::FlatGround) {
-            standeeQueue.push_back(gameObject.get());
-        }
-    }
-
     const glm::vec3 camEye = activeCam->GetPosition();
     const glm::vec3 camForward = activeCam->GetForward();
     std::sort(standeeQueue.begin(), standeeQueue.end(), [&](GameObject* a, GameObject* b) {
@@ -493,29 +607,35 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         return distA > distB; // Back-to-front for clean outline anti-aliasing alongside Z-buffer cutout
     });
 
-    Renderer2D::BeginScene(*activeCam, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.15f);
+    Renderer2D::BeginScene(*activeCam, lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.15f);
 
     for (GameObject* gameObject : standeeQueue) {
         auto* sprite = gameObject->GetComponent<SpriteRenderer>();
         auto* transform = gameObject->GetTransform();
         const float cutoff = sprite->GetAlphaCutoff();
         const glm::vec2 standeeSize = { transform->scale.x, transform->scale.y };
+        const float standeeEmissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
+        const float receiverOffset = std::max(0.48f, 0.55f * std::abs(standeeSize.x));
 
         if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane) {
             if (sprite->GetSubTexture()) {
                 Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRight(), activeCam->GetUp(),
-                                          transform->rotation.z, sprite->GetSubTexture(), sprite->GetColor(), cutoff);
+                                          transform->rotation.z, sprite->GetSubTexture(), sprite->GetColor(),
+                                          cutoff, standeeEmissive, receiverOffset);
             } else {
                 Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRight(), activeCam->GetUp(),
-                                          transform->rotation.z, sprite->GetTexture(), sprite->GetColor(), cutoff);
+                                          transform->rotation.z, sprite->GetTexture(), sprite->GetColor(),
+                                          cutoff, standeeEmissive, receiverOffset);
             }
         } else if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::CylindricalY) {
             if (sprite->GetSubTexture()) {
                 Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRightXZ(), glm::vec3(0.0f, 1.0f, 0.0f),
-                                          transform->rotation.z, sprite->GetSubTexture(), sprite->GetColor(), cutoff);
+                                          transform->rotation.z, sprite->GetSubTexture(), sprite->GetColor(),
+                                          cutoff, standeeEmissive, receiverOffset);
             } else {
                 Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRightXZ(), glm::vec3(0.0f, 1.0f, 0.0f),
-                                          transform->rotation.z, sprite->GetTexture(), sprite->GetColor(), cutoff);
+                                          transform->rotation.z, sprite->GetTexture(), sprite->GetColor(),
+                                          cutoff, standeeEmissive, receiverOffset);
             }
         } else {
             const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * transform->scale.y, 0.0f);
@@ -525,9 +645,11 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
                                           glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0.0f, 0.0f, 1.0f)) *
                                           glm::scale(glm::mat4(1.0f), transform->scale);
             if (sprite->GetSubTexture()) {
-                Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), sprite->GetColor(), cutoff);
+                Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), sprite->GetColor(),
+                                     cutoff, standeeEmissive, receiverOffset);
             } else {
-                Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), sprite->GetColor(), cutoff);
+                Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), sprite->GetColor(),
+                                     cutoff, standeeEmissive, receiverOffset);
             }
         }
     }
@@ -538,10 +660,11 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     // PASS 3: 3D BILLBOARD PARTICLES (Depth Test ON, Depth Write OFF)
     // ==========================================
     Renderer::SetDepthMask(false);
-    Renderer2D::BeginScene(*activeCam, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
+    Renderer2D::BeginScene(*activeCam, lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
 
     for (auto& gameObject : m_GameObjects) {
         if (auto* particleSystem = gameObject->GetComponent<ParticleSystem>()) {
+            const float particleEmissive = particleSystem->EmissiveParticles ? 1.25f : 0.0f;
             for (const auto& particle : particleSystem->GetParticles()) {
                 if (!particle.active) continue;
 
@@ -557,7 +680,9 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
                     activeCam->GetUp(),
                     glm::degrees(particle.rotation),
                     color,
-                    0.0f
+                    0.0f,
+                    particleEmissive,
+                    0.25f
                 );
             }
         }

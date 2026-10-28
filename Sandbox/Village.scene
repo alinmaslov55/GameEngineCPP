@@ -13,6 +13,48 @@
     "GameObjects": [
         {
             "Components": {
+                "DirectionalLight": {
+                    "AmbientColor": [
+                        0.36000001430511475,
+                        0.4099999964237213,
+                        0.6200000047683716
+                    ],
+                    "AmbientIntensity": 0.6200000047683716,
+                    "Azimuth": -42.0,
+                    "CastShadows": true,
+                    "Elevation": 40.0,
+                    "ShadowBias": 0.0017999999690800905,
+                    "ShadowSoftness": 1.350000023841858,
+                    "SunColor": [
+                        1.0,
+                        0.9100000262260437,
+                        0.7400000095367432
+                    ],
+                    "SunIntensity": 1.0499999523162842
+                },
+                "Transform": {
+                    "Position": [
+                        6.5,
+                        8.0,
+                        6.5
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Sun Light",
+            "UUID": 15004716361911742041
+        },
+        {
+            "Components": {
                 "Terrain": {
                     "BlendSharpness": 0.6800000071525574,
                     "Depth": 16.0,
@@ -59,7 +101,7 @@
                 }
             },
             "Name": "Terrain",
-            "UUID": 4978284750826257829
+            "UUID": 13332274594364339014
         },
         {
             "Components": {
@@ -342,7 +384,7 @@
                 }
             },
             "Name": "Map",
-            "UUID": 18328023742919975505
+            "UUID": 7675160945905127398
         },
         {
             "Components": {
@@ -368,17 +410,56 @@
                     "UseGravity": true
                 },
                 "ParticleSystem": {
-                    "PoolSize": 500
+                    "AutoEmit": false,
+                    "EmissiveParticles": false,
+                    "EmitRate": 8.0,
+                    "PoolSize": 500,
+                    "SpawnOffset": [
+                        0.0,
+                        0.949999988079071,
+                        0.0
+                    ],
+                    "TemplateProps": {
+                        "ColorBegin": [
+                            1.0,
+                            0.7200000286102295,
+                            0.2199999988079071,
+                            0.949999988079071
+                        ],
+                        "ColorEnd": [
+                            0.8999999761581421,
+                            0.18000000715255737,
+                            0.07999999821186066,
+                            0.0
+                        ],
+                        "LifeTime": 1.149999976158142,
+                        "SizeBegin": 0.11999999731779099,
+                        "SizeEnd": 0.019999999552965164,
+                        "SizeVariation": 0.03999999910593033,
+                        "Velocity": [
+                            0.0,
+                            1.149999976158142,
+                            0.0
+                        ],
+                        "VelocityVariation": [
+                            0.3499999940395355,
+                            0.3499999940395355,
+                            0.3499999940395355
+                        ]
+                    }
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/hero_lamb.png"
                 },
                 "Transform": {
@@ -400,7 +481,7 @@
                 }
             },
             "Name": "Player",
-            "UUID": 7379365841163475812
+            "UUID": 14180495124609244835
         },
         {
             "Components": {
@@ -422,15 +503,32 @@
                     ],
                     "UseGravity": true
                 },
+                "PointLight": {
+                    "Color": [
+                        0.949999988079071,
+                        0.2199999988079071,
+                        0.18000000715255737
+                    ],
+                    "Falloff": 1.899999976158142,
+                    "Flicker": true,
+                    "FlickerAmount": 0.11999999731779099,
+                    "FlickerSpeed": 4.199999809265137,
+                    "HeightOffset": 1.100000023841858,
+                    "Intensity": 0.949999988079071,
+                    "Radius": 3.200000047683716
+                },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.1599999964237213,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/cult_shrine.png"
                 },
                 "Transform": {
@@ -452,7 +550,223 @@
                 }
             },
             "Name": "Cult Shrine",
-            "UUID": 15590916090793608674
+            "UUID": 4048757214560281494
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "ParticleSystem": {
+                    "AutoEmit": true,
+                    "EmissiveParticles": true,
+                    "EmitRate": 7.0,
+                    "PoolSize": 120,
+                    "SpawnOffset": [
+                        0.0,
+                        1.0199999809265137,
+                        0.0
+                    ],
+                    "TemplateProps": {
+                        "ColorBegin": [
+                            1.0,
+                            0.7599999904632568,
+                            0.23999999463558197,
+                            0.949999988079071
+                        ],
+                        "ColorEnd": [
+                            0.9200000166893005,
+                            0.1599999964237213,
+                            0.07999999821186066,
+                            0.0
+                        ],
+                        "LifeTime": 1.149999976158142,
+                        "SizeBegin": 0.09000000357627869,
+                        "SizeEnd": 0.014999999664723873,
+                        "SizeVariation": 0.029999999329447746,
+                        "Velocity": [
+                            0.0,
+                            1.0499999523162842,
+                            0.0
+                        ],
+                        "VelocityVariation": [
+                            0.2800000011920929,
+                            0.30000001192092896,
+                            0.2800000011920929
+                        ]
+                    }
+                },
+                "PointLight": {
+                    "Color": [
+                        1.0,
+                        0.5799999833106995,
+                        0.20000000298023224
+                    ],
+                    "Falloff": 1.75,
+                    "Flicker": true,
+                    "FlickerAmount": 0.18000000715255737,
+                    "FlickerSpeed": 8.199999809265137,
+                    "HeightOffset": 0.949999988079071,
+                    "Intensity": 1.850000023841858,
+                    "Radius": 4.800000190734863
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.550000011920929,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/ritual_brazier.png"
+                },
+                "Transform": {
+                    "Position": [
+                        4.599999904632568,
+                        0.0,
+                        6.199999809265137
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.949999988079071,
+                        1.350000023841858,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Ritual Brazier 1",
+            "UUID": 15408944521335132051
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "ParticleSystem": {
+                    "AutoEmit": true,
+                    "EmissiveParticles": true,
+                    "EmitRate": 7.0,
+                    "PoolSize": 120,
+                    "SpawnOffset": [
+                        0.0,
+                        1.0199999809265137,
+                        0.0
+                    ],
+                    "TemplateProps": {
+                        "ColorBegin": [
+                            1.0,
+                            0.7599999904632568,
+                            0.23999999463558197,
+                            0.949999988079071
+                        ],
+                        "ColorEnd": [
+                            0.9200000166893005,
+                            0.1599999964237213,
+                            0.07999999821186066,
+                            0.0
+                        ],
+                        "LifeTime": 1.149999976158142,
+                        "SizeBegin": 0.09000000357627869,
+                        "SizeEnd": 0.014999999664723873,
+                        "SizeVariation": 0.029999999329447746,
+                        "Velocity": [
+                            0.0,
+                            1.0499999523162842,
+                            0.0
+                        ],
+                        "VelocityVariation": [
+                            0.2800000011920929,
+                            0.30000001192092896,
+                            0.2800000011920929
+                        ]
+                    }
+                },
+                "PointLight": {
+                    "Color": [
+                        1.0,
+                        0.5799999833106995,
+                        0.20000000298023224
+                    ],
+                    "Falloff": 1.75,
+                    "Flicker": true,
+                    "FlickerAmount": 0.18000000715255737,
+                    "FlickerSpeed": 8.199999809265137,
+                    "HeightOffset": 0.949999988079071,
+                    "Intensity": 1.850000023841858,
+                    "Radius": 4.800000190734863
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.550000011920929,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/ritual_brazier.png"
+                },
+                "Transform": {
+                    "Position": [
+                        8.399999618530273,
+                        0.0,
+                        6.199999809265137
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.949999988079071,
+                        1.350000023841858,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Ritual Brazier 2",
+            "UUID": 15661502234852751319
         },
         {
             "Components": {
@@ -477,12 +791,15 @@
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/pine_tree.png"
                 },
                 "Transform": {
@@ -504,7 +821,7 @@
                 }
             },
             "Name": "Pine Tree 1",
-            "UUID": 15509164509941603960
+            "UUID": 4985263904793478743
         },
         {
             "Components": {
@@ -529,12 +846,15 @@
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/pine_tree.png"
                 },
                 "Transform": {
@@ -556,7 +876,7 @@
                 }
             },
             "Name": "Pine Tree 2",
-            "UUID": 8992977823999280569
+            "UUID": 5919138496748220257
         },
         {
             "Components": {
@@ -581,12 +901,15 @@
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/pine_tree.png"
                 },
                 "Transform": {
@@ -608,7 +931,7 @@
                 }
             },
             "Name": "Pine Tree 3",
-            "UUID": 5040103923902523349
+            "UUID": 14655992262042992462
         },
         {
             "Components": {
@@ -633,12 +956,15 @@
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/pine_tree.png"
                 },
                 "Transform": {
@@ -660,7 +986,7 @@
                 }
             },
             "Name": "Pine Tree 4",
-            "UUID": 8890940938925223646
+            "UUID": 1851719838021409869
         },
         {
             "Components": {
@@ -685,12 +1011,15 @@
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/pine_tree.png"
                 },
                 "Transform": {
@@ -712,7 +1041,7 @@
                 }
             },
             "Name": "Pine Tree 5",
-            "UUID": 15560035325054601709
+            "UUID": 14095638226078193399
         },
         {
             "Components": {
@@ -737,12 +1066,15 @@
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/pine_tree.png"
                 },
                 "Transform": {
@@ -764,7 +1096,7 @@
                 }
             },
             "Name": "Pine Tree 6",
-            "UUID": 14967171018993629699
+            "UUID": 11083476611205255558
         },
         {
             "Components": {
@@ -789,12 +1121,15 @@
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/pine_tree.png"
                 },
                 "Transform": {
@@ -816,7 +1151,7 @@
                 }
             },
             "Name": "Pine Tree 7",
-            "UUID": 1353134178802730878
+            "UUID": 17742505201984529091
         },
         {
             "Components": {
@@ -841,12 +1176,15 @@
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/pine_tree.png"
                 },
                 "Transform": {
@@ -868,7 +1206,7 @@
                 }
             },
             "Name": "Pine Tree 8",
-            "UUID": 1902706454390136199
+            "UUID": 2737852770457228532
         },
         {
             "Components": {
@@ -893,12 +1231,15 @@
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/pine_tree.png"
                 },
                 "Transform": {
@@ -920,19 +1261,22 @@
                 }
             },
             "Name": "Pine Tree 9",
-            "UUID": 16919152551377652036
+            "UUID": 4866970481750530412
         },
         {
             "Components": {
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/berry_bush.png"
                 },
                 "Transform": {
@@ -954,19 +1298,22 @@
                 }
             },
             "Name": "Berry Bush 1",
-            "UUID": 334587591957913941
+            "UUID": 10412239041041617921
         },
         {
             "Components": {
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/berry_bush.png"
                 },
                 "Transform": {
@@ -988,19 +1335,22 @@
                 }
             },
             "Name": "Berry Bush 2",
-            "UUID": 15934972264182717585
+            "UUID": 12221995266216524317
         },
         {
             "Components": {
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/berry_bush.png"
                 },
                 "Transform": {
@@ -1022,19 +1372,22 @@
                 }
             },
             "Name": "Berry Bush 3",
-            "UUID": 10135133866088515796
+            "UUID": 10978365592066085470
         },
         {
             "Components": {
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/berry_bush.png"
                 },
                 "Transform": {
@@ -1056,19 +1409,22 @@
                 }
             },
             "Name": "Berry Bush 4",
-            "UUID": 17868750063263461034
+            "UUID": 5170130932178489246
         },
         {
             "Components": {
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/berry_bush.png"
                 },
                 "Transform": {
@@ -1090,19 +1446,22 @@
                 }
             },
             "Name": "Berry Bush 5",
-            "UUID": 895844295122783549
+            "UUID": 6848426219624205399
         },
         {
             "Components": {
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/berry_bush.png"
                 },
                 "Transform": {
@@ -1124,19 +1483,22 @@
                 }
             },
             "Name": "Berry Bush 6",
-            "UUID": 3716174540523113184
+            "UUID": 8929996037420260592
         },
         {
             "Components": {
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/berry_bush.png"
                 },
                 "Transform": {
@@ -1158,19 +1520,22 @@
                 }
             },
             "Name": "Berry Bush 7",
-            "UUID": 15629733328060927114
+            "UUID": 14953313654102595401
         },
         {
             "Components": {
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
                     "BillboardMode": 0,
+                    "CastShadows": true,
                     "Color": [
                         1.0,
                         1.0,
                         1.0,
                         1.0
                     ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
                     "TexturePath": "assets/diorama/berry_bush.png"
                 },
                 "Transform": {
@@ -1192,7 +1557,7 @@
                 }
             },
             "Name": "Berry Bush 8",
-            "UUID": 8189503546457411348
+            "UUID": 11368588967169076941
         },
         {
             "Components": {
@@ -1339,7 +1704,7 @@
                 ]
             },
             "Name": "HUD",
-            "UUID": 18168935485012348452
+            "UUID": 18347006110665985377
         }
     ],
     "OrthographicSize": 5.0,

@@ -1,5 +1,8 @@
 #include "Engine/Particles/ParticleSystem.h"
+#include "Engine/Scene/GameObject.h"
+#include "Engine/Scene/Transform.h"
 #include "Engine/Utils/Logger.h"
+#include <algorithm>
 #include <cstdlib>
 #include <glm/gtc/constants.hpp>
 #ifndef GLM_ENABLE_EXPERIMENTAL
@@ -44,11 +47,11 @@ namespace Engine {
         particle.colorBegin = particleProps.colorBegin;
         particle.colorEnd = particleProps.colorEnd;
 
-        particle.sizeBegin = particleProps.sizeBegin + particleProps.sizeVariation * RandomFloat();
-        particle.sizeEnd = particleProps.sizeEnd;
+        particle.sizeBegin = std::max(0.01f, particleProps.sizeBegin + particleProps.sizeVariation * RandomFloat());
+        particle.sizeEnd = std::max(0.0f, particleProps.sizeEnd);
 
-        particle.lifeTime = particleProps.lifeTime;
-        particle.lifeRemaining = particleProps.lifeTime;
+        particle.lifeTime = std::max(0.05f, particleProps.lifeTime);
+        particle.lifeRemaining = particle.lifeTime;
 
         // Cycle through the pool index safely
         if (m_PoolIndex == 0) {
@@ -60,6 +63,27 @@ namespace Engine {
 
     void ParticleSystem::Update(float deltaTime) {
         ENGINE_CORE_TRACE("ParticleSystem::Update (deltaTime: {:.4f}s)", deltaTime);
+
+        if (AutoEmit && EmitRate > 0.0f && deltaTime > 0.0f) {
+            m_EmitAccumulator = std::min(m_EmitAccumulator + deltaTime * EmitRate, 32.0f);
+            glm::vec3 basePos{ 0.0f };
+            if (auto* owner = GetGameObject()) {
+                if (auto* transform = owner->GetTransform()) {
+                    basePos = transform->position;
+                }
+            }
+            while (m_EmitAccumulator >= 1.0f) {
+                ParticleProps props = TemplateProps;
+                props.position = basePos + SpawnOffset + glm::vec3(
+                    0.12f * RandomFloat(),
+                    0.06f * RandomFloat(),
+                    0.12f * RandomFloat()
+                );
+                Emit(props);
+                m_EmitAccumulator -= 1.0f;
+            }
+        }
+
         for (auto& particle : m_ParticlePool) {
             if (!particle.active) continue;
 

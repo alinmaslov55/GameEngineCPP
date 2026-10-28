@@ -48,12 +48,24 @@ public:
     float GetAlphaCutoff() const { return m_AlphaCutoff; }
     void SetAlphaCutoff(float cutoff) { m_AlphaCutoff = std::clamp(cutoff, 0.0f, 1.0f); }
 
+    bool GetCastShadows() const { return m_CastShadows; }
+    void SetCastShadows(bool castShadows) { m_CastShadows = castShadows; }
+
+    bool GetReceiveLighting() const { return m_ReceiveLighting; }
+    void SetReceiveLighting(bool receiveLighting) { m_ReceiveLighting = receiveLighting; }
+
+    float GetEmissive() const { return m_Emissive; }
+    void SetEmissive(float emissive) { m_Emissive = std::clamp(emissive, 0.0f, 5.0f); }
+
 private:
     std::shared_ptr<Texture> m_Texture = nullptr;
     std::shared_ptr<SubTexture2D> m_SubTexture = nullptr;
     glm::vec4 m_Color{ 1.0f, 1.0f, 1.0f, 1.0f };
     BillboardMode m_BillboardMode = BillboardMode::ViewPlane;
     float m_AlphaCutoff = 0.15f;
+    bool m_CastShadows = true;
+    bool m_ReceiveLighting = true;
+    float m_Emissive = 0.0f;
 };
 } // namespace Engine
 

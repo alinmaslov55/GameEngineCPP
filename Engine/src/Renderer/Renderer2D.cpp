@@ -5,9 +5,11 @@
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <string>
 
 namespace Engine {
 
@@ -17,13 +19,16 @@ struct QuadVertex {
     glm::vec2 TexCoord;
     float TexIndex;
     float AlphaCutoff;
+    float Emissive;     // < 0.0 = unlit; >= 0.0 = lit + self-illumination multiplier
+    float ShadowOffset; // World-space receiver offset along -SunDirection to prevent billboard self-shadowing
 };
 
 struct Renderer2DStorage {
     static constexpr uint32_t MaxQuads = 10000;
     static constexpr uint32_t MaxVertices = MaxQuads * 4;
     static constexpr uint32_t MaxIndices = MaxQuads * 6;
-    static constexpr uint32_t MaxTextureSlots = 16;
+    static constexpr uint32_t MaxTextureSlots = 15; // Slots 0..14 = batched color textures; Slot 15 = ShadowMap
+    static constexpr uint32_t ShadowMapTextureSlot = 15;
 
     std::shared_ptr<VertexArray> QuadVertexArray;
     std::shared_ptr<VertexBuffer> QuadVertexBuffer;
@@ -39,6 +44,7 @@ struct Renderer2DStorage {
 
     glm::vec4 QuadVertexPositions[4]{};
     float DefaultAlphaCutoff = 0.0f;
+    uint32_t BoundShadowTextureID = 0;
 
     Renderer2D::Statistics Stats;
 };
@@ -81,8 +87,10 @@ void ComputeBillboardCorners(const glm::vec3& anchorPosition,
 } // namespace
 
 void Renderer2D::Init() {
-    ENGINE_CORE_INFO("Initializing Renderer2D (MaxQuads: {}, MaxTextureSlots: {})...",
-                     Renderer2DStorage::MaxQuads, Renderer2DStorage::MaxTextureSlots);
+    ENGINE_CORE_INFO("Initializing Renderer2D (MaxQuads: {}, MaxTextureSlots: {} + ShadowSlot {})...",
+                     Renderer2DStorage::MaxQuads,
+                     Renderer2DStorage::MaxTextureSlots,
+                     Renderer2DStorage::ShadowMapTextureSlot);
     s_Data = new Renderer2DStorage();
 
     s_Data->QuadVertexArray = std::make_shared<VertexArray>();
@@ -91,11 +99,13 @@ void Renderer2D::Init() {
         Renderer2DStorage::MaxVertices * static_cast<uint32_t>(sizeof(QuadVertex))
     );
     s_Data->QuadVertexBuffer->SetLayout({
-        { ShaderDataType::Float3, "a_Position"    },
-        { ShaderDataType::Float4, "a_Color"       },
-        { ShaderDataType::Float2, "a_TexCoord"    },
-        { ShaderDataType::Float,  "a_TexIndex"    },
-        { ShaderDataType::Float,  "a_AlphaCutoff" }
+        { ShaderDataType::Float3, "a_Position"     },
+        { ShaderDataType::Float4, "a_Color"        },
+        { ShaderDataType::Float2, "a_TexCoord"     },
+        { ShaderDataType::Float,  "a_TexIndex"     },
+        { ShaderDataType::Float,  "a_AlphaCutoff"  },
+        { ShaderDataType::Float,  "a_Emissive"     },
+        { ShaderDataType::Float,  "a_ShadowOffset" }
     });
     s_Data->QuadVertexArray->AddVertexBuffer(s_Data->QuadVertexBuffer);
 
@@ -119,11 +129,11 @@ void Renderer2D::Init() {
     s_Data->QuadVertexArray->SetIndexBuffer(quadIB);
     delete[] quadIndices;
 
-    // Create 1x1 white texture for solid color rendering in slot 0
+    // Create 1x1 white texture for solid color rendering in slot 0 & fallback shadow slot 15
     glGenTextures(1, &s_Data->WhiteTexture);
     glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     uint32_t whiteData = 0xffffffff;
@@ -142,33 +152,113 @@ void Renderer2D::Init() {
         layout(location = 2) in vec2 a_TexCoord;
         layout(location = 3) in float a_TexIndex;
         layout(location = 4) in float a_AlphaCutoff;
+        layout(location = 5) in float a_Emissive;
+        layout(location = 6) in float a_ShadowOffset;
 
         uniform mat4 u_ViewProjection;
 
+        out vec3 v_WorldPos;
         out vec4 v_Color;
         out vec2 v_TexCoord;
         flat out int v_TexIndex;
         out float v_AlphaCutoff;
+        out float v_Emissive;
+        out float v_ShadowOffset;
 
         void main() {
+            v_WorldPos = a_Position;
             v_Color = a_Color;
             v_TexCoord = a_TexCoord;
             v_TexIndex = int(a_TexIndex + 0.5);
             v_AlphaCutoff = a_AlphaCutoff;
+            v_Emissive = a_Emissive;
+            v_ShadowOffset = a_ShadowOffset;
             gl_Position = u_ViewProjection * vec4(a_Position, 1.0);
         }
     )";
 
     std::string fragmentSrc = R"(
         #version 410 core
+        in vec3 v_WorldPos;
         in vec4 v_Color;
         in vec2 v_TexCoord;
         flat in int v_TexIndex;
         in float v_AlphaCutoff;
+        in float v_Emissive;
+        in float v_ShadowOffset;
 
         out vec4 color;
 
-        uniform sampler2D u_Textures[16];
+        uniform sampler2D u_Textures[15];
+        uniform sampler2D u_ShadowMap;
+
+        uniform int u_LightingEnabled;
+        uniform vec3 u_SunDirection;
+        uniform vec3 u_SunColor;
+        uniform float u_SunIntensity;
+        uniform vec3 u_AmbientColor;
+        uniform float u_AmbientIntensity;
+
+        uniform int u_ShadowsEnabled;
+        uniform mat4 u_LightSpaceMatrix;
+        uniform float u_ShadowTexelSize;
+        uniform float u_ShadowSoftness;
+        uniform float u_ShadowBias;
+
+        uniform int u_PointLightCount;
+        uniform vec4 u_PointLightPosRadius[8];
+        uniform vec4 u_PointLightColorIntensity[8];
+        uniform float u_PointLightFalloff[8];
+
+        float computeShadowVisibility(vec3 worldPos, float receiverOffset) {
+            if (u_ShadowsEnabled == 0) {
+                return 1.0;
+            }
+            vec3 samplePos = worldPos - u_SunDirection * receiverOffset;
+            vec4 lightClip = u_LightSpaceMatrix * vec4(samplePos, 1.0);
+            vec3 projCoords = (lightClip.xyz / max(lightClip.w, 1e-5)) * 0.5 + 0.5;
+
+            if (projCoords.z > 1.0 || projCoords.x < 0.0 || projCoords.x > 1.0 ||
+                projCoords.y < 0.0 || projCoords.y > 1.0) {
+                return 1.0;
+            }
+
+            const vec2 poissonDisk[9] = vec2[9](
+                vec2( 0.000,  0.000),
+                vec2(-0.707, -0.707),
+                vec2( 0.707, -0.707),
+                vec2(-0.707,  0.707),
+                vec2( 0.707,  0.707),
+                vec2(-1.000,  0.000),
+                vec2( 1.000,  0.000),
+                vec2( 0.000, -1.000),
+                vec2( 0.000,  1.000)
+            );
+
+            float radiusUV = u_ShadowTexelSize * max(u_ShadowSoftness, 0.25);
+            float currentDepth = projCoords.z - u_ShadowBias;
+            float litSum = 0.0;
+            for (int i = 0; i < 9; ++i) {
+                float closestDepth = texture(u_ShadowMap, projCoords.xy + poissonDisk[i] * radiusUV).r;
+                litSum += (currentDepth <= closestDepth) ? 1.0 : 0.0;
+            }
+            return litSum / 9.0;
+        }
+
+        vec3 evaluatePointLights(vec3 worldPos) {
+            vec3 accum = vec3(0.0);
+            for (int i = 0; i < u_PointLightCount; ++i) {
+                vec3 lPos = u_PointLightPosRadius[i].xyz;
+                float radius = max(u_PointLightPosRadius[i].w, 0.05);
+                float dist = length(lPos - worldPos);
+                if (dist < radius) {
+                    float x = clamp(1.0 - (dist / radius), 0.0, 1.0);
+                    float atten = pow(x * x * (3.0 - 2.0 * x), max(u_PointLightFalloff[i], 0.25));
+                    accum += u_PointLightColorIntensity[i].rgb * (u_PointLightColorIntensity[i].a * atten);
+                }
+            }
+            return accum;
+        }
 
         void main() {
             vec4 texSample = vec4(1.0);
@@ -188,21 +278,31 @@ void Renderer2D::Init() {
                 case 12: texSample = texture(u_Textures[12], v_TexCoord); break;
                 case 13: texSample = texture(u_Textures[13], v_TexCoord); break;
                 case 14: texSample = texture(u_Textures[14], v_TexCoord); break;
-                case 15: texSample = texture(u_Textures[15], v_TexCoord); break;
             }
             vec4 texColor = v_Color * texSample;
             if (v_AlphaCutoff > 0.0 && texColor.a < v_AlphaCutoff) {
                 discard;
             }
-            color = texColor;
+
+            vec3 finalRGB = texColor.rgb;
+            if (u_LightingEnabled == 1 && v_Emissive >= 0.0) {
+                float shadowVis = computeShadowVisibility(v_WorldPos, v_ShadowOffset);
+                vec3 sunAndAmbient = u_AmbientColor * u_AmbientIntensity +
+                                     u_SunColor * (u_SunIntensity * shadowVis);
+                vec3 pointGlow = evaluatePointLights(v_WorldPos);
+                finalRGB = texColor.rgb * (sunAndAmbient + pointGlow + vec3(v_Emissive));
+            }
+            color = vec4(finalRGB, texColor.a);
         }
     )";
 
     s_Data->TextureShader = std::make_shared<Shader>(vertexSrc, fragmentSrc);
     s_Data->TextureShader->Bind();
     s_Data->TextureShader->SetIntArray("u_Textures", samplers, Renderer2DStorage::MaxTextureSlots);
+    s_Data->TextureShader->SetInt("u_ShadowMap", static_cast<int>(Renderer2DStorage::ShadowMapTextureSlot));
 
     s_Data->TextureSlots[0] = s_Data->WhiteTexture;
+    s_Data->BoundShadowTextureID = s_Data->WhiteTexture;
 
     s_Data->QuadVertexPositions[0] = { -0.5f, -0.5f, 0.0f, 1.0f };
     s_Data->QuadVertexPositions[1] = {  0.5f, -0.5f, 0.0f, 1.0f };
@@ -225,12 +325,75 @@ void Renderer2D::Shutdown() {
     ENGINE_CORE_INFO("Renderer2D shut down");
 }
 
+void Renderer2D::ApplyLightingUniforms(const SceneLightingData* lighting) {
+    auto& shader = *s_Data->TextureShader;
+    shader.Bind();
+
+    if (lighting && lighting->LightingActive) {
+        s_Data->BoundShadowTextureID = (lighting->ShadowsEnabled && lighting->ShadowMapTextureID != 0)
+            ? lighting->ShadowMapTextureID
+            : s_Data->WhiteTexture;
+
+        shader.SetInt("u_LightingEnabled", 1);
+        shader.SetFloat3("u_SunDirection", lighting->SunDirection);
+        shader.SetFloat3("u_SunColor", lighting->SunColor);
+        shader.SetFloat("u_SunIntensity", lighting->SunIntensity);
+        shader.SetFloat3("u_AmbientColor", lighting->AmbientColor);
+        shader.SetFloat("u_AmbientIntensity", lighting->AmbientIntensity);
+
+        shader.SetInt("u_ShadowsEnabled", (lighting->ShadowsEnabled && lighting->ShadowMapTextureID != 0) ? 1 : 0);
+        shader.SetMat4("u_LightSpaceMatrix", lighting->LightSpaceMatrix);
+        shader.SetFloat("u_ShadowTexelSize", lighting->ShadowMapTexelSize);
+        shader.SetFloat("u_ShadowSoftness", lighting->ShadowSoftness);
+        shader.SetFloat("u_ShadowBias", lighting->ShadowBias);
+
+        const uint32_t count = std::min(lighting->PointLightCount, SceneLightingData::MaxPointLights);
+        shader.SetInt("u_PointLightCount", static_cast<int>(count));
+        for (uint32_t i = 0; i < count; ++i) {
+            const std::string idxStr = std::to_string(i);
+            shader.SetFloat4("u_PointLightPosRadius[" + idxStr + "]", lighting->PointLights[i].PositionAndRadius);
+            shader.SetFloat4("u_PointLightColorIntensity[" + idxStr + "]", lighting->PointLights[i].ColorAndIntensity);
+            shader.SetFloat("u_PointLightFalloff[" + idxStr + "]", lighting->PointLights[i].Falloff);
+        }
+    } else {
+        // Bind WhiteTexture to slot 15 immediately so ShadowMap is never still bound during Pass 0 FBO writes
+        s_Data->BoundShadowTextureID = s_Data->WhiteTexture;
+        glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::ShadowMapTextureSlot);
+        glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
+
+        shader.SetInt("u_LightingEnabled", 0);
+        shader.SetInt("u_ShadowsEnabled", 0);
+        shader.SetInt("u_PointLightCount", 0);
+    }
+}
+
 void Renderer2D::BeginScene(const PerspectiveCamera& camera, bool depthTest, float defaultAlphaCutoff) {
-    ENGINE_CORE_TRACE("Renderer2D::BeginScene (PerspectiveCamera)");
+    ENGINE_CORE_TRACE("Renderer2D::BeginScene (PerspectiveCamera, Unlit)");
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
-    s_Data->TextureShader->Bind();
+    ApplyLightingUniforms(nullptr);
     s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
+    StartBatch();
+}
+
+void Renderer2D::BeginScene(const PerspectiveCamera& camera,
+                            const SceneLightingData& lighting,
+                            bool depthTest,
+                            float defaultAlphaCutoff) {
+    ENGINE_CORE_TRACE("Renderer2D::BeginScene (PerspectiveCamera, 2.5D Lit)");
+    Renderer::SetDepthTest(depthTest);
+    s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
+    ApplyLightingUniforms(&lighting);
+    s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
+    StartBatch();
+}
+
+void Renderer2D::BeginShadowPass(const glm::mat4& lightSpaceMatrix, float defaultAlphaCutoff) {
+    ENGINE_CORE_TRACE("Renderer2D::BeginShadowPass");
+    Renderer::SetDepthTest(true);
+    s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
+    ApplyLightingUniforms(nullptr); // Unbinds ShadowMap from slot 15 to prevent FBO feedback loop
+    s_Data->TextureShader->SetMat4("u_ViewProjection", lightSpaceMatrix);
     StartBatch();
 }
 
@@ -238,7 +401,7 @@ void Renderer2D::BeginScene(const OrthographicCamera& camera) {
     ENGINE_CORE_TRACE("Renderer2D::BeginScene (OrthographicCamera)");
     Renderer::SetDepthTest(false);
     s_Data->DefaultAlphaCutoff = 0.0f;
-    s_Data->TextureShader->Bind();
+    ApplyLightingUniforms(nullptr);
     s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
     StartBatch();
 }
@@ -247,7 +410,7 @@ void Renderer2D::BeginScene(const glm::mat4& projectionMatrix, bool depthTest, f
     ENGINE_CORE_TRACE("Renderer2D::BeginScene (Projection Matrix)");
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
-    s_Data->TextureShader->Bind();
+    ApplyLightingUniforms(nullptr);
     s_Data->TextureShader->SetMat4("u_ViewProjection", projectionMatrix);
     StartBatch();
 }
@@ -285,11 +448,13 @@ void Renderer2D::Flush() {
     );
     s_Data->QuadVertexBuffer->SetData(s_Data->QuadVertexBufferBase, dataSize);
 
-    // Bind all active textures for this batch
     for (uint32_t i = 0; i < s_Data->TextureSlotIndex; i++) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, s_Data->TextureSlots[i]);
     }
+
+    glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::ShadowMapTextureSlot);
+    glBindTexture(GL_TEXTURE_2D, s_Data->BoundShadowTextureID);
 
     s_Data->TextureShader->Bind();
     s_Data->QuadVertexArray->Bind();
@@ -302,13 +467,15 @@ void Renderer2D::SubmitVertices(
     uint32_t rendererTextureID,
     const glm::vec2 texCoords[4],
     const glm::vec4& tintColor,
-    float alphaCutoff)
+    float alphaCutoff,
+    float emissive,
+    float shadowReceiverOffset)
 {
     if (s_Data->QuadIndexCount >= Renderer2DStorage::MaxIndices) {
         NextBatch();
     }
 
-    float textureIndex = 0.0f; // Default to Slot 0 (1x1 WhiteTexture)
+    float textureIndex = 0.0f;
     if (rendererTextureID != 0) {
         for (uint32_t i = 1; i < s_Data->TextureSlotIndex; i++) {
             if (s_Data->TextureSlots[i] == rendererTextureID) {
@@ -330,11 +497,13 @@ void Renderer2D::SubmitVertices(
     const float resolvedCutoff = (alphaCutoff < 0.0f) ? s_Data->DefaultAlphaCutoff : alphaCutoff;
 
     for (size_t i = 0; i < 4; i++) {
-        s_Data->QuadVertexBufferPtr->Position    = positions[i];
-        s_Data->QuadVertexBufferPtr->Color       = tintColor;
-        s_Data->QuadVertexBufferPtr->TexCoord    = texCoords[i];
-        s_Data->QuadVertexBufferPtr->TexIndex    = textureIndex;
-        s_Data->QuadVertexBufferPtr->AlphaCutoff = resolvedCutoff;
+        s_Data->QuadVertexBufferPtr->Position     = positions[i];
+        s_Data->QuadVertexBufferPtr->Color        = tintColor;
+        s_Data->QuadVertexBufferPtr->TexCoord     = texCoords[i];
+        s_Data->QuadVertexBufferPtr->TexIndex     = textureIndex;
+        s_Data->QuadVertexBufferPtr->AlphaCutoff  = resolvedCutoff;
+        s_Data->QuadVertexBufferPtr->Emissive     = emissive;
+        s_Data->QuadVertexBufferPtr->ShadowOffset = shadowReceiverOffset;
         s_Data->QuadVertexBufferPtr++;
     }
 
@@ -347,25 +516,27 @@ void Renderer2D::SubmitQuad(
     uint32_t rendererTextureID,
     const glm::vec2 texCoords[4],
     const glm::vec4& tintColor,
-    float alphaCutoff)
+    float alphaCutoff,
+    float emissive,
+    float shadowReceiverOffset)
 {
     glm::vec3 worldPositions[4];
     for (size_t i = 0; i < 4; ++i) {
         worldPositions[i] = glm::vec3(transform * s_Data->QuadVertexPositions[i]);
     }
-    SubmitVertices(worldPositions, rendererTextureID, texCoords, tintColor, alphaCutoff);
+    SubmitVertices(worldPositions, rendererTextureID, texCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
 }
 
-void Renderer2D::DrawQuad(const glm::mat4& transform, const glm::vec4& color, float alphaCutoff) {
-    SubmitQuad(transform, 0, kDefaultTexCoords, color, alphaCutoff);
+void Renderer2D::DrawQuad(const glm::mat4& transform, const glm::vec4& color, float alphaCutoff, float emissive, float shadowReceiverOffset) {
+    SubmitQuad(transform, 0, kDefaultTexCoords, color, alphaCutoff, emissive, shadowReceiverOffset);
 }
 
-void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor, float alphaCutoff) {
+void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor, float alphaCutoff, float emissive, float shadowReceiverOffset) {
     uint32_t texID = (texture && texture->GetRendererID() != 0) ? texture->GetRendererID() : 0;
-    SubmitQuad(transform, texID, kDefaultTexCoords, tintColor, alphaCutoff);
+    SubmitQuad(transform, texID, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
 }
 
-void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor, float alphaCutoff) {
+void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor, float alphaCutoff, float emissive, float shadowReceiverOffset) {
     if (subTexture && subTexture->GetTexture() && subTexture->GetTexture()->GetRendererID() != 0) {
         const glm::vec2 min = subTexture->GetMin();
         const glm::vec2 max = subTexture->GetMax();
@@ -375,9 +546,9 @@ void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubT
             { max.x, max.y },
             { min.x, max.y }
         };
-        SubmitQuad(transform, subTexture->GetTexture()->GetRendererID(), subTexCoords, tintColor, alphaCutoff);
+        SubmitQuad(transform, subTexture->GetTexture()->GetRendererID(), subTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
     } else {
-        DrawQuad(transform, tintColor, alphaCutoff);
+        DrawQuad(transform, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
     }
 }
 
@@ -387,10 +558,12 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
                                const glm::vec3& upAxis,
                                float rotationZDegrees,
                                const glm::vec4& color,
-                               float alphaCutoff) {
+                               float alphaCutoff,
+                               float emissive,
+                               float shadowReceiverOffset) {
     glm::vec3 corners[4];
     ComputeBillboardCorners(anchorPosition, size, rightAxis, upAxis, rotationZDegrees, corners);
-    SubmitVertices(corners, 0, kDefaultTexCoords, color, alphaCutoff);
+    SubmitVertices(corners, 0, kDefaultTexCoords, color, alphaCutoff, emissive, shadowReceiverOffset);
 }
 
 void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
@@ -400,11 +573,13 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
                                float rotationZDegrees,
                                const std::shared_ptr<Texture>& texture,
                                const glm::vec4& tintColor,
-                               float alphaCutoff) {
+                               float alphaCutoff,
+                               float emissive,
+                               float shadowReceiverOffset) {
     glm::vec3 corners[4];
     ComputeBillboardCorners(anchorPosition, size, rightAxis, upAxis, rotationZDegrees, corners);
     uint32_t texID = (texture && texture->GetRendererID() != 0) ? texture->GetRendererID() : 0;
-    SubmitVertices(corners, texID, kDefaultTexCoords, tintColor, alphaCutoff);
+    SubmitVertices(corners, texID, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
 }
 
 void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
@@ -414,7 +589,9 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
                                float rotationZDegrees,
                                const std::shared_ptr<SubTexture2D>& subTexture,
                                const glm::vec4& tintColor,
-                               float alphaCutoff) {
+                               float alphaCutoff,
+                               float emissive,
+                               float shadowReceiverOffset) {
     glm::vec3 corners[4];
     ComputeBillboardCorners(anchorPosition, size, rightAxis, upAxis, rotationZDegrees, corners);
     if (subTexture && subTexture->GetTexture() && subTexture->GetTexture()->GetRendererID() != 0) {
@@ -426,9 +603,9 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
             { max.x, max.y },
             { min.x, max.y }
         };
-        SubmitVertices(corners, subTexture->GetTexture()->GetRendererID(), subTexCoords, tintColor, alphaCutoff);
+        SubmitVertices(corners, subTexture->GetTexture()->GetRendererID(), subTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
     } else {
-        SubmitVertices(corners, 0, kDefaultTexCoords, tintColor, alphaCutoff);
+        SubmitVertices(corners, 0, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
     }
 }
 

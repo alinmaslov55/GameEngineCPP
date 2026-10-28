@@ -6,6 +6,7 @@
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/CameraComponent.h>
+#include <Engine/Scene/LightComponents.h>
 #include <Engine/Scene/TerrainComponent.h>
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Scene/Transform.h>
@@ -115,6 +116,23 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
                 spriteRenderer.SetAlphaCutoff(cutoff);
             }
 
+            bool castShadows = spriteRenderer.GetCastShadows();
+            if (ImGui::Checkbox("Cast Shadows", &castShadows)) {
+                spriteRenderer.SetCastShadows(castShadows);
+            }
+            ImGui::SameLine();
+            bool receiveLighting = spriteRenderer.GetReceiveLighting();
+            if (ImGui::Checkbox("Receive Lighting", &receiveLighting)) {
+                spriteRenderer.SetReceiveLighting(receiveLighting);
+            }
+
+            if (receiveLighting) {
+                float emissive = spriteRenderer.GetEmissive();
+                if (ImGui::SliderFloat("Emissive Glow", &emissive, 0.0f, 3.0f, "%.2f")) {
+                    spriteRenderer.SetEmissive(emissive);
+                }
+            }
+
             std::string texLabel = "None";
             auto currentTex = spriteRenderer.GetTexture();
             if (currentTex && !currentTex->GetFilepath().empty()) {
@@ -156,14 +174,95 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             ImGui::Text("Active Particles: %u / %zu",
                         particleSystem.GetActiveParticleCount(),
                         particleSystem.GetParticles().size());
+            ImGui::Checkbox("Auto Emit", &particleSystem.AutoEmit);
+            ImGui::SameLine();
+            ImGui::Checkbox("Emissive Glow", &particleSystem.EmissiveParticles);
+            if (particleSystem.AutoEmit) {
+                ImGui::SliderFloat("Emit Rate (/s)", &particleSystem.EmitRate, 0.5f, 60.0f, "%.1f");
+                ImGui::DragFloat3("Spawn Offset", &particleSystem.SpawnOffset.x, 0.05f);
+            }
             if (ImGui::Button("Emit Test Particles")) {
-                Engine::ParticleProps props;
+                Engine::ParticleProps props = particleSystem.TemplateProps;
                 if (auto* t = selectedEntity->GetTransform()) {
-                    props.position = t->position;
+                    props.position = t->position + particleSystem.SpawnOffset;
                 }
-                props.velocity = { 0.0f, 1.0f, 0.0f };
                 particleSystem.Emit(props);
                 ENGINE_DEBUG("Inspector: Emitted test particle on '{}'", selectedEntity->GetName());
+            }
+        });
+
+        // 4b. Directional Light Component (2.5D Diorama Sun & Cutout Shadows)
+        DrawComponent<Engine::DirectionalLightComponent>("Directional Light", selectedEntity, [](Engine::DirectionalLightComponent& dirLight) {
+            ImGui::TextDisabled("Time-of-Day Presets:");
+            if (ImGui::SmallButton("Golden Afternoon")) {
+                dirLight.ElevationDegrees = 40.0f;
+                dirLight.AzimuthDegrees = -42.0f;
+                dirLight.SunColor = { 1.0f, 0.91f, 0.74f };
+                dirLight.SunIntensity = 1.05f;
+                dirLight.AmbientColor = { 0.36f, 0.41f, 0.62f };
+                dirLight.AmbientIntensity = 0.62f;
+                dirLight.ShadowSoftness = 1.35f;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Cult Dusk")) {
+                dirLight.ElevationDegrees = 22.0f;
+                dirLight.AzimuthDegrees = -64.0f;
+                dirLight.SunColor = { 1.0f, 0.54f, 0.34f };
+                dirLight.SunIntensity = 0.95f;
+                dirLight.AmbientColor = { 0.34f, 0.24f, 0.52f };
+                dirLight.AmbientIntensity = 0.52f;
+                dirLight.ShadowSoftness = 2.15f;
+            }
+            if (ImGui::SmallButton("Midnight Ritual")) {
+                dirLight.ElevationDegrees = 52.0f;
+                dirLight.AzimuthDegrees = 28.0f;
+                dirLight.SunColor = { 0.38f, 0.48f, 0.86f };
+                dirLight.SunIntensity = 0.28f;
+                dirLight.AmbientColor = { 0.14f, 0.16f, 0.30f };
+                dirLight.AmbientIntensity = 0.42f;
+                dirLight.ShadowSoftness = 1.65f;
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Clear Noon")) {
+                dirLight.ElevationDegrees = 68.0f;
+                dirLight.AzimuthDegrees = -18.0f;
+                dirLight.SunColor = { 1.0f, 0.98f, 0.92f };
+                dirLight.SunIntensity = 1.0f;
+                dirLight.AmbientColor = { 0.52f, 0.58f, 0.72f };
+                dirLight.AmbientIntensity = 0.68f;
+                dirLight.ShadowSoftness = 0.95f;
+            }
+
+            ImGui::Separator();
+            ImGui::SliderFloat("Elevation (deg)", &dirLight.ElevationDegrees, 10.0f, 85.0f, "%.1f");
+            ImGui::SliderFloat("Azimuth (deg)", &dirLight.AzimuthDegrees, -180.0f, 180.0f, "%.1f");
+            ImGui::ColorEdit3("Sun Color", &dirLight.SunColor.x);
+            ImGui::SliderFloat("Sun Intensity", &dirLight.SunIntensity, 0.0f, 2.5f, "%.2f");
+
+            ImGui::Separator();
+            ImGui::ColorEdit3("Ambient Shade", &dirLight.AmbientColor.x);
+            ImGui::SliderFloat("Ambient Intensity", &dirLight.AmbientIntensity, 0.0f, 1.5f, "%.2f");
+
+            ImGui::Separator();
+            ImGui::Checkbox("Cast Cutout Shadows", &dirLight.CastShadows);
+            if (dirLight.CastShadows) {
+                ImGui::SliderFloat("Shadow Softness", &dirLight.ShadowSoftness, 0.25f, 4.0f, "%.2f");
+                ImGui::SliderFloat("Shadow Bias", &dirLight.ShadowBias, 0.0002f, 0.01f, "%.4f");
+            }
+        });
+
+        // 4c. Point Light Component (Warm Flickering Braziers & Shrine Runes)
+        DrawComponent<Engine::PointLightComponent>("Point Light", selectedEntity, [](Engine::PointLightComponent& pointLight) {
+            ImGui::ColorEdit3("Light Color", &pointLight.Color.x);
+            ImGui::SliderFloat("Intensity", &pointLight.Intensity, 0.0f, 5.0f, "%.2f");
+            ImGui::SliderFloat("Radius (m)", &pointLight.Radius, 0.5f, 16.0f, "%.2f");
+            ImGui::SliderFloat("Falloff", &pointLight.Falloff, 0.3f, 4.0f, "%.2f");
+            ImGui::DragFloat("Height Offset (Y)", &pointLight.HeightOffset, 0.05f, 0.0f, 6.0f, "%.2f m");
+            ImGui::Separator();
+            ImGui::Checkbox("Torch Flicker", &pointLight.Flicker);
+            if (pointLight.Flicker) {
+                ImGui::SliderFloat("Flicker Speed", &pointLight.FlickerSpeed, 0.5f, 20.0f, "%.1f");
+                ImGui::SliderFloat("Flicker Amount", &pointLight.FlickerAmount, 0.0f, 0.6f, "%.2f");
             }
         });
 
@@ -307,6 +406,8 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         if (ImGui::BeginPopup("AddComponentPopup")) {
             DrawAddComponentEntry<Engine::SpriteRenderer>("Sprite Renderer", selectedEntity);
             DrawAddComponentEntry<Engine::TerrainComponent>("Terrain (Splatmap)", selectedEntity);
+            DrawAddComponentEntry<Engine::DirectionalLightComponent>("Directional Light", selectedEntity);
+            DrawAddComponentEntry<Engine::PointLightComponent>("Point Light", selectedEntity);
             DrawAddComponentEntry<Engine::CameraComponent>("Camera", selectedEntity);
             DrawAddComponentEntry<Engine::ParticleSystem>("Particle System", selectedEntity);
             DrawAddComponentEntry<Engine::Rigidbody2D>("Rigidbody 2D", selectedEntity);
