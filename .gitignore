@@ -3,6 +3,10 @@ build/
 logs/
 *.log
 
+# ImGui local workspace layouts
+imgui.ini
+**/editor_layout.ini
+
 # Prerequisites
 *.d
 

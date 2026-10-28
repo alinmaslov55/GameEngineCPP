@@ -69,6 +69,7 @@ void BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Scene>& runtimeSce
 int main(int argc, char* argv[]) {
     Engine::Application app;
     Engine::ResourceManager::DiscoverAssetRoot("Sandbox");
+    Engine::ImGuiLayer::SetIniFilePath(Engine::ResourceManager::GetAssetRoot() / "editor_layout.ini");
 
     auto editorScene = std::make_shared<Engine::Scene>("Village");
     editorScene->SetOrthographicSize(5.0f);
@@ -175,6 +176,14 @@ int main(int argc, char* argv[]) {
     bool openSavePopup = false;
     bool openLoadPopup = false;
     char filepathBuffer[256] = "assets/level.scene";
+
+    // Workspace panel visibility toggles
+    bool showHierarchy = true;
+    bool showInspector = true;
+    bool showTilePalette = true;
+    bool showAssetBrowser = true;
+    bool showProfiler = true;
+    bool showConsole = true;
 
     // Helper lambdas for Play / Stop transitions
     auto onScenePlay = [&]() {
@@ -305,6 +314,25 @@ int main(int argc, char* argv[]) {
                 }
                 ImGui::EndMenu();
             }
+            if (ImGui::BeginMenu("Window")) {
+                ImGui::MenuItem("Hierarchy", nullptr, &showHierarchy);
+                ImGui::MenuItem("Inspector", nullptr, &showInspector);
+                ImGui::MenuItem("Tile Palette", nullptr, &showTilePalette);
+                ImGui::MenuItem("Asset Browser", nullptr, &showAssetBrowser);
+                ImGui::MenuItem("Profiler", nullptr, &showProfiler);
+                ImGui::MenuItem("Console", nullptr, &showConsole);
+                ImGui::Separator();
+                if (ImGui::MenuItem("Reset Default Workspace")) {
+                    showHierarchy = true;
+                    showInspector = true;
+                    showTilePalette = true;
+                    showAssetBrowser = true;
+                    showProfiler = true;
+                    showConsole = true;
+                    Engine::ImGuiLayer::ResetWorkspaceLayout();
+                }
+                ImGui::EndMenu();
+            }
             ImGui::EndMenuBar();
         }
 
@@ -370,7 +398,8 @@ int main(int argc, char* argv[]) {
         // ==========================================
         // EDIT / PLAY TOOLBAR PANEL
         // ==========================================
-        ImGui::Begin("Toolbar", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
+        ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(8.0f, 5.0f));
+        ImGui::Begin("Toolbar", nullptr, ImGuiWindowFlags_NoDecoration | ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
         {
             if (sceneState == SceneState::Edit) {
                 ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.55f, 0.25f, 1.0f));
@@ -402,6 +431,7 @@ int main(int argc, char* argv[]) {
             }
         }
         ImGui::End();
+        ImGui::PopStyleVar();
 
         // ==========================================
         // SCENE VIEWPORT PANEL
@@ -484,69 +514,72 @@ int main(int argc, char* argv[]) {
         // ==========================================
         // HIERARCHY PANEL
         // ==========================================
-        ImGui::Begin("Hierarchy");
-        {
-            Engine::GameObject* entityToDelete = nullptr;
+        if (showHierarchy) {
+            ImGui::Begin("Hierarchy", &showHierarchy);
+            {
+                Engine::GameObject* entityToDelete = nullptr;
 
-            for (const auto& gameObjectPtr : activeScene->GetGameObjects()) {
-                Engine::GameObject* go = gameObjectPtr.get();
+                for (const auto& gameObjectPtr : activeScene->GetGameObjects()) {
+                    Engine::GameObject* go = gameObjectPtr.get();
 
-                std::string uuidStr = std::to_string(go->GetUUID());
-                ImGui::PushID(uuidStr.c_str());
+                    std::string uuidStr = std::to_string(go->GetUUID());
+                    ImGui::PushID(uuidStr.c_str());
 
-                bool isSelected = (selectedContext == go);
-                if (ImGui::Selectable(go->GetName().c_str(), isSelected)) {
-                    selectedContext = go;
-                    ENGINE_DEBUG("Hierarchy: Selected GameObject '{}' (UUID: {})", go->GetName(), go->GetUUID());
+                    bool isSelected = (selectedContext == go);
+                    if (ImGui::Selectable(go->GetName().c_str(), isSelected)) {
+                        selectedContext = go;
+                        ENGINE_DEBUG("Hierarchy: Selected GameObject '{}' (UUID: {})", go->GetName(), go->GetUUID());
+                    }
+
+                    // Right-click on an entity row to delete it
+                    if (ImGui::BeginPopupContextItem("EntityContextMenu")) {
+                        if (ImGui::MenuItem("Delete GameObject")) {
+                            entityToDelete = go;
+                        }
+                        ImGui::EndPopup();
+                    }
+
+                    ImGui::PopID();
                 }
 
-                // Right-click on an entity row to delete it
-                if (ImGui::BeginPopupContextItem("EntityContextMenu")) {
-                    if (ImGui::MenuItem("Delete GameObject")) {
-                        entityToDelete = go;
+                // Support Delete key when Hierarchy window is focused
+                if (!entityToDelete && selectedContext && ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
+                    entityToDelete = selectedContext;
+                }
+
+                // Click in empty space to deselect
+                if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered()) {
+                    selectedContext = nullptr;
+                }
+
+                // Right-click in empty space to create new GameObjects
+                if (ImGui::BeginPopupContextWindow("HierarchyContextMenu", 1 | ImGuiPopupFlags_NoOpenOverItems)) {
+                    if (ImGui::MenuItem("Create Empty GameObject")) {
+                        auto* newGo = activeScene->CreateGameObject("New GameObject");
+                        selectedContext = newGo;
+                        ENGINE_INFO("Hierarchy: Created new GameObject '{}'", newGo->GetName());
                     }
                     ImGui::EndPopup();
                 }
 
-                ImGui::PopID();
-            }
-
-            // Support Delete key when Hierarchy window is focused
-            if (!entityToDelete && selectedContext && ImGui::IsWindowFocused() && ImGui::IsKeyPressed(ImGuiKey_Delete)) {
-                entityToDelete = selectedContext;
-            }
-
-            // Click in empty space to deselect
-            if (ImGui::IsMouseClicked(ImGuiMouseButton_Left) && ImGui::IsWindowHovered() && !ImGui::IsAnyItemHovered()) {
-                selectedContext = nullptr;
-            }
-
-            // Right-click in empty space to create new GameObjects
-            if (ImGui::BeginPopupContextWindow("HierarchyContextMenu", 1 | ImGuiPopupFlags_NoOpenOverItems)) {
-                if (ImGui::MenuItem("Create Empty GameObject")) {
-                    auto* newGo = activeScene->CreateGameObject("New GameObject");
-                    selectedContext = newGo;
-                    ENGINE_INFO("Hierarchy: Created new GameObject '{}'", newGo->GetName());
+                // Perform deferred entity deletion safely outside iteration loop
+                if (entityToDelete) {
+                    std::string deletedName = entityToDelete->GetName();
+                    if (selectedContext == entityToDelete) {
+                        selectedContext = nullptr;
+                    }
+                    activeScene->DestroyGameObject(entityToDelete);
+                    ENGINE_INFO("Hierarchy: Deleted GameObject '{}'", deletedName);
                 }
-                ImGui::EndPopup();
             }
-
-            // Perform deferred entity deletion safely outside iteration loop
-            if (entityToDelete) {
-                std::string deletedName = entityToDelete->GetName();
-                if (selectedContext == entityToDelete) {
-                    selectedContext = nullptr;
-                }
-                activeScene->DestroyGameObject(entityToDelete);
-                ENGINE_INFO("Hierarchy: Deleted GameObject '{}'", deletedName);
-            }
+            ImGui::End();
         }
-        ImGui::End();
 
         // ==========================================
         // INSPECTOR PANEL
         // ==========================================
-        ImGui::Begin("Inspector");
+        if (showInspector) {
+        ImGui::Begin("Inspector", &showInspector);
 
         if (selectedContext) {
             // 1. Editable Entity Name wired to Object::SetName
@@ -801,145 +834,154 @@ int main(int argc, char* argv[]) {
         }
 
         ImGui::End();
+        }
 
         // ==========================================
         // TILE PALETTE PANEL
         // ==========================================
-        ImGui::Begin("Tile Palette");
-        ImGui::Text("Select a brush:");
-        ImGui::Separator();
+        if (showTilePalette) {
+            ImGui::Begin("Tile Palette", &showTilePalette);
+            ImGui::Text("Select a brush:");
+            ImGui::Separator();
 
-        if (ImGui::Button("Eraser (ID 0)", ImVec2(140, 30))) {
-            s_SelectedTileID = 0;
-            s_SelectedTileWalkable = false;
-            ENGINE_DEBUG("Tile Palette: Selected Eraser (ID 0, Non-walkable)");
-        }
-        if (ImGui::Button("Grass (ID 1)", ImVec2(140, 30))) {
-            s_SelectedTileID = 1;
-            s_SelectedTileWalkable = true;
-            ENGINE_DEBUG("Tile Palette: Selected Grass (ID 1, Walkable)");
-        }
-        if (ImGui::Button("Stone Wall (ID 2)", ImVec2(140, 30))) {
-            s_SelectedTileID = 2;
-            s_SelectedTileWalkable = false;
-            ENGINE_DEBUG("Tile Palette: Selected Stone Wall (ID 2, Non-walkable)");
-        }
+            if (ImGui::Button("Eraser (ID 0)", ImVec2(140, 30))) {
+                s_SelectedTileID = 0;
+                s_SelectedTileWalkable = false;
+                ENGINE_DEBUG("Tile Palette: Selected Eraser (ID 0, Non-walkable)");
+            }
+            if (ImGui::Button("Grass (ID 1)", ImVec2(140, 30))) {
+                s_SelectedTileID = 1;
+                s_SelectedTileWalkable = true;
+                ENGINE_DEBUG("Tile Palette: Selected Grass (ID 1, Walkable)");
+            }
+            if (ImGui::Button("Stone Wall (ID 2)", ImVec2(140, 30))) {
+                s_SelectedTileID = 2;
+                s_SelectedTileWalkable = false;
+                ENGINE_DEBUG("Tile Palette: Selected Stone Wall (ID 2, Non-walkable)");
+            }
 
-        ImGui::Spacing();
-        ImGui::Checkbox("Walkable Tile", &s_SelectedTileWalkable);
-        ImGui::TextDisabled("Current Brush: ID %u (%s)",
-                            s_SelectedTileID,
-                            s_SelectedTileWalkable ? "Walkable" : "Blocked");
-        ImGui::End();
+            ImGui::Spacing();
+            ImGui::Checkbox("Walkable Tile", &s_SelectedTileWalkable);
+            ImGui::TextDisabled("Current Brush: ID %u (%s)",
+                                s_SelectedTileID,
+                                s_SelectedTileWalkable ? "Walkable" : "Blocked");
+            ImGui::End();
+        }
 
         // ==========================================
         // ASSET BROWSER PANEL
         // ==========================================
-        ImGui::Begin("Asset Browser");
+        if (showAssetBrowser) {
+            ImGui::Begin("Asset Browser", &showAssetBrowser);
 
-        if (s_CurrentDirectory != s_AssetDirectory) {
-            if (ImGui::Button("<- Back")) {
-                s_CurrentDirectory = s_CurrentDirectory.parent_path();
-                ENGINE_DEBUG("Asset Browser: Navigated back to '{}'", s_CurrentDirectory.string());
+            if (s_CurrentDirectory != s_AssetDirectory) {
+                if (ImGui::Button("<- Back")) {
+                    s_CurrentDirectory = s_CurrentDirectory.parent_path();
+                    ENGINE_DEBUG("Asset Browser: Navigated back to '{}'", s_CurrentDirectory.string());
+                }
+                ImGui::Separator();
             }
-            ImGui::Separator();
-        }
 
-        if (std::filesystem::exists(s_CurrentDirectory)) {
-            for (auto& directoryEntry : std::filesystem::directory_iterator(s_CurrentDirectory)) {
-                const auto& path = directoryEntry.path();
-                std::string filenameString = path.filename().string();
+            if (std::filesystem::exists(s_CurrentDirectory)) {
+                for (auto& directoryEntry : std::filesystem::directory_iterator(s_CurrentDirectory)) {
+                    const auto& path = directoryEntry.path();
+                    std::string filenameString = path.filename().string();
 
-                if (directoryEntry.is_directory()) {
-                    if (ImGui::Button(filenameString.c_str())) {
-                        s_CurrentDirectory /= path.filename();
-                        ENGINE_DEBUG("Asset Browser: Opened directory '{}'", s_CurrentDirectory.string());
-                    }
-                } else {
-                    ImGui::Selectable(filenameString.c_str());
+                    if (directoryEntry.is_directory()) {
+                        if (ImGui::Button(filenameString.c_str())) {
+                            s_CurrentDirectory /= path.filename();
+                            ENGINE_DEBUG("Asset Browser: Opened directory '{}'", s_CurrentDirectory.string());
+                        }
+                    } else {
+                        ImGui::Selectable(filenameString.c_str());
 
-                    if (ImGui::BeginDragDropSource()) {
-                        std::string itemPath = path.string();
-                        ImGui::SetDragDropPayload("CONTENT_BROWSER_ITEM", itemPath.c_str(), itemPath.size() + 1);
-                        ImGui::Text("Drag %s", filenameString.c_str());
-                        ImGui::EndDragDropSource();
+                        if (ImGui::BeginDragDropSource()) {
+                            std::string itemPath = path.string();
+                            ImGui::SetDragDropPayload("CONTENT_BROWSER_ITEM", itemPath.c_str(), itemPath.size() + 1);
+                            ImGui::Text("Drag %s", filenameString.c_str());
+                            ImGui::EndDragDropSource();
+                        }
                     }
                 }
             }
-        }
 
-        ImGui::End();
+            ImGui::End();
+        }
 
         // ==========================================
         // PROFILER PANEL
         // ==========================================
-        ImGui::Begin("Profiler");
-        ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 
-                    1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
-        ImGui::Separator();
-        auto stats = Engine::Renderer2D::GetStats();
-        ImGui::Text("Renderer2D Stats:");
-        ImGui::Text("  Draw Calls: %u", stats.DrawCalls);
-        ImGui::Text("  Quads:      %u", stats.QuadCount);
-        ImGui::Text("  Vertices:   %u", stats.GetTotalVertexCount());
-        ImGui::Text("  Indices:    %u", stats.GetTotalIndexCount());
-        ImGui::End();
+        if (showProfiler) {
+            ImGui::Begin("Profiler", &showProfiler);
+            ImGui::Text("Application average %.3f ms/frame (%.1f FPS)", 
+                        1000.0f / ImGui::GetIO().Framerate, ImGui::GetIO().Framerate);
+            ImGui::Separator();
+            auto stats = Engine::Renderer2D::GetStats();
+            ImGui::Text("Renderer2D Stats:");
+            ImGui::Text("  Draw Calls: %u", stats.DrawCalls);
+            ImGui::Text("  Quads:      %u", stats.QuadCount);
+            ImGui::Text("  Vertices:   %u", stats.GetTotalVertexCount());
+            ImGui::Text("  Indices:    %u", stats.GetTotalIndexCount());
+            ImGui::End();
+        }
 
         // ==========================================
         // CONSOLE PANEL (Ring-Buffer Log Sink)
         // ==========================================
-        ImGui::Begin("Console");
-        {
-            static ImGuiTextFilter logFilter;
-            static bool autoScroll = true;
+        if (showConsole) {
+            ImGui::Begin("Console", &showConsole);
+            {
+                static ImGuiTextFilter logFilter;
+                static bool autoScroll = true;
 
-            if (ImGui::Button("Clear")) {
-                Engine::Logger::ClearLogs();
-            }
-            ImGui::SameLine();
+                if (ImGui::Button("Clear")) {
+                    Engine::Logger::ClearLogs();
+                }
+                ImGui::SameLine();
 
-            const char* levelNames[] = { "Trace", "Debug", "Info", "Warn", "Error", "Critical", "Off" };
-            int currentLevel = static_cast<int>(Engine::Logger::GetLevel());
-            ImGui::SetNextItemWidth(110.0f);
-            if (ImGui::Combo("Level", &currentLevel, levelNames, IM_ARRAYSIZE(levelNames))) {
-                Engine::Logger::SetLevel(static_cast<spdlog::level::level_enum>(currentLevel));
-            }
-            ImGui::SameLine();
+                const char* levelNames[] = { "Trace", "Debug", "Info", "Warn", "Error", "Critical", "Off" };
+                int currentLevel = static_cast<int>(Engine::Logger::GetLevel());
+                ImGui::SetNextItemWidth(110.0f);
+                if (ImGui::Combo("Level", &currentLevel, levelNames, IM_ARRAYSIZE(levelNames))) {
+                    Engine::Logger::SetLevel(static_cast<spdlog::level::level_enum>(currentLevel));
+                }
+                ImGui::SameLine();
 
-            logFilter.Draw("Filter", 180.0f);
-            ImGui::SameLine();
-            ImGui::Checkbox("Auto-scroll", &autoScroll);
-            ImGui::Separator();
+                logFilter.Draw("Filter", 180.0f);
+                ImGui::SameLine();
+                ImGui::Checkbox("Auto-scroll", &autoScroll);
+                ImGui::Separator();
 
-            ImGui::BeginChild("ConsoleScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
-            auto logs = Engine::Logger::GetRecentLogs();
-            for (const auto& entry : logs) {
-                if (!logFilter.PassFilter(entry.Message.c_str())) {
-                    continue;
+                ImGui::BeginChild("ConsoleScrollRegion", ImVec2(0, 0), false, ImGuiWindowFlags_HorizontalScrollbar);
+                auto logs = Engine::Logger::GetRecentLogs();
+                for (const auto& entry : logs) {
+                    if (!logFilter.PassFilter(entry.Message.c_str())) {
+                        continue;
+                    }
+
+                    ImVec4 color = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
+                    switch (entry.Level) {
+                        case spdlog::level::trace:    color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); break;
+                        case spdlog::level::debug:    color = ImVec4(0.4f, 0.8f, 1.0f, 1.0f); break;
+                        case spdlog::level::info:     color = ImVec4(0.5f, 1.0f, 0.5f, 1.0f); break;
+                        case spdlog::level::warn:     color = ImVec4(1.0f, 0.85f, 0.2f, 1.0f); break;
+                        case spdlog::level::err:      color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f); break;
+                        case spdlog::level::critical: color = ImVec4(1.0f, 0.1f, 0.5f, 1.0f); break;
+                        default: break;
+                    }
+
+                    ImGui::PushStyleColor(ImGuiCol_Text, color);
+                    ImGui::TextUnformatted(entry.Message.c_str());
+                    ImGui::PopStyleColor();
                 }
 
-                ImVec4 color = ImVec4(0.9f, 0.9f, 0.9f, 1.0f);
-                switch (entry.Level) {
-                    case spdlog::level::trace:    color = ImVec4(0.6f, 0.6f, 0.6f, 1.0f); break;
-                    case spdlog::level::debug:    color = ImVec4(0.4f, 0.8f, 1.0f, 1.0f); break;
-                    case spdlog::level::info:     color = ImVec4(0.5f, 1.0f, 0.5f, 1.0f); break;
-                    case spdlog::level::warn:     color = ImVec4(1.0f, 0.85f, 0.2f, 1.0f); break;
-                    case spdlog::level::err:      color = ImVec4(1.0f, 0.35f, 0.35f, 1.0f); break;
-                    case spdlog::level::critical: color = ImVec4(1.0f, 0.1f, 0.5f, 1.0f); break;
-                    default: break;
+                if (autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
+                    ImGui::SetScrollHereY(1.0f);
                 }
-
-                ImGui::PushStyleColor(ImGuiCol_Text, color);
-                ImGui::TextUnformatted(entry.Message.c_str());
-                ImGui::PopStyleColor();
+                ImGui::EndChild();
             }
-
-            if (autoScroll && ImGui::GetScrollY() >= ImGui::GetScrollMaxY()) {
-                ImGui::SetScrollHereY(1.0f);
-            }
-            ImGui::EndChild();
+            ImGui::End();
         }
-        ImGui::End();
 
         Engine::ImGuiLayer::EndDockspace();
         Engine::ImGuiLayer::End();
