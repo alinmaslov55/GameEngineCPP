@@ -7,6 +7,7 @@
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/CameraComponent.h>
 #include <Engine/Scene/LightComponents.h>
+#include <Engine/Scene/PostProcessComponent.h>
 #include <Engine/Scene/TerrainComponent.h>
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Scene/Transform.h>
@@ -266,6 +267,71 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             }
         });
 
+        // 4d. Post Process Volume Component (HDR Multi-Mip Bloom, Tone Mapping, Split-Tone Grade & Vignette)
+        DrawComponent<Engine::PostProcessComponent>("Post Process Volume", selectedEntity, [](Engine::PostProcessComponent& pp) {
+            ImGui::Checkbox("Enabled", &pp.Enabled);
+            ImGui::TextDisabled("Mood Presets:");
+            if (ImGui::SmallButton("Cult Storybook")) {
+                pp.ApplyPreset(Engine::PostProcessComponent::Preset::CultStorybook);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Golden Clearing")) {
+                pp.ApplyPreset(Engine::PostProcessComponent::Preset::GoldenClearing);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Blood Moon")) {
+                pp.ApplyPreset(Engine::PostProcessComponent::Preset::BloodMoonRitual);
+            }
+            if (ImGui::SmallButton("Midnight Sanctum")) {
+                pp.ApplyPreset(Engine::PostProcessComponent::Preset::MidnightSanctum);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Crisp Neutral")) {
+                pp.ApplyPreset(Engine::PostProcessComponent::Preset::CrispNeutral);
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Exposure & Tone Mapping");
+            const char* toneMapLabels[] = {
+                "ACES Filmic",
+                "Storybook Neutral (Hue-True)",
+                "Reinhard",
+                "None (Linear Clamp)"
+            };
+            int tmIdx = static_cast<int>(pp.ToneMapping);
+            if (ImGui::Combo("Tone Mapper", &tmIdx, toneMapLabels, 4)) {
+                pp.ToneMapping = static_cast<Engine::PostProcessComponent::ToneMapMode>(tmIdx);
+            }
+            ImGui::SliderFloat("Exposure (EV)", &pp.Exposure, -3.0f, 3.0f, "%.2f");
+            ImGui::ColorEdit3("HDR Backdrop", &pp.BackdropColor.x);
+
+            ImGui::Separator();
+            ImGui::Checkbox("HDR Multi-Mip Bloom", &pp.BloomEnabled);
+            if (pp.BloomEnabled) {
+                ImGui::SliderFloat("Threshold", &pp.BloomThreshold, 0.25f, 3.0f, "%.2f");
+                ImGui::SliderFloat("Soft Knee", &pp.BloomKnee, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Intensity##Bloom", &pp.BloomIntensity, 0.0f, 2.0f, "%.2f");
+                ImGui::SliderFloat("Scatter Radius", &pp.BloomScatter, 0.0f, 0.95f, "%.2f");
+            }
+
+            ImGui::Separator();
+            ImGui::Text("Color Grading & Split Toning");
+            ImGui::SliderFloat("Temperature", &pp.Temperature, -1.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Tint", &pp.Tint, -1.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Contrast", &pp.Contrast, 0.5f, 2.0f, "%.2f");
+            ImGui::SliderFloat("Saturation", &pp.Saturation, 0.0f, 2.0f, "%.2f");
+            ImGui::ColorEdit3("Shadow Tint", &pp.ShadowTint.x);
+            ImGui::ColorEdit3("Highlight Tint", &pp.HighlightTint.x);
+
+            ImGui::Separator();
+            ImGui::Checkbox("Diorama Vignette", &pp.VignetteEnabled);
+            if (pp.VignetteEnabled) {
+                ImGui::SliderFloat("Intensity##Vignette", &pp.VignetteIntensity, 0.0f, 1.0f, "%.2f");
+                ImGui::SliderFloat("Smoothness", &pp.VignetteSmoothness, 0.05f, 1.0f, "%.2f");
+                ImGui::ColorEdit3("Vignette Color", &pp.VignetteColor.x);
+            }
+        });
+
         // 5. Rigidbody 2D Component
         DrawComponent<Engine::Rigidbody2D>("Rigidbody 2D", selectedEntity, [](Engine::Rigidbody2D& rb2d) {
             const char* bodyTypeStrings[] = { "Static", "Dynamic", "Kinematic" };
@@ -408,6 +474,7 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             DrawAddComponentEntry<Engine::TerrainComponent>("Terrain (Splatmap)", selectedEntity);
             DrawAddComponentEntry<Engine::DirectionalLightComponent>("Directional Light", selectedEntity);
             DrawAddComponentEntry<Engine::PointLightComponent>("Point Light", selectedEntity);
+            DrawAddComponentEntry<Engine::PostProcessComponent>("Post Process Volume", selectedEntity);
             DrawAddComponentEntry<Engine::CameraComponent>("Camera", selectedEntity);
             DrawAddComponentEntry<Engine::ParticleSystem>("Particle System", selectedEntity);
             DrawAddComponentEntry<Engine::Rigidbody2D>("Rigidbody 2D", selectedEntity);

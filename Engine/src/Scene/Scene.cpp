@@ -2,6 +2,8 @@
 #include "Engine/Core/Time.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/PostProcessComponent.h"
+#include "Engine/Renderer/PostProcessor.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Renderer/Renderer2D.h"
@@ -399,14 +401,20 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     std::vector<GameObject*> standeeQueue;
     standeeQueue.reserve(m_GameObjects.size());
 
-    // Gather dynamic 2.5D scene lighting (Directional Sun + up to 8 flickering 3D Point Lights)
+    // Gather dynamic 2.5D scene lighting + optional HDR PostProcess Volume
     SceneLightingData lighting;
     const DirectionalLightComponent* dirLight = nullptr;
+    const PostProcessComponent* postProcess = nullptr;
     const float totalTime = Time::GetTotalTime();
 
     for (auto& gameObject : m_GameObjects) {
         if (!dirLight) {
             dirLight = gameObject->GetComponent<DirectionalLightComponent>();
+        }
+        if (!postProcess) {
+            if (auto* pp = gameObject->GetComponent<PostProcessComponent>(); pp && pp->Enabled) {
+                postProcess = pp;
+            }
         }
 
         if (auto* pl = gameObject->GetComponent<PointLightComponent>()) {
@@ -510,6 +518,11 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         lighting.ShadowsEnabled = true;
         lighting.ShadowMapTextureID = ShadowMap::GetDepthTextureID();
         lighting.ShadowMapTexelSize = 1.0f / static_cast<float>(ShadowMap::GetResolution());
+    }
+
+    const bool useHDRPostProcess = (postProcess != nullptr && postProcess->Enabled && PostProcessor::IsValid());
+    if (useHDRPostProcess) {
+        PostProcessor::BeginHDRScene(m_ViewportWidth, m_ViewportHeight, postProcess->BackdropColor);
     }
 
     // ==========================================
@@ -664,7 +677,7 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
 
     for (auto& gameObject : m_GameObjects) {
         if (auto* particleSystem = gameObject->GetComponent<ParticleSystem>()) {
-            const float particleEmissive = particleSystem->EmissiveParticles ? 1.25f : 0.0f;
+            const float particleEmissive = particleSystem->EmissiveParticles ? 1.65f : 0.0f;
             for (const auto& particle : particleSystem->GetParticles()) {
                 if (!particle.active) continue;
 
@@ -690,6 +703,10 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
 
     Renderer2D::EndScene();
     Renderer::SetDepthMask(true);
+
+    if (useHDRPostProcess) {
+        PostProcessor::EndHDRAndComposite(*postProcess);
+    }
 
     // ==========================================
     // PASS 4: 2D SCREEN-SPACE UI HUD (Depth Test OFF)

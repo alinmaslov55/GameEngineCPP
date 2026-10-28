@@ -12,6 +12,7 @@
 #include <Engine/Renderer/SubTexture2D.h>
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/LightComponents.h>
+#include <Engine/Scene/PostProcessComponent.h>
 #include <Engine/Scene/SceneSerializer.h>
 #include <Engine/Scene/TerrainComponent.h>
 #include <Engine/Scene/Tilemap.h>
@@ -56,6 +57,11 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     sunLight->AmbientIntensity = 0.62f;
     sunLight->CastShadows = true;
     sunLight->ShadowSoftness = 1.35f;
+
+    // 0b. HDR Post-Processing Volume (Multi-Mip Bloom + Storybook Split-Tone Grade + Diorama Vignette)
+    Engine::GameObject* postProcessObject = editorScene->CreateGameObject("Post Process Volume");
+    auto* postProcess = postProcessObject->AddComponent<Engine::PostProcessComponent>();
+    postProcess->ApplyPreset(Engine::PostProcessComponent::Preset::CultStorybook);
 
     // 1A. Organic 4-Layer Splatmap Terrain Clearing ([-1.5, 14.5] x [-1.5, 14.5])
     Engine::GameObject* terrainObject = editorScene->CreateGameObject("Terrain");
@@ -149,7 +155,7 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     auto* shrineSprite = shrine->AddComponent<Engine::SpriteRenderer>();
     shrineSprite->SetTexture(shrineTex);
     shrineSprite->SetAlphaCutoff(0.18f);
-    shrineSprite->SetEmissive(0.16f);
+    shrineSprite->SetEmissive(0.28f);
     auto* shrineCollider = shrine->AddComponent<Engine::BoxCollider2D>();
     shrineCollider->size = { 1.15f, 0.65f };
     shrineCollider->isDynamic = false;
@@ -178,7 +184,7 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
         auto* bSprite = brazier->AddComponent<Engine::SpriteRenderer>();
         bSprite->SetTexture(brazierTex);
         bSprite->SetAlphaCutoff(0.18f);
-        bSprite->SetEmissive(0.55f);
+        bSprite->SetEmissive(0.85f);
 
         auto* bCollider = brazier->AddComponent<Engine::BoxCollider2D>();
         bCollider->size = { 0.55f, 0.45f };

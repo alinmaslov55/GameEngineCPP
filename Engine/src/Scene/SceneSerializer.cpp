@@ -7,6 +7,7 @@
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/PostProcessComponent.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/UI/UIPanel.h"
@@ -245,6 +246,31 @@ std::string SceneSerializer::SerializeToString() const {
                 {"Flicker", pointLight->Flicker},
                 {"FlickerSpeed", pointLight->FlickerSpeed},
                 {"FlickerAmount", pointLight->FlickerAmount}
+            };
+        }
+
+        // 4d. PostProcessComponent
+        if (auto* pp = go->GetComponent<PostProcessComponent>()) {
+            compsJson["PostProcess"] = {
+                {"Enabled", pp->Enabled},
+                {"BackdropColor", {pp->BackdropColor.r, pp->BackdropColor.g, pp->BackdropColor.b}},
+                {"BloomEnabled", pp->BloomEnabled},
+                {"BloomThreshold", pp->BloomThreshold},
+                {"BloomKnee", pp->BloomKnee},
+                {"BloomIntensity", pp->BloomIntensity},
+                {"BloomScatter", pp->BloomScatter},
+                {"ToneMapping", static_cast<int>(pp->ToneMapping)},
+                {"Exposure", pp->Exposure},
+                {"Temperature", pp->Temperature},
+                {"Tint", pp->Tint},
+                {"Contrast", pp->Contrast},
+                {"Saturation", pp->Saturation},
+                {"ShadowTint", {pp->ShadowTint.r, pp->ShadowTint.g, pp->ShadowTint.b}},
+                {"HighlightTint", {pp->HighlightTint.r, pp->HighlightTint.g, pp->HighlightTint.b}},
+                {"VignetteEnabled", pp->VignetteEnabled},
+                {"VignetteIntensity", pp->VignetteIntensity},
+                {"VignetteSmoothness", pp->VignetteSmoothness},
+                {"VignetteColor", {pp->VignetteColor.r, pp->VignetteColor.g, pp->VignetteColor.b}}
             };
         }
 
@@ -698,6 +724,57 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 pointLight->Flicker = plJson.value("Flicker", true);
                 pointLight->FlickerSpeed = plJson.value("FlickerSpeed", 7.5f);
                 pointLight->FlickerAmount = plJson.value("FlickerAmount", 0.14f);
+            }
+
+            // 4d. PostProcessComponent
+            if (components.contains("PostProcess") && components["PostProcess"].is_object()) {
+                const auto& ppJson = components["PostProcess"];
+                auto* pp = go->AddComponent<PostProcessComponent>();
+                pp->Enabled = ppJson.value("Enabled", true);
+                if (ppJson.contains("BackdropColor") && ppJson["BackdropColor"].size() == 3) {
+                    pp->BackdropColor = {
+                        ppJson["BackdropColor"][0].get<float>(),
+                        ppJson["BackdropColor"][1].get<float>(),
+                        ppJson["BackdropColor"][2].get<float>()
+                    };
+                }
+                pp->BloomEnabled = ppJson.value("BloomEnabled", true);
+                pp->BloomThreshold = ppJson.value("BloomThreshold", 1.05f);
+                pp->BloomKnee = ppJson.value("BloomKnee", 0.45f);
+                pp->BloomIntensity = ppJson.value("BloomIntensity", 0.42f);
+                pp->BloomScatter = ppJson.value("BloomScatter", 0.72f);
+                pp->ToneMapping = static_cast<PostProcessComponent::ToneMapMode>(
+                    ppJson.value("ToneMapping", static_cast<int>(PostProcessComponent::ToneMapMode::StorybookNeutral))
+                );
+                pp->Exposure = ppJson.value("Exposure", 0.05f);
+                pp->Temperature = ppJson.value("Temperature", 0.06f);
+                pp->Tint = ppJson.value("Tint", 0.0f);
+                pp->Contrast = ppJson.value("Contrast", 1.06f);
+                pp->Saturation = ppJson.value("Saturation", 1.08f);
+                if (ppJson.contains("ShadowTint") && ppJson["ShadowTint"].size() == 3) {
+                    pp->ShadowTint = {
+                        ppJson["ShadowTint"][0].get<float>(),
+                        ppJson["ShadowTint"][1].get<float>(),
+                        ppJson["ShadowTint"][2].get<float>()
+                    };
+                }
+                if (ppJson.contains("HighlightTint") && ppJson["HighlightTint"].size() == 3) {
+                    pp->HighlightTint = {
+                        ppJson["HighlightTint"][0].get<float>(),
+                        ppJson["HighlightTint"][1].get<float>(),
+                        ppJson["HighlightTint"][2].get<float>()
+                    };
+                }
+                pp->VignetteEnabled = ppJson.value("VignetteEnabled", true);
+                pp->VignetteIntensity = ppJson.value("VignetteIntensity", 0.36f);
+                pp->VignetteSmoothness = ppJson.value("VignetteSmoothness", 0.62f);
+                if (ppJson.contains("VignetteColor") && ppJson["VignetteColor"].size() == 3) {
+                    pp->VignetteColor = {
+                        ppJson["VignetteColor"][0].get<float>(),
+                        ppJson["VignetteColor"][1].get<float>(),
+                        ppJson["VignetteColor"][2].get<float>()
+                    };
+                }
             }
 
             // 5. Rigidbody2D

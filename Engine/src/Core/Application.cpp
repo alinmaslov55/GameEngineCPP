@@ -4,6 +4,7 @@
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/Renderer2D.h"
+#include "Engine/Renderer/PostProcessor.h"
 #include "Engine/Renderer/ShadowMap.h"
 #include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Renderer/Texture.h"
@@ -46,6 +47,7 @@ void Application::Initialize() {
     Renderer2D::Init();
     TerrainRenderer::Init();
     ShadowMap::Init(2048);
+    PostProcessor::Init();
 
 #ifdef ENGINE_BUILD_EDITOR
     ImGuiLayer::Init(m_Window->GetSDLWindow(), m_Window->GetGLContext());
@@ -188,6 +190,7 @@ void Application::Shutdown() {
     ImGuiLayer::Shutdown();
 #endif
 
+    PostProcessor::Shutdown();
     ShadowMap::Shutdown();
     TerrainRenderer::Shutdown();
     Renderer2D::Shutdown();
