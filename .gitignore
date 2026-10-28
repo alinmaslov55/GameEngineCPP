@@ -1,5 +1,6 @@
 # add by dev
 build/
+build-dist/
 logs/
 *.log
 

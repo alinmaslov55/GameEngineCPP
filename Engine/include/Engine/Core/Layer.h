@@ -14,7 +14,9 @@ public:
     virtual void OnAttach() {}
     virtual void OnDetach() {}
     virtual void OnUpdate(float deltaTime) {}
+#ifdef ENGINE_BUILD_EDITOR
     virtual void OnImGuiRender() {}
+#endif
 
     const std::string& GetName() const { return m_DebugName; }
 

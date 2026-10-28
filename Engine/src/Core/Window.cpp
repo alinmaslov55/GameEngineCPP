@@ -1,7 +1,9 @@
 #include "Engine/Core/Window.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
+#ifdef ENGINE_BUILD_EDITOR
 #include <imgui_impl_sdl3.h>
+#endif
 
 namespace Engine {
 Window::Window(const std::string& title, int width, int height)
@@ -57,7 +59,9 @@ void Window::PollEvents() {
     ENGINE_CORE_TRACE("Window::PollEvents");
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+#ifdef ENGINE_BUILD_EDITOR
         ImGui_ImplSDL3_ProcessEvent(&event);
+#endif
         if (event.type == SDL_EVENT_QUIT) {
             ENGINE_CORE_INFO("Window close event received");
             m_ShouldClose = true;

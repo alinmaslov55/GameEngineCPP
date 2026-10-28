@@ -1,0 +1,50 @@
+{
+    "version": 3,
+    "cmakeMinimumRequired": {
+        "major": 3,
+        "minor": 20,
+        "patch": 0
+    },
+    "configurePresets": [
+        {
+            "name": "editor",
+            "displayName": "Editor Build (ImGui Enabled)",
+            "description": "Default development build with Dear ImGui Editor UI",
+            "binaryDir": "${sourceDir}/build",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "ENGINE_BUILD_EDITOR": "ON",
+                "ENGINE_BUILD_TESTS": "ON"
+            }
+        },
+        {
+            "name": "dist",
+            "displayName": "Standalone Distribution Build (No Editor)",
+            "description": "Standalone game executable with Dear ImGui and Editor stripped",
+            "binaryDir": "${sourceDir}/build-dist",
+            "cacheVariables": {
+                "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "ENGINE_BUILD_EDITOR": "OFF",
+                "ENGINE_BUILD_TESTS": "ON"
+            }
+        }
+    ],
+    "buildPresets": [
+        {
+            "name": "editor-debug",
+            "configurePreset": "editor",
+            "configuration": "Debug"
+        },
+        {
+            "name": "dist-debug",
+            "configurePreset": "dist",
+            "configuration": "Debug"
+        },
+        {
+            "name": "dist-release",
+            "configurePreset": "dist",
+            "configuration": "Release"
+        }
+    ]
+}
+

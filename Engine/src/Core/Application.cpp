@@ -9,7 +9,10 @@
 #include "Engine/Audio/AudioManager.h"
 #include "Engine/Audio/AudioClip.h"
 #include "Engine/Utils/Logger.h"
+
+#ifdef ENGINE_BUILD_EDITOR
 #include "Engine/ImGui/ImGuiLayer.h"
+#endif
 
 namespace Engine {
 
@@ -40,7 +43,9 @@ void Application::Initialize() {
     Renderer::Init();
     Renderer2D::Init();
 
+#ifdef ENGINE_BUILD_EDITOR
     ImGuiLayer::Init(m_Window->GetSDLWindow(), m_Window->GetGLContext());
+#endif
 
     ENGINE_CORE_INFO("Isometric Engine initialized successfully");
 }
@@ -72,6 +77,7 @@ void Application::Run() {
         const float deltaTime = Time::GetDeltaTime();
 
         if (!m_Layers.empty()) {
+#ifdef ENGINE_BUILD_EDITOR
             for (auto& layer : m_Layers) {
                 layer->OnUpdate(deltaTime);
             }
@@ -84,14 +90,34 @@ void Application::Run() {
             );
             Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
             Renderer::Clear();
+#else
+            // Distribution mode: prepare default OS window backbuffer before layers render directly to it
+            Renderer::SetViewport(
+                0, 0,
+                static_cast<uint32_t>(m_Window->GetWidth()),
+                static_cast<uint32_t>(m_Window->GetHeight())
+            );
+            Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
+            Renderer::Clear();
+
+            for (auto& layer : m_Layers) {
+                layer->OnUpdate(deltaTime);
+            }
+#endif
         } else {
             Update();
+            Renderer::SetViewport(
+                0, 0,
+                static_cast<uint32_t>(m_Window->GetWidth()),
+                static_cast<uint32_t>(m_Window->GetHeight())
+            );
             Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
             Renderer::Clear();
             Renderer2D::ResetStats();
             SceneManager::Render();
         }
 
+#ifdef ENGINE_BUILD_EDITOR
         // 3. Render UI Layer & Dockspace
         ImGuiLayer::Begin();
         ImGuiLayer::BeginDockspace();
@@ -105,6 +131,7 @@ void Application::Run() {
 
         ImGuiLayer::EndDockspace();
         ImGuiLayer::End();
+#endif
 
         // 4. Swap Buffers
         m_Window->SwapBuffers();
@@ -153,7 +180,9 @@ void Application::Shutdown() {
     ResourceManager::ClearType<Texture>();
     ResourceManager::ClearType<AudioClip>();
 
+#ifdef ENGINE_BUILD_EDITOR
     ImGuiLayer::Shutdown();
+#endif
 
     Renderer2D::Shutdown();
     AudioManager::Shutdown();
