@@ -8,6 +8,7 @@
 #include <Engine/ImGui/ImGuiLayer.h>
 #include <Engine/Renderer/Renderer.h>
 #include <Engine/Renderer/Renderer2D.h>
+#include <Engine/Renderer/TerrainRenderer.h>
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/SceneSerializer.h>
 #include <Engine/Utils/Logger.h>
@@ -101,13 +102,12 @@ void EditorLayer::OnImGuiRender() {
         m_EditorCamera,
         m_SceneState == SceneState::Edit,
         m_SelectedEntity,
-        m_TilePalettePanel.GetSelectedTileID(),
-        m_TilePalettePanel.IsSelectedTileWalkable()
+        m_TilePalettePanel
     );
 
     m_HierarchyPanel.OnImGuiRender(m_ActiveScene, m_SelectedEntity, &m_ShowHierarchy);
     m_InspectorPanel.OnImGuiRender(m_SelectedEntity, &m_ShowInspector);
-    m_TilePalettePanel.OnImGuiRender(&m_ShowTilePalette);
+    m_TilePalettePanel.OnImGuiRender(m_ActiveScene, m_SelectedEntity, &m_ShowTilePalette);
     m_ContentBrowserPanel.OnImGuiRender(&m_ShowAssetBrowser);
     m_ProfilerPanel.OnImGuiRender(&m_ShowProfiler);
     m_ConsolePanel.OnImGuiRender(&m_ShowConsole);
@@ -117,6 +117,8 @@ void EditorLayer::OnScenePlay() {
     if (m_SceneState == SceneState::Play || !m_EditorScene) {
         return;
     }
+
+    Engine::TerrainRenderer::ClearBrushPreview();
 
     const uint64_t selectedUUID = m_SelectedEntity ? m_SelectedEntity->GetUUID() : 0;
 

@@ -6,6 +6,7 @@
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/CameraComponent.h>
+#include <Engine/Scene/TerrainComponent.h>
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Utils/Logger.h>
@@ -215,13 +216,83 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             }
         });
 
-        // 8. Tilemap Component
+        // 8. Terrain Component (4-Layer Height-Modulated Splatmap)
+        DrawComponent<Engine::TerrainComponent>("Terrain (Splatmap)", selectedEntity, [](Engine::TerrainComponent& terrain) {
+            float dims[2] = { terrain.GetWidth(), terrain.GetDepth() };
+            if (ImGui::DragFloat2("World Size (X, Z)", dims, 0.25f, 1.0f, 500.0f, "%.1f m")) {
+                terrain.SetWidth(dims[0]);
+                terrain.SetDepth(dims[1]);
+            }
+
+            ImGui::Text("Splatmap Resolution: %u x %u", terrain.GetSplatWidth(), terrain.GetSplatHeight());
+            if (ImGui::SmallButton("64x64")) {
+                terrain.ResizeSplatmap(64, 64);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("128x128")) {
+                terrain.ResizeSplatmap(128, 128);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("256x256")) {
+                terrain.ResizeSplatmap(256, 256);
+            }
+
+            float sharpness = terrain.GetBlendSharpness();
+            if (ImGui::SliderFloat("Blend Sharpness", &sharpness, 0.0f, 1.0f, "%.2f")) {
+                terrain.SetBlendSharpness(sharpness);
+            }
+
+            float darkening = terrain.GetEdgeDarkening();
+            if (ImGui::SliderFloat("Edge Ink Border", &darkening, 0.0f, 0.45f, "%.2f")) {
+                terrain.SetEdgeDarkening(darkening);
+            }
+
+            ImGui::Separator();
+            const char* layerLabels[Engine::TerrainComponent::MaxLayers] = {
+                "Layer 0 (R - Grass)",
+                "Layer 1 (G - Dirt)",
+                "Layer 2 (B - Cobble)",
+                "Layer 3 (A - Soil)"
+            };
+            for (uint32_t i = 0; i < Engine::TerrainComponent::MaxLayers; ++i) {
+                ImGui::PushID(static_cast<int>(i));
+                ImGui::Text("%s", layerLabels[i]);
+
+                auto& layer = terrain.GetLayer(i);
+                std::string texName = "Default Color";
+                if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
+                    texName = std::filesystem::path(layer.LayerTexture->GetFilepath()).filename().string();
+                }
+
+                ImGui::Button(texName.c_str(), ImVec2(145.0f, 0.0f));
+                if (ImGui::BeginDragDropTarget()) {
+                    if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
+                        const std::string filepath(static_cast<const char*>(payload->Data));
+                        if (filepath.find(".png") != std::string::npos || filepath.find(".jpg") != std::string::npos) {
+                            terrain.SetLayerTexture(i, Engine::ResourceManager::Load<Engine::Texture>(filepath));
+                            ENGINE_INFO("Inspector: Assigned terrain layer {} texture '{}'", i, filepath);
+                        }
+                    }
+                    ImGui::EndDragDropTarget();
+                }
+
+                ImGui::SameLine();
+                ImGui::SetNextItemWidth(85.0f);
+                float tiling = layer.TilingScale;
+                if (ImGui::DragFloat("Tiling", &tiling, 0.01f, 0.05f, 10.0f, "%.2f")) {
+                    terrain.SetLayerTilingScale(i, tiling);
+                }
+                ImGui::PopID();
+            }
+        });
+
+        // 8b. Tilemap Component
         DrawComponent<Engine::Tilemap>("Tilemap", selectedEntity, [](Engine::Tilemap& tilemapComp) {
             ImGui::Text("Dimensions: %u x %u (%u tiles)",
                         tilemapComp.GetWidth(),
                         tilemapComp.GetHeight(),
                         tilemapComp.GetWidth() * tilemapComp.GetHeight());
-            ImGui::TextDisabled("Select a brush in Tile Palette and click in Scene to paint.");
+            ImGui::TextDisabled("Switch Tile Palette to 'Tile Grid' to paint discrete tiles.");
         });
 
         ImGui::Spacing();
@@ -235,6 +306,7 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
 
         if (ImGui::BeginPopup("AddComponentPopup")) {
             DrawAddComponentEntry<Engine::SpriteRenderer>("Sprite Renderer", selectedEntity);
+            DrawAddComponentEntry<Engine::TerrainComponent>("Terrain (Splatmap)", selectedEntity);
             DrawAddComponentEntry<Engine::CameraComponent>("Camera", selectedEntity);
             DrawAddComponentEntry<Engine::ParticleSystem>("Particle System", selectedEntity);
             DrawAddComponentEntry<Engine::Rigidbody2D>("Rigidbody 2D", selectedEntity);

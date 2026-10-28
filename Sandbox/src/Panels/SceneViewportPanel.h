@@ -1,6 +1,8 @@
 #ifndef SANDBOX_SCENEVIEWPORTPANEL_H
 #define SANDBOX_SCENEVIEWPORTPANEL_H
 
+#include "Panels/TilePalettePanel.h"
+
 #include <Engine/Renderer/EditorCamera.h>
 #include <Engine/Renderer/Framebuffer.h>
 #include <Engine/Scene/GameObject.h>
@@ -19,13 +21,14 @@ public:
                        Engine::EditorCamera& editorCamera,
                        bool isEditMode,
                        Engine::GameObject* selectedEntity,
-                       uint32_t selectedTileID,
-                       bool selectedTileWalkable);
+                       TilePalettePanel& palettePanel);
 
     const glm::vec2& GetViewportSize() const { return m_ViewportSize; }
 
 private:
     glm::vec2 m_ViewportSize = { 1280.0f, 720.0f };
+    bool m_HasActiveSplatStroke = false;
+    glm::vec2 m_LastSplatStrokeXZ = { 0.0f, 0.0f };
 };
 
 } // namespace Sandbox

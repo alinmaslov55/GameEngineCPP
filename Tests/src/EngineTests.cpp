@@ -16,6 +16,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Scene/TerrainComponent.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/UI/UIPanel.h"
@@ -362,13 +363,21 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     auto sourceScene = std::make_shared<Engine::Scene>("TestSerializedLevel");
     sourceScene->SetOrthographicSize(2.75f);
 
-    // Entity 1: Tilemap with mixed walkability
+    // Entity 1: Tilemap with mixed walkability + coexisting Splatmap TerrainComponent
     constexpr uint64_t kMapUUID = 111111111111ULL;
     auto* mapEntity = sourceScene->CreateGameObjectWithUUID(kMapUUID, "WorldMap");
     auto* map = mapEntity->AddComponent<Engine::Tilemap>(4, 3);
     map->SetTile(0, 0, 1, true);
     map->SetTile(1, 2, 2, false);
     map->SetTile(3, 1, 3, false);
+
+    auto* terrain = mapEntity->AddComponent<Engine::TerrainComponent>(12.0f, 10.0f, 32u, 32u);
+    terrain->SetBlendSharpness(0.74f);
+    terrain->SetEdgeDarkening(0.22f);
+    terrain->SetLayerTilingScale(2u, 0.62f);
+    terrain->PaintWorldBrush(6.0f, 5.0f, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 2u, 2.5f, 0.5f, 1.0f);
+    const glm::u8vec4 expectedCenterWeights = terrain->GetSplatTexel(16u, 16u);
+    EXPECT_EQ(expectedCenterWeights.b, 255u);
 
     // Entity 2: Dynamic actor with Transform, BoxCollider2D, ParticleSystem, CameraComponent
     constexpr uint64_t kHeroUUID = 222222222222ULL;
@@ -436,6 +445,17 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     EXPECT_EQ(clonedMap->GetTile(3, 1).id, 3u);
     EXPECT_FALSE(clonedMap->GetTile(3, 1).walkable);
 
+    auto* clonedTerrain = clonedMapObj->GetComponent<Engine::TerrainComponent>();
+    ASSERT_NE(clonedTerrain, nullptr);
+    EXPECT_NEAR(clonedTerrain->GetWidth(), 12.0f, 1e-5f);
+    EXPECT_NEAR(clonedTerrain->GetDepth(), 10.0f, 1e-5f);
+    EXPECT_EQ(clonedTerrain->GetSplatWidth(), 32u);
+    EXPECT_EQ(clonedTerrain->GetSplatHeight(), 32u);
+    EXPECT_NEAR(clonedTerrain->GetBlendSharpness(), 0.74f, 1e-5f);
+    EXPECT_NEAR(clonedTerrain->GetEdgeDarkening(), 0.22f, 1e-5f);
+    EXPECT_NEAR(clonedTerrain->GetLayer(2u).TilingScale, 0.62f, 1e-5f);
+    EXPECT_EQ(clonedTerrain->GetSplatTexel(16u, 16u), expectedCenterWeights);
+
     auto* clonedHero = clonedScene->GetGameObjects()[1].get();
     EXPECT_EQ(clonedHero->GetUUID(), kHeroUUID);
     EXPECT_EQ(clonedHero->GetName(), "Hero");
@@ -485,18 +505,28 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     EXPECT_NEAR(panels[0]->size.x, 200.0f, 1e-5f);
     EXPECT_NEAR(panels[1]->size.x, 120.0f, 1e-5f);
 
-    // 2. Test Disk File Round Trip
-    const std::filesystem::path tempSceneFile = std::filesystem::temp_directory_path() / "engine_unit_test_roundtrip.scene";
-    ASSERT_TRUE(sourceSerializer.Serialize(tempSceneFile.string()));
+    // 2. Test Disk File Round Trip (including external PNG splatmap persistence)
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "engine_serializer_terrain_test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+    const std::filesystem::path prevAssetRoot = Engine::ResourceManager::GetAssetRoot();
+    Engine::ResourceManager::SetAssetRoot(tempDir);
+
+    ASSERT_TRUE(sourceSerializer.Serialize("roundtrip.scene"));
 
     auto diskScene = std::make_shared<Engine::Scene>();
     Engine::SceneSerializer diskSerializer(diskScene);
-    ASSERT_TRUE(diskSerializer.Deserialize(tempSceneFile.string()));
+    ASSERT_TRUE(diskSerializer.Deserialize("roundtrip.scene"));
     EXPECT_EQ(diskScene->GetName(), "TestSerializedLevel");
-    EXPECT_EQ(diskScene->GetGameObjects().size(), 3u);
+    ASSERT_EQ(diskScene->GetGameObjects().size(), 3u);
 
-    std::error_code ec;
-    std::filesystem::remove(tempSceneFile, ec);
+    auto* diskTerrain = diskScene->GetGameObjects()[0]->GetComponent<Engine::TerrainComponent>();
+    ASSERT_NE(diskTerrain, nullptr);
+    EXPECT_EQ(diskTerrain->GetSplatTexel(16u, 16u), expectedCenterWeights);
+    EXPECT_FALSE(diskTerrain->HasUnsavedMemoryEdits());
+
+    Engine::ResourceManager::SetAssetRoot(prevAssetRoot);
+    std::filesystem::remove_all(tempDir, ec);
 }
 
 // ==========================================
@@ -738,6 +768,65 @@ TEST(BuildConfigurationTest, StandaloneSceneFileStartupAndMissingFileFailure) {
     Engine::ResourceManager::SetAssetRoot({});
     std::filesystem::remove_all(tempDir, ec);
 }
+
+// ==========================================
+// 10. Phase 2 Terrain Splatmap Blending & PNG Persistence Tests
+// ==========================================
+TEST(TerrainSplatmapTest, InitializationRadialFalloffAndWeightNormalization) {
+    Engine::TerrainComponent terrain(16.0f, 16.0f, 64u, 64u);
+
+    // 1. Default initialization fills 100% Layer 0 (Meadow Grass: R=255, G=0, B=0, A=0)
+    EXPECT_EQ(terrain.GetSplatTexel(0u, 0u), glm::u8vec4(255, 0, 0, 0));
+    EXPECT_EQ(terrain.GetSplatTexel(32u, 32u), glm::u8vec4(255, 0, 0, 0));
+
+    // 2. Paint a soft radial stroke of Layer 1 (Dirt) at world center (8.0, 8.0) with radius 4.0m
+    const glm::vec3 origin = { 0.0f, 0.0f, 0.0f };
+    const glm::vec3 scale  = { 1.0f, 1.0f, 1.0f };
+    terrain.PaintWorldBrush(8.0f, 8.0f, origin, scale, /*layerIndex=*/1u, /*radiusWorld=*/4.0f, /*falloff=*/0.8f, /*strength=*/1.0f);
+
+    const glm::u8vec4 centerTexel  = terrain.GetSplatTexel(32u, 32u); // ~0.18m from center (inside inner plateau)
+    const glm::u8vec4 falloffTexel = terrain.GetSplatTexel(42u, 32u); // ~2.6m from center (in smoothstep falloff band)
+    const glm::u8vec4 outsideTexel = terrain.GetSplatTexel(58u, 32u); // ~6.6m from center (> 4.0m radius)
+
+    EXPECT_EQ(centerTexel.g, 255u);
+    EXPECT_GT(falloffTexel.g, 0u);
+    EXPECT_LT(falloffTexel.g, centerTexel.g);
+    EXPECT_EQ(outsideTexel, glm::u8vec4(255, 0, 0, 0));
+
+    // 3. Paint overlapping Layer 2 (Cobble) & Layer 3 (Soil) strokes and verify exact R+G+B+A == 255 everywhere
+    terrain.PaintWorldSegment({ 4.0f, 4.0f }, { 12.0f, 12.0f }, origin, scale, 2u, 3.0f, 0.65f, 0.75f);
+    terrain.PaintWorldBrush(9.5f, 7.0f, origin, scale, 3u, 2.5f, 0.7f, 0.6f);
+
+    for (uint32_t pz = 0; pz < terrain.GetSplatHeight(); ++pz) {
+        for (uint32_t px = 0; px < terrain.GetSplatWidth(); ++px) {
+            const glm::u8vec4 w = terrain.GetSplatTexel(px, pz);
+            const int sum = static_cast<int>(w.r) + static_cast<int>(w.g) + static_cast<int>(w.b) + static_cast<int>(w.a);
+            ASSERT_EQ(sum, 255) << "Unnormalized splat texel at (" << px << ", " << pz << ")";
+        }
+    }
+}
+
+TEST(TerrainSplatmapTest, PngSaveAndLoadRoundTripWithoutFlipInversion) {
+    Engine::TerrainComponent srcTerrain(14.0f, 14.0f, 32u, 32u);
+    // Paint an asymmetric marker in the North-West corner (px=2, pz=3) to catch any vertical/horizontal flip bugs
+    srcTerrain.SetSplatTexel(2u, 3u, { 10, 40, 180, 25 });
+    const glm::u8vec4 expectedMarker = srcTerrain.GetSplatTexel(2u, 3u);
+
+    const std::filesystem::path tempPng = std::filesystem::temp_directory_path() / "engine_splat_flip_check.png";
+    ASSERT_TRUE(srcTerrain.SaveSplatmapToPNG(tempPng.string()));
+    EXPECT_FALSE(srcTerrain.HasUnsavedMemoryEdits());
+
+    Engine::TerrainComponent loadedTerrain(14.0f, 14.0f, 8u, 8u);
+    ASSERT_TRUE(loadedTerrain.LoadSplatmapFromPNG(tempPng.string()));
+    EXPECT_EQ(loadedTerrain.GetSplatWidth(), 32u);
+    EXPECT_EQ(loadedTerrain.GetSplatHeight(), 32u);
+    EXPECT_EQ(loadedTerrain.GetSplatTexel(2u, 3u), expectedMarker);
+    EXPECT_EQ(loadedTerrain.GetSplatTexel(2u, 28u), glm::u8vec4(255, 0, 0, 0));
+
+    std::error_code ec;
+    std::filesystem::remove(tempPng, ec);
+}
+
 
 
 

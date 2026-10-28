@@ -3,7 +3,9 @@
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Renderer/Renderer2D.h"
+#include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Scene/TerrainComponent.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Math/Isometric.h"
@@ -390,13 +392,30 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     }
 
     // ==========================================
-    // PASS 1: 3D GROUND PLANE (XZ Tilemaps & Flat Decals)
+    // PASS 1: 3D GROUND PLANE (Splatmap Terrain -> Tilemaps -> Flat Decals)
     // ==========================================
+    Renderer::SetDepthTest(true);
     Renderer::SetDepthMask(true);
+
+    // 1A. Continuous 4-Layer Splatmap Terrain (Base Ground at Y = origin.y)
+    bool hasSplatTerrain = false;
     Renderer::SetPolygonOffset(true, 1.0f, 1.0f);
+    for (auto& gameObject : m_GameObjects) {
+        if (auto* terrain = gameObject->GetComponent<TerrainComponent>()) {
+            auto* transform = gameObject->GetTransform();
+            const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
+            const glm::vec3 scale  = transform ? transform->scale    : glm::vec3(1.0f);
+            TerrainRenderer::RenderTerrain(*terrain, origin, scale, *activeCam);
+            hasSplatTerrain = true;
+        }
+    }
+
+    // 1B. Discrete XZ Tilemaps (layered cleanly at +0.002f above splatmap when coexisting)
+    Renderer::SetPolygonOffset(true, hasSplatTerrain ? 0.5f : 1.0f, hasSplatTerrain ? 0.5f : 1.0f);
     Renderer2D::BeginScene(*activeCam, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
 
     const glm::mat4 groundFlatRotation = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    const float tileOverlayLift = hasSplatTerrain ? 0.002f : 0.0f;
 
     for (auto& gameObject : m_GameObjects) {
         if (auto* tilemap = gameObject->GetComponent<Tilemap>()) {
@@ -414,7 +433,7 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
 
                     const glm::vec3 worldPos = mapOrigin + glm::vec3(
                         static_cast<float>(x) * mapScale.x,
-                        0.0f,
+                        tileOverlayLift,
                         static_cast<float>(z) * mapScale.z
                     );
 

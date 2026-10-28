@@ -4,6 +4,7 @@
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/Renderer2D.h"
+#include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Scene/SceneManager.h"
 #include "Engine/Audio/AudioManager.h"
@@ -42,6 +43,7 @@ void Application::Initialize() {
     AudioManager::Init();
     Renderer::Init();
     Renderer2D::Init();
+    TerrainRenderer::Init();
 
 #ifdef ENGINE_BUILD_EDITOR
     ImGuiLayer::Init(m_Window->GetSDLWindow(), m_Window->GetGLContext());
@@ -184,6 +186,7 @@ void Application::Shutdown() {
     ImGuiLayer::Shutdown();
 #endif
 
+    TerrainRenderer::Shutdown();
     Renderer2D::Shutdown();
     AudioManager::Shutdown();
     Input::Shutdown();

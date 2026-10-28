@@ -2,6 +2,7 @@
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Scene/TerrainComponent.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/CameraComponent.h"
@@ -158,6 +159,38 @@ std::string SceneSerializer::SerializeToString() const {
             }
 
             compsJson["Tilemap"] = std::move(tilemapJson);
+        }
+
+        // 3b. Terrain (4-Layer Splatmap Ground Blending)
+        if (auto* terrain = go->GetComponent<TerrainComponent>()) {
+            json terrainJson;
+            terrainJson["Width"] = terrain->GetWidth();
+            terrainJson["Depth"] = terrain->GetDepth();
+            terrainJson["SplatWidth"] = terrain->GetSplatWidth();
+            terrainJson["SplatHeight"] = terrain->GetSplatHeight();
+            terrainJson["BlendSharpness"] = terrain->GetBlendSharpness();
+            terrainJson["EdgeDarkening"] = terrain->GetEdgeDarkening();
+
+            if (!terrain->GetSplatmapPath().empty()) {
+                terrainJson["SplatmapPath"] = ResourceManager::ToRelativePath(terrain->GetSplatmapPath());
+            }
+            if (terrain->HasUnsavedMemoryEdits() || terrain->GetSplatmapPath().empty()) {
+                terrainJson["SplatDataBase64"] = terrain->EncodeSplatBase64();
+            }
+
+            json layersJson = json::array();
+            for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+                const auto& layer = terrain->GetLayer(i);
+                json layerJson = {
+                    {"TilingScale", layer.TilingScale}
+                };
+                if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
+                    layerJson["TexturePath"] = ResourceManager::ToRelativePath(layer.LayerTexture->GetFilepath());
+                }
+                layersJson.push_back(std::move(layerJson));
+            }
+            terrainJson["Layers"] = std::move(layersJson);
+            compsJson["Terrain"] = std::move(terrainJson);
         }
 
         // 4. ParticleSystem
@@ -324,6 +357,25 @@ bool SceneSerializer::Serialize(const std::string& filepath) {
         std::filesystem::create_directories(parentDir, ec);
     }
 
+    // Flush any dirty TerrainComponent splatmaps to external PNG assets before writing JSON
+    const std::string sceneStem = std::filesystem::path(filepath).stem().string();
+    uint32_t terrainCounter = 0;
+    for (const auto& go : m_Scene->GetGameObjects()) {
+        if (auto* terrain = go->GetComponent<TerrainComponent>()) {
+            if (terrain->GetSplatmapPath().empty()) {
+                const std::string baseName = sceneStem.empty() ? "terrain" : sceneStem;
+                const std::string suffix = (terrainCounter == 0) ? "_splatmap.png" : ("_splatmap_" + std::to_string(terrainCounter) + ".png");
+                terrain->SetSplatmapPath("assets/diorama/" + baseName + suffix);
+            }
+            ++terrainCounter;
+
+            const std::string resolvedSplatPath = ResourceManager::ResolvePath(terrain->GetSplatmapPath());
+            if (terrain->HasUnsavedMemoryEdits() || !std::filesystem::exists(resolvedSplatPath, ec)) {
+                terrain->SaveSplatmapToPNG(resolvedSplatPath);
+            }
+        }
+    }
+
     std::string serializedData = SerializeToString();
     if (serializedData.empty()) {
         return false;
@@ -466,6 +518,48 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                                 tilemap->SetTile(x, y, tileId, walkable);
                             }
                             ++idx;
+                        }
+                    }
+                }
+            }
+
+            // 3b. Terrain (4-Layer Splatmap Ground Blending)
+            if (components.contains("Terrain") && components["Terrain"].is_object()) {
+                const auto& trJson = components["Terrain"];
+                const float width = trJson.value("Width", 14.0f);
+                const float depth = trJson.value("Depth", 14.0f);
+                const uint32_t splatW = trJson.value("SplatWidth", 128u);
+                const uint32_t splatH = trJson.value("SplatHeight", 128u);
+
+                auto* terrain = go->AddComponent<TerrainComponent>(width, depth, splatW, splatH);
+                terrain->SetBlendSharpness(trJson.value("BlendSharpness", 0.68f));
+                terrain->SetEdgeDarkening(trJson.value("EdgeDarkening", 0.16f));
+
+                const std::string splatPath = trJson.value("SplatmapPath", "");
+                if (!splatPath.empty()) {
+                    terrain->SetSplatmapPath(splatPath);
+                }
+
+                bool loadedFromBase64 = false;
+                if (trJson.contains("SplatDataBase64") && trJson["SplatDataBase64"].is_string()) {
+                    loadedFromBase64 = terrain->DecodeSplatBase64(
+                        trJson["SplatDataBase64"].get<std::string>(), splatW, splatH
+                    );
+                }
+                if (!loadedFromBase64 && !splatPath.empty()) {
+                    terrain->LoadSplatmapFromPNG(ResourceManager::ResolvePath(splatPath));
+                }
+
+                if (trJson.contains("Layers") && trJson["Layers"].is_array()) {
+                    const auto& layersArr = trJson["Layers"];
+                    for (uint32_t i = 0; i < TerrainComponent::MaxLayers && i < layersArr.size(); ++i) {
+                        const auto& lJson = layersArr[i];
+                        terrain->SetLayerTilingScale(i, lJson.value("TilingScale", 0.45f));
+                        if (lJson.contains("TexturePath") && lJson["TexturePath"].is_string()) {
+                            const std::string texPath = lJson["TexturePath"].get<std::string>();
+                            if (!texPath.empty()) {
+                                terrain->SetLayerTexture(i, ResourceManager::Load<Texture>(texPath));
+                            }
                         }
                     }
                 }

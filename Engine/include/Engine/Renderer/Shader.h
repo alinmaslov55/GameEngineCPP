@@ -19,6 +19,10 @@ public:
 
     void SetInt(const std::string& name, int value) const;
     void SetIntArray(const std::string& name, const int* values, uint32_t count) const;
+    void SetFloat(const std::string& name, float value) const;
+    void SetFloatArray(const std::string& name, const float* values, uint32_t count) const;
+    void SetFloat2(const std::string& name, const glm::vec2& value) const;
+    void SetFloat3(const std::string& name, const glm::vec3& value) const;
     void SetFloat4(const std::string& name, const glm::vec4& value) const;
     void SetMat4(const std::string& name, const glm::mat4& matrix) const;
 
