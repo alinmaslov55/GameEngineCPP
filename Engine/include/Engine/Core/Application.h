@@ -1,8 +1,10 @@
 #ifndef CORE_APPLICATION_H
 #define CORE_APPLICATION_H
 
-#include <memory>
 #include <functional>
+#include <memory>
+#include <vector>
+#include "Engine/Core/Layer.h"
 #include "Engine/Core/Window.h"
 
 namespace Engine {
@@ -11,7 +13,11 @@ public:
     Application();
     ~Application();
 
+    static Application& Get() { return *s_Instance; }
+
     void Run();
+
+    void PushLayer(std::unique_ptr<Layer> layer);
 
     bool IsRunning() const;
     void Close();
@@ -27,10 +33,13 @@ private:
     void Initialize();
     void Shutdown();
 
+    static Application* s_Instance;
+
     std::unique_ptr<Window> m_Window;
+    std::vector<std::unique_ptr<Layer>> m_Layers;
     bool m_Running = true;
     std::function<void()> m_ImGuiRenderCallback{nullptr};
 };
 } // namespace Engine
 
-#endif
+#endif // CORE_APPLICATION_H

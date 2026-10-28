@@ -1,9 +1,14 @@
-set(SANDBOX_SOURCES
-    src/main.cpp
+# Automatically gather all Sandbox C++ source files (including Editor/ and Panels/)
+file(GLOB_RECURSE SANDBOX_SOURCES CONFIGURE_DEPENDS
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/*.cpp"
 )
 
 # Create the executable
 add_executable(EngineSandbox ${SANDBOX_SOURCES})
+
+target_include_directories(EngineSandbox PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src"
+)
 
 # Link the Engine library
 target_link_libraries(EngineSandbox PRIVATE Engine)

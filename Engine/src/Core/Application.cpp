@@ -13,7 +13,10 @@
 
 namespace Engine {
 
+Application* Application::s_Instance = nullptr;
+
 Application::Application() {
+    s_Instance = this;
     ENGINE_CORE_TRACE("Application constructor called");
     Initialize();
 }
@@ -21,6 +24,9 @@ Application::Application() {
 Application::~Application() {
     ENGINE_CORE_TRACE("Application destructor called");
     Shutdown();
+    if (s_Instance == this) {
+        s_Instance = nullptr;
+    }
 }
 
 void Application::Initialize() {
@@ -39,6 +45,15 @@ void Application::Initialize() {
     ENGINE_CORE_INFO("Isometric Engine initialized successfully");
 }
 
+void Application::PushLayer(std::unique_ptr<Layer> layer) {
+    if (!layer) {
+        return;
+    }
+    ENGINE_CORE_INFO("Application: Pushing layer '{}'", layer->GetName());
+    layer->OnAttach();
+    m_Layers.push_back(std::move(layer));
+}
+
 void Application::Run() {
     ENGINE_CORE_INFO("Starting application run loop");
     Time::Init();
@@ -52,22 +67,38 @@ void Application::Run() {
             break;
         }
 
-        // 2. Update Engine/Scene
+        // 2. Update Engine / Layers
         Time::Update();
-        Update();
+        const float deltaTime = Time::GetDeltaTime();
 
-        // 3. Clear Screen
-        Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
-        Renderer::Clear();
+        if (!m_Layers.empty()) {
+            for (auto& layer : m_Layers) {
+                layer->OnUpdate(deltaTime);
+            }
 
-        // 4. Render Engine Scene (The game world)
-        Renderer2D::ResetStats();
-        SceneManager::Render();
+            // Prepare default window backbuffer for ImGui presentation
+            Renderer::SetViewport(
+                0, 0,
+                static_cast<uint32_t>(m_Window->GetWidth()),
+                static_cast<uint32_t>(m_Window->GetHeight())
+            );
+            Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
+            Renderer::Clear();
+        } else {
+            Update();
+            Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
+            Renderer::Clear();
+            Renderer2D::ResetStats();
+            SceneManager::Render();
+        }
 
-        // 5. Render UI Layer
+        // 3. Render UI Layer & Dockspace
         ImGuiLayer::Begin();
         ImGuiLayer::BeginDockspace();
 
+        for (auto& layer : m_Layers) {
+            layer->OnImGuiRender();
+        }
         if (m_ImGuiRenderCallback) {
             m_ImGuiRenderCallback();
         }
@@ -75,7 +106,7 @@ void Application::Run() {
         ImGuiLayer::EndDockspace();
         ImGuiLayer::End();
 
-        // 6. Swap Buffers
+        // 4. Swap Buffers
         m_Window->SwapBuffers();
     }
     ENGINE_CORE_INFO("Application run loop finished");
@@ -97,7 +128,7 @@ void Application::Render() {
 }
 
 bool Application::IsRunning() const {
-    return m_Running && !m_Window->ShouldClose(); 
+    return m_Running && !m_Window->ShouldClose();
 }
 
 void Application::Close() {
@@ -107,6 +138,15 @@ void Application::Close() {
 
 void Application::Shutdown() {
     ENGINE_CORE_INFO("Shutting down Isometric Engine...");
+
+    // Detach and destroy layers first while OpenGL context and subsystems are still active
+    for (auto it = m_Layers.rbegin(); it != m_Layers.rend(); ++it) {
+        if (*it) {
+            (*it)->OnDetach();
+        }
+    }
+    m_Layers.clear();
+
     SceneManager::Shutdown();
 
     // Clear caches to gracefully destroy OpenGL textures and SDL Audio buffers

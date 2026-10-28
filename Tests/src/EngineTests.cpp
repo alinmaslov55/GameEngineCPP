@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 
+#include "Engine/Core/Layer.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/ImGui/ImGuiLayer.h"
 #include "Engine/Math/Isometric.h"
@@ -557,5 +558,39 @@ TEST(EditorWorkspaceTest, DefaultWorkspaceDocksAllPanelsAndRoundTripsIni) {
     std::error_code ec;
     std::filesystem::remove(tempIniPath, ec);
 }
+
+// ==========================================
+// 8. Engine::Layer Lifecycle Tests
+// ==========================================
+TEST(LayerTest, CustomLayerLifecycleCallbacks) {
+    class MockLayer : public Engine::Layer {
+    public:
+        MockLayer() : Engine::Layer("MockEditorLayer") {}
+        int attachCount = 0;
+        int detachCount = 0;
+        int imguiCount = 0;
+        float accumulatedDt = 0.0f;
+
+        void OnAttach() override { ++attachCount; }
+        void OnDetach() override { ++detachCount; }
+        void OnUpdate(float deltaTime) override { accumulatedDt += deltaTime; }
+        void OnImGuiRender() override { ++imguiCount; }
+    };
+
+    auto layer = std::make_unique<MockLayer>();
+    EXPECT_EQ(layer->GetName(), "MockEditorLayer");
+
+    layer->OnAttach();
+    layer->OnUpdate(0.016f);
+    layer->OnUpdate(0.032f);
+    layer->OnImGuiRender();
+    layer->OnDetach();
+
+    EXPECT_EQ(layer->attachCount, 1);
+    EXPECT_NEAR(layer->accumulatedDt, 0.048f, 1e-5f);
+    EXPECT_EQ(layer->imguiCount, 1);
+    EXPECT_EQ(layer->detachCount, 1);
+}
+
 
 
