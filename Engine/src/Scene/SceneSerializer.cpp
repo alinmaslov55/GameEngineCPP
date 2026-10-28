@@ -6,6 +6,7 @@
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/CameraComponent.h"
+#include "Engine/Scene/FoliageWindComponents.h"
 #include "Engine/Scene/LightComponents.h"
 #include "Engine/Scene/PostProcessComponent.h"
 #include "Engine/Renderer/SpriteRenderer.h"
@@ -104,6 +105,8 @@ std::string SceneSerializer::SerializeToString() const {
             spriteJson["CastShadows"] = spriteRenderer->GetCastShadows();
             spriteJson["ReceiveLighting"] = spriteRenderer->GetReceiveLighting();
             spriteJson["Emissive"] = spriteRenderer->GetEmissive();
+            spriteJson["WindSwayWeight"] = spriteRenderer->GetWindSwayWeight();
+            spriteJson["WindPhaseOffset"] = spriteRenderer->GetWindPhaseOffset();
 
             if (auto tex = spriteRenderer->GetTexture()) {
                 spriteJson["TexturePath"] = ResourceManager::ToRelativePath(tex->GetFilepath());
@@ -271,6 +274,39 @@ std::string SceneSerializer::SerializeToString() const {
                 {"VignetteIntensity", pp->VignetteIntensity},
                 {"VignetteSmoothness", pp->VignetteSmoothness},
                 {"VignetteColor", {pp->VignetteColor.r, pp->VignetteColor.g, pp->VignetteColor.b}}
+            };
+        }
+
+        // 4e. WindComponent
+        if (auto* wind = go->GetComponent<WindComponent>()) {
+            compsJson["Wind"] = {
+                {"Enabled", wind->Enabled},
+                {"DirectionDegrees", wind->DirectionDegrees},
+                {"Strength", wind->Strength},
+                {"Speed", wind->Speed},
+                {"Gustiness", wind->Gustiness},
+                {"GustFrequency", wind->GustFrequency},
+                {"SpatialWaveScale", wind->SpatialWaveScale},
+                {"InteractiveRustle", wind->InteractiveRustle},
+                {"PlayerInteractionRadius", wind->PlayerInteractionRadius},
+                {"PlayerPushStrength", wind->PlayerPushStrength}
+            };
+        }
+
+        // 4f. SquashStretchComponent
+        if (auto* ss = go->GetComponent<SquashStretchComponent>()) {
+            compsJson["SquashStretch"] = {
+                {"Enabled", ss->Enabled},
+                {"Stiffness", ss->Stiffness},
+                {"Damping", ss->Damping},
+                {"MaxSquash", ss->MaxSquash},
+                {"MaxStretch", ss->MaxStretch},
+                {"EnableWalkHop", ss->EnableWalkHop},
+                {"WalkBobFrequency", ss->WalkBobFrequency},
+                {"WalkSquashAmount", ss->WalkSquashAmount},
+                {"WalkTiltDegrees", ss->WalkTiltDegrees},
+                {"JumpLaunchStretch", ss->JumpLaunchStretch},
+                {"LandingSquashImpact", ss->LandingSquashImpact}
             };
         }
 
@@ -548,6 +584,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 sprite->SetCastShadows(srJson.value("CastShadows", true));
                 sprite->SetReceiveLighting(srJson.value("ReceiveLighting", true));
                 sprite->SetEmissive(srJson.value("Emissive", 0.0f));
+                sprite->SetWindSwayWeight(srJson.value("WindSwayWeight", 0.0f));
+                sprite->SetWindPhaseOffset(srJson.value("WindPhaseOffset", 0.0f));
                 if (srJson.contains("TexturePath") && srJson["TexturePath"].is_string()) {
                     std::string texPath = srJson["TexturePath"].get<std::string>();
                     if (!texPath.empty()) {
@@ -775,6 +813,39 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                         ppJson["VignetteColor"][2].get<float>()
                     };
                 }
+            }
+
+            // 4e. WindComponent
+            if (components.contains("Wind") && components["Wind"].is_object()) {
+                const auto& wJson = components["Wind"];
+                auto* wind = go->AddComponent<WindComponent>();
+                wind->Enabled = wJson.value("Enabled", true);
+                wind->DirectionDegrees = wJson.value("DirectionDegrees", 25.0f);
+                wind->Strength = wJson.value("Strength", 0.16f);
+                wind->Speed = wJson.value("Speed", 2.15f);
+                wind->Gustiness = wJson.value("Gustiness", 0.55f);
+                wind->GustFrequency = wJson.value("GustFrequency", 0.42f);
+                wind->SpatialWaveScale = wJson.value("SpatialWaveScale", 0.55f);
+                wind->InteractiveRustle = wJson.value("InteractiveRustle", true);
+                wind->PlayerInteractionRadius = wJson.value("PlayerInteractionRadius", 1.25f);
+                wind->PlayerPushStrength = wJson.value("PlayerPushStrength", 0.34f);
+            }
+
+            // 4f. SquashStretchComponent
+            if (components.contains("SquashStretch") && components["SquashStretch"].is_object()) {
+                const auto& ssJson = components["SquashStretch"];
+                auto* ss = go->AddComponent<SquashStretchComponent>();
+                ss->Enabled = ssJson.value("Enabled", true);
+                ss->Stiffness = ssJson.value("Stiffness", 175.0f);
+                ss->Damping = ssJson.value("Damping", 14.5f);
+                ss->MaxSquash = ssJson.value("MaxSquash", 0.32f);
+                ss->MaxStretch = ssJson.value("MaxStretch", 0.38f);
+                ss->EnableWalkHop = ssJson.value("EnableWalkHop", true);
+                ss->WalkBobFrequency = ssJson.value("WalkBobFrequency", 11.5f);
+                ss->WalkSquashAmount = ssJson.value("WalkSquashAmount", 0.075f);
+                ss->WalkTiltDegrees = ssJson.value("WalkTiltDegrees", 4.8f);
+                ss->JumpLaunchStretch = ssJson.value("JumpLaunchStretch", 4.20f);
+                ss->LandingSquashImpact = ssJson.value("LandingSquashImpact", 0.85f);
             }
 
             // 5. Rigidbody2D

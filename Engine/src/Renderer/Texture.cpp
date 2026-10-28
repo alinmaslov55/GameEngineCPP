@@ -193,4 +193,54 @@ void Texture::Unbind() const {
     ENGINE_CORE_TRACE("Texture ID {} unbound", m_RendererID);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
+
+bool Texture::ReloadFromDisk() {
+    if (m_Filepath.empty()) {
+        return false;
+    }
+
+    stbi_set_flip_vertically_on_load(1);
+    int newW = 0, newH = 0, newBPP = 0;
+    unsigned char* localBuffer = stbi_load(m_Filepath.c_str(), &newW, &newH, &newBPP, 4);
+    if (!localBuffer) {
+        ENGINE_CORE_ERROR("Texture::ReloadFromDisk failed to load '{}'", m_Filepath);
+        return false;
+    }
+
+    m_Width = newW;
+    m_Height = newH;
+    m_BPP = newBPP;
+    m_LinearFilter = (m_Width >= 64 && m_Height >= 64);
+    m_HasMipmaps = m_LinearFilter;
+
+    if (!HasActiveGLContext()) {
+        stbi_image_free(localBuffer);
+        return true;
+    }
+
+    if (m_RendererID == 0) {
+        glGenTextures(1, &m_RendererID);
+    }
+
+    glBindTexture(GL_TEXTURE_2D, m_RendererID);
+    const GLint minFilter = m_LinearFilter ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST;
+    const GLint magFilter = m_LinearFilter ? GL_LINEAR : GL_NEAREST;
+    const GLint wrap = m_RepeatWrap ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, localBuffer);
+    if (m_HasMipmaps) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    stbi_image_free(localBuffer);
+    ENGINE_CORE_INFO("Texture reloaded in-place: '{}' (ID: {}, {}x{})", m_Filepath, m_RendererID, m_Width, m_Height);
+    return true;
+}
 } // namespace Engine

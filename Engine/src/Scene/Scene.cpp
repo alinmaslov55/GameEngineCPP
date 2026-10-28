@@ -1,6 +1,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Core/Time.h"
 #include "Engine/Scene/CameraComponent.h"
+#include "Engine/Scene/FoliageWindComponents.h"
 #include "Engine/Scene/LightComponents.h"
 #include "Engine/Scene/PostProcessComponent.h"
 #include "Engine/Renderer/PostProcessor.h"
@@ -401,10 +402,13 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     std::vector<GameObject*> standeeQueue;
     standeeQueue.reserve(m_GameObjects.size());
 
-    // Gather dynamic 2.5D scene lighting + optional HDR PostProcess Volume
+    // Gather dynamic 2.5D scene lighting, global Wind field, dynamic foliage interactors, and HDR PostProcess Volume
     SceneLightingData lighting;
     const DirectionalLightComponent* dirLight = nullptr;
     const PostProcessComponent* postProcess = nullptr;
+    const WindComponent* windComp = nullptr;
+    std::vector<std::pair<GameObject*, glm::vec3>> foliageInteractors;
+    foliageInteractors.reserve(8);
     const float totalTime = Time::GetTotalTime();
 
     for (auto& gameObject : m_GameObjects) {
@@ -414,6 +418,18 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         if (!postProcess) {
             if (auto* pp = gameObject->GetComponent<PostProcessComponent>(); pp && pp->Enabled) {
                 postProcess = pp;
+            }
+        }
+        if (auto* wc = gameObject->GetComponent<WindComponent>()) {
+            if (!windComp || (!windComp->Enabled && wc->Enabled)) {
+                windComp = wc;
+            }
+        }
+        if (foliageInteractors.size() < 8) {
+            if (auto* bc = gameObject->GetComponent<BoxCollider2D>(); bc && bc->isDynamic) {
+                if (auto* t = gameObject->GetTransform()) {
+                    foliageInteractors.emplace_back(gameObject.get(), t->position);
+                }
             }
         }
 
@@ -457,6 +473,66 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         lighting.SunIntensity = 0.0f;
     }
 
+    auto buildWindUniforms = [&](const glm::vec3& swayRightAxis) {
+        SceneWindData windData;
+        if (windComp) {
+            windData.WindActive = windComp->Enabled;
+            windData.TimeSeconds = totalTime;
+            windData.Strength = std::max(0.0f, windComp->Strength);
+            windData.Speed = windComp->Speed;
+            windData.Gustiness = std::clamp(windComp->Gustiness, 0.0f, 1.0f);
+            windData.GustFrequency = windComp->GustFrequency;
+        }
+        windData.SwayRightAxis = swayRightAxis;
+        return windData;
+    };
+
+    auto resolveStandeeMotion = [&](GameObject* go,
+                                    const SpriteRenderer* sprite,
+                                    const glm::vec3& swayRightAxis,
+                                    glm::vec2& outSize,
+                                    float& outRotationZ,
+                                    float& outWindWeight,
+                                    float& outSpatialPhase,
+                                    float& outProximityBend) {
+        const auto* transform = go->GetTransform();
+        glm::vec2 scaleMult = { 1.0f, 1.0f };
+        float tiltOffset = 0.0f;
+        if (const auto* ss = go->GetComponent<SquashStretchComponent>()) {
+            scaleMult = ss->GetScaleMultiplier();
+            tiltOffset = ss->GetVisualTiltDegrees();
+        }
+
+        outSize = { transform->scale.x * scaleMult.x, transform->scale.y * scaleMult.y };
+        outRotationZ = transform->rotation.z + tiltOffset;
+
+        const float rawWindWeight = sprite->GetWindSwayWeight();
+        const float heightFactor = std::clamp(0.55f + 0.25f * std::abs(outSize.y), 0.50f, 1.45f);
+        outWindWeight = rawWindWeight * heightFactor;
+        outSpatialPhase = windComp
+            ? windComp->ComputeSpatialPhase(transform->position, sprite->GetWindPhaseOffset())
+            : sprite->GetWindPhaseOffset();
+
+        outProximityBend = 0.0f;
+        if (windComp && windComp->InteractiveRustle && rawWindWeight > 0.0001f) {
+            float bendSum = 0.0f;
+            for (const auto& [interactorObj, interactorPos] : foliageInteractors) {
+                if (interactorObj == go) {
+                    continue;
+                }
+                bendSum += windComp->EvaluateProximityBend(
+                    transform->position,
+                    interactorPos,
+                    swayRightAxis,
+                    rawWindWeight,
+                    totalTime,
+                    1.2f
+                );
+            }
+            outProximityBend = std::clamp(bendSum, -0.65f, 0.65f);
+        }
+    };
+
     // ==========================================
     // PASS 0: DIRECTIONAL CUTOUT SHADOW MAP CAPTURE (2048x2048 24-bit Depth FBO)
     // ==========================================
@@ -468,11 +544,14 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
             ShadowMap::GetResolution()
         );
 
-        Renderer2D::BeginShadowPass(lighting.LightSpaceMatrix, 0.15f);
-        ShadowMap::BeginCapture();
-
         const glm::vec3 sunRightXZ = dirLight->GetSunRightXZ();
         const glm::vec3 worldUp = { 0.0f, 1.0f, 0.0f };
+
+        Renderer2D::BeginShadowPass(lighting.LightSpaceMatrix, 0.15f);
+        if (windComp) {
+            Renderer2D::SetWindData(buildWindUniforms(sunRightXZ));
+        }
+        ShadowMap::BeginCapture();
 
         for (GameObject* gameObject : standeeQueue) {
             auto* sprite = gameObject->GetComponent<SpriteRenderer>();
@@ -482,28 +561,37 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
 
             auto* transform = gameObject->GetTransform();
             const float cutoff = std::max(0.05f, sprite->GetAlphaCutoff());
-            const glm::vec2 standeeSize = { transform->scale.x, transform->scale.y };
+            glm::vec2 standeeSize{ 1.0f };
+            float effectiveRotZ = 0.0f;
+            float windWeight = 0.0f;
+            float spatialPhase = 0.0f;
+            float proximityBend = 0.0f;
+            resolveStandeeMotion(gameObject, sprite, sunRightXZ,
+                                 standeeSize, effectiveRotZ, windWeight, spatialPhase, proximityBend);
 
             if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane ||
                 sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::CylindricalY) {
                 // Orient cutout standee perpendicular to the sun's horizontal azimuth at its Y=0 anchor
-                // so silhouette shadows remain crisp and un-foreshortened across 360° sun angles
+                // so silhouette shadows remain crisp and sway in lockstep with Pass 2 standees
                 if (sprite->GetSubTexture()) {
                     Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
-                                              transform->rotation.z, sprite->GetSubTexture(), glm::vec4(1.0f),
-                                              cutoff, -1.0f, 0.0f);
+                                              effectiveRotZ, sprite->GetSubTexture(), glm::vec4(1.0f),
+                                              cutoff, -1.0f, 0.0f,
+                                              windWeight, spatialPhase, proximityBend);
                 } else {
                     Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
-                                              transform->rotation.z, sprite->GetTexture(), glm::vec4(1.0f),
-                                              cutoff, -1.0f, 0.0f);
+                                              effectiveRotZ, sprite->GetTexture(), glm::vec4(1.0f),
+                                              cutoff, -1.0f, 0.0f,
+                                              windWeight, spatialPhase, proximityBend);
                 }
             } else {
-                const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * transform->scale.y, 0.0f);
+                const glm::vec3 scaled3D = { standeeSize.x, standeeSize.y, transform->scale.z };
+                const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * standeeSize.y, 0.0f);
                 const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
                                               glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
                                               glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
-                                              glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0.0f, 0.0f, 1.0f)) *
-                                              glm::scale(glm::mat4(1.0f), transform->scale);
+                                              glm::rotate(glm::mat4(1.0f), glm::radians(effectiveRotZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                              glm::scale(glm::mat4(1.0f), scaled3D);
                 if (sprite->GetSubTexture()) {
                     Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
                 } else {
@@ -620,43 +708,59 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         return distA > distB; // Back-to-front for clean outline anti-aliasing alongside Z-buffer cutout
     });
 
+    const glm::vec3 camRightXZ = activeCam->GetRightXZ();
     Renderer2D::BeginScene(*activeCam, lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.15f);
+    if (windComp) {
+        Renderer2D::SetWindData(buildWindUniforms(camRightXZ));
+    }
 
     for (GameObject* gameObject : standeeQueue) {
         auto* sprite = gameObject->GetComponent<SpriteRenderer>();
         auto* transform = gameObject->GetTransform();
         const float cutoff = sprite->GetAlphaCutoff();
-        const glm::vec2 standeeSize = { transform->scale.x, transform->scale.y };
+        glm::vec2 standeeSize{ 1.0f };
+        float effectiveRotZ = 0.0f;
+        float windWeight = 0.0f;
+        float spatialPhase = 0.0f;
+        float proximityBend = 0.0f;
+        resolveStandeeMotion(gameObject, sprite, camRightXZ,
+                             standeeSize, effectiveRotZ, windWeight, spatialPhase, proximityBend);
+
         const float standeeEmissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
         const float receiverOffset = std::max(0.48f, 0.55f * std::abs(standeeSize.x));
 
         if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane) {
             if (sprite->GetSubTexture()) {
                 Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRight(), activeCam->GetUp(),
-                                          transform->rotation.z, sprite->GetSubTexture(), sprite->GetColor(),
-                                          cutoff, standeeEmissive, receiverOffset);
+                                          effectiveRotZ, sprite->GetSubTexture(), sprite->GetColor(),
+                                          cutoff, standeeEmissive, receiverOffset,
+                                          windWeight, spatialPhase, proximityBend);
             } else {
                 Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRight(), activeCam->GetUp(),
-                                          transform->rotation.z, sprite->GetTexture(), sprite->GetColor(),
-                                          cutoff, standeeEmissive, receiverOffset);
+                                          effectiveRotZ, sprite->GetTexture(), sprite->GetColor(),
+                                          cutoff, standeeEmissive, receiverOffset,
+                                          windWeight, spatialPhase, proximityBend);
             }
         } else if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::CylindricalY) {
             if (sprite->GetSubTexture()) {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRightXZ(), glm::vec3(0.0f, 1.0f, 0.0f),
-                                          transform->rotation.z, sprite->GetSubTexture(), sprite->GetColor(),
-                                          cutoff, standeeEmissive, receiverOffset);
+                Renderer2D::DrawBillboard(transform->position, standeeSize, camRightXZ, glm::vec3(0.0f, 1.0f, 0.0f),
+                                          effectiveRotZ, sprite->GetSubTexture(), sprite->GetColor(),
+                                          cutoff, standeeEmissive, receiverOffset,
+                                          windWeight, spatialPhase, proximityBend);
             } else {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRightXZ(), glm::vec3(0.0f, 1.0f, 0.0f),
-                                          transform->rotation.z, sprite->GetTexture(), sprite->GetColor(),
-                                          cutoff, standeeEmissive, receiverOffset);
+                Renderer2D::DrawBillboard(transform->position, standeeSize, camRightXZ, glm::vec3(0.0f, 1.0f, 0.0f),
+                                          effectiveRotZ, sprite->GetTexture(), sprite->GetColor(),
+                                          cutoff, standeeEmissive, receiverOffset,
+                                          windWeight, spatialPhase, proximityBend);
             }
         } else {
-            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * transform->scale.y, 0.0f);
+            const glm::vec3 scaled3D = { standeeSize.x, standeeSize.y, transform->scale.z };
+            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * standeeSize.y, 0.0f);
             const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
                                           glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
                                           glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0.0f, 0.0f, 1.0f)) *
-                                          glm::scale(glm::mat4(1.0f), transform->scale);
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(effectiveRotZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                          glm::scale(glm::mat4(1.0f), scaled3D);
             if (sprite->GetSubTexture()) {
                 Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), sprite->GetColor(),
                                      cutoff, standeeEmissive, receiverOffset);

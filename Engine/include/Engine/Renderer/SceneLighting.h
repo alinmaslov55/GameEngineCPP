@@ -39,6 +39,16 @@ struct SceneLightingData {
     std::array<PointLightUniform, MaxPointLights> PointLights{};
 };
 
+struct SceneWindData {
+    bool WindActive = false;
+    float TimeSeconds = 0.0f;
+    float Strength = 0.16f;
+    float Speed = 2.15f;
+    float Gustiness = 0.55f;
+    float GustFrequency = 0.42f;
+    glm::vec3 SwayRightAxis = { 1.0f, 0.0f, 0.0f };
+};
+
 } // namespace Engine
 
 #endif // RENDERER_SCENELIGHTING_H

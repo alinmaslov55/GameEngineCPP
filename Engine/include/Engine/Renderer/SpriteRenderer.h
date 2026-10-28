@@ -57,6 +57,12 @@ public:
     float GetEmissive() const { return m_Emissive; }
     void SetEmissive(float emissive) { m_Emissive = std::clamp(emissive, 0.0f, 5.0f); }
 
+    float GetWindSwayWeight() const { return m_WindSwayWeight; }
+    void SetWindSwayWeight(float weight) { m_WindSwayWeight = std::clamp(weight, 0.0f, 2.0f); }
+
+    float GetWindPhaseOffset() const { return m_WindPhaseOffset; }
+    void SetWindPhaseOffset(float offset) { m_WindPhaseOffset = offset; }
+
 private:
     std::shared_ptr<Texture> m_Texture = nullptr;
     std::shared_ptr<SubTexture2D> m_SubTexture = nullptr;
@@ -66,6 +72,8 @@ private:
     bool m_CastShadows = true;
     bool m_ReceiveLighting = true;
     float m_Emissive = 0.0f;
+    float m_WindSwayWeight = 0.0f;
+    float m_WindPhaseOffset = 0.0f;
 };
 } // namespace Engine
 

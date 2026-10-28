@@ -21,6 +21,7 @@ struct QuadVertex {
     float AlphaCutoff;
     float Emissive;     // < 0.0 = unlit; >= 0.0 = lit + self-illumination multiplier
     float ShadowOffset; // World-space receiver offset along -SunDirection to prevent billboard self-shadowing
+    glm::vec3 WindParams; // x = top-anchored sway weight, y = anchor spatial phase, z = proximity bend (m)
 };
 
 struct Renderer2DStorage {
@@ -105,7 +106,8 @@ void Renderer2D::Init() {
         { ShaderDataType::Float,  "a_TexIndex"     },
         { ShaderDataType::Float,  "a_AlphaCutoff"  },
         { ShaderDataType::Float,  "a_Emissive"     },
-        { ShaderDataType::Float,  "a_ShadowOffset" }
+        { ShaderDataType::Float,  "a_ShadowOffset" },
+        { ShaderDataType::Float3, "a_WindParams"   }
     });
     s_Data->QuadVertexArray->AddVertexBuffer(s_Data->QuadVertexBuffer);
 
@@ -154,8 +156,16 @@ void Renderer2D::Init() {
         layout(location = 4) in float a_AlphaCutoff;
         layout(location = 5) in float a_Emissive;
         layout(location = 6) in float a_ShadowOffset;
+        layout(location = 7) in vec3 a_WindParams;
 
         uniform mat4 u_ViewProjection;
+        uniform int u_WindActive;
+        uniform float u_WindTime;
+        uniform float u_WindStrength;
+        uniform float u_WindSpeed;
+        uniform float u_WindGustiness;
+        uniform float u_WindGustFreq;
+        uniform vec3 u_SwayRightAxis;
 
         out vec3 v_WorldPos;
         out vec4 v_Color;
@@ -166,14 +176,27 @@ void Renderer2D::Init() {
         out float v_ShadowOffset;
 
         void main() {
-            v_WorldPos = a_Position;
+            vec3 worldPos = a_Position;
+            if (a_WindParams.x > 0.0001 || abs(a_WindParams.z) > 0.0001) {
+                float sway = 0.0;
+                if (u_WindActive == 1 && a_WindParams.x > 0.0001) {
+                    float primary = sin(u_WindTime * u_WindSpeed + a_WindParams.y);
+                    float detail  = 0.32 * sin(u_WindTime * (u_WindSpeed * 2.17) + a_WindParams.y * 1.73 + 1.1);
+                    float gustOsc = 0.55 + 0.45 * sin(u_WindTime * u_WindGustFreq + a_WindParams.y * 0.37);
+                    float gustEnv = mix(1.0, gustOsc, u_WindGustiness);
+                    sway = (primary + detail) * u_WindStrength * gustEnv * a_WindParams.x;
+                }
+                worldPos += u_SwayRightAxis * (sway + a_WindParams.z);
+            }
+
+            v_WorldPos = worldPos;
             v_Color = a_Color;
             v_TexCoord = a_TexCoord;
             v_TexIndex = int(a_TexIndex + 0.5);
             v_AlphaCutoff = a_AlphaCutoff;
             v_Emissive = a_Emissive;
             v_ShadowOffset = a_ShadowOffset;
-            gl_Position = u_ViewProjection * vec4(a_Position, 1.0);
+            gl_Position = u_ViewProjection * vec4(worldPos, 1.0);
         }
     )";
 
@@ -367,11 +390,30 @@ void Renderer2D::ApplyLightingUniforms(const SceneLightingData* lighting) {
     }
 }
 
+void Renderer2D::ApplyWindUniforms(const SceneWindData* wind) {
+    auto& shader = *s_Data->TextureShader;
+    shader.Bind();
+
+    if (wind) {
+        shader.SetInt("u_WindActive", wind->WindActive ? 1 : 0);
+        shader.SetFloat("u_WindTime", wind->TimeSeconds);
+        shader.SetFloat("u_WindStrength", wind->Strength);
+        shader.SetFloat("u_WindSpeed", wind->Speed);
+        shader.SetFloat("u_WindGustiness", std::clamp(wind->Gustiness, 0.0f, 1.0f));
+        shader.SetFloat("u_WindGustFreq", wind->GustFrequency);
+        shader.SetFloat3("u_SwayRightAxis", wind->SwayRightAxis);
+    } else {
+        shader.SetInt("u_WindActive", 0);
+        shader.SetFloat3("u_SwayRightAxis", { 1.0f, 0.0f, 0.0f });
+    }
+}
+
 void Renderer2D::BeginScene(const PerspectiveCamera& camera, bool depthTest, float defaultAlphaCutoff) {
     ENGINE_CORE_TRACE("Renderer2D::BeginScene (PerspectiveCamera, Unlit)");
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(nullptr);
+    ApplyWindUniforms(nullptr);
     s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
     StartBatch();
 }
@@ -384,6 +426,7 @@ void Renderer2D::BeginScene(const PerspectiveCamera& camera,
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(&lighting);
+    ApplyWindUniforms(nullptr);
     s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
     StartBatch();
 }
@@ -393,6 +436,7 @@ void Renderer2D::BeginShadowPass(const glm::mat4& lightSpaceMatrix, float defaul
     Renderer::SetDepthTest(true);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(nullptr); // Unbinds ShadowMap from slot 15 to prevent FBO feedback loop
+    ApplyWindUniforms(nullptr);
     s_Data->TextureShader->SetMat4("u_ViewProjection", lightSpaceMatrix);
     StartBatch();
 }
@@ -402,6 +446,7 @@ void Renderer2D::BeginScene(const OrthographicCamera& camera) {
     Renderer::SetDepthTest(false);
     s_Data->DefaultAlphaCutoff = 0.0f;
     ApplyLightingUniforms(nullptr);
+    ApplyWindUniforms(nullptr);
     s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
     StartBatch();
 }
@@ -411,6 +456,7 @@ void Renderer2D::BeginScene(const glm::mat4& projectionMatrix, bool depthTest, f
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(nullptr);
+    ApplyWindUniforms(nullptr);
     s_Data->TextureShader->SetMat4("u_ViewProjection", projectionMatrix);
     StartBatch();
 }
@@ -419,6 +465,16 @@ void Renderer2D::SetDefaultAlphaCutoff(float alphaCutoff) {
     if (s_Data) {
         s_Data->DefaultAlphaCutoff = alphaCutoff;
     }
+}
+
+void Renderer2D::SetWindData(const SceneWindData& wind) {
+    if (!s_Data) {
+        return;
+    }
+    if (s_Data->QuadIndexCount > 0) {
+        NextBatch();
+    }
+    ApplyWindUniforms(&wind);
 }
 
 void Renderer2D::EndScene() {
@@ -469,7 +525,8 @@ void Renderer2D::SubmitVertices(
     const glm::vec4& tintColor,
     float alphaCutoff,
     float emissive,
-    float shadowReceiverOffset)
+    float shadowReceiverOffset,
+    const glm::vec3 windParams[4])
 {
     if (s_Data->QuadIndexCount >= Renderer2DStorage::MaxIndices) {
         NextBatch();
@@ -504,6 +561,7 @@ void Renderer2D::SubmitVertices(
         s_Data->QuadVertexBufferPtr->AlphaCutoff  = resolvedCutoff;
         s_Data->QuadVertexBufferPtr->Emissive     = emissive;
         s_Data->QuadVertexBufferPtr->ShadowOffset = shadowReceiverOffset;
+        s_Data->QuadVertexBufferPtr->WindParams   = windParams[i];
         s_Data->QuadVertexBufferPtr++;
     }
 
@@ -520,11 +578,17 @@ void Renderer2D::SubmitQuad(
     float emissive,
     float shadowReceiverOffset)
 {
+    constexpr glm::vec3 kZeroWindParams[4] = {
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f }
+    };
     glm::vec3 worldPositions[4];
     for (size_t i = 0; i < 4; ++i) {
         worldPositions[i] = glm::vec3(transform * s_Data->QuadVertexPositions[i]);
     }
-    SubmitVertices(worldPositions, rendererTextureID, texCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
+    SubmitVertices(worldPositions, rendererTextureID, texCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, kZeroWindParams);
 }
 
 void Renderer2D::DrawQuad(const glm::mat4& transform, const glm::vec4& color, float alphaCutoff, float emissive, float shadowReceiverOffset) {
@@ -560,10 +624,19 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
                                const glm::vec4& color,
                                float alphaCutoff,
                                float emissive,
-                               float shadowReceiverOffset) {
+                               float shadowReceiverOffset,
+                               float windSwayWeight,
+                               float windSpatialPhase,
+                               float proximityBend) {
     glm::vec3 corners[4];
     ComputeBillboardCorners(anchorPosition, size, rightAxis, upAxis, rotationZDegrees, corners);
-    SubmitVertices(corners, 0, kDefaultTexCoords, color, alphaCutoff, emissive, shadowReceiverOffset);
+    const glm::vec3 windParams[4] = {
+        { 0.0f,           windSpatialPhase, 0.0f          },
+        { 0.0f,           windSpatialPhase, 0.0f          },
+        { windSwayWeight, windSpatialPhase, proximityBend },
+        { windSwayWeight, windSpatialPhase, proximityBend }
+    };
+    SubmitVertices(corners, 0, kDefaultTexCoords, color, alphaCutoff, emissive, shadowReceiverOffset, windParams);
 }
 
 void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
@@ -575,11 +648,20 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
                                const glm::vec4& tintColor,
                                float alphaCutoff,
                                float emissive,
-                               float shadowReceiverOffset) {
+                               float shadowReceiverOffset,
+                               float windSwayWeight,
+                               float windSpatialPhase,
+                               float proximityBend) {
     glm::vec3 corners[4];
     ComputeBillboardCorners(anchorPosition, size, rightAxis, upAxis, rotationZDegrees, corners);
+    const glm::vec3 windParams[4] = {
+        { 0.0f,           windSpatialPhase, 0.0f          },
+        { 0.0f,           windSpatialPhase, 0.0f          },
+        { windSwayWeight, windSpatialPhase, proximityBend },
+        { windSwayWeight, windSpatialPhase, proximityBend }
+    };
     uint32_t texID = (texture && texture->GetRendererID() != 0) ? texture->GetRendererID() : 0;
-    SubmitVertices(corners, texID, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
+    SubmitVertices(corners, texID, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, windParams);
 }
 
 void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
@@ -591,9 +673,18 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
                                const glm::vec4& tintColor,
                                float alphaCutoff,
                                float emissive,
-                               float shadowReceiverOffset) {
+                               float shadowReceiverOffset,
+                               float windSwayWeight,
+                               float windSpatialPhase,
+                               float proximityBend) {
     glm::vec3 corners[4];
     ComputeBillboardCorners(anchorPosition, size, rightAxis, upAxis, rotationZDegrees, corners);
+    const glm::vec3 windParams[4] = {
+        { 0.0f,           windSpatialPhase, 0.0f          },
+        { 0.0f,           windSpatialPhase, 0.0f          },
+        { windSwayWeight, windSpatialPhase, proximityBend },
+        { windSwayWeight, windSpatialPhase, proximityBend }
+    };
     if (subTexture && subTexture->GetTexture() && subTexture->GetTexture()->GetRendererID() != 0) {
         const glm::vec2 min = subTexture->GetMin();
         const glm::vec2 max = subTexture->GetMax();
@@ -603,9 +694,9 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
             { max.x, max.y },
             { min.x, max.y }
         };
-        SubmitVertices(corners, subTexture->GetTexture()->GetRendererID(), subTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
+        SubmitVertices(corners, subTexture->GetTexture()->GetRendererID(), subTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, windParams);
     } else {
-        SubmitVertices(corners, 0, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset);
+        SubmitVertices(corners, 0, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, windParams);
     }
 }
 

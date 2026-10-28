@@ -51,7 +51,7 @@
                 }
             },
             "Name": "Sun Light",
-            "UUID": 2504090604104598385
+            "UUID": 11822855994352683111
         },
         {
             "Components": {
@@ -111,7 +111,42 @@
                 }
             },
             "Name": "Post Process Volume",
-            "UUID": 12326688989600084117
+            "UUID": 13247081901271792223
+        },
+        {
+            "Components": {
+                "Transform": {
+                    "Position": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                },
+                "Wind": {
+                    "DirectionDegrees": 25.0,
+                    "Enabled": true,
+                    "GustFrequency": 0.41999998688697815,
+                    "Gustiness": 0.550000011920929,
+                    "InteractiveRustle": true,
+                    "PlayerInteractionRadius": 1.25,
+                    "PlayerPushStrength": 0.3400000035762787,
+                    "SpatialWaveScale": 0.550000011920929,
+                    "Speed": 2.1500000953674316,
+                    "Strength": 0.1599999964237213
+                }
+            },
+            "Name": "Wind Zone",
+            "UUID": 11438420728611635342
         },
         {
             "Components": {
@@ -161,7 +196,7 @@
                 }
             },
             "Name": "Terrain",
-            "UUID": 6068731826790781693
+            "UUID": 10051158027119605241
         },
         {
             "Components": {
@@ -444,7 +479,7 @@
                 }
             },
             "Name": "Map",
-            "UUID": 1352434296426264592
+            "UUID": 11145421161576050754
         },
         {
             "Components": {
@@ -520,7 +555,22 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/hero_lamb.png"
+                    "TexturePath": "assets/diorama/hero_lamb.png",
+                    "WindPhaseOffset": 0.0,
+                    "WindSwayWeight": 0.0
+                },
+                "SquashStretch": {
+                    "Damping": 14.5,
+                    "EnableWalkHop": true,
+                    "Enabled": true,
+                    "JumpLaunchStretch": 4.199999809265137,
+                    "LandingSquashImpact": 0.8500000238418579,
+                    "MaxSquash": 0.3199999928474426,
+                    "MaxStretch": 0.3799999952316284,
+                    "Stiffness": 175.0,
+                    "WalkBobFrequency": 11.5,
+                    "WalkSquashAmount": 0.07500000298023224,
+                    "WalkTiltDegrees": 4.800000190734863
                 },
                 "Transform": {
                     "Position": [
@@ -541,7 +591,7 @@
                 }
             },
             "Name": "Player",
-            "UUID": 13906332874996223960
+            "UUID": 3242000333563063927
         },
         {
             "Components": {
@@ -589,7 +639,9 @@
                     ],
                     "Emissive": 0.2800000011920929,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/cult_shrine.png"
+                    "TexturePath": "assets/diorama/cult_shrine.png",
+                    "WindPhaseOffset": 0.0,
+                    "WindSwayWeight": 0.0
                 },
                 "Transform": {
                     "Position": [
@@ -610,7 +662,7 @@
                 }
             },
             "Name": "Cult Shrine",
-            "UUID": 13851981313401655639
+            "UUID": 2396500566287343740
         },
         {
             "Components": {
@@ -697,7 +749,9 @@
                     ],
                     "Emissive": 0.8500000238418579,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/ritual_brazier.png"
+                    "TexturePath": "assets/diorama/ritual_brazier.png",
+                    "WindPhaseOffset": 0.0,
+                    "WindSwayWeight": 0.0
                 },
                 "Transform": {
                     "Position": [
@@ -718,7 +772,7 @@
                 }
             },
             "Name": "Ritual Brazier 1",
-            "UUID": 4209344120417628268
+            "UUID": 11037331706588835654
         },
         {
             "Components": {
@@ -805,7 +859,9 @@
                     ],
                     "Emissive": 0.8500000238418579,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/ritual_brazier.png"
+                    "TexturePath": "assets/diorama/ritual_brazier.png",
+                    "WindPhaseOffset": 0.0,
+                    "WindSwayWeight": 0.0
                 },
                 "Transform": {
                     "Position": [
@@ -826,7 +882,7 @@
                 }
             },
             "Name": "Ritual Brazier 2",
-            "UUID": 14284902712556463058
+            "UUID": 3183080394898975376
         },
         {
             "Components": {
@@ -860,7 +916,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/pine_tree.png"
+                    "TexturePath": "assets/diorama/pine_tree.png",
+                    "WindPhaseOffset": 0.7099999785423279,
+                    "WindSwayWeight": 0.3799999952316284
                 },
                 "Transform": {
                     "Position": [
@@ -881,7 +939,7 @@
                 }
             },
             "Name": "Pine Tree 1",
-            "UUID": 6999790816534028052
+            "UUID": 3449150037739766472
         },
         {
             "Components": {
@@ -915,7 +973,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/pine_tree.png"
+                    "TexturePath": "assets/diorama/pine_tree.png",
+                    "WindPhaseOffset": 1.4199999570846558,
+                    "WindSwayWeight": 0.3799999952316284
                 },
                 "Transform": {
                     "Position": [
@@ -936,7 +996,7 @@
                 }
             },
             "Name": "Pine Tree 2",
-            "UUID": 4113807627213996746
+            "UUID": 17093928467193085992
         },
         {
             "Components": {
@@ -970,7 +1030,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/pine_tree.png"
+                    "TexturePath": "assets/diorama/pine_tree.png",
+                    "WindPhaseOffset": 2.129999876022339,
+                    "WindSwayWeight": 0.3799999952316284
                 },
                 "Transform": {
                     "Position": [
@@ -991,7 +1053,7 @@
                 }
             },
             "Name": "Pine Tree 3",
-            "UUID": 16412399111834937460
+            "UUID": 13693474786766695427
         },
         {
             "Components": {
@@ -1025,7 +1087,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/pine_tree.png"
+                    "TexturePath": "assets/diorama/pine_tree.png",
+                    "WindPhaseOffset": 2.8399999141693115,
+                    "WindSwayWeight": 0.3799999952316284
                 },
                 "Transform": {
                     "Position": [
@@ -1046,7 +1110,7 @@
                 }
             },
             "Name": "Pine Tree 4",
-            "UUID": 4334059282520792935
+            "UUID": 7087639395564973463
         },
         {
             "Components": {
@@ -1080,7 +1144,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/pine_tree.png"
+                    "TexturePath": "assets/diorama/pine_tree.png",
+                    "WindPhaseOffset": 3.549999952316284,
+                    "WindSwayWeight": 0.3799999952316284
                 },
                 "Transform": {
                     "Position": [
@@ -1101,7 +1167,7 @@
                 }
             },
             "Name": "Pine Tree 5",
-            "UUID": 5095555803692544059
+            "UUID": 356939269675392422
         },
         {
             "Components": {
@@ -1135,7 +1201,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/pine_tree.png"
+                    "TexturePath": "assets/diorama/pine_tree.png",
+                    "WindPhaseOffset": 4.259999752044678,
+                    "WindSwayWeight": 0.3799999952316284
                 },
                 "Transform": {
                     "Position": [
@@ -1156,7 +1224,7 @@
                 }
             },
             "Name": "Pine Tree 6",
-            "UUID": 15038534445041028937
+            "UUID": 10154262457100587910
         },
         {
             "Components": {
@@ -1190,7 +1258,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/pine_tree.png"
+                    "TexturePath": "assets/diorama/pine_tree.png",
+                    "WindPhaseOffset": 4.96999979019165,
+                    "WindSwayWeight": 0.3799999952316284
                 },
                 "Transform": {
                     "Position": [
@@ -1211,7 +1281,7 @@
                 }
             },
             "Name": "Pine Tree 7",
-            "UUID": 9509038378921312199
+            "UUID": 9903720296325435422
         },
         {
             "Components": {
@@ -1245,7 +1315,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/pine_tree.png"
+                    "TexturePath": "assets/diorama/pine_tree.png",
+                    "WindPhaseOffset": 5.679999828338623,
+                    "WindSwayWeight": 0.3799999952316284
                 },
                 "Transform": {
                     "Position": [
@@ -1266,7 +1338,7 @@
                 }
             },
             "Name": "Pine Tree 8",
-            "UUID": 7309027366426374154
+            "UUID": 2895172811699932512
         },
         {
             "Components": {
@@ -1300,7 +1372,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/pine_tree.png"
+                    "TexturePath": "assets/diorama/pine_tree.png",
+                    "WindPhaseOffset": 6.389999866485596,
+                    "WindSwayWeight": 0.3799999952316284
                 },
                 "Transform": {
                     "Position": [
@@ -1321,7 +1395,7 @@
                 }
             },
             "Name": "Pine Tree 9",
-            "UUID": 11226871656053342777
+            "UUID": 10793346557490946859
         },
         {
             "Components": {
@@ -1337,7 +1411,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/berry_bush.png"
+                    "TexturePath": "assets/diorama/berry_bush.png",
+                    "WindPhaseOffset": 0.9300000071525574,
+                    "WindSwayWeight": 0.6800000071525574
                 },
                 "Transform": {
                     "Position": [
@@ -1358,7 +1434,7 @@
                 }
             },
             "Name": "Berry Bush 1",
-            "UUID": 17361854883987337880
+            "UUID": 7745184877535847607
         },
         {
             "Components": {
@@ -1374,7 +1450,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/berry_bush.png"
+                    "TexturePath": "assets/diorama/berry_bush.png",
+                    "WindPhaseOffset": 1.8600000143051147,
+                    "WindSwayWeight": 0.6800000071525574
                 },
                 "Transform": {
                     "Position": [
@@ -1395,7 +1473,7 @@
                 }
             },
             "Name": "Berry Bush 2",
-            "UUID": 9875317925596834302
+            "UUID": 11815839329575960482
         },
         {
             "Components": {
@@ -1411,7 +1489,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/berry_bush.png"
+                    "TexturePath": "assets/diorama/berry_bush.png",
+                    "WindPhaseOffset": 2.7899999618530273,
+                    "WindSwayWeight": 0.6800000071525574
                 },
                 "Transform": {
                     "Position": [
@@ -1432,7 +1512,7 @@
                 }
             },
             "Name": "Berry Bush 3",
-            "UUID": 2321287361161450028
+            "UUID": 8259922484871728154
         },
         {
             "Components": {
@@ -1448,7 +1528,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/berry_bush.png"
+                    "TexturePath": "assets/diorama/berry_bush.png",
+                    "WindPhaseOffset": 3.7200000286102295,
+                    "WindSwayWeight": 0.6800000071525574
                 },
                 "Transform": {
                     "Position": [
@@ -1469,7 +1551,7 @@
                 }
             },
             "Name": "Berry Bush 4",
-            "UUID": 16929671672584387305
+            "UUID": 12841491686265722563
         },
         {
             "Components": {
@@ -1485,7 +1567,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/berry_bush.png"
+                    "TexturePath": "assets/diorama/berry_bush.png",
+                    "WindPhaseOffset": 4.650000095367432,
+                    "WindSwayWeight": 0.6800000071525574
                 },
                 "Transform": {
                     "Position": [
@@ -1506,7 +1590,7 @@
                 }
             },
             "Name": "Berry Bush 5",
-            "UUID": 12490430332855032633
+            "UUID": 10888818548435693461
         },
         {
             "Components": {
@@ -1522,7 +1606,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/berry_bush.png"
+                    "TexturePath": "assets/diorama/berry_bush.png",
+                    "WindPhaseOffset": 5.579999923706055,
+                    "WindSwayWeight": 0.6800000071525574
                 },
                 "Transform": {
                     "Position": [
@@ -1543,7 +1629,7 @@
                 }
             },
             "Name": "Berry Bush 6",
-            "UUID": 12090217495133134382
+            "UUID": 8996168498286864899
         },
         {
             "Components": {
@@ -1559,7 +1645,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/berry_bush.png"
+                    "TexturePath": "assets/diorama/berry_bush.png",
+                    "WindPhaseOffset": 6.510000228881836,
+                    "WindSwayWeight": 0.6800000071525574
                 },
                 "Transform": {
                     "Position": [
@@ -1580,7 +1668,7 @@
                 }
             },
             "Name": "Berry Bush 7",
-            "UUID": 3281441720456102353
+            "UUID": 12867108327442348997
         },
         {
             "Components": {
@@ -1596,7 +1684,9 @@
                     ],
                     "Emissive": 0.0,
                     "ReceiveLighting": true,
-                    "TexturePath": "assets/diorama/berry_bush.png"
+                    "TexturePath": "assets/diorama/berry_bush.png",
+                    "WindPhaseOffset": 7.440000057220459,
+                    "WindSwayWeight": 0.6800000071525574
                 },
                 "Transform": {
                     "Position": [
@@ -1617,7 +1707,537 @@
                 }
             },
             "Name": "Berry Bush 8",
-            "UUID": 18278669927832331648
+            "UUID": 11774723329197041189
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.41999998688697815,
+                        0.3799999952316284
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.1599999964237213,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/cult_banner.png",
+                    "WindPhaseOffset": 1.4500000476837158,
+                    "WindSwayWeight": 0.7400000095367432
+                },
+                "SquashStretch": {
+                    "Damping": 14.5,
+                    "EnableWalkHop": true,
+                    "Enabled": true,
+                    "JumpLaunchStretch": 4.199999809265137,
+                    "LandingSquashImpact": 0.8500000238418579,
+                    "MaxSquash": 0.3199999928474426,
+                    "MaxStretch": 0.3799999952316284,
+                    "Stiffness": 175.0,
+                    "WalkBobFrequency": 11.5,
+                    "WalkSquashAmount": 0.07500000298023224,
+                    "WalkTiltDegrees": 4.800000190734863
+                },
+                "Transform": {
+                    "Position": [
+                        5.099999904632568,
+                        0.0,
+                        8.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.8999999761581421,
+                        2.1500000953674316,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Cult Banner 1",
+            "UUID": 17983601787939230851
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.41999998688697815,
+                        0.3799999952316284
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.1599999964237213,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/cult_banner.png",
+                    "WindPhaseOffset": 2.9000000953674316,
+                    "WindSwayWeight": 0.7400000095367432
+                },
+                "SquashStretch": {
+                    "Damping": 14.5,
+                    "EnableWalkHop": true,
+                    "Enabled": true,
+                    "JumpLaunchStretch": 4.199999809265137,
+                    "LandingSquashImpact": 0.8500000238418579,
+                    "MaxSquash": 0.3199999928474426,
+                    "MaxStretch": 0.3799999952316284,
+                    "Stiffness": 175.0,
+                    "WalkBobFrequency": 11.5,
+                    "WalkSquashAmount": 0.07500000298023224,
+                    "WalkTiltDegrees": 4.800000190734863
+                },
+                "Transform": {
+                    "Position": [
+                        7.900000095367432,
+                        0.0,
+                        8.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.8999999761581421,
+                        2.1500000953674316,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Cult Banner 2",
+            "UUID": 9341890247719462426
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 0.8299999833106995,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        5.400000095367432,
+                        0.0,
+                        10.399999618530273
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.7208000421524048,
+                        0.8056000471115112,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 1",
+            "UUID": 14900863308578180855
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 1.659999966621399,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        7.599999904632568,
+                        0.0,
+                        10.600000381469727
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.8160000443458557,
+                        0.9120000004768372,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 2",
+            "UUID": 2271371929494279048
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 2.490000009536743,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        4.900000095367432,
+                        0.0,
+                        9.5
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.6256000399589539,
+                        0.6991999745368958,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 3",
+            "UUID": 8214162813534765137
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 3.319999933242798,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        8.199999809265137,
+                        0.0,
+                        9.399999618530273
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.7208000421524048,
+                        0.8056000471115112,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 4",
+            "UUID": 10136814913049047420
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 4.150000095367432,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        8.899999618530273,
+                        0.0,
+                        6.900000095367432
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.8160000443458557,
+                        0.9120000004768372,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 5",
+            "UUID": 17698146158592960959
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 4.980000019073486,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        10.899999618530273,
+                        0.0,
+                        5.900000095367432
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.6256000399589539,
+                        0.6991999745368958,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 6",
+            "UUID": 3067785849392787637
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 5.809999942779541,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        4.800000190734863,
+                        0.0,
+                        3.799999952316284
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.7208000421524048,
+                        0.8056000471115112,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 7",
+            "UUID": 312430016535911116
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 6.639999866485596,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        8.300000190734863,
+                        0.0,
+                        3.9000000953674316
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.8160000443458557,
+                        0.9120000004768372,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 8",
+            "UUID": 1908234252306934232
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 7.46999979019165,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        2.9000000953674316,
+                        0.0,
+                        4.199999809265137
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.6256000399589539,
+                        0.6991999745368958,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 9",
+            "UUID": 2758054510374847314
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "TexturePath": "assets/diorama/tall_grass_tuft.png",
+                    "WindPhaseOffset": 8.300000190734863,
+                    "WindSwayWeight": 0.8999999761581421
+                },
+                "Transform": {
+                    "Position": [
+                        10.399999618530273,
+                        0.0,
+                        9.199999809265137
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        0.7208000421524048,
+                        0.8056000471115112,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Tall Grass 10",
+            "UUID": 8980442181199035224
         },
         {
             "Components": {
@@ -1764,7 +2384,7 @@
                 ]
             },
             "Name": "HUD",
-            "UUID": 13114809049853462060
+            "UUID": 10147088925161144682
         }
     ],
     "OrthographicSize": 5.0,

@@ -6,6 +6,7 @@
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/CameraComponent.h>
+#include <Engine/Scene/FoliageWindComponents.h>
 #include <Engine/Scene/LightComponents.h>
 #include <Engine/Scene/PostProcessComponent.h>
 #include <Engine/Scene/TerrainComponent.h>
@@ -131,6 +132,19 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
                 float emissive = spriteRenderer.GetEmissive();
                 if (ImGui::SliderFloat("Emissive Glow", &emissive, 0.0f, 3.0f, "%.2f")) {
                     spriteRenderer.SetEmissive(emissive);
+                }
+            }
+
+            if (spriteRenderer.GetBillboardMode() != Engine::SpriteRenderer::BillboardMode::FlatGround) {
+                float windWeight = spriteRenderer.GetWindSwayWeight();
+                if (ImGui::SliderFloat("Wind Sway Weight", &windWeight, 0.0f, 1.5f, "%.2f")) {
+                    spriteRenderer.SetWindSwayWeight(windWeight);
+                }
+                if (windWeight > 0.001f) {
+                    float phaseOffset = spriteRenderer.GetWindPhaseOffset();
+                    if (ImGui::SliderFloat("Wind Phase Offset", &phaseOffset, 0.0f, 6.283f, "%.2f rad")) {
+                        spriteRenderer.SetWindPhaseOffset(phaseOffset);
+                    }
                 }
             }
 
@@ -332,6 +346,66 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             }
         });
 
+        // 4e. Wind Zone Component (Global 2.5D Foliage Wind & Interactive Player Rustle)
+        DrawComponent<Engine::WindComponent>("Wind Zone", selectedEntity, [](Engine::WindComponent& wind) {
+            ImGui::Checkbox("Enabled", &wind.Enabled);
+            ImGui::TextDisabled("Wind Presets:");
+            if (ImGui::SmallButton("Meadow Breeze")) {
+                wind.ApplyPreset(Engine::WindComponent::Preset::GentleMeadowBreeze);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Autumn Gusts")) {
+                wind.ApplyPreset(Engine::WindComponent::Preset::AutumnGusts);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Ritual Storm")) {
+                wind.ApplyPreset(Engine::WindComponent::Preset::RitualStorm);
+            }
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Still Air")) {
+                wind.ApplyPreset(Engine::WindComponent::Preset::StillAir);
+            }
+
+            ImGui::Separator();
+            ImGui::SliderFloat("Direction (deg)", &wind.DirectionDegrees, -180.0f, 180.0f, "%.1f");
+            ImGui::SliderFloat("Sway Strength (m)", &wind.Strength, 0.0f, 0.75f, "%.2f m");
+            ImGui::SliderFloat("Wave Speed", &wind.Speed, 0.2f, 8.0f, "%.2f");
+            ImGui::SliderFloat("Gustiness", &wind.Gustiness, 0.0f, 1.0f, "%.2f");
+            ImGui::SliderFloat("Gust Frequency", &wind.GustFrequency, 0.1f, 3.0f, "%.2f");
+            ImGui::SliderFloat("Spatial Wave Scale", &wind.SpatialWaveScale, 0.05f, 2.0f, "%.2f");
+
+            ImGui::Separator();
+            ImGui::Checkbox("Interactive Player Parting", &wind.InteractiveRustle);
+            if (wind.InteractiveRustle) {
+                ImGui::SliderFloat("Parting Radius", &wind.PlayerInteractionRadius, 0.25f, 3.5f, "%.2f m");
+                ImGui::SliderFloat("Push Strength", &wind.PlayerPushStrength, 0.0f, 1.0f, "%.2f m");
+            }
+        });
+
+        // 4f. Squash & Stretch Component (Physics-Safe Secondary Spring Motion)
+        DrawComponent<Engine::SquashStretchComponent>("Squash & Stretch", selectedEntity, [](Engine::SquashStretchComponent& ss) {
+            ImGui::Checkbox("Enabled", &ss.Enabled);
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Test Pop Impulse")) {
+                ss.TriggerImpulse(4.20f, 9.0f);
+            }
+
+            ImGui::SliderFloat("Spring Stiffness", &ss.Stiffness, 30.0f, 400.0f, "%.0f");
+            ImGui::SliderFloat("Spring Damping", &ss.Damping, 2.0f, 40.0f, "%.1f");
+            ImGui::SliderFloat("Max Squash", &ss.MaxSquash, 0.05f, 0.60f, "%.2f");
+            ImGui::SliderFloat("Max Stretch", &ss.MaxStretch, 0.05f, 0.65f, "%.2f");
+
+            ImGui::Separator();
+            ImGui::Checkbox("Walk Hop & Waddle", &ss.EnableWalkHop);
+            if (ss.EnableWalkHop) {
+                ImGui::SliderFloat("Walk Frequency", &ss.WalkBobFrequency, 4.0f, 22.0f, "%.1f");
+                ImGui::SliderFloat("Walk Squash", &ss.WalkSquashAmount, 0.0f, 0.20f, "%.3f");
+                ImGui::SliderFloat("Walk Tilt (deg)", &ss.WalkTiltDegrees, 0.0f, 15.0f, "%.1f");
+            }
+            ImGui::SliderFloat("Jump Launch Stretch", &ss.JumpLaunchStretch, 0.0f, 8.0f, "%.2f");
+            ImGui::SliderFloat("Landing Squash", &ss.LandingSquashImpact, 0.0f, 2.0f, "%.2f");
+        });
+
         // 5. Rigidbody 2D Component
         DrawComponent<Engine::Rigidbody2D>("Rigidbody 2D", selectedEntity, [](Engine::Rigidbody2D& rb2d) {
             const char* bodyTypeStrings[] = { "Static", "Dynamic", "Kinematic" };
@@ -475,6 +549,8 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             DrawAddComponentEntry<Engine::DirectionalLightComponent>("Directional Light", selectedEntity);
             DrawAddComponentEntry<Engine::PointLightComponent>("Point Light", selectedEntity);
             DrawAddComponentEntry<Engine::PostProcessComponent>("Post Process Volume", selectedEntity);
+            DrawAddComponentEntry<Engine::WindComponent>("Wind Zone", selectedEntity);
+            DrawAddComponentEntry<Engine::SquashStretchComponent>("Squash & Stretch", selectedEntity);
             DrawAddComponentEntry<Engine::CameraComponent>("Camera", selectedEntity);
             DrawAddComponentEntry<Engine::ParticleSystem>("Particle System", selectedEntity);
             DrawAddComponentEntry<Engine::Rigidbody2D>("Rigidbody 2D", selectedEntity);

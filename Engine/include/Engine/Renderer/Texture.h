@@ -27,6 +27,7 @@ public:
                     uint32_t width,
                     uint32_t height,
                     const void* rgbaSubData);
+    bool ReloadFromDisk();
 
     int GetWidth() const { return m_Width; }
     int GetHeight() const { return m_Height; }

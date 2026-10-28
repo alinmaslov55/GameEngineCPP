@@ -11,6 +11,7 @@
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/SubTexture2D.h>
 #include <Engine/Renderer/Texture.h>
+#include <Engine/Scene/FoliageWindComponents.h>
 #include <Engine/Scene/LightComponents.h>
 #include <Engine/Scene/PostProcessComponent.h>
 #include <Engine/Scene/SceneSerializer.h>
@@ -62,6 +63,11 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     Engine::GameObject* postProcessObject = editorScene->CreateGameObject("Post Process Volume");
     auto* postProcess = postProcessObject->AddComponent<Engine::PostProcessComponent>();
     postProcess->ApplyPreset(Engine::PostProcessComponent::Preset::CultStorybook);
+
+    // 0c. Global 2.5D Wind Zone (Traveling Gust Waves + Interactive Player Foliage Parting)
+    Engine::GameObject* windObject = editorScene->CreateGameObject("Wind Zone");
+    auto* windZone = windObject->AddComponent<Engine::WindComponent>();
+    windZone->ApplyPreset(Engine::WindComponent::Preset::GentleMeadowBreeze);
 
     // 1A. Organic 4-Layer Splatmap Terrain Clearing ([-1.5, 14.5] x [-1.5, 14.5])
     Engine::GameObject* terrainObject = editorScene->CreateGameObject("Terrain");
@@ -147,6 +153,8 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     auto* playerAudio = player->AddComponent<Engine::AudioSource>();
     playerAudio->SetClip(Engine::ResourceManager::Load<Engine::AudioClip>("jump.wav"));
 
+    player->AddComponent<Engine::SquashStretchComponent>();
+
     // 3. Central Cult Shrine Centerpiece (with Subtle Crimson Rune Glow)
     auto shrineTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/cult_shrine.png");
     Engine::GameObject* shrine = editorScene->CreateGameObject("Cult Shrine");
@@ -215,7 +223,7 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
         embers->TemplateProps.lifeTime = 1.15f;
     }
 
-    // 4. Storybook Pine Trees
+    // 4. Storybook Pine Trees (Swaying Canopies + Synchronized Swaying Shadows)
     auto pineTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/pine_tree.png");
     const glm::vec3 treePositions[] = {
         {  1.2f, 0.0f,  1.2f },
@@ -230,18 +238,21 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     };
     int treeIdx = 1;
     for (const auto& pos : treePositions) {
-        Engine::GameObject* tree = editorScene->CreateGameObject("Pine Tree " + std::to_string(treeIdx++));
+        Engine::GameObject* tree = editorScene->CreateGameObject("Pine Tree " + std::to_string(treeIdx));
         tree->GetTransform()->position = pos;
         tree->GetTransform()->scale = { 2.0f, 2.75f, 1.0f };
         auto* sprite = tree->AddComponent<Engine::SpriteRenderer>();
         sprite->SetTexture(pineTex);
         sprite->SetAlphaCutoff(0.18f);
+        sprite->SetWindSwayWeight(0.38f);
+        sprite->SetWindPhaseOffset(static_cast<float>(treeIdx) * 0.71f);
         auto* trunkCollider = tree->AddComponent<Engine::BoxCollider2D>();
         trunkCollider->size = { 0.55f, 0.45f };
         trunkCollider->isDynamic = false;
+        ++treeIdx;
     }
 
-    // 5. Berry Bushes on Tilled Farm Plots & Clearing Edges
+    // 5. Berry Bushes on Tilled Farm Plots & Clearing Edges (Swaying + Interactive Player Parting)
     auto bushTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/berry_bush.png");
     const glm::vec3 bushPositions[] = {
         {  2.2f, 0.0f, 5.6f },
@@ -255,12 +266,67 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     };
     int bushIdx = 1;
     for (const auto& pos : bushPositions) {
-        Engine::GameObject* bush = editorScene->CreateGameObject("Berry Bush " + std::to_string(bushIdx++));
+        Engine::GameObject* bush = editorScene->CreateGameObject("Berry Bush " + std::to_string(bushIdx));
         bush->GetTransform()->position = pos;
         bush->GetTransform()->scale = { 1.05f, 0.95f, 1.0f };
         auto* sprite = bush->AddComponent<Engine::SpriteRenderer>();
         sprite->SetTexture(bushTex);
         sprite->SetAlphaCutoff(0.18f);
+        sprite->SetWindSwayWeight(0.68f);
+        sprite->SetWindPhaseOffset(static_cast<float>(bushIdx) * 0.93f);
+        ++bushIdx;
+    }
+
+    // 5b. Ritual Cult Banners Flanking the Cobblestone Shrine Approach
+    auto bannerTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/cult_banner.png");
+    const glm::vec3 bannerPositions[] = {
+        { 5.1f, 0.0f, 8.0f },
+        { 7.9f, 0.0f, 8.0f }
+    };
+    int bannerIdx = 1;
+    for (const auto& pos : bannerPositions) {
+        Engine::GameObject* banner = editorScene->CreateGameObject("Cult Banner " + std::to_string(bannerIdx));
+        banner->GetTransform()->position = pos;
+        banner->GetTransform()->scale = { 0.90f, 2.15f, 1.0f };
+        auto* sprite = banner->AddComponent<Engine::SpriteRenderer>();
+        sprite->SetTexture(bannerTex);
+        sprite->SetAlphaCutoff(0.18f);
+        sprite->SetEmissive(0.16f);
+        sprite->SetWindSwayWeight(0.74f);
+        sprite->SetWindPhaseOffset(static_cast<float>(bannerIdx) * 1.45f);
+        auto* baseCollider = banner->AddComponent<Engine::BoxCollider2D>();
+        baseCollider->size = { 0.42f, 0.38f };
+        baseCollider->isDynamic = false;
+        banner->AddComponent<Engine::SquashStretchComponent>();
+        ++bannerIdx;
+    }
+
+    // 5c. Tall Meadow Grass & Wildflower Clusters (Walkthrough Interactive Foliage Parting)
+    auto grassTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/tall_grass_tuft.png");
+    const glm::vec3 grassPositions[] = {
+        {  5.4f, 0.0f, 10.4f },
+        {  7.6f, 0.0f, 10.6f },
+        {  4.9f, 0.0f,  9.5f },
+        {  8.2f, 0.0f,  9.4f },
+        {  8.9f, 0.0f,  6.9f },
+        { 10.9f, 0.0f,  5.9f },
+        {  4.8f, 0.0f,  3.8f },
+        {  8.3f, 0.0f,  3.9f },
+        {  2.9f, 0.0f,  4.2f },
+        { 10.4f, 0.0f,  9.2f }
+    };
+    int grassIdx = 1;
+    for (const auto& pos : grassPositions) {
+        Engine::GameObject* grass = editorScene->CreateGameObject("Tall Grass " + std::to_string(grassIdx));
+        const float sizeJitter = 0.92f + 0.14f * static_cast<float>(grassIdx % 3);
+        grass->GetTransform()->position = pos;
+        grass->GetTransform()->scale = { 0.68f * sizeJitter, 0.76f * sizeJitter, 1.0f };
+        auto* sprite = grass->AddComponent<Engine::SpriteRenderer>();
+        sprite->SetTexture(grassTex);
+        sprite->SetAlphaCutoff(0.18f);
+        sprite->SetWindSwayWeight(0.90f);
+        sprite->SetWindPhaseOffset(static_cast<float>(grassIdx) * 0.83f);
+        ++grassIdx;
     }
 
     // 6. Screen-Space UI HUD Canvas

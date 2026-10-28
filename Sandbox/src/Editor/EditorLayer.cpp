@@ -10,6 +10,7 @@
 #include <Engine/Renderer/Renderer.h>
 #include <Engine/Renderer/Renderer2D.h>
 #include <Engine/Renderer/TerrainRenderer.h>
+#include <Engine/Scene/FoliageWindComponents.h>
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/SceneSerializer.h>
 #include <Engine/Utils/Logger.h>
@@ -78,6 +79,9 @@ void EditorLayer::OnUpdate(float deltaTime) {
             if (auto* ps = go->GetComponent<Engine::ParticleSystem>()) {
                 ps->Update(deltaTime);
             }
+            if (auto* ss = go->GetComponent<Engine::SquashStretchComponent>()) {
+                ss->Update(deltaTime);
+            }
         }
     }
 
@@ -109,7 +113,8 @@ void EditorLayer::OnImGuiRender() {
         m_EditorCamera,
         m_SceneState == SceneState::Edit,
         m_SelectedEntity,
-        m_TilePalettePanel
+        m_TilePalettePanel,
+        m_ContentBrowserPanel
     );
 
     m_HierarchyPanel.OnImGuiRender(m_ActiveScene, m_SelectedEntity, &m_ShowHierarchy);

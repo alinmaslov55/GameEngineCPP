@@ -27,6 +27,7 @@ public:
     static void Flush();
 
     static void SetDefaultAlphaCutoff(float alphaCutoff);
+    static void SetWindData(const SceneWindData& wind);
 
     // Draw a center-pivoted quad using a 4x4 transform matrix (ground tiles, decals, 2D UI)
     // Note: emissive < 0.0f renders the quad unlit; emissive >= 0.0f adds self-glow on top of scene lighting
@@ -43,7 +44,10 @@ public:
                               const glm::vec4& color,
                               float alphaCutoff = -1.0f,
                               float emissive = 0.0f,
-                              float shadowReceiverOffset = 0.48f);
+                              float shadowReceiverOffset = 0.48f,
+                              float windSwayWeight = 0.0f,
+                              float windSpatialPhase = 0.0f,
+                              float proximityBend = 0.0f);
 
     static void DrawBillboard(const glm::vec3& anchorPosition,
                               const glm::vec2& size,
@@ -54,7 +58,10 @@ public:
                               const glm::vec4& tintColor = glm::vec4(1.0f),
                               float alphaCutoff = -1.0f,
                               float emissive = 0.0f,
-                              float shadowReceiverOffset = 0.48f);
+                              float shadowReceiverOffset = 0.48f,
+                              float windSwayWeight = 0.0f,
+                              float windSpatialPhase = 0.0f,
+                              float proximityBend = 0.0f);
 
     static void DrawBillboard(const glm::vec3& anchorPosition,
                               const glm::vec2& size,
@@ -65,7 +72,10 @@ public:
                               const glm::vec4& tintColor = glm::vec4(1.0f),
                               float alphaCutoff = -1.0f,
                               float emissive = 0.0f,
-                              float shadowReceiverOffset = 0.48f);
+                              float shadowReceiverOffset = 0.48f,
+                              float windSwayWeight = 0.0f,
+                              float windSpatialPhase = 0.0f,
+                              float proximityBend = 0.0f);
 
     // Per-frame batch rendering statistics
     struct Statistics {
@@ -83,13 +93,15 @@ private:
     static void StartBatch();
     static void NextBatch();
     static void ApplyLightingUniforms(const SceneLightingData* lighting);
+    static void ApplyWindUniforms(const SceneWindData* wind);
     static void SubmitVertices(const glm::vec3 positions[4],
                                uint32_t rendererTextureID,
                                const glm::vec2 texCoords[4],
                                const glm::vec4& tintColor,
                                float alphaCutoff,
                                float emissive,
-                               float shadowReceiverOffset);
+                               float shadowReceiverOffset,
+                               const glm::vec3 windParams[4]);
     static void SubmitQuad(const glm::mat4& transform,
                            uint32_t rendererTextureID,
                            const glm::vec2 texCoords[4],

@@ -79,6 +79,26 @@ namespace Engine {
             return nullptr;
         }
 
+        // Reloads an already-cached asset in-place if supported, or loads it fresh into the cache
+        template<typename T>
+        static std::shared_ptr<T> Reload(const std::string& filepath) {
+            if (filepath.empty()) {
+                return nullptr;
+            }
+            std::string resolvedPath = ResolvePath(filepath);
+            std::string cacheKey = ToRelativePath(resolvedPath);
+            auto& cache = AssetCache<T>::data;
+            auto it = cache.find(cacheKey);
+            if (it != cache.end() && it->second) {
+                if constexpr (requires(T& obj) { obj.ReloadFromDisk(); }) {
+                    it->second->ReloadFromDisk();
+                    return it->second;
+                }
+                cache.erase(it);
+            }
+            return Load<T>(filepath);
+        }
+
         // Clears all loaded assets of a specific type to free memory
         template<typename T>
         static void ClearType() {

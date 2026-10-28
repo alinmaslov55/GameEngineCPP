@@ -1,6 +1,7 @@
 #ifndef SANDBOX_SCENEVIEWPORTPANEL_H
 #define SANDBOX_SCENEVIEWPORTPANEL_H
 
+#include "Panels/ContentBrowserPanel.h"
 #include "Panels/TilePalettePanel.h"
 
 #include <Engine/Renderer/EditorCamera.h>
@@ -20,8 +21,9 @@ public:
                        const std::shared_ptr<Engine::Scene>& activeScene,
                        Engine::EditorCamera& editorCamera,
                        bool isEditMode,
-                       Engine::GameObject* selectedEntity,
-                       TilePalettePanel& palettePanel);
+                       Engine::GameObject*& selectedEntity,
+                       TilePalettePanel& palettePanel,
+                       const ContentBrowserPanel& contentBrowser);
 
     const glm::vec2& GetViewportSize() const { return m_ViewportSize; }
 

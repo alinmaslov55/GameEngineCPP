@@ -7,6 +7,7 @@
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Scene/Component.h>
+#include <Engine/Scene/FoliageWindComponents.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/Transform.h>
@@ -70,6 +71,9 @@ public:
             if (collider && collider->isDynamic && collider->useGravity) {
                 if (collider->IsGrounded(transform->position.y)) {
                     collider->verticalVelocity = jumpForce;
+                    if (auto* ss = GetGameObject()->GetComponent<Engine::SquashStretchComponent>()) {
+                        ss->TriggerImpulse(ss->JumpLaunchStretch);
+                    }
                     if (audioSource) {
                         audioSource->Play();
                     }
@@ -77,6 +81,9 @@ public:
             } else {
                 if (transform->position.y <= 1e-4f && m_FallbackVerticalVelocity <= 0.0f) {
                     m_FallbackVerticalVelocity = jumpForce;
+                    if (auto* ss = GetGameObject()->GetComponent<Engine::SquashStretchComponent>()) {
+                        ss->TriggerImpulse(ss->JumpLaunchStretch);
+                    }
                     if (audioSource) {
                         audioSource->Play();
                     }
