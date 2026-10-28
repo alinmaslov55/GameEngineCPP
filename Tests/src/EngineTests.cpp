@@ -8,6 +8,8 @@
 #include "Engine/Math/Isometric.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Renderer/EditorCamera.h"
+#include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/Component.h"
@@ -163,27 +165,77 @@ TEST(GameObjectTest, SceneDestroyGameObjectRemovesEntity) {
 }
 
 // ==========================================
-// 3. EditorCamera Zoom, Pan & Reset Tests
+// 3. 3D Diorama PerspectiveCamera & EditorCamera Tests
 // ==========================================
-TEST(EditorCameraTest, ScrollPanAndResetUpdateStateDeterministically) {
-    Engine::EditorCamera editorCam(16.0f / 9.0f, 4.0f);
-    const glm::vec3 defaultPos = editorCam.GetPosition();
-    EXPECT_FLOAT_EQ(editorCam.GetZoomLevel(), 4.0f);
+TEST(PerspectiveCameraTest, OrthonormalBasisAndGroundRaycasting) {
+    Engine::PerspectiveCamera cam(32.0f, 16.0f / 9.0f, 0.1f, 250.0f);
+    cam.SetFocalPoint({6.5f, 0.0f, 7.0f});
+    cam.SetDistance(15.0f);
+    cam.SetPitchDegrees(40.0f);
+    cam.SetYawDegrees(0.0f);
 
-    // Scrolling up zooms in (smaller orthographic zoom level)
+    // At Yaw = 0°, ForwardXZ points North (-Z) and RightXZ points East (+X)
+    EXPECT_NEAR(cam.GetForwardXZ().x, 0.0f, 1e-5f);
+    EXPECT_NEAR(cam.GetForwardXZ().z, -1.0f, 1e-5f);
+    EXPECT_NEAR(cam.GetRightXZ().x, 1.0f, 1e-5f);
+    EXPECT_NEAR(cam.GetRightXZ().z, 0.0f, 1e-5f);
+
+    // Camera view basis (Right, Up, Forward) must be mutually orthogonal and unit-length
+    EXPECT_NEAR(glm::length(cam.GetForward()), 1.0f, 1e-5f);
+    EXPECT_NEAR(glm::length(cam.GetRight()), 1.0f, 1e-5f);
+    EXPECT_NEAR(glm::length(cam.GetUp()), 1.0f, 1e-5f);
+    EXPECT_NEAR(glm::dot(cam.GetRight(), cam.GetUp()), 0.0f, 1e-5f);
+    EXPECT_NEAR(glm::dot(cam.GetForward(), cam.GetUp()), 0.0f, 1e-5f);
+    EXPECT_GT(cam.GetUp().y, 0.0f);
+
+    // Raycast through NDC (0, 0) must strike exact FocalPoint on Y = 0
+    glm::vec3 centerHit{0.0f};
+    ASSERT_TRUE(cam.RaycastGroundPlane({0.0f, 0.0f}, 0.0f, centerHit));
+    EXPECT_NEAR(centerHit.x, 6.5f, 1e-3f);
+    EXPECT_NEAR(centerHit.y, 0.0f, 1e-4f);
+    EXPECT_NEAR(centerHit.z, 7.0f, 1e-3f);
+
+    // Raycast to the right of screen center (NDC +0.5, 0) must land East (+X) of FocalPoint
+    glm::vec3 rightHit{0.0f};
+    ASSERT_TRUE(cam.RaycastGroundPlane({0.5f, 0.0f}, 0.0f, rightHit));
+    EXPECT_GT(rightHit.x, centerHit.x);
+
+    // Orbiting Yaw to 45° still strikes exact FocalPoint at screen center
+    cam.SetYawDegrees(45.0f);
+    glm::vec3 angledCenterHit{0.0f};
+    ASSERT_TRUE(cam.RaycastGroundPlane({0.0f, 0.0f}, 0.0f, angledCenterHit));
+    EXPECT_NEAR(angledCenterHit.x, 6.5f, 1e-3f);
+    EXPECT_NEAR(angledCenterHit.z, 7.0f, 1e-3f);
+}
+
+TEST(EditorCameraTest, ScrollPanOrbitAndResetUpdateStateDeterministically) {
+    Engine::EditorCamera editorCam(16.0f / 9.0f, 15.0f);
+    const glm::vec3 defaultFocal = editorCam.GetFocalPoint();
+    EXPECT_FLOAT_EQ(editorCam.GetDistance(), 15.0f);
+    EXPECT_FLOAT_EQ(editorCam.GetPitchDegrees(), 40.0f);
+    EXPECT_FLOAT_EQ(editorCam.GetYawDegrees(), 0.0f);
+
+    // Scrolling up zooms in (shorter 3D camera distance)
     editorCam.OnMouseScroll(2.0f);
-    EXPECT_LT(editorCam.GetZoomLevel(), 4.0f);
+    EXPECT_LT(editorCam.GetDistance(), 15.0f);
 
-    // Panning shifts camera position away from initial default
+    // Panning shifts ground-plane focal point on X and Z
     editorCam.Pan({128.0f, -72.0f}, {1280.0f, 720.0f});
-    EXPECT_NE(editorCam.GetPosition().x, defaultPos.x);
-    EXPECT_NE(editorCam.GetPosition().y, defaultPos.y);
+    EXPECT_NE(editorCam.GetFocalPoint().x, defaultFocal.x);
+    EXPECT_NE(editorCam.GetFocalPoint().z, defaultFocal.z);
 
-    // Reset restores canonical position and zoom
+    // Orbit updates Yaw and clamped Pitch
+    editorCam.Orbit(35.0f, 10.0f);
+    EXPECT_FLOAT_EQ(editorCam.GetYawDegrees(), 35.0f);
+    EXPECT_FLOAT_EQ(editorCam.GetPitchDegrees(), 50.0f);
+
+    // Reset restores canonical diorama framing
     editorCam.Reset();
-    EXPECT_FLOAT_EQ(editorCam.GetZoomLevel(), 3.5f);
-    EXPECT_FLOAT_EQ(editorCam.GetPosition().x, 0.0f);
-    EXPECT_FLOAT_EQ(editorCam.GetPosition().y, 2.25f);
+    EXPECT_FLOAT_EQ(editorCam.GetDistance(), 15.0f);
+    EXPECT_FLOAT_EQ(editorCam.GetYawDegrees(), 0.0f);
+    EXPECT_FLOAT_EQ(editorCam.GetPitchDegrees(), 40.0f);
+    EXPECT_FLOAT_EQ(editorCam.GetFocalPoint().x, defaultFocal.x);
+    EXPECT_FLOAT_EQ(editorCam.GetFocalPoint().z, defaultFocal.z);
 }
 
 // ==========================================
@@ -340,10 +392,17 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     box->gravity = -14.5f;
     box->groundLevel = 0.25f;
 
+    auto* heroSprite = hero->AddComponent<Engine::SpriteRenderer>();
+    heroSprite->SetBillboardMode(Engine::SpriteRenderer::BillboardMode::CylindricalY);
+    heroSprite->SetAlphaCutoff(0.32f);
+
     hero->AddComponent<Engine::ParticleSystem>(256);
 
     auto* cam = hero->AddComponent<Engine::CameraComponent>();
-    cam->OrthographicSize = 3.2f;
+    cam->FOV = 36.0f;
+    cam->Distance = 18.5f;
+    cam->Pitch = 42.0f;
+    cam->Yaw = -25.0f;
     cam->FixedAspectRatio = true;
 
     // Entity 3: Multiple UIPanels on a single HUD GameObject
@@ -403,13 +462,21 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     EXPECT_NEAR(clonedBox->size.x, 0.8f, 1e-5f);
     EXPECT_NEAR(clonedBox->offset.y, -0.2f, 1e-5f);
 
+    auto* clonedSprite = clonedHero->GetComponent<Engine::SpriteRenderer>();
+    ASSERT_NE(clonedSprite, nullptr);
+    EXPECT_EQ(clonedSprite->GetBillboardMode(), Engine::SpriteRenderer::BillboardMode::CylindricalY);
+    EXPECT_NEAR(clonedSprite->GetAlphaCutoff(), 0.32f, 1e-5f);
+
     auto* clonedParticles = clonedHero->GetComponent<Engine::ParticleSystem>();
     ASSERT_NE(clonedParticles, nullptr);
     EXPECT_EQ(clonedParticles->GetParticles().size(), 256u);
 
     auto* clonedCam = clonedHero->GetComponent<Engine::CameraComponent>();
     ASSERT_NE(clonedCam, nullptr);
-    EXPECT_NEAR(clonedCam->OrthographicSize, 3.2f, 1e-5f);
+    EXPECT_NEAR(clonedCam->FOV, 36.0f, 1e-5f);
+    EXPECT_NEAR(clonedCam->Distance, 18.5f, 1e-5f);
+    EXPECT_NEAR(clonedCam->Pitch, 42.0f, 1e-5f);
+    EXPECT_NEAR(clonedCam->Yaw, -25.0f, 1e-5f);
     EXPECT_TRUE(clonedCam->FixedAspectRatio);
 
     auto* clonedHud = clonedScene->GetGameObjects()[2].get();

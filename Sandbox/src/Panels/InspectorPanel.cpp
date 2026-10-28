@@ -5,6 +5,7 @@
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/Texture.h>
+#include <Engine/Scene/CameraComponent.h>
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Utils/Logger.h>
@@ -90,11 +91,27 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             }
         }
 
-        // 3. Sprite Renderer Component (with Drag-and-Drop texture assignment)
+        // 3. Sprite Renderer Component (with 2.5D Billboard Mode, Alpha Cutout & Drag-and-Drop texture assignment)
         DrawComponent<Engine::SpriteRenderer>("Sprite Renderer", selectedEntity, [&](Engine::SpriteRenderer& spriteRenderer) {
             glm::vec4 color = spriteRenderer.GetColor();
             if (ImGui::ColorEdit4("Color", &color.x)) {
                 spriteRenderer.SetColor(color);
+            }
+
+            const char* billboardLabels[] = {
+                "ViewPlane (2.5D Standee)",
+                "Cylindrical Y (Vertical)",
+                "Flat Ground (Decal)",
+                "None (3D Transform)"
+            };
+            int modeIdx = static_cast<int>(spriteRenderer.GetBillboardMode());
+            if (ImGui::Combo("Billboard Mode", &modeIdx, billboardLabels, 4)) {
+                spriteRenderer.SetBillboardMode(static_cast<Engine::SpriteRenderer::BillboardMode>(modeIdx));
+            }
+
+            float cutoff = spriteRenderer.GetAlphaCutoff();
+            if (ImGui::SliderFloat("Alpha Cutoff", &cutoff, 0.0f, 0.95f, "%.2f")) {
+                spriteRenderer.SetAlphaCutoff(cutoff);
             }
 
             std::string texLabel = "None";
@@ -185,7 +202,20 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             }
         });
 
-        // 7. Tilemap Component
+        // 7. Camera Component (3D Diorama Perspective)
+        DrawComponent<Engine::CameraComponent>("Camera", selectedEntity, [&](Engine::CameraComponent& camComp) {
+            bool changed = false;
+            changed |= ImGui::SliderFloat("FOV (deg)", &camComp.FOV, 15.0f, 90.0f, "%.1f");
+            changed |= ImGui::DragFloat("Distance", &camComp.Distance, 0.2f, 2.0f, 80.0f);
+            changed |= ImGui::SliderFloat("Pitch (deg)", &camComp.Pitch, 15.0f, 80.0f, "%.1f");
+            changed |= ImGui::DragFloat("Yaw (deg)", &camComp.Yaw, 0.5f, -360.0f, 360.0f);
+            ImGui::Checkbox("Fixed Aspect Ratio", &camComp.FixedAspectRatio);
+            if (changed) {
+                camComp.SyncFromTransform(selectedEntity->GetTransform());
+            }
+        });
+
+        // 8. Tilemap Component
         DrawComponent<Engine::Tilemap>("Tilemap", selectedEntity, [](Engine::Tilemap& tilemapComp) {
             ImGui::Text("Dimensions: %u x %u (%u tiles)",
                         tilemapComp.GetWidth(),
@@ -198,13 +228,14 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         ImGui::Separator();
         ImGui::Spacing();
 
-        // 8. Add Component Popup
+        // 9. Add Component Popup
         if (ImGui::Button("Add Component")) {
             ImGui::OpenPopup("AddComponentPopup");
         }
 
         if (ImGui::BeginPopup("AddComponentPopup")) {
             DrawAddComponentEntry<Engine::SpriteRenderer>("Sprite Renderer", selectedEntity);
+            DrawAddComponentEntry<Engine::CameraComponent>("Camera", selectedEntity);
             DrawAddComponentEntry<Engine::ParticleSystem>("Particle System", selectedEntity);
             DrawAddComponentEntry<Engine::Rigidbody2D>("Rigidbody 2D", selectedEntity);
             DrawAddComponentEntry<Engine::BoxCollider2D>("Box Collider 2D", selectedEntity);

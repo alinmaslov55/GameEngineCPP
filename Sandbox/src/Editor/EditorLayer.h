@@ -51,7 +51,7 @@ private:
     std::shared_ptr<Engine::Scene> m_ActiveScene;
     SceneState m_SceneState = SceneState::Edit;
 
-    Engine::EditorCamera m_EditorCamera{1280.0f / 720.0f, 3.5f};
+    Engine::EditorCamera m_EditorCamera{1280.0f / 720.0f, 15.0f};
     std::shared_ptr<Engine::Framebuffer> m_Framebuffer;
     Engine::GameObject* m_SelectedEntity = nullptr;
 

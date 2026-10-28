@@ -1,29 +1,33 @@
 #include "Engine/Renderer/EditorCamera.h"
 #include "Engine/Utils/Logger.h"
 #include <algorithm>
+#include <cmath>
 
 namespace Engine {
 
-EditorCamera::EditorCamera(float aspectRatio, float zoomLevel)
-    : m_AspectRatio(aspectRatio),
-      m_ZoomLevel(zoomLevel),
-      m_Camera(-aspectRatio * zoomLevel, aspectRatio * zoomLevel, -zoomLevel, zoomLevel) {
-    m_Camera.SetPosition(m_Position);
-    ENGINE_CORE_DEBUG("EditorCamera initialized (aspect: {:.2f}, zoom: {:.2f})", m_AspectRatio, m_ZoomLevel);
+EditorCamera::EditorCamera(float aspectRatio, float distance)
+    : m_DefaultDistance(std::clamp(distance, 3.0f, 60.0f)),
+      m_Camera(32.0f, aspectRatio, 0.1f, 250.0f) {
+    m_Camera.SetFocalPoint(m_DefaultFocalPoint);
+    m_Camera.SetDistance(m_DefaultDistance);
+    m_Camera.SetPitchDegrees(m_DefaultPitchDegrees);
+    m_Camera.SetYawDegrees(m_DefaultYawDegrees);
+    ENGINE_CORE_DEBUG("EditorCamera initialized (3D Diorama FOV: 32°, Pitch: {:.1f}°, Distance: {:.2f})",
+                      m_DefaultPitchDegrees, m_DefaultDistance);
 }
 
 void EditorCamera::OnViewportResize(uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) {
         return;
     }
-    m_AspectRatio = static_cast<float>(width) / static_cast<float>(height);
-    UpdateProjection();
+    const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+    m_Camera.SetAspectRatio(aspectRatio);
 }
 
 void EditorCamera::OnMouseScroll(float yOffset) {
-    m_ZoomLevel -= yOffset * 0.15f * m_ZoomLevel;
-    m_ZoomLevel = std::clamp(m_ZoomLevel, 0.25f, 25.0f);
-    UpdateProjection();
+    float nextDistance = m_Camera.GetDistance() - yOffset * 0.12f * m_Camera.GetDistance();
+    nextDistance = std::clamp(nextDistance, 3.0f, 60.0f);
+    m_Camera.SetDistance(nextDistance);
 }
 
 void EditorCamera::Pan(const glm::vec2& pixelDelta, const glm::vec2& viewportSize) {
@@ -31,39 +35,43 @@ void EditorCamera::Pan(const glm::vec2& pixelDelta, const glm::vec2& viewportSiz
         return;
     }
 
-    float worldWidth  = 2.0f * m_AspectRatio * m_ZoomLevel;
-    float worldHeight = 2.0f * m_ZoomLevel;
+    const float halfFovTan = std::tan(glm::radians(m_Camera.GetFOVDegrees() * 0.5f));
+    const float frustumHeight = 2.0f * m_Camera.GetDistance() * halfFovTan;
+    const float frustumWidth = frustumHeight * m_Camera.GetAspectRatio();
 
-    m_Position.x -= (pixelDelta.x / viewportSize.x) * worldWidth;
-    m_Position.y += (pixelDelta.y / viewportSize.y) * worldHeight;
-    m_Camera.SetPosition(m_Position);
+    // Scale ground-plane travel by 1 / sin(pitch) so vertical mouse drag matches ground depth under pitch
+    const float sinPitch = std::max(0.25f, std::sin(glm::radians(m_Camera.GetPitchDegrees())));
+
+    const float moveRight = -(pixelDelta.x / viewportSize.x) * frustumWidth;
+    const float moveForward = (pixelDelta.y / viewportSize.y) * (frustumHeight / sinPitch);
+
+    const glm::vec3 nextFocal = m_Camera.GetFocalPoint() +
+                                m_Camera.GetRightXZ() * moveRight +
+                                m_Camera.GetForwardXZ() * moveForward;
+    m_Camera.SetFocalPoint(nextFocal);
+}
+
+void EditorCamera::Orbit(float deltaYawDegrees, float deltaPitchDegrees) {
+    m_Camera.SetYawDegrees(m_Camera.GetYawDegrees() + deltaYawDegrees);
+    if (std::abs(deltaPitchDegrees) > 1e-5f) {
+        const float nextPitch = std::clamp(m_Camera.GetPitchDegrees() + deltaPitchDegrees, 15.0f, 80.0f);
+        m_Camera.SetPitchDegrees(nextPitch);
+    }
 }
 
 void EditorCamera::Reset() {
-    m_Position = { 0.0f, 2.25f, 0.0f };
-    m_ZoomLevel = 3.5f;
-    m_Camera.SetPosition(m_Position);
-    UpdateProjection();
+    m_Camera.SetFocalPoint(m_DefaultFocalPoint);
+    m_Camera.SetDistance(m_DefaultDistance);
+    m_Camera.SetPitchDegrees(m_DefaultPitchDegrees);
+    m_Camera.SetYawDegrees(m_DefaultYawDegrees);
 }
 
-void EditorCamera::SetPosition(const glm::vec3& position) {
-    m_Position = position;
-    m_Camera.SetPosition(m_Position);
+void EditorCamera::SetFocalPoint(const glm::vec3& focalPoint) {
+    m_Camera.SetFocalPoint(focalPoint);
 }
 
-void EditorCamera::SetZoomLevel(float zoomLevel) {
-    m_ZoomLevel = std::clamp(zoomLevel, 0.25f, 25.0f);
-    UpdateProjection();
-}
-
-void EditorCamera::UpdateProjection() {
-    m_Camera.SetProjection(
-        -m_AspectRatio * m_ZoomLevel,
-         m_AspectRatio * m_ZoomLevel,
-        -m_ZoomLevel,
-         m_ZoomLevel
-    );
+void EditorCamera::SetDistance(float distance) {
+    m_Camera.SetDistance(std::clamp(distance, 3.0f, 60.0f));
 }
 
 } // namespace Engine
-

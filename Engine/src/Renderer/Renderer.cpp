@@ -4,11 +4,10 @@
 
 namespace Engine {
 void Renderer::Init() {
-    ENGINE_CORE_INFO("Initializing Renderer...");
-    // Disable depth testing by default for 2D isometric Painter's Algorithm rendering at z = 0
-    // so transparent sprites and particles blend cleanly without depth-buffer occlusion.
-    glDisable(GL_DEPTH_TEST);
+    ENGINE_CORE_INFO("Initializing Renderer (3D Depth Buffering enabled)...");
+    glEnable(GL_DEPTH_TEST);
     glDepthFunc(GL_LEQUAL);
+    glDepthMask(GL_TRUE);
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
@@ -28,6 +27,19 @@ void Renderer::SetDepthTest(bool enabled) {
     }
 }
 
+void Renderer::SetDepthMask(bool writeEnabled) {
+    glDepthMask(writeEnabled ? GL_TRUE : GL_FALSE);
+}
+
+void Renderer::SetPolygonOffset(bool enabled, float factor, float units) {
+    if (enabled) {
+        glEnable(GL_POLYGON_OFFSET_FILL);
+        glPolygonOffset(factor, units);
+    } else {
+        glDisable(GL_POLYGON_OFFSET_FILL);
+    }
+}
+
 void Renderer::SetClearColor(const glm::vec4& color) {
     ENGINE_CORE_TRACE("Renderer SetClearColor ({:.2f}, {:.2f}, {:.2f}, {:.2f})", color.r, color.g, color.b, color.a);
     glClearColor(color.r, color.g, color.b, color.a);
@@ -35,6 +47,7 @@ void Renderer::SetClearColor(const glm::vec4& color) {
 
 void Renderer::Clear() {
     ENGINE_CORE_TRACE("Renderer Clear");
+    glDepthMask(GL_TRUE);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 }
 

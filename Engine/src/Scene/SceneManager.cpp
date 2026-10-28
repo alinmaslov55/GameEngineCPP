@@ -53,7 +53,7 @@ void SceneManager::OnRuntimeStop() {
     }
 }
 
-void SceneManager::Render(const OrthographicCamera* overrideCamera) {
+void SceneManager::Render(const PerspectiveCamera* overrideCamera) {
     ENGINE_CORE_TRACE("SceneManager::Render");
     if (s_ActiveScene) {
         s_ActiveScene->Render(overrideCamera);

@@ -65,6 +65,15 @@ std::string SceneSerializer::SerializeToString() const {
     json sceneJson;
     sceneJson["SceneName"] = m_Scene->GetName();
     sceneJson["OrthographicSize"] = m_Scene->GetOrthographicSize();
+    const auto& sceneCam = m_Scene->GetCamera();
+    const auto& focal = sceneCam.GetFocalPoint();
+    sceneJson["Camera"] = {
+        {"FOV", sceneCam.GetFOVDegrees()},
+        {"Distance", sceneCam.GetDistance()},
+        {"Pitch", sceneCam.GetPitchDegrees()},
+        {"Yaw", sceneCam.GetYawDegrees()},
+        {"FocalPoint", {focal.x, focal.y, focal.z}}
+    };
     sceneJson["GameObjects"] = json::array();
 
     for (const auto& go : m_Scene->GetGameObjects()) {
@@ -87,6 +96,8 @@ std::string SceneSerializer::SerializeToString() const {
             json spriteJson;
             const auto& col = spriteRenderer->GetColor();
             spriteJson["Color"] = { col.r, col.g, col.b, col.a };
+            spriteJson["BillboardMode"] = static_cast<int>(spriteRenderer->GetBillboardMode());
+            spriteJson["AlphaCutoff"] = spriteRenderer->GetAlphaCutoff();
 
             if (auto tex = spriteRenderer->GetTexture()) {
                 spriteJson["TexturePath"] = ResourceManager::ToRelativePath(tex->GetFilepath());
@@ -183,7 +194,10 @@ std::string SceneSerializer::SerializeToString() const {
         // 6. CameraComponent
         if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
             compsJson["CameraComponent"] = {
-                {"OrthographicSize", cameraComp->OrthographicSize},
+                {"FOV", cameraComp->FOV},
+                {"Distance", cameraComp->Distance},
+                {"Pitch", cameraComp->Pitch},
+                {"Yaw", cameraComp->Yaw},
                 {"FixedAspectRatio", cameraComp->FixedAspectRatio}
             };
         }
@@ -347,6 +361,21 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
     if (sceneJson.contains("OrthographicSize") && sceneJson["OrthographicSize"].is_number()) {
         m_Scene->SetOrthographicSize(sceneJson["OrthographicSize"].get<float>());
     }
+    if (sceneJson.contains("Camera") && sceneJson["Camera"].is_object()) {
+        const auto& camJson = sceneJson["Camera"];
+        auto& sceneCam = m_Scene->GetCamera();
+        sceneCam.SetFOVDegrees(camJson.value("FOV", 32.0f));
+        sceneCam.SetDistance(camJson.value("Distance", 15.0f));
+        sceneCam.SetPitchDegrees(camJson.value("Pitch", 40.0f));
+        sceneCam.SetYawDegrees(camJson.value("Yaw", 0.0f));
+        if (camJson.contains("FocalPoint") && camJson["FocalPoint"].is_array() && camJson["FocalPoint"].size() == 3) {
+            sceneCam.SetFocalPoint({
+                camJson["FocalPoint"][0].get<float>(),
+                camJson["FocalPoint"][1].get<float>(),
+                camJson["FocalPoint"][2].get<float>()
+            });
+        }
+    }
 
     size_t loadedCount = 0;
     if (sceneJson.contains("GameObjects") && sceneJson["GameObjects"].is_array()) {
@@ -388,6 +417,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                     const auto& color = srJson["Color"];
                     sprite->SetColor({ color[0].get<float>(), color[1].get<float>(), color[2].get<float>(), color[3].get<float>() });
                 }
+                sprite->SetBillboardMode(static_cast<SpriteRenderer::BillboardMode>(srJson.value("BillboardMode", 0)));
+                sprite->SetAlphaCutoff(srJson.value("AlphaCutoff", 0.15f));
                 if (srJson.contains("TexturePath") && srJson["TexturePath"].is_string()) {
                     std::string texPath = srJson["TexturePath"].get<std::string>();
                     if (!texPath.empty()) {
@@ -479,9 +510,13 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
             if (components.contains("CameraComponent")) {
                 const auto& camJson = components["CameraComponent"];
                 auto* camComp = go->AddComponent<CameraComponent>();
-                camComp->OrthographicSize = camJson.value("OrthographicSize", 1.8f);
+                camComp->FOV = camJson.value("FOV", 32.0f);
+                camComp->Distance = camJson.value("Distance", 14.0f);
+                camComp->Pitch = camJson.value("Pitch", 40.0f);
+                camComp->Yaw = camJson.value("Yaw", 0.0f);
                 camComp->FixedAspectRatio = camJson.value("FixedAspectRatio", false);
                 camComp->SetViewportSize(1280, 720);
+                camComp->SyncFromTransform(go->GetTransform());
             }
 
             // 7. UIPanels

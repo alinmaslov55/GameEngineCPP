@@ -2,28 +2,46 @@
 #define SCENE_CAMERACOMPONENT_H
 
 #include "Engine/Scene/Component.h"
-#include "Engine/Renderer/OrthographicCamera.h"
+#include "Engine/Scene/Transform.h"
+#include "Engine/Renderer/PerspectiveCamera.h"
 #include <cstdint>
 
 namespace Engine {
 class CameraComponent : public Component {
 public:
-    OrthographicCamera Camera;
-    float OrthographicSize = 1.8f;
+    PerspectiveCamera Camera;
+    float FOV = 32.0f;
+    float Distance = 14.0f;
+    float Pitch = 40.0f;
+    float Yaw = 0.0f;
     bool FixedAspectRatio = false;
 
-    // 16:9 aspect ratio camera
-    CameraComponent() : Camera(-1.6f, 1.6f, -0.9f, 0.9f) {}
+    CameraComponent() : Camera(32.0f, 16.0f / 9.0f, 0.1f, 250.0f) {
+        ApplySettings();
+    }
     ~CameraComponent() override = default;
 
+    void ApplySettings() {
+        Camera.SetFOVDegrees(FOV);
+        Camera.SetDistance(Distance);
+        Camera.SetPitchDegrees(Pitch);
+        Camera.SetYawDegrees(Yaw);
+    }
+
+    void SyncFromTransform(const Transform* transform) {
+        ApplySettings();
+        if (transform) {
+            Camera.SetFocalPoint(transform->position);
+        }
+    }
+
     void SetViewportSize(uint32_t width, uint32_t height) {
-        if (width == 0 || height == 0) return;
-        float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
-        float orthoLeft   = -OrthographicSize * aspectRatio * 0.5f;
-        float orthoRight  =  OrthographicSize * aspectRatio * 0.5f;
-        float orthoBottom = -OrthographicSize * 0.5f;
-        float orthoTop    =  OrthographicSize * 0.5f;
-        Camera.SetProjection(orthoLeft, orthoRight, orthoBottom, orthoTop);
+        if (width == 0 || height == 0) {
+            return;
+        }
+        const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+        Camera.SetAspectRatio(aspectRatio);
+        ApplySettings();
     }
 };
 } // namespace Engine

@@ -15,7 +15,7 @@ public:
     static void UpdateRuntime(float deltaTime);
     static void OnRuntimeStart();
     static void OnRuntimeStop();
-    static void Render(const OrthographicCamera* overrideCamera = nullptr);
+    static void Render(const PerspectiveCamera* overrideCamera = nullptr);
 
 private:
     static std::shared_ptr<Scene> s_ActiveScene;

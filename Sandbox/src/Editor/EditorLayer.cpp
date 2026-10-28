@@ -304,7 +304,10 @@ void EditorLayer::RenderToolbar() {
                 m_EditorCamera.Reset();
             }
             ImGui::SameLine();
-            ImGui::TextDisabled("| MMB/RMB Drag: Pan | Scroll: Zoom (%.2fx)", m_EditorCamera.GetZoomLevel());
+            ImGui::TextDisabled("| MMB/RMB: Pan | Alt+Drag or Q/E: Orbit (Yaw %.0f°, Pitch %.0f°) | Scroll: Dist %.1f",
+                                m_EditorCamera.GetYawDegrees(),
+                                m_EditorCamera.GetPitchDegrees(),
+                                m_EditorCamera.GetDistance());
         } else {
             ImGui::TextColored(ImVec4(0.4f, 1.0f, 0.4f, 1.0f), "[PLAY MODE]");
             ImGui::SameLine();

@@ -12,6 +12,7 @@ public:
 
     void Bind(uint32_t slot = 0) const;
     void Unbind() const;
+    void SetFilterLinear(bool linear);
 
     int GetWidth() const { return m_Width; }
     int GetHeight() const { return m_Height; }

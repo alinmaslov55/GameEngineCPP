@@ -1,5 +1,6 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/CameraComponent.h"
+#include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Physics/PhysicsComponents.h"
@@ -25,7 +26,11 @@
 
 namespace Engine {
 Scene::Scene(const std::string& name)
-    : m_Name(name), m_Camera(-1.6f, 1.6f, -0.9f, 0.9f) {
+    : m_Name(name), m_Camera(32.0f, 16.0f / 9.0f, 0.1f, 250.0f) {
+    m_Camera.SetFocalPoint({ 6.5f, 0.0f, 6.5f });
+    m_Camera.SetDistance(15.0f);
+    m_Camera.SetPitchDegrees(40.0f);
+    m_Camera.SetYawDegrees(0.0f);
     ENGINE_CORE_INFO("Scene created: '{}'", m_Name);
 }
 
@@ -60,12 +65,8 @@ void Scene::OnViewportResize(uint32_t width, uint32_t height) {
     m_ViewportWidth = width;
     m_ViewportHeight = height;
 
-    float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
-    float orthoLeft   = -m_OrthographicSize * aspectRatio * 0.5f;
-    float orthoRight  =  m_OrthographicSize * aspectRatio * 0.5f;
-    float orthoBottom = -m_OrthographicSize * 0.5f;
-    float orthoTop    =  m_OrthographicSize * 0.5f;
-    m_Camera.SetProjection(orthoLeft, orthoRight, orthoBottom, orthoTop);
+    const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
+    m_Camera.SetAspectRatio(aspectRatio);
 
     for (auto& go : m_GameObjects) {
         if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
@@ -78,7 +79,7 @@ void Scene::OnViewportResize(uint32_t width, uint32_t height) {
     ENGINE_CORE_DEBUG("Scene '{}': Viewport resized to {}x{} (aspect: {:.3f})", m_Name, width, height, aspectRatio);
 }
 
-const OrthographicCamera& Scene::GetActiveCamera() const {
+const PerspectiveCamera& Scene::GetActiveCamera() const {
     for (const auto& go : m_GameObjects) {
         if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
             return cameraComp->Camera;
@@ -92,7 +93,6 @@ void Scene::SetOrthographicSize(float size) {
         return;
     }
     m_OrthographicSize = size;
-    OnViewportResize(m_ViewportWidth, m_ViewportHeight);
 }
 
 void Scene::DestroyGameObject(GameObject* gameObject) {
@@ -372,135 +372,143 @@ void Scene::UpdateRuntime(float deltaTime) {
     Update(deltaTime);
 }
 
-void Scene::Render(const OrthographicCamera* overrideCamera) {
-    ENGINE_CORE_TRACE("Scene '{}': Render", m_Name);
+void Scene::Render(const PerspectiveCamera* overrideCamera) {
+    ENGINE_CORE_TRACE("Scene '{}': Render (2.5D Diorama)", m_Name);
 
-    if (overrideCamera) {
-        Renderer2D::BeginScene(*overrideCamera);
-    } else {
-        CameraComponent* mainCamera = nullptr;
-        Transform* cameraTransform = nullptr;
-
+    const PerspectiveCamera* activeCam = overrideCamera;
+    if (!activeCam) {
         for (auto& go : m_GameObjects) {
             if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
-                mainCamera = cameraComp;
-                cameraTransform = go->GetTransform();
+                cameraComp->SyncFromTransform(go->GetTransform());
+                activeCam = &cameraComp->Camera;
                 break;
             }
         }
-
-        if (mainCamera) {
-            if (cameraTransform) {
-                mainCamera->Camera.SetPosition(cameraTransform->position);
-                mainCamera->Camera.SetRotation(cameraTransform->rotation.z);
-            }
-            Renderer2D::BeginScene(mainCamera->Camera);
-        } else {
-            Renderer2D::BeginScene(m_Camera);
+        if (!activeCam) {
+            activeCam = &m_Camera;
         }
     }
 
-    // 1. Render Tilemaps (Ground Layer) first
+    // ==========================================
+    // PASS 1: 3D GROUND PLANE (XZ Tilemaps & Flat Decals)
+    // ==========================================
+    Renderer::SetDepthMask(true);
+    Renderer::SetPolygonOffset(true, 1.0f, 1.0f);
+    Renderer2D::BeginScene(*activeCam, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
+
+    const glm::mat4 groundFlatRotation = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+
     for (auto& gameObject : m_GameObjects) {
-        auto tilemap = gameObject->GetComponent<Tilemap>();
-        if (tilemap) {
+        if (auto* tilemap = gameObject->GetComponent<Tilemap>()) {
             auto* transform = gameObject->GetTransform();
-            
-            for (uint32_t y = 0; y < tilemap->GetHeight(); y++) {
+            const glm::vec3 mapOrigin = transform ? transform->position : glm::vec3(0.0f);
+            const glm::vec3 mapScale  = transform ? transform->scale    : glm::vec3(1.0f);
+
+            for (uint32_t z = 0; z < tilemap->GetHeight(); z++) {
                 for (uint32_t x = 0; x < tilemap->GetWidth(); x++) {
-                    uint32_t tileId = tilemap->GetTile(x, y).id;
-                    if (tileId == 0) continue; // Skip empty tiles
+                    const uint32_t tileId = tilemap->GetTile(x, z).id;
+                    if (tileId == 0) continue;
 
                     auto subTexture = tilemap->tileSet->GetTileTexture(tileId);
                     if (!subTexture) continue;
 
-                    // Grid coordinates act as X and Z in the 3D world
-                    glm::vec3 worldPos = transform->position + glm::vec3(x, 0.0f, y);
-                    
-                    // Project to 2D Isometric Space
-                    glm::vec2 screenPos = Isometric::WorldToScreen(worldPos);
-                    glm::vec3 renderPos = { screenPos.x, screenPos.y, 0.0f };
+                    const glm::vec3 worldPos = mapOrigin + glm::vec3(
+                        static_cast<float>(x) * mapScale.x,
+                        0.0f,
+                        static_cast<float>(z) * mapScale.z
+                    );
 
-                    glm::mat4 transformMatrix = glm::translate(glm::mat4(1.0f), renderPos) *
-                                                glm::scale(glm::mat4(1.0f), transform->scale);
+                    const glm::mat4 tileMatrix = glm::translate(glm::mat4(1.0f), worldPos) *
+                                                 groundFlatRotation *
+                                                 glm::scale(glm::mat4(1.0f), glm::vec3(mapScale.x, mapScale.z, 1.0f));
 
-                    Renderer2D::DrawQuad(transformMatrix, subTexture);
+                    Renderer2D::DrawQuad(tileMatrix, subTexture, glm::vec4(1.0f), 0.0f);
                 }
             }
         }
     }
 
-    // 2. Collect all GameObjects that have a SpriteRenderer
-    std::vector<GameObject*> renderQueue;
+    // Render FlatGround decal sprites just above the tilemap
     for (auto& gameObject : m_GameObjects) {
-        if (gameObject->GetComponent<SpriteRenderer>() && gameObject->GetTransform()) {
-            renderQueue.push_back(gameObject.get());
+        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
+        auto* transform = gameObject->GetTransform();
+        if (!sprite || !transform || sprite->GetBillboardMode() != SpriteRenderer::BillboardMode::FlatGround) {
+            continue;
+        }
+
+        glm::vec3 decalPos = transform->position;
+        decalPos.y += 0.004f;
+        const glm::mat4 decalMatrix = glm::translate(glm::mat4(1.0f), decalPos) *
+                                      glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                      groundFlatRotation *
+                                      glm::scale(glm::mat4(1.0f), glm::vec3(transform->scale.x, transform->scale.z, 1.0f));
+
+        if (sprite->GetSubTexture()) {
+            Renderer2D::DrawQuad(decalMatrix, sprite->GetSubTexture(), sprite->GetColor(), sprite->GetAlphaCutoff());
+        } else {
+            Renderer2D::DrawQuad(decalMatrix, sprite->GetTexture(), sprite->GetColor(), sprite->GetAlphaCutoff());
         }
     }
 
-    // 3. Sort the queue by isometric depth
-    std::sort(renderQueue.begin(), renderQueue.end(), [](GameObject* a, GameObject* b) {
-        auto* tA = a->GetTransform();
-        auto* tB = b->GetTransform();
+    Renderer2D::EndScene();
+    Renderer::SetPolygonOffset(false);
 
-        // In isometric 3D, depth is primarily calculated by X + Z.
-        // Higher (X + Z) means it is further back into the screen.
-        float depthA = tA->position.x + tA->position.z;
-        float depthB = tB->position.x + tB->position.z;
-
-        if (std::abs(depthA - depthB) < 1e-5f) {
-            // Tie-breaker: lower physical Y renders first (behind), higher physical Y renders later (in front)
-            return tA->position.y < tB->position.y;
+    // ==========================================
+    // PASS 2: UPRIGHT 2.5D CUTOUT STANDEES (Depth Test + Alpha Discard)
+    // ==========================================
+    std::vector<GameObject*> standeeQueue;
+    standeeQueue.reserve(m_GameObjects.size());
+    for (auto& gameObject : m_GameObjects) {
+        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
+        if (sprite && gameObject->GetTransform() &&
+            sprite->GetBillboardMode() != SpriteRenderer::BillboardMode::FlatGround) {
+            standeeQueue.push_back(gameObject.get());
         }
+    }
 
-        return depthA > depthB;
+    const glm::vec3 camEye = activeCam->GetPosition();
+    const glm::vec3 camForward = activeCam->GetForward();
+    std::sort(standeeQueue.begin(), standeeQueue.end(), [&](GameObject* a, GameObject* b) {
+        const float distA = glm::dot(a->GetTransform()->position - camEye, camForward);
+        const float distB = glm::dot(b->GetTransform()->position - camEye, camForward);
+        return distA > distB; // Back-to-front for clean outline anti-aliasing alongside Z-buffer cutout
     });
 
-    // 4. Draw the sorted queue
-    for (GameObject* gameObject : renderQueue) {
-        auto spriteRenderer = gameObject->GetComponent<SpriteRenderer>();
+    Renderer2D::BeginScene(*activeCam, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.15f);
+
+    for (GameObject* gameObject : standeeQueue) {
+        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
         auto* transform = gameObject->GetTransform();
+        const float cutoff = sprite->GetAlphaCutoff();
+        const glm::vec2 standeeSize = { transform->scale.x, transform->scale.y };
 
-        // Convert 3D world position to 2D isometric screen position ---
-        glm::vec2 screenPos = Isometric::WorldToScreen(transform->position);
-        glm::vec3 renderPos = { screenPos.x, screenPos.y, 0.0f }; // Z is 0 for 2D rendering
-
-        // Use renderPos instead of transform->position
-        glm::mat4 transformMatrix = glm::translate(glm::mat4(1.0f), renderPos) *
-                                    glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0, 0, 1)) *
-                                    glm::scale(glm::mat4(1.0f), transform->scale);
-
-        if (spriteRenderer->GetSubTexture()) {
-            Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetSubTexture(), spriteRenderer->GetColor());
+        if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane) {
+            if (sprite->GetSubTexture()) {
+                Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRight(), activeCam->GetUp(),
+                                          transform->rotation.z, sprite->GetSubTexture(), sprite->GetColor(), cutoff);
+            } else {
+                Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRight(), activeCam->GetUp(),
+                                          transform->rotation.z, sprite->GetTexture(), sprite->GetColor(), cutoff);
+            }
+        } else if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::CylindricalY) {
+            if (sprite->GetSubTexture()) {
+                Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRightXZ(), glm::vec3(0.0f, 1.0f, 0.0f),
+                                          transform->rotation.z, sprite->GetSubTexture(), sprite->GetColor(), cutoff);
+            } else {
+                Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRightXZ(), glm::vec3(0.0f, 1.0f, 0.0f),
+                                          transform->rotation.z, sprite->GetTexture(), sprite->GetColor(), cutoff);
+            }
         } else {
-            Renderer2D::DrawQuad(transformMatrix, spriteRenderer->GetTexture(), spriteRenderer->GetColor());
-        }
-    }
-
-    // 2.5 Render Particles (in 3D Isometric Space)
-    for (auto& gameObject : m_GameObjects) {
-        auto particleSystem = gameObject->GetComponent<ParticleSystem>();
-        if (particleSystem) {
-            for (const auto& particle : particleSystem->GetParticles()) {
-                if (!particle.active) continue;
-
-                // Calculate lifecycle ratio (0.0 = dead, 1.0 = just spawned)
-                float lifeRatio = particle.lifeRemaining / particle.lifeTime;
-                
-                // Interpolate size and color over time
-                float size = glm::mix(particle.sizeEnd, particle.sizeBegin, lifeRatio);
-                glm::vec4 color = glm::mix(particle.colorEnd, particle.colorBegin, lifeRatio);
-
-                // Convert 3D world position to 2D isometric screen space
-                glm::vec2 screenPos = Isometric::WorldToScreen(particle.position);
-                glm::vec3 renderPos = { screenPos.x, screenPos.y, 0.0f };
-
-                glm::mat4 transform = glm::translate(glm::mat4(1.0f), renderPos) *
-                                      glm::rotate(glm::mat4(1.0f), particle.rotation, glm::vec3(0.0f, 0.0f, 1.0f)) *
-                                      glm::scale(glm::mat4(1.0f), glm::vec3(size));
-
-                // Draw the particle as a flat colored quad (or you can bind a subtexture here)
-                Renderer2D::DrawQuad(transform, color);
+            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * transform->scale.y, 0.0f);
+            const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.z), glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                          glm::scale(glm::mat4(1.0f), transform->scale);
+            if (sprite->GetSubTexture()) {
+                Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), sprite->GetColor(), cutoff);
+            } else {
+                Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), sprite->GetColor(), cutoff);
             }
         }
     }
@@ -508,18 +516,47 @@ void Scene::Render(const OrthographicCamera* overrideCamera) {
     Renderer2D::EndScene();
 
     // ==========================================
-    // 3. UI RENDERING PASS (Screen Space)
+    // PASS 3: 3D BILLBOARD PARTICLES (Depth Test ON, Depth Write OFF)
     // ==========================================
-    
-    // Create an orthographic projection matching the active viewport size
-    // (0,0) at bottom-left, (m_ViewportWidth, m_ViewportHeight) at top-right
+    Renderer::SetDepthMask(false);
+    Renderer2D::BeginScene(*activeCam, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
+
+    for (auto& gameObject : m_GameObjects) {
+        if (auto* particleSystem = gameObject->GetComponent<ParticleSystem>()) {
+            for (const auto& particle : particleSystem->GetParticles()) {
+                if (!particle.active) continue;
+
+                const float lifeRatio = particle.lifeRemaining / particle.lifeTime;
+                const float size = glm::mix(particle.sizeEnd, particle.sizeBegin, lifeRatio);
+                const glm::vec4 color = glm::mix(particle.colorEnd, particle.colorBegin, lifeRatio);
+
+                const glm::vec3 anchor = particle.position - activeCam->GetUp() * (0.5f * size);
+                Renderer2D::DrawBillboard(
+                    anchor,
+                    { size, size },
+                    activeCam->GetRight(),
+                    activeCam->GetUp(),
+                    glm::degrees(particle.rotation),
+                    color,
+                    0.0f
+                );
+            }
+        }
+    }
+
+    Renderer2D::EndScene();
+    Renderer::SetDepthMask(true);
+
+    // ==========================================
+    // PASS 4: 2D SCREEN-SPACE UI HUD (Depth Test OFF)
+    // ==========================================
     glm::mat4 uiProjection = glm::ortho(
         0.0f, static_cast<float>(m_ViewportWidth),
         0.0f, static_cast<float>(m_ViewportHeight),
         -1.0f, 1.0f
     );
-    
-    Renderer2D::BeginScene(uiProjection); 
+
+    Renderer2D::BeginScene(uiProjection, /*depthTest=*/false, /*defaultAlphaCutoff=*/0.0f); 
 
     for (auto& gameObject : m_GameObjects) {
         for (auto* uiPanel : gameObject->GetComponents<UIPanel>()) {

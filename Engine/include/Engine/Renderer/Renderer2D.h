@@ -2,6 +2,7 @@
 #define RENDERER_RENDERER2D_H
 
 #include "Engine/Renderer/OrthographicCamera.h"
+#include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/SubTexture2D.h"
 
@@ -16,15 +17,45 @@ public:
     static void Init();
     static void Shutdown();
 
+    static void BeginScene(const PerspectiveCamera& camera, bool depthTest = true, float defaultAlphaCutoff = 0.0f);
     static void BeginScene(const OrthographicCamera& camera);
-    static void BeginScene(const glm::mat4& projectionMatrix);
+    static void BeginScene(const glm::mat4& projectionMatrix, bool depthTest = false, float defaultAlphaCutoff = 0.0f);
     static void EndScene();
     static void Flush();
 
-    // Draw a quad using a transform matrix
-    static void DrawQuad(const glm::mat4& transform, const glm::vec4& color);
-    static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor = glm::vec4(1.0f));
-    static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor = glm::vec4(1.0f));
+    static void SetDefaultAlphaCutoff(float alphaCutoff);
+
+    // Draw a center-pivoted quad using a 4x4 transform matrix (ground tiles, decals, 2D UI)
+    static void DrawQuad(const glm::mat4& transform, const glm::vec4& color, float alphaCutoff = -1.0f);
+    static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor = glm::vec4(1.0f), float alphaCutoff = -1.0f);
+    static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor = glm::vec4(1.0f), float alphaCutoff = -1.0f);
+
+    // Draw a bottom-center anchored 3D upright billboard ("cardboard standee")
+    static void DrawBillboard(const glm::vec3& anchorPosition,
+                              const glm::vec2& size,
+                              const glm::vec3& rightAxis,
+                              const glm::vec3& upAxis,
+                              float rotationZDegrees,
+                              const glm::vec4& color,
+                              float alphaCutoff = -1.0f);
+
+    static void DrawBillboard(const glm::vec3& anchorPosition,
+                              const glm::vec2& size,
+                              const glm::vec3& rightAxis,
+                              const glm::vec3& upAxis,
+                              float rotationZDegrees,
+                              const std::shared_ptr<Texture>& texture,
+                              const glm::vec4& tintColor = glm::vec4(1.0f),
+                              float alphaCutoff = -1.0f);
+
+    static void DrawBillboard(const glm::vec3& anchorPosition,
+                              const glm::vec2& size,
+                              const glm::vec3& rightAxis,
+                              const glm::vec3& upAxis,
+                              float rotationZDegrees,
+                              const std::shared_ptr<SubTexture2D>& subTexture,
+                              const glm::vec4& tintColor = glm::vec4(1.0f),
+                              float alphaCutoff = -1.0f);
 
     // Per-frame batch rendering statistics
     struct Statistics {
@@ -41,7 +72,16 @@ public:
 private:
     static void StartBatch();
     static void NextBatch();
-    static void SubmitQuad(const glm::mat4& transform, uint32_t rendererTextureID, const glm::vec2 texCoords[4], const glm::vec4& tintColor);
+    static void SubmitVertices(const glm::vec3 positions[4],
+                               uint32_t rendererTextureID,
+                               const glm::vec2 texCoords[4],
+                               const glm::vec4& tintColor,
+                               float alphaCutoff);
+    static void SubmitQuad(const glm::mat4& transform,
+                           uint32_t rendererTextureID,
+                           const glm::vec2 texCoords[4],
+                           const glm::vec4& tintColor,
+                           float alphaCutoff);
 };
 
 } // namespace Engine

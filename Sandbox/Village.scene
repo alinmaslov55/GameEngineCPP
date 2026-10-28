@@ -1,91 +1,75 @@
 {
+    "Camera": {
+        "Distance": 15.0,
+        "FOV": 32.0,
+        "FocalPoint": [
+            6.5,
+            0.0,
+            7.0
+        ],
+        "Pitch": 40.0,
+        "Yaw": 0.0
+    },
     "GameObjects": [
         {
             "Components": {
-                "AudioSource": {
-                    "ClipPath": "jump.wav"
-                },
-                "BoxCollider2D": {
-                    "Density": 1.0,
-                    "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": true,
-                    "Offset": [
-                        0.0,
-                        0.0
-                    ],
-                    "Restitution": 0.0,
-                    "RestitutionThreshold": 0.5,
-                    "Size": [
-                        0.6000000238418579,
-                        0.6000000238418579
-                    ],
-                    "UseGravity": true
-                },
-                "ParticleSystem": {
-                    "PoolSize": 500
-                },
-                "SpriteRenderer": {
-                    "Color": [
-                        1.0,
-                        1.0,
-                        1.0,
-                        1.0
-                    ]
-                },
-                "Transform": {
-                    "Position": [
-                        5.0,
-                        0.0,
-                        2.0
-                    ],
-                    "Rotation": [
-                        0.0,
-                        0.0,
-                        0.0
-                    ],
-                    "Scale": [
-                        1.0,
-                        1.0,
-                        1.0
-                    ]
-                }
-            },
-            "Name": "Player",
-            "UUID": 5157025382990759490
-        },
-        {
-            "Components": {
                 "Tilemap": {
-                    "Height": 10,
+                    "Height": 14,
                     "TileSet": [
                         {
                             "ID": 1,
                             "SubTexture": {
                                 "MaxUV": [
-                                    0.08882720023393631,
-                                    0.1235521212220192
+                                    0.4959999918937683,
+                                    0.9959999918937683
                                 ],
                                 "MinUV": [
-                                    0.0,
-                                    0.0
+                                    0.004000000189989805,
+                                    0.5040000081062317
                                 ],
-                                "TexturePath": "test.png"
+                                "TexturePath": "assets/diorama/ground_atlas.png"
                             }
                         },
                         {
                             "ID": 2,
                             "SubTexture": {
                                 "MaxUV": [
-                                    0.17765440046787262,
-                                    0.1235521212220192
+                                    0.9959999918937683,
+                                    0.9959999918937683
                                 ],
                                 "MinUV": [
-                                    0.08882720023393631,
-                                    0.0
+                                    0.5040000081062317,
+                                    0.5040000081062317
                                 ],
-                                "TexturePath": "test.png"
+                                "TexturePath": "assets/diorama/ground_atlas.png"
+                            }
+                        },
+                        {
+                            "ID": 3,
+                            "SubTexture": {
+                                "MaxUV": [
+                                    0.4959999918937683,
+                                    0.4959999918937683
+                                ],
+                                "MinUV": [
+                                    0.004000000189989805,
+                                    0.004000000189989805
+                                ],
+                                "TexturePath": "assets/diorama/ground_atlas.png"
+                            }
+                        },
+                        {
+                            "ID": 4,
+                            "SubTexture": {
+                                "MaxUV": [
+                                    0.9959999918937683,
+                                    0.4959999918937683
+                                ],
+                                "MinUV": [
+                                    0.5040000081062317,
+                                    0.004000000189989805
+                                ],
+                                "TexturePath": "assets/diorama/ground_atlas.png"
                             }
                         }
                     ],
@@ -124,8 +108,105 @@
                         1,
                         1,
                         1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        2,
+                        2,
+                        2,
                         2,
                         1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        3,
+                        3,
+                        3,
+                        2,
+                        2,
+                        2,
+                        2,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        3,
+                        3,
+                        3,
+                        2,
+                        2,
+                        2,
+                        2,
+                        4,
+                        4,
+                        4,
+                        4,
+                        1,
+                        1,
+                        1,
+                        3,
+                        3,
+                        3,
+                        2,
+                        2,
+                        2,
+                        2,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        3,
+                        3,
+                        3,
+                        1,
+                        2,
+                        2,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        1,
+                        3,
+                        3,
+                        3,
+                        1,
+                        2,
                         2,
                         1,
                         1,
@@ -139,6 +220,8 @@
                         1,
                         1,
                         1,
+                        2,
+                        2,
                         1,
                         1,
                         1,
@@ -151,6 +234,8 @@
                         1,
                         1,
                         1,
+                        2,
+                        2,
                         1,
                         1,
                         1,
@@ -163,13 +248,8 @@
                         1,
                         1,
                         1,
-                        1,
-                        1,
-                        1,
-                        1,
-                        1,
-                        1,
-                        1,
+                        2,
+                        2,
                         1,
                         1,
                         1,
@@ -191,109 +271,7 @@
                         1,
                         1
                     ],
-                    "Walkable": [
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        false,
-                        true,
-                        false,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true,
-                        true
-                    ],
-                    "Width": 10
+                    "Width": 14
                 },
                 "Transform": {
                     "Position": [
@@ -314,7 +292,857 @@
                 }
             },
             "Name": "Map",
-            "UUID": 141082291235936361
+            "UUID": 9100986212595278825
+        },
+        {
+            "Components": {
+                "AudioSource": {
+                    "ClipPath": "jump.wav"
+                },
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": true,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "ParticleSystem": {
+                    "PoolSize": 500
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/hero_lamb.png"
+                },
+                "Transform": {
+                    "Position": [
+                        6.5,
+                        0.0,
+                        9.199999809265137
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.25,
+                        1.350000023841858,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Player",
+            "UUID": 3164641980358210479
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        1.149999976158142,
+                        0.6499999761581421
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/cult_shrine.png"
+                },
+                "Transform": {
+                    "Position": [
+                        6.5,
+                        0.0,
+                        5.5
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.75,
+                        2.3499999046325684,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Cult Shrine",
+            "UUID": 17208151478246001507
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/pine_tree.png"
+                },
+                "Transform": {
+                    "Position": [
+                        1.2000000476837158,
+                        0.0,
+                        1.2000000476837158
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        2.0,
+                        2.75,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Pine Tree 1",
+            "UUID": 12264982898103090344
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/pine_tree.png"
+                },
+                "Transform": {
+                    "Position": [
+                        3.799999952316284,
+                        0.0,
+                        1.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        2.0,
+                        2.75,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Pine Tree 2",
+            "UUID": 14875530131898530229
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/pine_tree.png"
+                },
+                "Transform": {
+                    "Position": [
+                        6.5,
+                        0.0,
+                        0.8999999761581421
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        2.0,
+                        2.75,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Pine Tree 3",
+            "UUID": 7140061780518613460
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/pine_tree.png"
+                },
+                "Transform": {
+                    "Position": [
+                        9.199999809265137,
+                        0.0,
+                        1.100000023841858
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        2.0,
+                        2.75,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Pine Tree 4",
+            "UUID": 3770813917997785046
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/pine_tree.png"
+                },
+                "Transform": {
+                    "Position": [
+                        11.800000190734863,
+                        0.0,
+                        1.2999999523162842
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        2.0,
+                        2.75,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Pine Tree 5",
+            "UUID": 4136386150468631024
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/pine_tree.png"
+                },
+                "Transform": {
+                    "Position": [
+                        0.8999999761581421,
+                        0.0,
+                        4.800000190734863
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        2.0,
+                        2.75,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Pine Tree 6",
+            "UUID": 14409855743322142736
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/pine_tree.png"
+                },
+                "Transform": {
+                    "Position": [
+                        12.100000381469727,
+                        0.0,
+                        4.400000095367432
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        2.0,
+                        2.75,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Pine Tree 7",
+            "UUID": 10078304554301197432
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/pine_tree.png"
+                },
+                "Transform": {
+                    "Position": [
+                        1.100000023841858,
+                        0.0,
+                        10.600000381469727
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        2.0,
+                        2.75,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Pine Tree 8",
+            "UUID": 2662361929216860658
+        },
+        {
+            "Components": {
+                "BoxCollider2D": {
+                    "Density": 1.0,
+                    "Friction": 0.5,
+                    "Gravity": -9.800000190734863,
+                    "GroundLevel": 0.0,
+                    "IsDynamic": false,
+                    "Offset": [
+                        0.0,
+                        0.0
+                    ],
+                    "Restitution": 0.0,
+                    "RestitutionThreshold": 0.5,
+                    "Size": [
+                        0.550000011920929,
+                        0.44999998807907104
+                    ],
+                    "UseGravity": true
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/pine_tree.png"
+                },
+                "Transform": {
+                    "Position": [
+                        11.399999618530273,
+                        0.0,
+                        9.800000190734863
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        2.0,
+                        2.75,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Pine Tree 9",
+            "UUID": 760110099519612297
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/berry_bush.png"
+                },
+                "Transform": {
+                    "Position": [
+                        2.200000047683716,
+                        0.0,
+                        5.599999904632568
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0499999523162842,
+                        0.949999988079071,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Berry Bush 1",
+            "UUID": 9520403293339409268
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/berry_bush.png"
+                },
+                "Transform": {
+                    "Position": [
+                        3.799999952316284,
+                        0.0,
+                        5.599999904632568
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0499999523162842,
+                        0.949999988079071,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Berry Bush 2",
+            "UUID": 12099511333098792262
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/berry_bush.png"
+                },
+                "Transform": {
+                    "Position": [
+                        2.200000047683716,
+                        0.0,
+                        7.599999904632568
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0499999523162842,
+                        0.949999988079071,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Berry Bush 3",
+            "UUID": 5517458075169342198
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/berry_bush.png"
+                },
+                "Transform": {
+                    "Position": [
+                        3.799999952316284,
+                        0.0,
+                        7.599999904632568
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0499999523162842,
+                        0.949999988079071,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Berry Bush 4",
+            "UUID": 3509231156925688912
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/berry_bush.png"
+                },
+                "Transform": {
+                    "Position": [
+                        2.200000047683716,
+                        0.0,
+                        9.300000190734863
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0499999523162842,
+                        0.949999988079071,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Berry Bush 5",
+            "UUID": 8848717730103043536
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/berry_bush.png"
+                },
+                "Transform": {
+                    "Position": [
+                        3.799999952316284,
+                        0.0,
+                        9.300000190734863
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0499999523162842,
+                        0.949999988079071,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Berry Bush 6",
+            "UUID": 14085586782771946381
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/berry_bush.png"
+                },
+                "Transform": {
+                    "Position": [
+                        10.199999809265137,
+                        0.0,
+                        7.599999904632568
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0499999523162842,
+                        0.949999988079071,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Berry Bush 7",
+            "UUID": 12409564101736190047
+        },
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.18000000715255737,
+                    "BillboardMode": 0,
+                    "Color": [
+                        1.0,
+                        1.0,
+                        1.0,
+                        1.0
+                    ],
+                    "TexturePath": "assets/diorama/berry_bush.png"
+                },
+                "Transform": {
+                    "Position": [
+                        9.600000381469727,
+                        0.0,
+                        3.5999999046325684
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0499999523162842,
+                        0.949999988079071,
+                        1.0
+                    ]
+                }
+            },
+            "Name": "Berry Bush 8",
+            "UUID": 9273227846813055603
         },
         {
             "Components": {
@@ -418,8 +1246,8 @@
                             ]
                         },
                         "Position": [
-                            60.0,
-                            652.0
+                            38.0,
+                            670.0
                         ],
                         "Scale": 1.0,
                         "Text": "HP:"
@@ -428,42 +1256,42 @@
                 "UIPanels": [
                     {
                         "Color": [
-                            0.20000000298023224,
-                            0.20000000298023224,
-                            0.20000000298023224,
-                            1.0
+                            0.14000000059604645,
+                            0.11999999731779099,
+                            0.15000000596046448,
+                            0.9200000166893005
                         ],
                         "Position": [
-                            50.0,
-                            650.0
+                            130.0,
+                            675.0
                         ],
                         "Size": [
                             200.0,
-                            20.0
+                            22.0
                         ]
                     },
                     {
                         "Color": [
-                            0.800000011920929,
-                            0.10000000149011612,
-                            0.10000000149011612,
+                            0.8199999928474426,
+                            0.14000000059604645,
+                            0.18000000715255737,
                             1.0
                         ],
                         "Position": [
-                            50.0,
-                            650.0
+                            105.0,
+                            675.0
                         ],
                         "Size": [
                             150.0,
-                            20.0
+                            18.0
                         ]
                     }
                 ]
             },
             "Name": "HUD",
-            "UUID": 9707566802686016670
+            "UUID": 15970435419300896288
         }
     ],
     "OrthographicSize": 5.0,
-    "SceneName": "Village"
+    "SceneName": "Cult Diorama Clearing"
 }
