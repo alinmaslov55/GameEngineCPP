@@ -91,9 +91,11 @@ namespace Engine {
             auto it = cache.find(cacheKey);
             if (it != cache.end() && it->second) {
                 if constexpr (requires(T& obj) { obj.ReloadFromDisk(); }) {
+                    ENGINE_CORE_INFO("ResourceManager: Reloading cached asset in-place: '{}'", cacheKey);
                     it->second->ReloadFromDisk();
                     return it->second;
                 }
+                ENGINE_CORE_DEBUG("ResourceManager: Evicting cached asset for fresh reload: '{}'", cacheKey);
                 cache.erase(it);
             }
             return Load<T>(filepath);

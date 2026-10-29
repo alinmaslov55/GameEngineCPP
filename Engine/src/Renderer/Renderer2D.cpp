@@ -471,6 +471,8 @@ void Renderer2D::SetWindData(const SceneWindData& wind) {
     if (!s_Data) {
         return;
     }
+    ENGINE_CORE_TRACE("Renderer2D::SetWindData: WindActive={}, Strength={:.2f}, Speed={:.2f}",
+                      wind.WindActive, wind.Strength, wind.Speed);
     if (s_Data->QuadIndexCount > 0) {
         NextBatch();
     }

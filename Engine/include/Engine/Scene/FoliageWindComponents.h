@@ -5,6 +5,7 @@
 #include "Engine/Scene/Component.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Utils/Logger.h"
 
 #include <algorithm>
 #include <cmath>
@@ -38,8 +39,10 @@ public:
     float PlayerPushStrength = 0.34f;
 
     void ApplyPreset(Preset preset) {
+        const char* presetName = "Unknown";
         switch (preset) {
             case Preset::GentleMeadowBreeze:
+                presetName = "GentleMeadowBreeze";
                 Enabled = true;
                 DirectionDegrees = 25.0f;
                 Strength = 0.16f;
@@ -53,6 +56,7 @@ public:
                 break;
 
             case Preset::AutumnGusts:
+                presetName = "AutumnGusts";
                 Enabled = true;
                 DirectionDegrees = -35.0f;
                 Strength = 0.28f;
@@ -66,6 +70,7 @@ public:
                 break;
 
             case Preset::RitualStorm:
+                presetName = "RitualStorm";
                 Enabled = true;
                 DirectionDegrees = -58.0f;
                 Strength = 0.44f;
@@ -79,11 +84,14 @@ public:
                 break;
 
             case Preset::StillAir:
+                presetName = "StillAir";
                 Enabled = false;
                 Strength = 0.0f;
                 Gustiness = 0.0f;
                 break;
         }
+        ENGINE_CORE_DEBUG("WindComponent: Applied preset '{}' (Dir={:.1f} deg, Strength={:.2f}, Speed={:.2f})",
+                          presetName, DirectionDegrees, Strength, Speed);
     }
 
     glm::vec2 GetWindDirectionXZ() const {
@@ -189,6 +197,8 @@ public:
     float LandingSquashImpact = 0.85f;
 
     void TriggerImpulse(float verticalScaleVelocity, float tiltImpulseDegrees = 0.0f) {
+        ENGINE_CORE_TRACE("SquashStretchComponent: TriggerImpulse(vertical={:.2f}, tilt={:.2f})",
+                          verticalScaleVelocity, tiltImpulseDegrees);
         m_VerticalDeformVelocity += verticalScaleVelocity;
         m_TiltVelocity += tiltImpulseDegrees;
     }
@@ -221,6 +231,8 @@ public:
                 // Auto-detect jump launch (grounded -> airborne moving upward)
                 if (m_WasGrounded && !grounded && verticalSpeed > 0.25f) {
                     if (m_VerticalDeformVelocity < JumpLaunchStretch * 0.5f) {
+                        ENGINE_CORE_DEBUG("SquashStretchComponent: Jump launch detected on '{}' (verticalSpeed={:.2f})",
+                                          owner ? owner->GetName() : "Unnamed", verticalSpeed);
                         TriggerImpulse(JumpLaunchStretch);
                     }
                 }
@@ -233,6 +245,8 @@ public:
                 if (!m_WasGrounded && grounded) {
                     const float impactSpeed = std::max(std::abs(m_LastAirVerticalSpeed), 3.0f);
                     const float squashVel = -std::clamp(impactSpeed * LandingSquashImpact, 2.20f, 5.60f);
+                    ENGINE_CORE_DEBUG("SquashStretchComponent: Landing touchdown detected on '{}' (impactSpeed={:.2f}, squashVel={:.2f})",
+                                      owner ? owner->GetName() : "Unnamed", impactSpeed, squashVel);
                     m_VerticalDeform = std::min(m_VerticalDeform, 0.0f);
                     m_VerticalDeformVelocity = std::min(m_VerticalDeformVelocity, 0.0f) + squashVel;
                     m_LastAirVerticalSpeed = 0.0f;

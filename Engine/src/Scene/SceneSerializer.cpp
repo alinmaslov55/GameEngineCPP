@@ -597,6 +597,10 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                         sprite->SetSubTexture(subTex);
                     }
                 }
+                if (sprite->GetWindSwayWeight() > 0.001f) {
+                    ENGINE_CORE_TRACE("SceneSerializer: Restored SpriteRenderer wind on '{}' (Weight={:.2f}, Phase={:.2f})",
+                                      name, sprite->GetWindSwayWeight(), sprite->GetWindPhaseOffset());
+                }
             }
 
             // 3. Tilemap
@@ -829,6 +833,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 wind->InteractiveRustle = wJson.value("InteractiveRustle", true);
                 wind->PlayerInteractionRadius = wJson.value("PlayerInteractionRadius", 1.25f);
                 wind->PlayerPushStrength = wJson.value("PlayerPushStrength", 0.34f);
+                ENGINE_CORE_DEBUG("SceneSerializer: Restored WindComponent on '{}' (Dir={:.1f} deg, Strength={:.2f}, Speed={:.2f})",
+                                  name, wind->DirectionDegrees, wind->Strength, wind->Speed);
             }
 
             // 4f. SquashStretchComponent
@@ -846,6 +852,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 ss->WalkTiltDegrees = ssJson.value("WalkTiltDegrees", 4.8f);
                 ss->JumpLaunchStretch = ssJson.value("JumpLaunchStretch", 4.20f);
                 ss->LandingSquashImpact = ssJson.value("LandingSquashImpact", 0.85f);
+                ENGINE_CORE_DEBUG("SceneSerializer: Restored SquashStretchComponent on '{}' (Stiffness={:.1f}, Damping={:.1f})",
+                                  name, ss->Stiffness, ss->Damping);
             }
 
             // 5. Rigidbody2D

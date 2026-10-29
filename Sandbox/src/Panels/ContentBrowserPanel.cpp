@@ -79,6 +79,7 @@ void ContentBrowserPanel::OnImGuiRender(bool* pOpen) {
     ImGui::SetNextItemWidth(175.0f);
     if (ImGui::Combo("##DropArchetype", &archIdx, archetypeLabels, 6)) {
         m_DropArchetype = static_cast<DioramaDropArchetype>(archIdx);
+        ENGINE_DEBUG("Asset Browser: Drop archetype changed to '{}' ({})", archetypeLabels[archIdx], archIdx);
     }
     if (ImGui::IsItemHovered()) {
         ImGui::SetTooltip("Selects how textures dragged onto the 3D Scene Viewport are configured.");
@@ -183,14 +184,18 @@ void ContentBrowserPanel::OnImGuiRender(bool* pOpen) {
                         settings.AutoTrimAndBottomFlush = true;
                         settings.AlphaBleedPasses = 4;
 
+                        ENGINE_INFO("Asset Browser: Processing cutout for '{}'...", path.string());
                         const auto res = Engine::CutoutProcessor::ProcessFile(path, outPath, settings);
                         if (res.Success) {
                             Engine::ResourceManager::Reload<Engine::Texture>(outPath.string());
                             m_LastStatusMessage = "Processed " + outPath.filename().string() +
                                                   " (" + std::to_string(res.OutputWidth) + "x" +
                                                   std::to_string(res.OutputHeight) + ")";
+                            ENGINE_INFO("Asset Browser: Cutout processed successfully: '{}' ({}x{}, aspect {:.3f})",
+                                        outPath.string(), res.OutputWidth, res.OutputHeight, res.SuggestedAspectRatio);
                         } else {
                             m_LastStatusMessage = "Cutout failed: " + res.ErrorMessage;
+                            ENGINE_ERROR("Asset Browser: Cutout processing failed for '{}': {}", path.string(), res.ErrorMessage);
                         }
                     }
 
@@ -202,12 +207,16 @@ void ContentBrowserPanel::OnImGuiRender(bool* pOpen) {
                         settings.AutoTrimAndBottomFlush = true;
                         settings.AlphaBleedPasses = 4;
 
+                        ENGINE_INFO("Asset Browser: Saving processed cutout copy for '{}' to '{}'...", path.string(), outPath.string());
                         const auto res = Engine::CutoutProcessor::ProcessFile(path, outPath, settings);
                         if (res.Success) {
                             Engine::ResourceManager::Reload<Engine::Texture>(outPath.string());
                             m_LastStatusMessage = "Saved " + outPath.filename().string();
+                            ENGINE_INFO("Asset Browser: Cutout copy saved successfully: '{}' ({}x{})",
+                                        outPath.string(), res.OutputWidth, res.OutputHeight);
                         } else {
                             m_LastStatusMessage = "Cutout failed: " + res.ErrorMessage;
+                            ENGINE_ERROR("Asset Browser: Cutout copy failed for '{}': {}", path.string(), res.ErrorMessage);
                         }
                     }
 
@@ -219,12 +228,16 @@ void ContentBrowserPanel::OnImGuiRender(bool* pOpen) {
                         settings.AutoTrimAndBottomFlush = true;
                         settings.AlphaBleedPasses = 4;
 
+                        ENGINE_INFO("Asset Browser: Aligning & bleeding '{}' (preserving alpha)...", path.string());
                         const auto res = Engine::CutoutProcessor::ProcessFile(path, outPath, settings);
                         if (res.Success) {
                             Engine::ResourceManager::Reload<Engine::Texture>(outPath.string());
                             m_LastStatusMessage = "Aligned & bled " + outPath.filename().string();
+                            ENGINE_INFO("Asset Browser: Align & bleed completed successfully: '{}' ({}x{})",
+                                        outPath.string(), res.OutputWidth, res.OutputHeight);
                         } else {
                             m_LastStatusMessage = "Process failed: " + res.ErrorMessage;
+                            ENGINE_ERROR("Asset Browser: Align & bleed failed for '{}': {}", path.string(), res.ErrorMessage);
                         }
                     }
 

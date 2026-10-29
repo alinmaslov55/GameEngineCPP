@@ -214,8 +214,13 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                 }
 
                 selectedEntity = spawned;
-                ENGINE_INFO("Scene Viewport: Spawned 2.5D entity '{}' at ({:.2f}, {:.2f}, {:.2f})",
-                            entityName, spawnPos.x, spawnPos.y, spawnPos.z);
+                const char* archName = (archetype == DioramaDropArchetype::SwayingFoliage) ? "SwayingFoliage" :
+                                       (archetype == DioramaDropArchetype::PineOrTree) ? "PineOrTree" :
+                                       (archetype == DioramaDropArchetype::RitualBanner) ? "RitualBanner" :
+                                       (archetype == DioramaDropArchetype::FlatDecal) ? "FlatDecal" : "SolidStandee";
+                ENGINE_INFO("Scene Viewport: Spawned 2.5D standee '{}' [{}] at ({:.2f}, {:.2f}, {:.2f}), scale=({:.2f}, {:.2f}, {:.2f}), aspect={:.2f}",
+                            entityName, archName, spawnPos.x, spawnPos.y, spawnPos.z,
+                            transform->scale.x, transform->scale.y, transform->scale.z, aspect);
             }
         }
         ImGui::EndDragDropTarget();

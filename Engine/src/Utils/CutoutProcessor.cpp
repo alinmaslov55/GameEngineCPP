@@ -85,6 +85,8 @@ CutoutProcessResult CutoutProcessor::ProcessRGBAInPlace(std::vector<uint8_t>& rg
         }
     }
     result.ResolvedKeyMode = activeMode;
+    ENGINE_CORE_DEBUG("CutoutProcessor: Key mode resolved to {} (Key RGB=[{:.2f}, {:.2f}, {:.2f}], cornerAlpha={:.2f})",
+                      static_cast<int>(activeMode), keyColor.r, keyColor.g, keyColor.b, cornerAvg.a);
 
     // 2. Global Chroma Keying + Anti-Aliased Fringe Despill (handles interior holes cleanly)
     const float tol = std::clamp(settings.ChromaTolerance, 0.02f, 1.20f);
@@ -201,6 +203,8 @@ CutoutProcessResult CutoutProcessor::ProcessRGBAInPlace(std::vector<uint8_t>& rg
     result.ContentHeight = maxY - minY + 1u;
     result.SuggestedAspectRatio = static_cast<float>(result.ContentWidth) /
                                   static_cast<float>(std::max(1u, result.ContentHeight));
+    ENGINE_CORE_DEBUG("CutoutProcessor: Silhouette bounds [{}, {}] - [{}, {}] -> content size {}x{} (aspect {:.3f})",
+                      minX, minY, maxX, maxY, result.ContentWidth, result.ContentHeight, result.SuggestedAspectRatio);
 
     if (settings.AutoTrimAndBottomFlush) {
         uint32_t outW = result.ContentWidth + 2u * settings.HorizontalPaddingPx;
@@ -234,6 +238,8 @@ CutoutProcessResult CutoutProcessor::ProcessRGBAInPlace(std::vector<uint8_t>& rg
         rgba.swap(cropped);
         width = outW;
         height = outH;
+        ENGINE_CORE_DEBUG("CutoutProcessor: Bottom-flushed and trimmed canvas to {}x{} (dstStartX={}, dstStartY={})",
+                          outW, outH, dstStartX, dstStartY);
     }
 
     // 4. Multi-Pass Alpha-Edge RGB Dilation (Color Bleed into A == 0 pixels to eliminate mipmap halos)
@@ -291,6 +297,7 @@ CutoutProcessResult CutoutProcessor::ProcessRGBAInPlace(std::vector<uint8_t>& rg
             }
             validRGBMask.swap(nextMask);
         }
+        ENGINE_CORE_DEBUG("CutoutProcessor: Completed {} alpha bleed dilation passes", settings.AlphaBleedPasses);
     }
 
     result.Success = true;
@@ -305,6 +312,8 @@ CutoutProcessResult CutoutProcessor::ProcessFile(const std::filesystem::path& in
     CutoutProcessResult result;
     const std::string inStr = inputPath.string();
     const std::string outStr = outputPath.string();
+
+    ENGINE_CORE_INFO("CutoutProcessor: Starting processing of '{}'...", inStr);
 
     // Load in top-down PNG row order (row 0 = top, row H-1 = bottom ground contact)
     stbi_set_flip_vertically_on_load(0);

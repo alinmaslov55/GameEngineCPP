@@ -347,22 +347,26 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         });
 
         // 4e. Wind Zone Component (Global 2.5D Foliage Wind & Interactive Player Rustle)
-        DrawComponent<Engine::WindComponent>("Wind Zone", selectedEntity, [](Engine::WindComponent& wind) {
+        DrawComponent<Engine::WindComponent>("Wind Zone", selectedEntity, [selectedEntity](Engine::WindComponent& wind) {
             ImGui::Checkbox("Enabled", &wind.Enabled);
             ImGui::TextDisabled("Wind Presets:");
             if (ImGui::SmallButton("Meadow Breeze")) {
+                ENGINE_INFO("Inspector: Applied 'GentleMeadowBreeze' wind preset on '{}'", selectedEntity->GetName());
                 wind.ApplyPreset(Engine::WindComponent::Preset::GentleMeadowBreeze);
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Autumn Gusts")) {
+                ENGINE_INFO("Inspector: Applied 'AutumnGusts' wind preset on '{}'", selectedEntity->GetName());
                 wind.ApplyPreset(Engine::WindComponent::Preset::AutumnGusts);
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Ritual Storm")) {
+                ENGINE_INFO("Inspector: Applied 'RitualStorm' wind preset on '{}'", selectedEntity->GetName());
                 wind.ApplyPreset(Engine::WindComponent::Preset::RitualStorm);
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Still Air")) {
+                ENGINE_INFO("Inspector: Applied 'StillAir' wind preset on '{}'", selectedEntity->GetName());
                 wind.ApplyPreset(Engine::WindComponent::Preset::StillAir);
             }
 
@@ -383,10 +387,11 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         });
 
         // 4f. Squash & Stretch Component (Physics-Safe Secondary Spring Motion)
-        DrawComponent<Engine::SquashStretchComponent>("Squash & Stretch", selectedEntity, [](Engine::SquashStretchComponent& ss) {
+        DrawComponent<Engine::SquashStretchComponent>("Squash & Stretch", selectedEntity, [selectedEntity](Engine::SquashStretchComponent& ss) {
             ImGui::Checkbox("Enabled", &ss.Enabled);
             ImGui::SameLine();
             if (ImGui::SmallButton("Test Pop Impulse")) {
+                ENGINE_INFO("Inspector: Triggered test pop impulse on '{}'", selectedEntity->GetName());
                 ss.TriggerImpulse(4.20f, 9.0f);
             }
 

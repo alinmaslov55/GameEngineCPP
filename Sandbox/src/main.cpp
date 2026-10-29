@@ -21,9 +21,12 @@ int main(int argc, char* argv[]) {
         Engine::CutoutProcessSettings settings;
         const auto result = Engine::CutoutProcessor::ProcessFile(argv[2], argv[3], settings);
         if (!result.Success) {
+            ENGINE_ERROR("CutoutProcessor failed: {}", result.ErrorMessage);
             std::fprintf(stderr, "CutoutProcessor failed: %s\n", result.ErrorMessage.c_str());
             return EXIT_FAILURE;
         }
+        ENGINE_INFO("Processed '{}' -> '{}' ({}x{}, aspect {:.3f})",
+                    argv[2], argv[3], result.OutputWidth, result.OutputHeight, result.SuggestedAspectRatio);
         std::printf("Processed '%s' -> '%s' (%ux%u, aspect %.3f)\n",
                     argv[2], argv[3], result.OutputWidth, result.OutputHeight, result.SuggestedAspectRatio);
         return EXIT_SUCCESS;

@@ -360,6 +360,8 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
         glm::vec2(38.0f, 670.0f)
     );
 
+    ENGINE_INFO("DemoScene: Configured 2.5D Diorama Showcase scene with Wind Zone, Squash & Stretch, and Foliage standees");
+
     // Persist updated 2.5D diorama scene + village_splatmap.png to disk for standalone distribution & reload
     Engine::SceneSerializer serializer(editorScene);
     serializer.Serialize("Village.scene");
