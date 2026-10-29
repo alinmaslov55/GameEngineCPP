@@ -537,6 +537,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 camJson["FocalPoint"][2].get<float>()
             });
         }
+        ENGINE_CORE_DEBUG("SceneSerializer: Restored Camera (FOV={:.1f}, Dist={:.1f}, Pitch={:.1f}, Yaw={:.1f})",
+                          sceneCam.GetFOVDegrees(), sceneCam.GetDistance(), sceneCam.GetPitchDegrees(), sceneCam.GetYawDegrees());
     }
 
     size_t loadedCount = 0;
@@ -597,6 +599,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                         sprite->SetSubTexture(subTex);
                     }
                 }
+                ENGINE_CORE_TRACE("SceneSerializer: Restored SpriteRenderer on '{}' (BillboardMode={}, Cutoff={:.2f}, CastShadows={})",
+                                  name, static_cast<int>(sprite->GetBillboardMode()), sprite->GetAlphaCutoff(), sprite->GetCastShadows());
                 if (sprite->GetWindSwayWeight() > 0.001f) {
                     ENGINE_CORE_TRACE("SceneSerializer: Restored SpriteRenderer wind on '{}' (Weight={:.2f}, Phase={:.2f})",
                                       name, sprite->GetWindSwayWeight(), sprite->GetWindPhaseOffset());
@@ -682,6 +686,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                         }
                     }
                 }
+                ENGINE_CORE_DEBUG("SceneSerializer: Restored TerrainComponent on '{}' ({:.1f}x{:.1f}m, Splatmap={}x{})",
+                                  name, width, depth, splatW, splatH);
             }
 
             // 4. ParticleSystem
@@ -746,6 +752,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 dirLight->CastShadows = dlJson.value("CastShadows", true);
                 dirLight->ShadowSoftness = dlJson.value("ShadowSoftness", 1.35f);
                 dirLight->ShadowBias = dlJson.value("ShadowBias", 0.0018f);
+                ENGINE_CORE_DEBUG("SceneSerializer: Restored DirectionalLight on '{}' (Elev={:.1f}, Azim={:.1f}, Intensity={:.2f})",
+                                  name, dirLight->ElevationDegrees, dirLight->AzimuthDegrees, dirLight->SunIntensity);
             }
 
             // 4c. PointLightComponent
@@ -766,6 +774,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 pointLight->Flicker = plJson.value("Flicker", true);
                 pointLight->FlickerSpeed = plJson.value("FlickerSpeed", 7.5f);
                 pointLight->FlickerAmount = plJson.value("FlickerAmount", 0.14f);
+                ENGINE_CORE_DEBUG("SceneSerializer: Restored PointLight on '{}' (Radius={:.1f}, Intensity={:.2f}, Flicker={})",
+                                  name, pointLight->Radius, pointLight->Intensity, pointLight->Flicker);
             }
 
             // 4d. PostProcessComponent
@@ -817,6 +827,8 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                         ppJson["VignetteColor"][2].get<float>()
                     };
                 }
+                ENGINE_CORE_DEBUG("SceneSerializer: Restored PostProcess on '{}' (ToneMap={}, Bloom={}, Vignette={})",
+                                  name, static_cast<int>(pp->ToneMapping), pp->BloomEnabled, pp->VignetteEnabled);
             }
 
             // 4e. WindComponent

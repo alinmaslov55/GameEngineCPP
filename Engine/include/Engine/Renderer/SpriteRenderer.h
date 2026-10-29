@@ -43,19 +43,34 @@ public:
     std::shared_ptr<SubTexture2D> GetSubTexture() const { return m_SubTexture; }
 
     BillboardMode GetBillboardMode() const { return m_BillboardMode; }
-    void SetBillboardMode(BillboardMode mode) { m_BillboardMode = mode; }
+    void SetBillboardMode(BillboardMode mode) {
+        m_BillboardMode = mode;
+        ENGINE_CORE_DEBUG("SpriteRenderer: SetBillboardMode {}", static_cast<int>(mode));
+    }
 
     float GetAlphaCutoff() const { return m_AlphaCutoff; }
-    void SetAlphaCutoff(float cutoff) { m_AlphaCutoff = std::clamp(cutoff, 0.0f, 1.0f); }
+    void SetAlphaCutoff(float cutoff) {
+        m_AlphaCutoff = std::clamp(cutoff, 0.0f, 1.0f);
+        ENGINE_CORE_TRACE("SpriteRenderer: SetAlphaCutoff {:.2f}", m_AlphaCutoff);
+    }
 
     bool GetCastShadows() const { return m_CastShadows; }
-    void SetCastShadows(bool castShadows) { m_CastShadows = castShadows; }
+    void SetCastShadows(bool castShadows) {
+        m_CastShadows = castShadows;
+        ENGINE_CORE_TRACE("SpriteRenderer: SetCastShadows {}", castShadows);
+    }
 
     bool GetReceiveLighting() const { return m_ReceiveLighting; }
-    void SetReceiveLighting(bool receiveLighting) { m_ReceiveLighting = receiveLighting; }
+    void SetReceiveLighting(bool receiveLighting) {
+        m_ReceiveLighting = receiveLighting;
+        ENGINE_CORE_TRACE("SpriteRenderer: SetReceiveLighting {}", receiveLighting);
+    }
 
     float GetEmissive() const { return m_Emissive; }
-    void SetEmissive(float emissive) { m_Emissive = std::clamp(emissive, 0.0f, 5.0f); }
+    void SetEmissive(float emissive) {
+        m_Emissive = std::clamp(emissive, 0.0f, 5.0f);
+        ENGINE_CORE_TRACE("SpriteRenderer: SetEmissive {:.2f}", m_Emissive);
+    }
 
     float GetWindSwayWeight() const { return m_WindSwayWeight; }
     void SetWindSwayWeight(float weight) { m_WindSwayWeight = std::clamp(weight, 0.0f, 2.0f); }

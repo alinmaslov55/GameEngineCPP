@@ -57,6 +57,7 @@ void TilePalettePanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activ
     }
     if (ImGui::Button("Splat Brush", ImVec2(108.0f, 24.0f))) {
         m_PaintMode = GroundPaintMode::TerrainSplat;
+        ENGINE_DEBUG("Tile Palette: Switched to Terrain Splat mode");
     }
     if (isSplat) {
         ImGui::PopStyleColor();
@@ -68,6 +69,7 @@ void TilePalettePanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activ
     }
     if (ImGui::Button("Tile Grid", ImVec2(108.0f, 24.0f))) {
         m_PaintMode = GroundPaintMode::TileGrid;
+        ENGINE_DEBUG("Tile Palette: Switched to Tile Grid mode");
     }
     if (!isSplat) {
         ImGui::PopStyleColor();
@@ -143,18 +145,22 @@ void TilePalettePanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activ
         if (ImGui::Button("Meadow Grass (ID 1)", ImVec2(195.0f, 26.0f))) {
             m_SelectedTileID = 1;
             m_SelectedTileWalkable = true;
+            ENGINE_DEBUG("Tile Palette: Selected Meadow Grass (ID 1)");
         }
         if (ImGui::Button("Cobblestone (ID 2)", ImVec2(195.0f, 26.0f))) {
             m_SelectedTileID = 2;
             m_SelectedTileWalkable = true;
+            ENGINE_DEBUG("Tile Palette: Selected Cobblestone (ID 2)");
         }
         if (ImGui::Button("Tilled Soil (ID 3)", ImVec2(195.0f, 26.0f))) {
             m_SelectedTileID = 3;
             m_SelectedTileWalkable = true;
+            ENGINE_DEBUG("Tile Palette: Selected Tilled Soil (ID 3)");
         }
         if (ImGui::Button("Dirt Path (ID 4)", ImVec2(195.0f, 26.0f))) {
             m_SelectedTileID = 4;
             m_SelectedTileWalkable = true;
+            ENGINE_DEBUG("Tile Palette: Selected Dirt Path (ID 4)");
         }
 
         ImGui::Spacing();

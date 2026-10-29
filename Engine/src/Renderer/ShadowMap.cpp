@@ -92,6 +92,7 @@ void ShadowMap::Shutdown() {
     }
     delete s_ShadowData;
     s_ShadowData = nullptr;
+    ENGINE_CORE_INFO("ShadowMap shutdown completed");
 }
 
 bool ShadowMap::IsValid() {

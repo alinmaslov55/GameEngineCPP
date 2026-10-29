@@ -465,6 +465,7 @@ void PostProcessor::Shutdown() {
 
     delete s_PPData;
     s_PPData = nullptr;
+    ENGINE_CORE_INFO("PostProcessor shutdown completed");
 }
 
 bool PostProcessor::IsValid() {

@@ -2,6 +2,7 @@
 #define SCENE_POSTPROCESSCOMPONENT_H
 
 #include "Engine/Scene/Component.h"
+#include "Engine/Utils/Logger.h"
 
 #include <algorithm>
 #include <cmath>
@@ -58,9 +59,11 @@ public:
         Enabled = true;
         BloomEnabled = true;
         VignetteEnabled = true;
+        const char* presetName = "Unknown";
 
         switch (preset) {
             case Preset::CultStorybook:
+                presetName = "CultStorybook";
                 BackdropColor = { 0.05f, 0.04f, 0.08f };
                 BloomThreshold = 1.05f;
                 BloomKnee = 0.45f;
@@ -80,6 +83,7 @@ public:
                 break;
 
             case Preset::GoldenClearing:
+                presetName = "GoldenClearing";
                 BackdropColor = { 0.07f, 0.06f, 0.05f };
                 BloomThreshold = 0.98f;
                 BloomKnee = 0.52f;
@@ -99,6 +103,7 @@ public:
                 break;
 
             case Preset::BloodMoonRitual:
+                presetName = "BloodMoonRitual";
                 BackdropColor = { 0.07f, 0.02f, 0.04f };
                 BloomThreshold = 0.92f;
                 BloomKnee = 0.50f;
@@ -118,6 +123,7 @@ public:
                 break;
 
             case Preset::MidnightSanctum:
+                presetName = "MidnightSanctum";
                 BackdropColor = { 0.02f, 0.03f, 0.07f };
                 BloomThreshold = 0.88f;
                 BloomKnee = 0.42f;
@@ -137,6 +143,7 @@ public:
                 break;
 
             case Preset::CrispNeutral:
+                presetName = "CrispNeutral";
                 BackdropColor = { 0.08f, 0.08f, 0.09f };
                 BloomThreshold = 1.25f;
                 BloomKnee = 0.35f;
@@ -156,6 +163,8 @@ public:
                 VignetteColor = { 0.0f, 0.0f, 0.0f };
                 break;
         }
+        ENGINE_CORE_DEBUG("PostProcessComponent: Applied preset '{}' (ToneMap={}, Bloom={}, Exposure={:.2f})",
+                          presetName, static_cast<int>(ToneMapping), BloomEnabled, Exposure);
     }
 
     // Quadratic soft-knee bright-pass filter matching the GPU Mip-0 prefilter shader

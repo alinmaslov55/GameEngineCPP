@@ -36,6 +36,8 @@ TerrainComponent::TerrainComponent(float width,
       m_SplatHeight(std::clamp(splatHeight, 4u, 2048u)) {
     m_SplatData.resize(static_cast<size_t>(m_SplatWidth) * static_cast<size_t>(m_SplatHeight) * 4u, 0u);
     FillLayer(0);
+    ENGINE_CORE_DEBUG("TerrainComponent created: Size={:.1f}x{:.1f}m, Splatmap={}x{}",
+                      m_Width, m_Depth, m_SplatWidth, m_SplatHeight);
 }
 
 void TerrainComponent::SetWidth(float width) {
@@ -66,6 +68,8 @@ void TerrainComponent::ResizeSplatmap(uint32_t newWidth, uint32_t newHeight) {
         }
     }
 
+    ENGINE_CORE_INFO("TerrainComponent: Resized splatmap from {}x{} to {}x{}",
+                     m_SplatWidth, m_SplatHeight, newWidth, newHeight);
     m_SplatWidth = newWidth;
     m_SplatHeight = newHeight;
     m_SplatData = std::move(resampled);
@@ -89,6 +93,7 @@ void TerrainComponent::SetLayerTexture(uint32_t layerIndex, const std::shared_pt
         texture->SetWrapRepeat(true);
     }
     m_Layers[layerIndex].LayerTexture = texture;
+    ENGINE_CORE_DEBUG("TerrainComponent: Set layer {} texture '{}'", layerIndex, texture ? texture->GetFilepath() : "nullptr");
 }
 
 void TerrainComponent::SetLayerTilingScale(uint32_t layerIndex, float tilingScale) {
@@ -174,6 +179,7 @@ void TerrainComponent::FillLayer(uint32_t layerIndex) {
     }
 
     MarkDirtyRect(0, 0, m_SplatWidth - 1u, m_SplatHeight - 1u, true);
+    ENGINE_CORE_DEBUG("TerrainComponent: Filled splatmap with Layer {}", clampedLayer);
 }
 
 glm::u8vec4 TerrainComponent::GetSplatTexel(uint32_t px, uint32_t pz) const {
@@ -492,6 +498,8 @@ bool TerrainComponent::DecodeSplatBase64(const std::string& base64Data, uint32_t
     m_SplatData = std::move(decoded);
     m_GpuSplatTexture.reset();
     MarkDirtyRect(0, 0, m_SplatWidth - 1u, m_SplatHeight - 1u, true);
+    ENGINE_CORE_DEBUG("TerrainComponent: Decoded base64 splatmap ({} bytes, {}x{})",
+                      m_SplatData.size(), m_SplatWidth, m_SplatHeight);
     return true;
 }
 

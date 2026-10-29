@@ -4,6 +4,7 @@
 #include "Engine/Scene/Component.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Utils/Logger.h"
 #include <cstdint>
 
 namespace Engine {
@@ -42,6 +43,7 @@ public:
         const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
         Camera.SetAspectRatio(aspectRatio);
         ApplySettings();
+        ENGINE_CORE_DEBUG("CameraComponent: Viewport set to {}x{} (Aspect={:.3f})", width, height, aspectRatio);
     }
 };
 } // namespace Engine

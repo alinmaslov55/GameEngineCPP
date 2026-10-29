@@ -1,4 +1,5 @@
 #include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Utils/Logger.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
@@ -13,6 +14,8 @@ PerspectiveCamera::PerspectiveCamera(float fovDegrees, float aspectRatio, float 
       m_FarClip(std::max(nearClip + 1.0f, farClip)) {
     RecalculateProjection();
     RecalculateView();
+    ENGINE_CORE_DEBUG("PerspectiveCamera created: FOV={:.1f} deg, Aspect={:.3f}, Near={:.2f}, Far={:.2f}",
+                      m_FOVDegrees, m_AspectRatio, m_NearClip, m_FarClip);
 }
 
 void PerspectiveCamera::SetPerspective(float fovDegrees, float aspectRatio, float nearClip, float farClip) {
@@ -23,6 +26,8 @@ void PerspectiveCamera::SetPerspective(float fovDegrees, float aspectRatio, floa
     m_NearClip = std::max(0.01f, nearClip);
     m_FarClip = std::max(m_NearClip + 1.0f, farClip);
     RecalculateProjection();
+    ENGINE_CORE_DEBUG("PerspectiveCamera::SetPerspective: FOV={:.1f} deg, Aspect={:.3f}, Near={:.2f}, Far={:.2f}",
+                      m_FOVDegrees, m_AspectRatio, m_NearClip, m_FarClip);
 }
 
 void PerspectiveCamera::SetAspectRatio(float aspectRatio) {
@@ -110,6 +115,8 @@ bool PerspectiveCamera::RaycastGroundPlane(const glm::vec2& ndc, float planeY, g
     }
 
     outHitPoint = rayOrigin + rayDir * t;
+    ENGINE_CORE_TRACE("PerspectiveCamera::RaycastGroundPlane: Hit at ({:.2f}, {:.2f}, {:.2f}) for NDC ({:.2f}, {:.2f})",
+                      outHitPoint.x, outHitPoint.y, outHitPoint.z, ndc.x, ndc.y);
     return true;
 }
 

@@ -320,6 +320,8 @@ void TerrainRenderer::SetBrushPreview(bool enabled,
     s_TerrainData->BrushCenterXZ = worldCenterXZ;
     s_TerrainData->BrushRadiusWorld = std::max(0.05f, radiusWorld);
     s_TerrainData->BrushFalloff = std::clamp(falloff, 0.0f, 1.0f);
+    ENGINE_CORE_TRACE("TerrainRenderer::SetBrushPreview: enabled={}, center=({:.2f}, {:.2f}), radius={:.2f}",
+                      enabled, worldCenterXZ.x, worldCenterXZ.y, radiusWorld);
 }
 
 void TerrainRenderer::ClearBrushPreview() {

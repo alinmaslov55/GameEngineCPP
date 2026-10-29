@@ -207,9 +207,10 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         });
 
         // 4b. Directional Light Component (2.5D Diorama Sun & Cutout Shadows)
-        DrawComponent<Engine::DirectionalLightComponent>("Directional Light", selectedEntity, [](Engine::DirectionalLightComponent& dirLight) {
+        DrawComponent<Engine::DirectionalLightComponent>("Directional Light", selectedEntity, [selectedEntity](Engine::DirectionalLightComponent& dirLight) {
             ImGui::TextDisabled("Time-of-Day Presets:");
             if (ImGui::SmallButton("Golden Afternoon")) {
+                ENGINE_INFO("Inspector: Applied 'Golden Afternoon' lighting preset on '{}'", selectedEntity->GetName());
                 dirLight.ElevationDegrees = 40.0f;
                 dirLight.AzimuthDegrees = -42.0f;
                 dirLight.SunColor = { 1.0f, 0.91f, 0.74f };
@@ -220,6 +221,7 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Cult Dusk")) {
+                ENGINE_INFO("Inspector: Applied 'Cult Dusk' lighting preset on '{}'", selectedEntity->GetName());
                 dirLight.ElevationDegrees = 22.0f;
                 dirLight.AzimuthDegrees = -64.0f;
                 dirLight.SunColor = { 1.0f, 0.54f, 0.34f };
@@ -229,6 +231,7 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
                 dirLight.ShadowSoftness = 2.15f;
             }
             if (ImGui::SmallButton("Midnight Ritual")) {
+                ENGINE_INFO("Inspector: Applied 'Midnight Ritual' lighting preset on '{}'", selectedEntity->GetName());
                 dirLight.ElevationDegrees = 52.0f;
                 dirLight.AzimuthDegrees = 28.0f;
                 dirLight.SunColor = { 0.38f, 0.48f, 0.86f };
@@ -239,6 +242,7 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Clear Noon")) {
+                ENGINE_INFO("Inspector: Applied 'Clear Noon' lighting preset on '{}'", selectedEntity->GetName());
                 dirLight.ElevationDegrees = 68.0f;
                 dirLight.AzimuthDegrees = -18.0f;
                 dirLight.SunColor = { 1.0f, 0.98f, 0.92f };
@@ -282,25 +286,30 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         });
 
         // 4d. Post Process Volume Component (HDR Multi-Mip Bloom, Tone Mapping, Split-Tone Grade & Vignette)
-        DrawComponent<Engine::PostProcessComponent>("Post Process Volume", selectedEntity, [](Engine::PostProcessComponent& pp) {
+        DrawComponent<Engine::PostProcessComponent>("Post Process Volume", selectedEntity, [selectedEntity](Engine::PostProcessComponent& pp) {
             ImGui::Checkbox("Enabled", &pp.Enabled);
             ImGui::TextDisabled("Mood Presets:");
             if (ImGui::SmallButton("Cult Storybook")) {
+                ENGINE_INFO("Inspector: Applied 'Cult Storybook' post-process preset on '{}'", selectedEntity->GetName());
                 pp.ApplyPreset(Engine::PostProcessComponent::Preset::CultStorybook);
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Golden Clearing")) {
+                ENGINE_INFO("Inspector: Applied 'Golden Clearing' post-process preset on '{}'", selectedEntity->GetName());
                 pp.ApplyPreset(Engine::PostProcessComponent::Preset::GoldenClearing);
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Blood Moon")) {
+                ENGINE_INFO("Inspector: Applied 'Blood Moon' post-process preset on '{}'", selectedEntity->GetName());
                 pp.ApplyPreset(Engine::PostProcessComponent::Preset::BloodMoonRitual);
             }
             if (ImGui::SmallButton("Midnight Sanctum")) {
+                ENGINE_INFO("Inspector: Applied 'Midnight Sanctum' post-process preset on '{}'", selectedEntity->GetName());
                 pp.ApplyPreset(Engine::PostProcessComponent::Preset::MidnightSanctum);
             }
             ImGui::SameLine();
             if (ImGui::SmallButton("Crisp Neutral")) {
+                ENGINE_INFO("Inspector: Applied 'Crisp Neutral' post-process preset on '{}'", selectedEntity->GetName());
                 pp.ApplyPreset(Engine::PostProcessComponent::Preset::CrispNeutral);
             }
 
@@ -315,6 +324,7 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
             int tmIdx = static_cast<int>(pp.ToneMapping);
             if (ImGui::Combo("Tone Mapper", &tmIdx, toneMapLabels, 4)) {
                 pp.ToneMapping = static_cast<Engine::PostProcessComponent::ToneMapMode>(tmIdx);
+                ENGINE_DEBUG("Inspector: Tone mapper changed to '{}' on '{}'", toneMapLabels[tmIdx], selectedEntity->GetName());
             }
             ImGui::SliderFloat("Exposure (EV)", &pp.Exposure, -3.0f, 3.0f, "%.2f");
             ImGui::ColorEdit3("HDR Backdrop", &pp.BackdropColor.x);

@@ -22,6 +22,7 @@ void EditorCamera::OnViewportResize(uint32_t width, uint32_t height) {
     }
     const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
     m_Camera.SetAspectRatio(aspectRatio);
+    ENGINE_CORE_DEBUG("EditorCamera::OnViewportResize: {}x{} (Aspect={:.3f})", width, height, aspectRatio);
 }
 
 void EditorCamera::OnMouseScroll(float yOffset) {
@@ -64,6 +65,8 @@ void EditorCamera::Reset() {
     m_Camera.SetDistance(m_DefaultDistance);
     m_Camera.SetPitchDegrees(m_DefaultPitchDegrees);
     m_Camera.SetYawDegrees(m_DefaultYawDegrees);
+    ENGINE_CORE_DEBUG("EditorCamera::Reset: FocalPoint=({:.1f}, {:.1f}, {:.1f}), Distance={:.1f}, Pitch={:.1f} deg",
+                      m_DefaultFocalPoint.x, m_DefaultFocalPoint.y, m_DefaultFocalPoint.z, m_DefaultDistance, m_DefaultPitchDegrees);
 }
 
 void EditorCamera::SetFocalPoint(const glm::vec3& focalPoint) {
