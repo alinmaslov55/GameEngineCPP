@@ -125,6 +125,12 @@ void Scene::Update(float deltaTime) {
         gameObject->Update(deltaTime);
     }
 
+    UpdateCollidersAndGravity(deltaTime);
+    ResolveEntityCollisions();
+    ResolveTilemapCollisions();
+}
+
+void Scene::UpdateCollidersAndGravity(float deltaTime) {
     m_ColliderScratch.clear();
     m_TilemapScratch.clear();
     for (auto& gameObject : m_GameObjects) {
@@ -146,7 +152,9 @@ void Scene::Update(float deltaTime) {
             m_TilemapScratch.push_back(gameObject.get());
         }
     }
+}
 
+void Scene::ResolveEntityCollisions() {
     // 1. Entity-vs-Entity AABB Collision on XZ Ground Plane
     for (size_t i = 0; i < m_ColliderScratch.size(); i++) {
         for (size_t j = i + 1; j < m_ColliderScratch.size(); j++) {
@@ -203,7 +211,9 @@ void Scene::Update(float deltaTime) {
             }
         }
     }
+}
 
+void Scene::ResolveTilemapCollisions() {
     // 2. Dynamic Entity-vs-Tilemap Non-Walkable Tile Collision on XZ Ground Plane
     for (const auto& entryA : m_ColliderScratch) {
         auto* cA = entryA.collider;
@@ -379,48 +389,102 @@ void Scene::UpdateRuntime(float deltaTime) {
     Update(deltaTime);
 }
 
-void Scene::Render(const PerspectiveCamera* overrideCamera) {
-    ENGINE_CORE_TRACE("Scene '{}': Render (2.5D Diorama)", m_Name);
+SceneWindData SceneRenderContext::BuildWindUniforms(const glm::vec3& swayRightAxis) const {
+    SceneWindData windData;
+    if (windComp) {
+        windData.WindActive = windComp->Enabled;
+        windData.TimeSeconds = totalTime;
+        windData.Strength = std::max(0.0f, windComp->Strength);
+        windData.Speed = windComp->Speed;
+        windData.Gustiness = std::clamp(windComp->Gustiness, 0.0f, 1.0f);
+        windData.GustFrequency = windComp->GustFrequency;
+    }
+    windData.SwayRightAxis = swayRightAxis;
+    return windData;
+}
 
-    const PerspectiveCamera* activeCam = overrideCamera;
-    if (!activeCam) {
+void SceneRenderContext::ResolveStandeeMotion(GameObject* go,
+                                            const SpriteRenderer* sprite,
+                                            const glm::vec3& swayRightAxis,
+                                            const std::vector<std::pair<GameObject*, glm::vec3>>& foliageInteractors,
+                                            glm::vec2& outSize,
+                                            float& outRotationZ,
+                                            float& outWindWeight,
+                                            float& outSpatialPhase,
+                                            float& outProximityBend) const {
+    const auto* transform = go->GetTransform();
+    glm::vec2 scaleMult = { 1.0f, 1.0f };
+    float tiltOffset = 0.0f;
+    if (const auto* ss = go->GetComponent<SquashStretchComponent>()) {
+        scaleMult = ss->GetScaleMultiplier();
+        tiltOffset = ss->GetVisualTiltDegrees();
+    }
+
+    outSize = { transform->scale.x * scaleMult.x, transform->scale.y * scaleMult.y };
+    outRotationZ = transform->rotation.z + tiltOffset;
+
+    const float rawWindWeight = sprite->GetWindSwayWeight();
+    const float heightFactor = std::clamp(0.55f + 0.25f * std::abs(outSize.y), 0.50f, 1.45f);
+    outWindWeight = rawWindWeight * heightFactor;
+    outSpatialPhase = windComp
+        ? windComp->ComputeSpatialPhase(transform->position, sprite->GetWindPhaseOffset())
+        : sprite->GetWindPhaseOffset();
+
+    outProximityBend = 0.0f;
+    if (windComp && windComp->InteractiveRustle && rawWindWeight > 0.0001f) {
+        float bendSum = 0.0f;
+        for (const auto& [interactorObj, interactorPos] : foliageInteractors) {
+            if (interactorObj == go) {
+                continue;
+            }
+            bendSum += windComp->EvaluateProximityBend(
+                transform->position,
+                interactorPos,
+                swayRightAxis,
+                rawWindWeight,
+                totalTime,
+                1.2f
+            );
+        }
+        outProximityBend = std::clamp(bendSum, -0.65f, 0.65f);
+    }
+}
+
+SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideCamera) {
+    SceneRenderContext ctx;
+    ctx.totalTime = Time::GetTotalTime();
+
+    ctx.activeCam = overrideCamera;
+    if (!ctx.activeCam) {
         for (auto& go : m_GameObjects) {
             if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
                 cameraComp->SyncFromTransform(go->GetTransform());
-                activeCam = &cameraComp->Camera;
+                ctx.activeCam = &cameraComp->Camera;
                 break;
             }
         }
-        if (!activeCam) {
-            activeCam = &m_Camera;
+        if (!ctx.activeCam) {
+            ctx.activeCam = &m_Camera;
         }
     }
 
-    // Gather upright 2.5D cutout standees once for both Pass 0 (Shadow Capture) and Pass 2 (Camera View)
     m_StandeeScratch.clear();
     m_StandeeScratch.reserve(m_GameObjects.size());
-
-    // Gather dynamic 2.5D scene lighting, global Wind field, dynamic foliage interactors, and HDR PostProcess Volume
-    SceneLightingData lighting;
-    const DirectionalLightComponent* dirLight = nullptr;
-    const PostProcessComponent* postProcess = nullptr;
-    const WindComponent* windComp = nullptr;
     m_FoliageScratch.clear();
     m_FoliageScratch.reserve(8);
-    const float totalTime = Time::GetTotalTime();
 
     for (auto& gameObject : m_GameObjects) {
-        if (!dirLight) {
-            dirLight = gameObject->GetComponent<DirectionalLightComponent>();
+        if (!ctx.dirLight) {
+            ctx.dirLight = gameObject->GetComponent<DirectionalLightComponent>();
         }
-        if (!postProcess) {
+        if (!ctx.postProcess) {
             if (auto* pp = gameObject->GetComponent<PostProcessComponent>(); pp && pp->Enabled) {
-                postProcess = pp;
+                ctx.postProcess = pp;
             }
         }
         if (auto* wc = gameObject->GetComponent<WindComponent>()) {
-            if (!windComp || (!windComp->Enabled && wc->Enabled)) {
-                windComp = wc;
+            if (!ctx.windComp || (!ctx.windComp->Enabled && wc->Enabled)) {
+                ctx.windComp = wc;
             }
         }
         if (m_FoliageScratch.size() < 8) {
@@ -432,16 +496,16 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         }
 
         if (auto* pl = gameObject->GetComponent<PointLightComponent>()) {
-            if (lighting.PointLightCount < SceneLightingData::MaxPointLights) {
+            if (ctx.lighting.PointLightCount < SceneLightingData::MaxPointLights) {
                 auto* t = gameObject->GetTransform();
                 const glm::vec3 basePos = t ? t->position : glm::vec3(0.0f);
                 const glm::vec3 lightWorldPos = basePos + glm::vec3(0.0f, pl->HeightOffset, 0.0f);
                 const float effectiveIntensity = pl->EvaluateEffectiveIntensity(
-                    totalTime,
+                    ctx.totalTime,
                     static_cast<uint32_t>(gameObject->GetUUID())
                 );
 
-                PointLightUniform& uniformSlot = lighting.PointLights[lighting.PointLightCount++];
+                PointLightUniform& uniformSlot = ctx.lighting.PointLights[ctx.lighting.PointLightCount++];
                 uniformSlot.PositionAndRadius = { lightWorldPos.x, lightWorldPos.y, lightWorldPos.z, std::max(0.05f, pl->Radius) };
                 uniformSlot.ColorAndIntensity = { pl->Color.r, pl->Color.g, pl->Color.b, effectiveIntensity };
                 uniformSlot.Falloff = std::max(0.1f, pl->Falloff);
@@ -455,165 +519,101 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         }
     }
 
-    if (dirLight) {
-        lighting.LightingActive = true;
-        lighting.SunDirection = dirLight->GetLightDirection();
-        lighting.SunColor = dirLight->SunColor;
-        lighting.SunIntensity = std::max(0.0f, dirLight->SunIntensity);
-        lighting.AmbientColor = dirLight->AmbientColor;
-        lighting.AmbientIntensity = std::max(0.0f, dirLight->AmbientIntensity);
-        lighting.ShadowSoftness = std::max(0.0f, dirLight->ShadowSoftness);
-        lighting.ShadowBias = std::clamp(dirLight->ShadowBias, 0.0001f, 0.05f);
-    } else if (lighting.PointLightCount > 0) {
-        lighting.LightingActive = true;
-        lighting.AmbientColor = { 0.55f, 0.55f, 0.62f };
-        lighting.AmbientIntensity = 1.0f;
-        lighting.SunIntensity = 0.0f;
+    if (ctx.dirLight) {
+        ctx.lighting.LightingActive = true;
+        ctx.lighting.SunDirection = ctx.dirLight->GetLightDirection();
+        ctx.lighting.SunColor = ctx.dirLight->SunColor;
+        ctx.lighting.SunIntensity = std::max(0.0f, ctx.dirLight->SunIntensity);
+        ctx.lighting.AmbientColor = ctx.dirLight->AmbientColor;
+        ctx.lighting.AmbientIntensity = std::max(0.0f, ctx.dirLight->AmbientIntensity);
+        ctx.lighting.ShadowSoftness = std::max(0.0f, ctx.dirLight->ShadowSoftness);
+        ctx.lighting.ShadowBias = std::clamp(ctx.dirLight->ShadowBias, 0.0001f, 0.05f);
+    } else if (ctx.lighting.PointLightCount > 0) {
+        ctx.lighting.LightingActive = true;
+        ctx.lighting.AmbientColor = { 0.55f, 0.55f, 0.62f };
+        ctx.lighting.AmbientIntensity = 1.0f;
+        ctx.lighting.SunIntensity = 0.0f;
     }
 
-    auto buildWindUniforms = [&](const glm::vec3& swayRightAxis) {
-        SceneWindData windData;
-        if (windComp) {
-            windData.WindActive = windComp->Enabled;
-            windData.TimeSeconds = totalTime;
-            windData.Strength = std::max(0.0f, windComp->Strength);
-            windData.Speed = windComp->Speed;
-            windData.Gustiness = std::clamp(windComp->Gustiness, 0.0f, 1.0f);
-            windData.GustFrequency = windComp->GustFrequency;
+    ctx.useHDRPostProcess = (ctx.postProcess != nullptr && ctx.postProcess->Enabled && PostProcessor::IsValid());
+    return ctx;
+}
+
+void Scene::RenderPassShadowMap(SceneRenderContext& ctx) {
+    if (!ctx.dirLight || !ctx.dirLight->CastShadows || ctx.dirLight->SunIntensity <= 0.001f || !ShadowMap::IsValid()) {
+        return;
+    }
+
+    const float orthoRadius = std::clamp(ctx.activeCam->GetDistance() * 0.95f, 10.0f, 35.0f);
+    ctx.lighting.LightSpaceMatrix = ctx.dirLight->ComputeLightSpaceMatrix(
+        ctx.activeCam->GetFocalPoint(),
+        orthoRadius,
+        ShadowMap::GetResolution()
+    );
+
+    const glm::vec3 sunRightXZ = ctx.dirLight->GetSunRightXZ();
+    const glm::vec3 worldUp = { 0.0f, 1.0f, 0.0f };
+
+    Renderer2D::BeginShadowPass(ctx.lighting.LightSpaceMatrix, 0.15f);
+    if (ctx.windComp) {
+        Renderer2D::SetWindData(ctx.BuildWindUniforms(sunRightXZ));
+    }
+    ShadowMap::BeginCapture();
+
+    for (GameObject* gameObject : m_StandeeScratch) {
+        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
+        if (!sprite || !sprite->GetCastShadows()) {
+            continue;
         }
-        windData.SwayRightAxis = swayRightAxis;
-        return windData;
-    };
 
-    auto resolveStandeeMotion = [&](GameObject* go,
-                                    const SpriteRenderer* sprite,
-                                    const glm::vec3& swayRightAxis,
-                                    glm::vec2& outSize,
-                                    float& outRotationZ,
-                                    float& outWindWeight,
-                                    float& outSpatialPhase,
-                                    float& outProximityBend) {
-        const auto* transform = go->GetTransform();
-        glm::vec2 scaleMult = { 1.0f, 1.0f };
-        float tiltOffset = 0.0f;
-        if (const auto* ss = go->GetComponent<SquashStretchComponent>()) {
-            scaleMult = ss->GetScaleMultiplier();
-            tiltOffset = ss->GetVisualTiltDegrees();
-        }
-
-        outSize = { transform->scale.x * scaleMult.x, transform->scale.y * scaleMult.y };
-        outRotationZ = transform->rotation.z + tiltOffset;
-
-        const float rawWindWeight = sprite->GetWindSwayWeight();
-        const float heightFactor = std::clamp(0.55f + 0.25f * std::abs(outSize.y), 0.50f, 1.45f);
-        outWindWeight = rawWindWeight * heightFactor;
-        outSpatialPhase = windComp
-            ? windComp->ComputeSpatialPhase(transform->position, sprite->GetWindPhaseOffset())
-            : sprite->GetWindPhaseOffset();
-
-        outProximityBend = 0.0f;
-        if (windComp && windComp->InteractiveRustle && rawWindWeight > 0.0001f) {
-            float bendSum = 0.0f;
-            for (const auto& [interactorObj, interactorPos] : m_FoliageScratch) {
-                if (interactorObj == go) {
-                    continue;
-                }
-                bendSum += windComp->EvaluateProximityBend(
-                    transform->position,
-                    interactorPos,
-                    swayRightAxis,
-                    rawWindWeight,
-                    totalTime,
-                    1.2f
-                );
-            }
-            outProximityBend = std::clamp(bendSum, -0.65f, 0.65f);
-        }
-    };
-
-    // ==========================================
-    // PASS 0: DIRECTIONAL CUTOUT SHADOW MAP CAPTURE (2048x2048 24-bit Depth FBO)
-    // ==========================================
-    if (dirLight && dirLight->CastShadows && dirLight->SunIntensity > 0.001f && ShadowMap::IsValid()) {
-        const float orthoRadius = std::clamp(activeCam->GetDistance() * 0.95f, 10.0f, 35.0f);
-        lighting.LightSpaceMatrix = dirLight->ComputeLightSpaceMatrix(
-            activeCam->GetFocalPoint(),
-            orthoRadius,
-            ShadowMap::GetResolution()
-        );
-
-        const glm::vec3 sunRightXZ = dirLight->GetSunRightXZ();
-        const glm::vec3 worldUp = { 0.0f, 1.0f, 0.0f };
-
-        Renderer2D::BeginShadowPass(lighting.LightSpaceMatrix, 0.15f);
-        if (windComp) {
-            Renderer2D::SetWindData(buildWindUniforms(sunRightXZ));
-        }
-        ShadowMap::BeginCapture();
-
-        for (GameObject* gameObject : m_StandeeScratch) {
-            auto* sprite = gameObject->GetComponent<SpriteRenderer>();
-            if (!sprite->GetCastShadows()) {
-                continue;
-            }
-
-            auto* transform = gameObject->GetTransform();
-            const float cutoff = std::max(0.05f, sprite->GetAlphaCutoff());
-            glm::vec2 standeeSize{ 1.0f };
-            float effectiveRotZ = 0.0f;
-            float windWeight = 0.0f;
-            float spatialPhase = 0.0f;
-            float proximityBend = 0.0f;
-            resolveStandeeMotion(gameObject, sprite, sunRightXZ,
+        auto* transform = gameObject->GetTransform();
+        const float cutoff = std::max(0.05f, sprite->GetAlphaCutoff());
+        glm::vec2 standeeSize{ 1.0f };
+        float effectiveRotZ = 0.0f;
+        float windWeight = 0.0f;
+        float spatialPhase = 0.0f;
+        float proximityBend = 0.0f;
+        ctx.ResolveStandeeMotion(gameObject, sprite, sunRightXZ, m_FoliageScratch,
                                  standeeSize, effectiveRotZ, windWeight, spatialPhase, proximityBend);
 
-            if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane ||
-                sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::CylindricalY) {
-                // Orient cutout standee perpendicular to the sun's horizontal azimuth at its Y=0 anchor
-                // so silhouette shadows remain crisp and sway in lockstep with Pass 2 standees
-                if (sprite->GetSubTexture()) {
-                    Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
-                                              effectiveRotZ, sprite->GetSubTexture(), glm::vec4(1.0f),
-                                              cutoff, -1.0f, 0.0f,
-                                              windWeight, spatialPhase, proximityBend);
-                } else {
-                    Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
-                                              effectiveRotZ, sprite->GetTexture(), glm::vec4(1.0f),
-                                              cutoff, -1.0f, 0.0f,
-                                              windWeight, spatialPhase, proximityBend);
-                }
+        if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane ||
+            sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::CylindricalY) {
+            if (sprite->GetSubTexture()) {
+                Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
+                                          effectiveRotZ, sprite->GetSubTexture(), glm::vec4(1.0f),
+                                          cutoff, -1.0f, 0.0f,
+                                          windWeight, spatialPhase, proximityBend);
             } else {
-                const glm::vec3 scaled3D = { standeeSize.x, standeeSize.y, transform->scale.z };
-                const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * standeeSize.y, 0.0f);
-                const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
-                                              glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
-                                              glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
-                                              glm::rotate(glm::mat4(1.0f), glm::radians(effectiveRotZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
-                                              glm::scale(glm::mat4(1.0f), scaled3D);
-                if (sprite->GetSubTexture()) {
-                    Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
-                } else {
-                    Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
-                }
+                Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
+                                          effectiveRotZ, sprite->GetTexture(), glm::vec4(1.0f),
+                                          cutoff, -1.0f, 0.0f,
+                                          windWeight, spatialPhase, proximityBend);
+            }
+        } else {
+            const glm::vec3 scaled3D = { standeeSize.x, standeeSize.y, transform->scale.z };
+            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * standeeSize.y, 0.0f);
+            const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(effectiveRotZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                          glm::scale(glm::mat4(1.0f), scaled3D);
+            if (sprite->GetSubTexture()) {
+                Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
+            } else {
+                Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
             }
         }
-
-        Renderer2D::EndScene();
-        ShadowMap::EndCapture();
-
-        lighting.ShadowsEnabled = true;
-        lighting.ShadowMapTextureID = ShadowMap::GetDepthTextureID();
-        lighting.ShadowMapTexelSize = 1.0f / static_cast<float>(ShadowMap::GetResolution());
     }
 
-    const bool useHDRPostProcess = (postProcess != nullptr && postProcess->Enabled && PostProcessor::IsValid());
-    if (useHDRPostProcess) {
-        PostProcessor::BeginHDRScene(m_ViewportWidth, m_ViewportHeight, postProcess->BackdropColor);
-    }
+    Renderer2D::EndScene();
+    ShadowMap::EndCapture();
 
-    // ==========================================
-    // PASS 1: 3D GROUND PLANE (Splatmap Terrain -> Tilemaps -> Flat Decals)
-    // ==========================================
+    ctx.lighting.ShadowsEnabled = true;
+    ctx.lighting.ShadowMapTextureID = ShadowMap::GetDepthTextureID();
+    ctx.lighting.ShadowMapTexelSize = 1.0f / static_cast<float>(ShadowMap::GetResolution());
+}
+
+void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
     Renderer::SetDepthTest(true);
     Renderer::SetDepthMask(true);
 
@@ -625,14 +625,14 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
             auto* transform = gameObject->GetTransform();
             const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
             const glm::vec3 scale  = transform ? transform->scale    : glm::vec3(1.0f);
-            TerrainRenderer::RenderTerrain(*terrain, origin, scale, *activeCam, &lighting);
+            TerrainRenderer::RenderTerrain(*terrain, origin, scale, *ctx.activeCam, &ctx.lighting);
             hasSplatTerrain = true;
         }
     }
 
     // 1B. Discrete XZ Tilemaps (layered cleanly at +0.002f above splatmap when coexisting)
     Renderer::SetPolygonOffset(true, hasSplatTerrain ? 0.5f : 1.0f, hasSplatTerrain ? 0.5f : 1.0f);
-    Renderer2D::BeginScene(*activeCam, lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
+    Renderer2D::BeginScene(*ctx.activeCam, ctx.lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
 
     const glm::mat4 groundFlatRotation = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     const float tileOverlayLift = hasSplatTerrain ? 0.002f : 0.0f;
@@ -694,22 +694,21 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
 
     Renderer2D::EndScene();
     Renderer::SetPolygonOffset(false);
+}
 
-    // ==========================================
-    // PASS 2: UPRIGHT 2.5D CUTOUT STANDEES (Depth Test + Alpha Discard + Soft Shadow Receiving)
-    // ==========================================
-    const glm::vec3 camEye = activeCam->GetPosition();
-    const glm::vec3 camForward = activeCam->GetForward();
+void Scene::RenderPassCutoutStandees(SceneRenderContext& ctx) {
+    const glm::vec3 camEye = ctx.activeCam->GetPosition();
+    const glm::vec3 camForward = ctx.activeCam->GetForward();
     std::sort(m_StandeeScratch.begin(), m_StandeeScratch.end(), [&](GameObject* a, GameObject* b) {
         const float distA = glm::dot(a->GetTransform()->position - camEye, camForward);
         const float distB = glm::dot(b->GetTransform()->position - camEye, camForward);
         return distA > distB; // Back-to-front for clean outline anti-aliasing alongside Z-buffer cutout
     });
 
-    const glm::vec3 camRightXZ = activeCam->GetRightXZ();
-    Renderer2D::BeginScene(*activeCam, lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.15f);
-    if (windComp) {
-        Renderer2D::SetWindData(buildWindUniforms(camRightXZ));
+    const glm::vec3 camRightXZ = ctx.activeCam->GetRightXZ();
+    Renderer2D::BeginScene(*ctx.activeCam, ctx.lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.15f);
+    if (ctx.windComp) {
+        Renderer2D::SetWindData(ctx.BuildWindUniforms(camRightXZ));
     }
 
     for (GameObject* gameObject : m_StandeeScratch) {
@@ -721,20 +720,20 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         float windWeight = 0.0f;
         float spatialPhase = 0.0f;
         float proximityBend = 0.0f;
-        resolveStandeeMotion(gameObject, sprite, camRightXZ,
-                             standeeSize, effectiveRotZ, windWeight, spatialPhase, proximityBend);
+        ctx.ResolveStandeeMotion(gameObject, sprite, camRightXZ, m_FoliageScratch,
+                                 standeeSize, effectiveRotZ, windWeight, spatialPhase, proximityBend);
 
         const float standeeEmissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
         const float receiverOffset = std::max(0.48f, 0.55f * std::abs(standeeSize.x));
 
         if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane) {
             if (sprite->GetSubTexture()) {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRight(), activeCam->GetUp(),
+                Renderer2D::DrawBillboard(transform->position, standeeSize, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(),
                                           effectiveRotZ, sprite->GetSubTexture(), sprite->GetColor(),
                                           cutoff, standeeEmissive, receiverOffset,
                                           windWeight, spatialPhase, proximityBend);
             } else {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, activeCam->GetRight(), activeCam->GetUp(),
+                Renderer2D::DrawBillboard(transform->position, standeeSize, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(),
                                           effectiveRotZ, sprite->GetTexture(), sprite->GetColor(),
                                           cutoff, standeeEmissive, receiverOffset,
                                           windWeight, spatialPhase, proximityBend);
@@ -770,12 +769,11 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     }
 
     Renderer2D::EndScene();
+}
 
-    // ==========================================
-    // PASS 3: 3D BILLBOARD PARTICLES (Depth Test ON, Depth Write OFF)
-    // ==========================================
+void Scene::RenderPassParticles(SceneRenderContext& ctx) {
     Renderer::SetDepthMask(false);
-    Renderer2D::BeginScene(*activeCam, lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
+    Renderer2D::BeginScene(*ctx.activeCam, ctx.lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
 
     for (auto& gameObject : m_GameObjects) {
         if (auto* particleSystem = gameObject->GetComponent<ParticleSystem>()) {
@@ -787,12 +785,12 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
                 const float size = glm::mix(particle.sizeEnd, particle.sizeBegin, lifeRatio);
                 const glm::vec4 color = glm::mix(particle.colorEnd, particle.colorBegin, lifeRatio);
 
-                const glm::vec3 anchor = particle.position - activeCam->GetUp() * (0.5f * size);
+                const glm::vec3 anchor = particle.position - ctx.activeCam->GetUp() * (0.5f * size);
                 Renderer2D::DrawBillboard(
                     anchor,
                     { size, size },
-                    activeCam->GetRight(),
-                    activeCam->GetUp(),
+                    ctx.activeCam->GetRight(),
+                    ctx.activeCam->GetUp(),
                     glm::degrees(particle.rotation),
                     color,
                     0.0f,
@@ -805,26 +803,19 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
 
     Renderer2D::EndScene();
     Renderer::SetDepthMask(true);
+}
 
-    if (useHDRPostProcess) {
-        PostProcessor::EndHDRAndComposite(*postProcess);
-    }
-
-    // ==========================================
-    // PASS 4: 2D SCREEN-SPACE UI HUD (Depth Test OFF)
-    // ==========================================
+void Scene::RenderPassScreenUI() {
     glm::mat4 uiProjection = glm::ortho(
         0.0f, static_cast<float>(m_ViewportWidth),
         0.0f, static_cast<float>(m_ViewportHeight),
         -1.0f, 1.0f
     );
 
-    Renderer2D::BeginScene(uiProjection, /*depthTest=*/false, /*defaultAlphaCutoff=*/0.0f); 
+    Renderer2D::BeginScene(uiProjection, /*depthTest=*/false, /*defaultAlphaCutoff=*/0.0f);
 
     for (auto& gameObject : m_GameObjects) {
         for (auto* uiPanel : gameObject->GetComponents<UIPanel>()) {
-            // UI elements don't use the standard Transform component.
-            // We construct a simple model matrix using the screen-space pixel coordinates.
             glm::mat4 uiTransform = glm::translate(glm::mat4(1.0f), glm::vec3(uiPanel->position, 0.0f)) *
                                     glm::scale(glm::mat4(1.0f), glm::vec3(uiPanel->size, 1.0f));
 
@@ -839,29 +830,19 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     for (auto& gameObject : m_GameObjects) {
         for (auto* uiLabel : gameObject->GetComponents<UILabel>()) {
             if (uiLabel->font) {
-                // Track the baseline starting position
                 float cursorX = uiLabel->position.x;
                 float cursorY = uiLabel->position.y;
 
                 for (char c : uiLabel->text) {
                     const Character& ch = uiLabel->font->GetCharacter(c);
-
-                    // Calculate the exact screen position of this specific character quad
                     float xPos = cursorX + (ch.bearing.x * uiLabel->scale);
-                    
-                    // Subtract (size.y - bearing.y) to align characters with hanging tails (like 'g' or 'p')
                     float yPos = cursorY - ((ch.size.y - ch.bearing.y) * uiLabel->scale);
-
                     glm::vec2 currentSize = ch.size * uiLabel->scale;
 
-                    // Build the transform matrix
                     glm::mat4 charTransform = glm::translate(glm::mat4(1.0f), glm::vec3(xPos, yPos, 0.0f)) *
                                               glm::scale(glm::mat4(1.0f), glm::vec3(currentSize, 1.0f));
 
-                    // Draw the character
                     Renderer2D::DrawQuad(charTransform, ch.subTexture, uiLabel->color);
-
-                    // Advance the cursor for the next character
                     cursorX += (ch.advance * uiLabel->scale);
                 }
             }
@@ -869,5 +850,27 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     }
 
     Renderer2D::EndScene();
+}
+
+void Scene::Render(const PerspectiveCamera* overrideCamera) {
+    ENGINE_CORE_TRACE("Scene '{}': Render (2.5D Diorama)", m_Name);
+
+    SceneRenderContext ctx = GatherRenderContext(overrideCamera);
+
+    RenderPassShadowMap(ctx);
+
+    if (ctx.useHDRPostProcess) {
+        PostProcessor::BeginHDRScene(m_ViewportWidth, m_ViewportHeight, ctx.postProcess->BackdropColor);
+    }
+
+    RenderPassGroundPlane(ctx);
+    RenderPassCutoutStandees(ctx);
+    RenderPassParticles(ctx);
+
+    if (ctx.useHDRPostProcess) {
+        PostProcessor::EndHDRAndComposite(*ctx.postProcess);
+    }
+
+    RenderPassScreenUI();
 }
 } // namespace Engine

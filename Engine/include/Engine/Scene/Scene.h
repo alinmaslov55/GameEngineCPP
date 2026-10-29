@@ -8,10 +8,36 @@
 #include <utility>
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Renderer/SceneLighting.h"
 
 namespace Engine {
 
 class BoxCollider2D;
+class DirectionalLightComponent;
+class PostProcessComponent;
+class WindComponent;
+class SpriteRenderer;
+
+struct SceneRenderContext {
+    const PerspectiveCamera* activeCam = nullptr;
+    SceneLightingData lighting;
+    const DirectionalLightComponent* dirLight = nullptr;
+    const PostProcessComponent* postProcess = nullptr;
+    const WindComponent* windComp = nullptr;
+    float totalTime = 0.0f;
+    bool useHDRPostProcess = false;
+
+    SceneWindData BuildWindUniforms(const glm::vec3& swayRightAxis) const;
+    void ResolveStandeeMotion(GameObject* go,
+                             const SpriteRenderer* sprite,
+                             const glm::vec3& swayRightAxis,
+                             const std::vector<std::pair<GameObject*, glm::vec3>>& foliageInteractors,
+                             glm::vec2& outSize,
+                             float& outRotationZ,
+                             float& outWindWeight,
+                             float& outSpatialPhase,
+                             float& outProximityBend) const;
+};
 
 class Scene {
 public:
@@ -45,6 +71,18 @@ public:
     const std::vector<std::unique_ptr<GameObject>>& GetGameObjects() const { return m_GameObjects; }
 
 private:
+    void UpdateCollidersAndGravity(float deltaTime);
+    void ResolveEntityCollisions();
+    void ResolveTilemapCollisions();
+
+    SceneRenderContext GatherRenderContext(const PerspectiveCamera* overrideCamera);
+    void RenderPassShadowMap(SceneRenderContext& ctx);
+    void RenderPassGroundPlane(SceneRenderContext& ctx);
+    void RenderPassCutoutStandees(SceneRenderContext& ctx);
+    void RenderPassParticles(SceneRenderContext& ctx);
+    void RenderPassScreenUI();
+
+private:
     struct ColliderCacheEntry {
         GameObject* gameObject = nullptr;
         Transform* transform = nullptr;
@@ -67,6 +105,7 @@ private:
     std::vector<ColliderCacheEntry> m_ColliderScratch;
     std::vector<GameObject*> m_TilemapScratch;
 };
+
 } // namespace Engine
 
 #endif // SCENE_SCENE_H
