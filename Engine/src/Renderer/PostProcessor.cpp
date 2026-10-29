@@ -1,5 +1,6 @@
 #include "Engine/Renderer/PostProcessor.h"
 #include "Engine/Renderer/Shader.h"
+#include "Engine/Core/ResourceManager.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>
@@ -199,246 +200,18 @@ void PostProcessor::Init() {
 
     glGenVertexArrays(1, &s_PPData->FullscreenVAO);
 
-    const std::string fullscreenVertSrc = R"(
-        #version 410 core
-        out vec2 v_UV;
-
-        void main() {
-            vec2 uv = vec2((gl_VertexID << 1) & 2, gl_VertexID & 2);
-            v_UV = uv;
-            gl_Position = vec4(uv * 2.0 - 1.0, 0.0, 1.0);
-        }
-    )";
-
-    // 1. 13-Tap Energy-Preserving Karis Downsample + Quadratic Soft-Knee Prefilter
-    const std::string downsampleFragSrc = R"(
-        #version 410 core
-        in vec2 v_UV;
-        out vec4 color;
-
-        uniform sampler2D u_SrcTexture;
-        uniform vec2 u_SrcTexelSize;
-        uniform int u_MipLevel;
-        uniform float u_Threshold;
-        uniform float u_Knee;
-
-        float luma(vec3 c) {
-            return dot(c, vec3(0.2126, 0.7152, 0.0722));
-        }
-
-        float karisWeight(vec3 c) {
-            return 1.0 / (1.0 + max(luma(c), 0.0));
-        }
-
-        vec3 softKneePrefilter(vec3 c) {
-            c = max(c, vec3(0.0));
-            float brightness = max(c.r, max(c.g, c.b));
-            if (brightness <= 1e-6) {
-                return vec3(0.0);
-            }
-            float rq = brightness - u_Threshold;
-            if (u_Knee > 1e-5) {
-                float soft = clamp(brightness - u_Threshold + u_Knee, 0.0, 2.0 * u_Knee);
-                soft = (soft * soft) / (4.0 * u_Knee);
-                rq = max(soft, brightness - u_Threshold);
-            } else {
-                rq = max(0.0, brightness - u_Threshold);
-            }
-            return c * (rq / brightness);
-        }
-
-        void main() {
-            vec2 t = u_SrcTexelSize;
-
-            vec3 a = texture(u_SrcTexture, v_UV + vec2(-2.0 * t.x,  2.0 * t.y)).rgb;
-            vec3 b = texture(u_SrcTexture, v_UV + vec2( 0.0,        2.0 * t.y)).rgb;
-            vec3 c = texture(u_SrcTexture, v_UV + vec2( 2.0 * t.x,  2.0 * t.y)).rgb;
-
-            vec3 d = texture(u_SrcTexture, v_UV + vec2(-2.0 * t.x,  0.0)).rgb;
-            vec3 e = texture(u_SrcTexture, v_UV).rgb;
-            vec3 f = texture(u_SrcTexture, v_UV + vec2( 2.0 * t.x,  0.0)).rgb;
-
-            vec3 g = texture(u_SrcTexture, v_UV + vec2(-2.0 * t.x, -2.0 * t.y)).rgb;
-            vec3 h = texture(u_SrcTexture, v_UV + vec2( 0.0,       -2.0 * t.y)).rgb;
-            vec3 i = texture(u_SrcTexture, v_UV + vec2( 2.0 * t.x, -2.0 * t.y)).rgb;
-
-            vec3 j = texture(u_SrcTexture, v_UV + vec2(-1.0 * t.x,  1.0 * t.y)).rgb;
-            vec3 k = texture(u_SrcTexture, v_UV + vec2( 1.0 * t.x,  1.0 * t.y)).rgb;
-            vec3 l = texture(u_SrcTexture, v_UV + vec2(-1.0 * t.x, -1.0 * t.y)).rgb;
-            vec3 m = texture(u_SrcTexture, v_UV + vec2( 1.0 * t.x, -1.0 * t.y)).rgb;
-
-            vec3 g0 = (j + k + l + m) * 0.25;
-            vec3 g1 = (a + b + d + e) * 0.25;
-            vec3 g2 = (b + c + e + f) * 0.25;
-            vec3 g3 = (d + e + g + h) * 0.25;
-            vec3 g4 = (e + f + h + i) * 0.25;
-
-            vec3 result;
-            if (u_MipLevel == 0) {
-                float w0 = 0.500 * karisWeight(g0);
-                float w1 = 0.125 * karisWeight(g1);
-                float w2 = 0.125 * karisWeight(g2);
-                float w3 = 0.125 * karisWeight(g3);
-                float w4 = 0.125 * karisWeight(g4);
-                float wSum = max(w0 + w1 + w2 + w3 + w4, 1e-5);
-                result = (g0 * w0 + g1 * w1 + g2 * w2 + g3 * w3 + g4 * w4) / wSum;
-                result = softKneePrefilter(result);
-            } else {
-                result = g0 * 0.5 + (g1 + g2 + g3 + g4) * 0.125;
-            }
-
-            color = vec4(max(result, vec3(0.0)), 1.0);
-        }
-    )";
-
-    // 2. 9-Tap Tent Filter Progressive Upsample Shader
-    const std::string upsampleFragSrc = R"(
-        #version 410 core
-        in vec2 v_UV;
-        out vec4 color;
-
-        uniform sampler2D u_SrcTexture;
-        uniform vec2 u_TexelRadius;
-
-        void main() {
-            vec2 d = u_TexelRadius;
-            vec3 s = vec3(0.0);
-            s += texture(u_SrcTexture, v_UV + vec2(-d.x,  d.y)).rgb * 1.0;
-            s += texture(u_SrcTexture, v_UV + vec2( 0.0,  d.y)).rgb * 2.0;
-            s += texture(u_SrcTexture, v_UV + vec2( d.x,  d.y)).rgb * 1.0;
-
-            s += texture(u_SrcTexture, v_UV + vec2(-d.x,  0.0)).rgb * 2.0;
-            s += texture(u_SrcTexture, v_UV                   ).rgb * 4.0;
-            s += texture(u_SrcTexture, v_UV + vec2( d.x,  0.0)).rgb * 2.0;
-
-            s += texture(u_SrcTexture, v_UV + vec2(-d.x, -d.y)).rgb * 1.0;
-            s += texture(u_SrcTexture, v_UV + vec2( 0.0, -d.y)).rgb * 2.0;
-            s += texture(u_SrcTexture, v_UV + vec2( d.x, -d.y)).rgb * 1.0;
-
-            color = vec4(max(s * (1.0 / 16.0), vec3(0.0)), 1.0);
-        }
-    )";
-
-    // 3. Final HDR Composite, Tone Mapping, Storybook Split-Tone Grading & Diorama Vignette Shader
-    const std::string compositeFragSrc = R"(
-        #version 410 core
-        in vec2 v_UV;
-        out vec4 color;
-
-        uniform sampler2D u_SceneHDR;
-        uniform sampler2D u_BloomTexture;
-
-        uniform int u_BloomEnabled;
-        uniform float u_BloomIntensity;
-
-        uniform int u_ToneMapMode;
-        uniform float u_Exposure;
-
-        uniform float u_Temperature;
-        uniform float u_Tint;
-        uniform float u_Contrast;
-        uniform float u_Saturation;
-        uniform vec3 u_ShadowTint;
-        uniform vec3 u_HighlightTint;
-
-        uniform int u_VignetteEnabled;
-        uniform float u_VignetteIntensity;
-        uniform float u_VignetteSmoothness;
-        uniform vec3 u_VignetteColor;
-        uniform float u_AspectRatio;
-
-        vec3 toneMapACES(vec3 x) {
-            vec3 num = x * (2.51 * x + vec3(0.03));
-            vec3 den = x * (2.43 * x + vec3(0.59)) + vec3(0.14);
-            return clamp(num / den, 0.0, 1.0);
-        }
-
-        vec3 toneMapStorybookNeutral(vec3 c) {
-            const float startCompression = 0.8 - 0.04;
-            const float desaturation = 0.15;
-
-            float minCh = min(c.r, min(c.g, c.b));
-            float offset = (minCh < 0.08) ? (minCh - 6.25 * minCh * minCh) : 0.04;
-            c -= vec3(offset);
-
-            float peak = max(c.r, max(c.g, c.b));
-            if (peak < startCompression) {
-                return clamp(c, 0.0, 1.0);
-            }
-
-            const float d = 1.0 - startCompression;
-            float newPeak = 1.0 - (d * d) / (peak + d - startCompression);
-            c *= (newPeak / peak);
-
-            float g = 1.0 - 1.0 / (desaturation * (peak - newPeak) + 1.0);
-            return clamp(mix(c, vec3(newPeak), g), 0.0, 1.0);
-        }
-
-        void main() {
-            vec3 hdr = max(texture(u_SceneHDR, v_UV).rgb, vec3(0.0));
-            if (u_BloomEnabled == 1) {
-                vec3 bloom = max(texture(u_BloomTexture, v_UV).rgb, vec3(0.0));
-                hdr += bloom * max(u_BloomIntensity, 0.0);
-            }
-
-            // Exposure (EV stops) & Pre-Tonemap Sensor White Balance
-            hdr *= exp2(u_Exposure);
-            vec3 wbGain = vec3(
-                1.0 + 0.18 * u_Temperature + 0.08 * u_Tint,
-                1.0 - 0.12 * u_Tint,
-                1.0 - 0.18 * u_Temperature + 0.08 * u_Tint
-            );
-            hdr = max(hdr * max(wbGain, vec3(0.05)), vec3(0.0));
-
-            // Tone Mapping to [0, 1] Display Range
-            vec3 ldr = hdr;
-            if (u_ToneMapMode == 0) {
-                ldr = toneMapACES(hdr);
-            } else if (u_ToneMapMode == 1) {
-                ldr = toneMapStorybookNeutral(hdr);
-            } else if (u_ToneMapMode == 2) {
-                ldr = clamp(hdr / (vec3(1.0) + hdr), 0.0, 1.0);
-            } else {
-                ldr = clamp(hdr, 0.0, 1.0);
-            }
-
-            // Perceptual Split-Toning (Plum/Indigo Shadows + Warm Ivory Highlights)
-            float baseLuma = dot(ldr, vec3(0.2126, 0.7152, 0.0722));
-            float shadowMask = 1.0 - smoothstep(0.0, 0.55, baseLuma);
-            float highlightMask = smoothstep(0.35, 1.0, baseLuma);
-            vec3 splitGain = mix(vec3(1.0), max(u_ShadowTint, vec3(0.0)), shadowMask * 0.85) *
-                             mix(vec3(1.0), max(u_HighlightTint, vec3(0.0)), highlightMask * 0.85);
-            ldr *= splitGain;
-
-            // Midpoint Contrast & Luma-Preserving Saturation
-            ldr = (ldr - 0.5) * u_Contrast + 0.5;
-            float gradedLuma = dot(ldr, vec3(0.2126, 0.7152, 0.0722));
-            ldr = clamp(mix(vec3(gradedLuma), ldr, u_Saturation), 0.0, 1.0);
-
-            // Colored Atmospheric Diorama Vignette
-            if (u_VignetteEnabled == 1 && u_VignetteIntensity > 0.0001) {
-                vec2 centered = (v_UV - 0.5) * 2.0;
-                centered.x *= mix(1.0, max(u_AspectRatio, 1.0) * 0.82, 0.35);
-                float dist = length(centered);
-                float inner = max(0.05, 1.35 - u_VignetteIntensity * 0.95 - u_VignetteSmoothness * 0.55);
-                float outer = inner + max(0.08, u_VignetteSmoothness * 1.15);
-                float vigMask = smoothstep(inner, outer, dist) * clamp(u_VignetteIntensity * 1.25, 0.0, 1.0);
-                ldr = mix(ldr, clamp(u_VignetteColor, 0.0, 1.0), clamp(vigMask, 0.0, 1.0));
-            }
-
-            color = vec4(ldr, 1.0);
-        }
-    )";
-
-    s_PPData->DownsampleShader = std::make_shared<Shader>(fullscreenVertSrc, downsampleFragSrc);
+    std::string downsamplePath = ResourceManager::ResolvePath("assets/shaders/PostProcess_BloomDownsample.glsl");
+    s_PPData->DownsampleShader = std::make_shared<Shader>(downsamplePath);
     s_PPData->DownsampleShader->Bind();
     s_PPData->DownsampleShader->SetInt("u_SrcTexture", 0);
 
-    s_PPData->UpsampleShader = std::make_shared<Shader>(fullscreenVertSrc, upsampleFragSrc);
+    std::string upsamplePath = ResourceManager::ResolvePath("assets/shaders/PostProcess_BloomUpsample.glsl");
+    s_PPData->UpsampleShader = std::make_shared<Shader>(upsamplePath);
     s_PPData->UpsampleShader->Bind();
     s_PPData->UpsampleShader->SetInt("u_SrcTexture", 0);
 
-    s_PPData->CompositeShader = std::make_shared<Shader>(fullscreenVertSrc, compositeFragSrc);
+    std::string compositePath = ResourceManager::ResolvePath("assets/shaders/PostProcess_Composite.glsl");
+    s_PPData->CompositeShader = std::make_shared<Shader>(compositePath);
     s_PPData->CompositeShader->Bind();
     s_PPData->CompositeShader->SetInt("u_SceneHDR", 0);
     s_PPData->CompositeShader->SetInt("u_BloomTexture", 1);

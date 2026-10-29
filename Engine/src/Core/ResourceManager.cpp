@@ -97,7 +97,14 @@ std::string ResourceManager::ResolvePath(const std::string& filepath) {
     std::error_code ec;
     if (!s_AssetRoot.empty()) {
         std::filesystem::path candidate = (s_AssetRoot / inputPath).lexically_normal();
-        if (std::filesystem::exists(candidate, ec) || !std::filesystem::exists(inputPath, ec)) {
+        if (std::filesystem::exists(candidate, ec)) {
+            return candidate.generic_string();
+        }
+        std::filesystem::path assetSubCandidate = (s_AssetRoot / "assets" / inputPath).lexically_normal();
+        if (std::filesystem::exists(assetSubCandidate, ec)) {
+            return assetSubCandidate.generic_string();
+        }
+        if (!std::filesystem::exists(inputPath, ec)) {
             return candidate.generic_string();
         }
     }

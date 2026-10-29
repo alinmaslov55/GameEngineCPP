@@ -9,9 +9,12 @@
 #include <glm/glm.hpp>
 
 namespace Engine {
+
 class Shader {
 public:
+    Shader(const std::string& filepath);
     Shader(const std::string& vertexSrc, const std::string& fragmentSrc);
+    Shader(const std::string& name, const std::string& vertexSrc, const std::string& fragmentSrc);
     ~Shader();
 
     Shader(const Shader&) = delete;
@@ -23,6 +26,10 @@ public:
     void Bind() const;
     void Unbind() const;
 
+    bool Reload();
+    bool IsValid() const { return m_RendererID != 0; }
+    const std::string& GetName() const { return m_Name; }
+    const std::string& GetFilePath() const { return m_FilePath; }
     uint32_t GetRendererID() const { return m_RendererID; }
 
     void SetInt(const std::string& name, int value) const;
@@ -36,11 +43,17 @@ public:
 
 private:
     int GetUniformLocation(const std::string& name) const;
+    std::string ReadFile(const std::string& filepath);
+    std::unordered_map<uint32_t, std::string> PreProcess(const std::string& source);
+    bool Compile(const std::unordered_map<uint32_t, std::string>& shaderSources);
 
 private:
     uint32_t m_RendererID = 0;
+    std::string m_FilePath;
+    std::string m_Name;
     mutable std::unordered_map<std::string, int> m_UniformLocationCache;
 };
+
 } // namespace Engine
 
 #endif // RENDERER_SHADER_H

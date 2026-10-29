@@ -39,6 +39,8 @@ void Application::Initialize() {
     Logger::Init();
     ENGINE_CORE_INFO("Initializing Isometric Engine...");
 
+    ResourceManager::DiscoverAssetRoot("Sandbox");
+
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
     Time::Init();
     Input::Init();
