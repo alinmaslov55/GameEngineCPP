@@ -16,7 +16,7 @@ enum class ShaderDataType {
     Bool
 };
 
-static uint32_t ShaderDataTypeSize(ShaderDataType type) {
+constexpr inline uint32_t ShaderDataTypeSize(ShaderDataType type) noexcept {
     switch (type) {
         case ShaderDataType::Float:  return 4;
         case ShaderDataType::Float2: return 4 * 2;
@@ -104,6 +104,12 @@ public:
     VertexBuffer(float* vertices, uint32_t size);
     ~VertexBuffer();
 
+    VertexBuffer(const VertexBuffer&) = delete;
+    VertexBuffer& operator=(const VertexBuffer&) = delete;
+
+    VertexBuffer(VertexBuffer&& other) noexcept;
+    VertexBuffer& operator=(VertexBuffer&& other) noexcept;
+
     void Bind() const;
     void Unbind() const;
 
@@ -121,6 +127,12 @@ class IndexBuffer {
 public:
     IndexBuffer(uint32_t* indices, uint32_t count);
     ~IndexBuffer();
+
+    IndexBuffer(const IndexBuffer&) = delete;
+    IndexBuffer& operator=(const IndexBuffer&) = delete;
+
+    IndexBuffer(IndexBuffer&& other) noexcept;
+    IndexBuffer& operator=(IndexBuffer&& other) noexcept;
 
     void Bind() const;
     void Unbind() const;

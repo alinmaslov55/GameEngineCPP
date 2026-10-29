@@ -2,27 +2,55 @@
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>
+#include <utility>
 
 namespace Engine {
+
 Framebuffer::Framebuffer(const FramebufferSpecification& spec)
     : m_Specification(spec) {
     Invalidate();
 }
 
 Framebuffer::~Framebuffer() {
-    glDeleteFramebuffers(1, &m_RendererID);
-    glDeleteTextures(1, &m_ColorAttachment);
-    glDeleteTextures(1, &m_DepthAttachment);
-    ENGINE_CORE_DEBUG("Framebuffer destroyed with ID: {}", m_RendererID);
+    Release();
+}
+
+void Framebuffer::Release() {
+    if (m_RendererID != 0) {
+        ENGINE_CORE_DEBUG("Framebuffer destroyed with ID: {}", m_RendererID);
+        glDeleteFramebuffers(1, &m_RendererID);
+        m_RendererID = 0;
+    }
+    if (m_ColorAttachment != 0) {
+        glDeleteTextures(1, &m_ColorAttachment);
+        m_ColorAttachment = 0;
+    }
+    if (m_DepthAttachment != 0) {
+        glDeleteTextures(1, &m_DepthAttachment);
+        m_DepthAttachment = 0;
+    }
+}
+
+Framebuffer::Framebuffer(Framebuffer&& other) noexcept
+    : m_RendererID(std::exchange(other.m_RendererID, 0)),
+      m_ColorAttachment(std::exchange(other.m_ColorAttachment, 0)),
+      m_DepthAttachment(std::exchange(other.m_DepthAttachment, 0)),
+      m_Specification(other.m_Specification) {
+}
+
+Framebuffer& Framebuffer::operator=(Framebuffer&& other) noexcept {
+    if (this != &other) {
+        Release();
+        m_RendererID = std::exchange(other.m_RendererID, 0);
+        m_ColorAttachment = std::exchange(other.m_ColorAttachment, 0);
+        m_DepthAttachment = std::exchange(other.m_DepthAttachment, 0);
+        m_Specification = other.m_Specification;
+    }
+    return *this;
 }
 
 void Framebuffer::Invalidate() {
-    if (m_RendererID) {
-        ENGINE_CORE_TRACE("Invalidating existing Framebuffer ID: {}", m_RendererID);
-        glDeleteFramebuffers(1, &m_RendererID);
-        glDeleteTextures(1, &m_ColorAttachment);
-        glDeleteTextures(1, &m_DepthAttachment);
-    }
+    Release();
 
     glGenFramebuffers(1, &m_RendererID);
     glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
@@ -74,4 +102,5 @@ void Framebuffer::Resize(uint32_t width, uint32_t height) {
     m_Specification.Height = height;
     Invalidate();
 }
+
 } // namespace Engine

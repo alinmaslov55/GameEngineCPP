@@ -125,15 +125,15 @@ void Scene::Update(float deltaTime) {
         gameObject->Update(deltaTime);
     }
 
-    std::vector<GameObject*> colliders;
-    std::vector<GameObject*> tilemapObjects;
+    m_ColliderScratch.clear();
+    m_TilemapScratch.clear();
     for (auto& gameObject : m_GameObjects) {
         if (auto* collider = gameObject->GetComponent<BoxCollider2D>()) {
-            colliders.push_back(gameObject.get());
+            auto* transform = gameObject->GetTransform();
+            m_ColliderScratch.push_back({ gameObject.get(), transform, collider });
 
             // Apply vertical isometric gravity & ground clamping for dynamic bodies
-            if (collider->isDynamic && collider->useGravity) {
-                auto* transform = gameObject->GetTransform();
+            if (collider->isDynamic && collider->useGravity && transform) {
                 collider->verticalVelocity += collider->gravity * deltaTime;
                 transform->position.y += collider->verticalVelocity * deltaTime;
                 if (transform->position.y <= collider->groundLevel) {
@@ -143,23 +143,24 @@ void Scene::Update(float deltaTime) {
             }
         }
         if (gameObject->GetComponent<Tilemap>()) {
-            tilemapObjects.push_back(gameObject.get());
+            m_TilemapScratch.push_back(gameObject.get());
         }
     }
 
     // 1. Entity-vs-Entity AABB Collision on XZ Ground Plane
-    for (size_t i = 0; i < colliders.size(); i++) {
-        for (size_t j = i + 1; j < colliders.size(); j++) {
-            GameObject* a = colliders[i];
-            GameObject* b = colliders[j];
+    for (size_t i = 0; i < m_ColliderScratch.size(); i++) {
+        for (size_t j = i + 1; j < m_ColliderScratch.size(); j++) {
+            const auto& entryA = m_ColliderScratch[i];
+            const auto& entryB = m_ColliderScratch[j];
 
-            auto cA = a->GetComponent<BoxCollider2D>();
-            auto cB = b->GetComponent<BoxCollider2D>();
+            auto* cA = entryA.collider;
+            auto* cB = entryB.collider;
 
             if (!cA->isDynamic && !cB->isDynamic) continue;
 
-            auto* tA = a->GetTransform();
-            auto* tB = b->GetTransform();
+            auto* tA = entryA.transform;
+            auto* tB = entryB.transform;
+            if (!tA || !tB) continue;
 
             // Calculate AABB bounds on the XZ ground plane for Object A
             float aLeft  = tA->position.x + cA->offset.x - (cA->size.x * tA->scale.x) / 2.0f;
@@ -178,7 +179,7 @@ void Scene::Update(float deltaTime) {
 
             if (overlapX > 0 && overlapZ > 0) {
                 ENGINE_CORE_TRACE("Scene '{}': Collision resolved between '{}' and '{}' (overlap: {:.3f}, {:.3f})",
-                                  m_Name, a->GetName(), b->GetName(), overlapX, overlapZ);
+                                  m_Name, entryA.gameObject->GetName(), entryB.gameObject->GetName(), overlapX, overlapZ);
                 glm::vec2 push(0.0f);
 
                 if (overlapX < overlapZ) {
@@ -204,18 +205,20 @@ void Scene::Update(float deltaTime) {
     }
 
     // 2. Dynamic Entity-vs-Tilemap Non-Walkable Tile Collision on XZ Ground Plane
-    for (GameObject* a : colliders) {
-        auto* cA = a->GetComponent<BoxCollider2D>();
+    for (const auto& entryA : m_ColliderScratch) {
+        auto* cA = entryA.collider;
         if (!cA->isDynamic) continue;
 
-        auto* tA = a->GetTransform();
+        auto* tA = entryA.transform;
+        if (!tA) continue;
+
         float halfW = (cA->size.x * tA->scale.x) * 0.5f;
         float halfD = (cA->size.y * tA->scale.z) * 0.5f;
 
-        for (GameObject* mapObj : tilemapObjects) {
+        for (GameObject* mapObj : m_TilemapScratch) {
             auto* tilemap = mapObj->GetComponent<Tilemap>();
             auto* mapTransform = mapObj->GetTransform();
-            if (!tilemap || tilemap->GetWidth() == 0 || tilemap->GetHeight() == 0) continue;
+            if (!tilemap || tilemap->GetWidth() == 0 || tilemap->GetHeight() == 0 || !mapTransform) continue;
 
             float aLeft  = tA->position.x + cA->offset.x - halfW;
             float aRight = tA->position.x + cA->offset.x + halfW;
@@ -280,7 +283,7 @@ void Scene::OnRuntimeStart() {
     b2WorldDef worldDef = b2DefaultWorldDef();
     worldDef.gravity = b2Vec2{ 0.0f, -9.8f };
     b2WorldId worldId = b2CreateWorld(&worldDef);
-    memcpy(&m_PhysicsWorldId, &worldId, sizeof(worldId));
+    m_PhysicsWorldId = b2StoreWorldId(worldId);
     m_IsRuntimeRunning = true;
 
     for (auto& go : m_GameObjects) {
@@ -303,8 +306,7 @@ void Scene::OnRuntimeStart() {
             bodyDef.name = go->GetName().c_str();
 
             b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
-            memset(&rb2d->RuntimeBody, 0, sizeof(void*));
-            memcpy(&rb2d->RuntimeBody, &bodyId, sizeof(bodyId));
+            rb2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
 
             if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
                 b2ShapeDef shapeDef = b2DefaultShapeDef();
@@ -319,8 +321,7 @@ void Scene::OnRuntimeStart() {
                 b2Polygon box = b2MakeOffsetBox(halfW, halfH, center, rot);
 
                 b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-                memset(&bc2d->RuntimeFixture, 0, sizeof(void*));
-                memcpy(&bc2d->RuntimeFixture, &shapeId, sizeof(shapeId));
+                bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
             }
         }
     }
@@ -333,8 +334,7 @@ void Scene::OnRuntimeStop() {
 
     ENGINE_CORE_INFO("Scene '{}': Stopping Box2D runtime physics", m_Name);
 
-    b2WorldId worldId;
-    memcpy(&worldId, &m_PhysicsWorldId, sizeof(worldId));
+    b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
     if (b2World_IsValid(worldId)) {
         b2DestroyWorld(worldId);
     }
@@ -353,8 +353,7 @@ void Scene::OnRuntimeStop() {
 
 void Scene::UpdateRuntime(float deltaTime) {
     if (m_IsRuntimeRunning) {
-        b2WorldId worldId;
-        memcpy(&worldId, &m_PhysicsWorldId, sizeof(worldId));
+        b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
         if (b2World_IsValid(worldId)) {
             b2World_Step(worldId, deltaTime, 4);
         }
@@ -365,8 +364,7 @@ void Scene::UpdateRuntime(float deltaTime) {
             auto* rb2d = go->GetComponent<Rigidbody2D>();
 
             if (rb2d && transform && rb2d->RuntimeBody) {
-                b2BodyId bodyId;
-                memcpy(&bodyId, &rb2d->RuntimeBody, sizeof(bodyId));
+                b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
                 if (b2Body_IsValid(bodyId)) {
                     b2Vec2 pos = b2Body_GetPosition(bodyId);
                     b2Rot rot = b2Body_GetRotation(bodyId);
@@ -399,16 +397,16 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     }
 
     // Gather upright 2.5D cutout standees once for both Pass 0 (Shadow Capture) and Pass 2 (Camera View)
-    std::vector<GameObject*> standeeQueue;
-    standeeQueue.reserve(m_GameObjects.size());
+    m_StandeeScratch.clear();
+    m_StandeeScratch.reserve(m_GameObjects.size());
 
     // Gather dynamic 2.5D scene lighting, global Wind field, dynamic foliage interactors, and HDR PostProcess Volume
     SceneLightingData lighting;
     const DirectionalLightComponent* dirLight = nullptr;
     const PostProcessComponent* postProcess = nullptr;
     const WindComponent* windComp = nullptr;
-    std::vector<std::pair<GameObject*, glm::vec3>> foliageInteractors;
-    foliageInteractors.reserve(8);
+    m_FoliageScratch.clear();
+    m_FoliageScratch.reserve(8);
     const float totalTime = Time::GetTotalTime();
 
     for (auto& gameObject : m_GameObjects) {
@@ -425,10 +423,10 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
                 windComp = wc;
             }
         }
-        if (foliageInteractors.size() < 8) {
+        if (m_FoliageScratch.size() < 8) {
             if (auto* bc = gameObject->GetComponent<BoxCollider2D>(); bc && bc->isDynamic) {
                 if (auto* t = gameObject->GetTransform()) {
-                    foliageInteractors.emplace_back(gameObject.get(), t->position);
+                    m_FoliageScratch.emplace_back(gameObject.get(), t->position);
                 }
             }
         }
@@ -453,7 +451,7 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         auto* sprite = gameObject->GetComponent<SpriteRenderer>();
         if (sprite && gameObject->GetTransform() &&
             sprite->GetBillboardMode() != SpriteRenderer::BillboardMode::FlatGround) {
-            standeeQueue.push_back(gameObject.get());
+            m_StandeeScratch.push_back(gameObject.get());
         }
     }
 
@@ -516,7 +514,7 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         outProximityBend = 0.0f;
         if (windComp && windComp->InteractiveRustle && rawWindWeight > 0.0001f) {
             float bendSum = 0.0f;
-            for (const auto& [interactorObj, interactorPos] : foliageInteractors) {
+            for (const auto& [interactorObj, interactorPos] : m_FoliageScratch) {
                 if (interactorObj == go) {
                     continue;
                 }
@@ -553,7 +551,7 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         }
         ShadowMap::BeginCapture();
 
-        for (GameObject* gameObject : standeeQueue) {
+        for (GameObject* gameObject : m_StandeeScratch) {
             auto* sprite = gameObject->GetComponent<SpriteRenderer>();
             if (!sprite->GetCastShadows()) {
                 continue;
@@ -702,7 +700,7 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
     // ==========================================
     const glm::vec3 camEye = activeCam->GetPosition();
     const glm::vec3 camForward = activeCam->GetForward();
-    std::sort(standeeQueue.begin(), standeeQueue.end(), [&](GameObject* a, GameObject* b) {
+    std::sort(m_StandeeScratch.begin(), m_StandeeScratch.end(), [&](GameObject* a, GameObject* b) {
         const float distA = glm::dot(a->GetTransform()->position - camEye, camForward);
         const float distB = glm::dot(b->GetTransform()->position - camEye, camForward);
         return distA > distB; // Back-to-front for clean outline anti-aliasing alongside Z-buffer cutout
@@ -714,7 +712,7 @@ void Scene::Render(const PerspectiveCamera* overrideCamera) {
         Renderer2D::SetWindData(buildWindUniforms(camRightXZ));
     }
 
-    for (GameObject* gameObject : standeeQueue) {
+    for (GameObject* gameObject : m_StandeeScratch) {
         auto* sprite = gameObject->GetComponent<SpriteRenderer>();
         auto* transform = gameObject->GetTransform();
         const float cutoff = sprite->GetAlphaCutoff();

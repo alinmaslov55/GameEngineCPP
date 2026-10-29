@@ -2,6 +2,7 @@
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>
+#include <utility>
 
 namespace Engine {
 
@@ -20,8 +21,27 @@ VertexBuffer::VertexBuffer(float* vertices, uint32_t size) {
 }
 
 VertexBuffer::~VertexBuffer() {
-    ENGINE_CORE_DEBUG("VertexBuffer destroyed with ID: {}", m_RendererID);
-    glDeleteBuffers(1, &m_RendererID);
+    if (m_RendererID != 0) {
+        ENGINE_CORE_DEBUG("VertexBuffer destroyed with ID: {}", m_RendererID);
+        glDeleteBuffers(1, &m_RendererID);
+        m_RendererID = 0;
+    }
+}
+
+VertexBuffer::VertexBuffer(VertexBuffer&& other) noexcept
+    : m_RendererID(std::exchange(other.m_RendererID, 0)),
+      m_Layout(std::move(other.m_Layout)) {
+}
+
+VertexBuffer& VertexBuffer::operator=(VertexBuffer&& other) noexcept {
+    if (this != &other) {
+        if (m_RendererID != 0) {
+            glDeleteBuffers(1, &m_RendererID);
+        }
+        m_RendererID = std::exchange(other.m_RendererID, 0);
+        m_Layout = std::move(other.m_Layout);
+    }
+    return *this;
 }
 
 void VertexBuffer::Bind() const {
@@ -48,8 +68,27 @@ IndexBuffer::IndexBuffer(uint32_t* indices, uint32_t count) : m_Count(count) {
 }
 
 IndexBuffer::~IndexBuffer() {
-    ENGINE_CORE_DEBUG("IndexBuffer destroyed with ID: {}", m_RendererID);
-    glDeleteBuffers(1, &m_RendererID);
+    if (m_RendererID != 0) {
+        ENGINE_CORE_DEBUG("IndexBuffer destroyed with ID: {}", m_RendererID);
+        glDeleteBuffers(1, &m_RendererID);
+        m_RendererID = 0;
+    }
+}
+
+IndexBuffer::IndexBuffer(IndexBuffer&& other) noexcept
+    : m_RendererID(std::exchange(other.m_RendererID, 0)),
+      m_Count(std::exchange(other.m_Count, 0)) {
+}
+
+IndexBuffer& IndexBuffer::operator=(IndexBuffer&& other) noexcept {
+    if (this != &other) {
+        if (m_RendererID != 0) {
+            glDeleteBuffers(1, &m_RendererID);
+        }
+        m_RendererID = std::exchange(other.m_RendererID, 0);
+        m_Count = std::exchange(other.m_Count, 0);
+    }
+    return *this;
 }
 
 void IndexBuffer::Bind() const {

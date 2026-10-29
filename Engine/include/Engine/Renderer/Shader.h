@@ -14,8 +14,16 @@ public:
     Shader(const std::string& vertexSrc, const std::string& fragmentSrc);
     ~Shader();
 
+    Shader(const Shader&) = delete;
+    Shader& operator=(const Shader&) = delete;
+
+    Shader(Shader&& other) noexcept;
+    Shader& operator=(Shader&& other) noexcept;
+
     void Bind() const;
     void Unbind() const;
+
+    uint32_t GetRendererID() const { return m_RendererID; }
 
     void SetInt(const std::string& name, int value) const;
     void SetIntArray(const std::string& name, const int* values, uint32_t count) const;

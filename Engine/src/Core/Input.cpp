@@ -25,7 +25,23 @@ void Input::Shutdown() {
 
 void Input::Update() {
     ENGINE_CORE_TRACE("Input::Update");
+    // Gamepad connection is reactively handled via SDL events (OnGamepadAdded / OnGamepadRemoved)
+}
+
+void Input::OnGamepadAdded(SDL_JoystickID which) {
     if (!s_Gamepad) {
+        s_Gamepad = SDL_OpenGamepad(which);
+        if (s_Gamepad) {
+            ENGINE_CORE_INFO("Connected gamepad: {}", SDL_GetGamepadName(s_Gamepad));
+        }
+    }
+}
+
+void Input::OnGamepadRemoved(SDL_JoystickID which) {
+    if (s_Gamepad && SDL_GetGamepadID(s_Gamepad) == which) {
+        ENGINE_CORE_INFO("Disconnected gamepad: {}", SDL_GetGamepadName(s_Gamepad));
+        SDL_CloseGamepad(s_Gamepad);
+        s_Gamepad = nullptr;
         ConnectFirstGamepad();
     }
 }

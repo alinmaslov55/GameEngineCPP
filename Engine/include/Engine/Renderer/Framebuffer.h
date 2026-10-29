@@ -13,6 +13,12 @@ public:
     Framebuffer(const FramebufferSpecification& spec);
     ~Framebuffer();
 
+    Framebuffer(const Framebuffer&) = delete;
+    Framebuffer& operator=(const Framebuffer&) = delete;
+
+    Framebuffer(Framebuffer&& other) noexcept;
+    Framebuffer& operator=(Framebuffer&& other) noexcept;
+
     void Invalidate();
     void Bind();
     void Unbind();
@@ -22,6 +28,8 @@ public:
     const FramebufferSpecification& GetSpecification() const { return m_Specification; }
 
 private:
+    void Release();
+
     uint32_t m_RendererID = 0;
     uint32_t m_ColorAttachment = 0;
     uint32_t m_DepthAttachment = 0;

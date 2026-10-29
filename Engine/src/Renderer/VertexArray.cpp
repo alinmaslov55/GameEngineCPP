@@ -1,6 +1,7 @@
 #include "Engine/Renderer/VertexArray.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
+#include <utility>
 
 namespace Engine {
 
@@ -28,8 +29,29 @@ VertexArray::VertexArray() {
 }
 
 VertexArray::~VertexArray() {
-    ENGINE_CORE_DEBUG("VertexArray destroyed with ID: {}", m_RendererID);
-    glDeleteVertexArrays(1, &m_RendererID);
+    if (m_RendererID != 0) {
+        ENGINE_CORE_DEBUG("VertexArray destroyed with ID: {}", m_RendererID);
+        glDeleteVertexArrays(1, &m_RendererID);
+        m_RendererID = 0;
+    }
+}
+
+VertexArray::VertexArray(VertexArray&& other) noexcept
+    : m_RendererID(std::exchange(other.m_RendererID, 0)),
+      m_VertexBuffers(std::move(other.m_VertexBuffers)),
+      m_IndexBuffer(std::move(other.m_IndexBuffer)) {
+}
+
+VertexArray& VertexArray::operator=(VertexArray&& other) noexcept {
+    if (this != &other) {
+        if (m_RendererID != 0) {
+            glDeleteVertexArrays(1, &m_RendererID);
+        }
+        m_RendererID = std::exchange(other.m_RendererID, 0);
+        m_VertexBuffers = std::move(other.m_VertexBuffers);
+        m_IndexBuffer = std::move(other.m_IndexBuffer);
+    }
+    return *this;
 }
 
 void VertexArray::Bind() const {

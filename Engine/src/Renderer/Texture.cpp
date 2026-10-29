@@ -2,6 +2,7 @@
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
 #include <stb_image.h>
+#include <utility>
 
 namespace Engine {
 
@@ -92,10 +93,41 @@ Texture::Texture(uint32_t width,
 }
 
 Texture::~Texture() {
-    ENGINE_CORE_DEBUG("Texture destroyed with ID: {}", m_RendererID);
-    if (m_RendererID != 0 && glad_glDeleteTextures != nullptr) {
-        glDeleteTextures(1, &m_RendererID);
+    if (m_RendererID != 0) {
+        ENGINE_CORE_DEBUG("Texture destroyed with ID: {}", m_RendererID);
+        if (glad_glDeleteTextures != nullptr) {
+            glDeleteTextures(1, &m_RendererID);
+        }
+        m_RendererID = 0;
     }
+}
+
+Texture::Texture(Texture&& other) noexcept
+    : m_RendererID(std::exchange(other.m_RendererID, 0)),
+      m_Filepath(std::move(other.m_Filepath)),
+      m_Width(std::exchange(other.m_Width, 0)),
+      m_Height(std::exchange(other.m_Height, 0)),
+      m_BPP(std::exchange(other.m_BPP, 4)),
+      m_LinearFilter(other.m_LinearFilter),
+      m_HasMipmaps(other.m_HasMipmaps),
+      m_RepeatWrap(other.m_RepeatWrap) {
+}
+
+Texture& Texture::operator=(Texture&& other) noexcept {
+    if (this != &other) {
+        if (m_RendererID != 0 && glad_glDeleteTextures != nullptr) {
+            glDeleteTextures(1, &m_RendererID);
+        }
+        m_RendererID = std::exchange(other.m_RendererID, 0);
+        m_Filepath = std::move(other.m_Filepath);
+        m_Width = std::exchange(other.m_Width, 0);
+        m_Height = std::exchange(other.m_Height, 0);
+        m_BPP = std::exchange(other.m_BPP, 4);
+        m_LinearFilter = other.m_LinearFilter;
+        m_HasMipmaps = other.m_HasMipmaps;
+        m_RepeatWrap = other.m_RepeatWrap;
+    }
+    return *this;
 }
 
 void Texture::SetFilterLinear(bool linear) {

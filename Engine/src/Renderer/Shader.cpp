@@ -4,6 +4,7 @@
 #include <glad/glad.h>
 #include <glm/gtc/type_ptr.hpp>
 #include <vector>
+#include <utility>
 
 namespace Engine {
 Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
@@ -68,8 +69,27 @@ Shader::Shader(const std::string& vertexSrc, const std::string& fragmentSrc) {
 }
 
 Shader::~Shader() {
-    ENGINE_CORE_DEBUG("Shader program destroyed with ID: {}", m_RendererID);
-    glDeleteProgram(m_RendererID);
+    if (m_RendererID != 0) {
+        ENGINE_CORE_DEBUG("Shader program destroyed with ID: {}", m_RendererID);
+        glDeleteProgram(m_RendererID);
+        m_RendererID = 0;
+    }
+}
+
+Shader::Shader(Shader&& other) noexcept
+    : m_RendererID(std::exchange(other.m_RendererID, 0)),
+      m_UniformLocationCache(std::move(other.m_UniformLocationCache)) {
+}
+
+Shader& Shader::operator=(Shader&& other) noexcept {
+    if (this != &other) {
+        if (m_RendererID != 0) {
+            glDeleteProgram(m_RendererID);
+        }
+        m_RendererID = std::exchange(other.m_RendererID, 0);
+        m_UniformLocationCache = std::move(other.m_UniformLocationCache);
+    }
+    return *this;
 }
 
 void Shader::Bind() const {

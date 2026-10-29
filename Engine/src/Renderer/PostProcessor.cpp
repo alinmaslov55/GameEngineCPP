@@ -40,7 +40,7 @@ struct PostProcessorStorage {
     bool ResourcesValid = false;
 };
 
-PostProcessorStorage* s_PPData = nullptr;
+std::unique_ptr<PostProcessorStorage> s_PPData = nullptr;
 
 bool HasGLPostProcessSupport() {
     return glad_glGenFramebuffers != nullptr &&
@@ -190,7 +190,7 @@ void PostProcessor::Init() {
         return;
     }
 
-    s_PPData = new PostProcessorStorage();
+    s_PPData = std::make_unique<PostProcessorStorage>();
     if (!HasGLPostProcessSupport()) {
         return;
     }
@@ -459,12 +459,7 @@ void PostProcessor::Shutdown() {
         s_PPData->FullscreenVAO = 0;
     }
 
-    s_PPData->DownsampleShader.reset();
-    s_PPData->UpsampleShader.reset();
-    s_PPData->CompositeShader.reset();
-
-    delete s_PPData;
-    s_PPData = nullptr;
+    s_PPData.reset();
     ENGINE_CORE_INFO("PostProcessor shutdown completed");
 }
 

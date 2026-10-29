@@ -1,4 +1,5 @@
 #include "Engine/Core/Window.h"
+#include "Engine/Core/Input.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
 #ifdef ENGINE_BUILD_EDITOR
@@ -73,6 +74,10 @@ void Window::PollEvents() {
                 m_Height = event.window.data2;
                 ENGINE_CORE_DEBUG("Window resized to {}x{}", m_Width, m_Height);
             }
+        } else if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
+            Input::OnGamepadAdded(event.gdevice.which);
+        } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
+            Input::OnGamepadRemoved(event.gdevice.which);
         }
     }
 }

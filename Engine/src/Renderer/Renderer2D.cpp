@@ -48,9 +48,18 @@ struct Renderer2DStorage {
     uint32_t BoundShadowTextureID = 0;
 
     Renderer2D::Statistics Stats;
+
+    ~Renderer2DStorage() {
+        if (WhiteTexture != 0 && glad_glDeleteTextures != nullptr) {
+            glDeleteTextures(1, &WhiteTexture);
+            WhiteTexture = 0;
+        }
+        delete[] QuadVertexBufferBase;
+        QuadVertexBufferBase = nullptr;
+    }
 };
 
-static Renderer2DStorage* s_Data{nullptr};
+static std::unique_ptr<Renderer2DStorage> s_Data{nullptr};
 
 namespace {
 constexpr glm::vec2 kDefaultTexCoords[4] = {
@@ -92,7 +101,7 @@ void Renderer2D::Init() {
                      Renderer2DStorage::MaxQuads,
                      Renderer2DStorage::MaxTextureSlots,
                      Renderer2DStorage::ShadowMapTextureSlot);
-    s_Data = new Renderer2DStorage();
+    s_Data = std::make_unique<Renderer2DStorage>();
 
     s_Data->QuadVertexArray = std::make_shared<VertexArray>();
 
@@ -337,14 +346,7 @@ void Renderer2D::Init() {
 
 void Renderer2D::Shutdown() {
     ENGINE_CORE_INFO("Shutting down Renderer2D...");
-    if (s_Data) {
-        if (s_Data->WhiteTexture) {
-            glDeleteTextures(1, &s_Data->WhiteTexture);
-        }
-        delete[] s_Data->QuadVertexBufferBase;
-        delete s_Data;
-        s_Data = nullptr;
-    }
+    s_Data.reset();
     ENGINE_CORE_INFO("Renderer2D shut down");
 }
 

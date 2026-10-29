@@ -5,10 +5,14 @@
 #include <string>
 #include <vector>
 #include <memory>
+#include <utility>
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
 
 namespace Engine {
+
+class BoxCollider2D;
+
 class Scene {
 public:
     Scene(const std::string& name = "Untitled Scene");
@@ -41,6 +45,12 @@ public:
     const std::vector<std::unique_ptr<GameObject>>& GetGameObjects() const { return m_GameObjects; }
 
 private:
+    struct ColliderCacheEntry {
+        GameObject* gameObject = nullptr;
+        Transform* transform = nullptr;
+        BoxCollider2D* collider = nullptr;
+    };
+
     std::string m_Name;
     std::vector<std::unique_ptr<GameObject>> m_GameObjects;
     PerspectiveCamera m_Camera;
@@ -50,6 +60,12 @@ private:
 
     bool m_IsRuntimeRunning = false;
     uint32_t m_PhysicsWorldId = 0;
+
+    // Hot-path scratch buffers to prevent per-frame dynamic heap allocations
+    std::vector<GameObject*> m_StandeeScratch;
+    std::vector<std::pair<GameObject*, glm::vec3>> m_FoliageScratch;
+    std::vector<ColliderCacheEntry> m_ColliderScratch;
+    std::vector<GameObject*> m_TilemapScratch;
 };
 } // namespace Engine
 

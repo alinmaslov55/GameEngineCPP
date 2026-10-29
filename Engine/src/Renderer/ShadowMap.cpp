@@ -3,10 +3,15 @@
 
 #include <glad/glad.h>
 #include <algorithm>
+#include <memory>
 
 namespace Engine {
 
 namespace {
+
+bool HasGLFramebufferSupport() {
+    return glad_glGenFramebuffers != nullptr && glad_glGenTextures != nullptr;
+}
 
 struct ShadowMapStorage {
     uint32_t FramebufferID = 0;
@@ -15,13 +20,22 @@ struct ShadowMapStorage {
 
     GLint SavedFBO = 0;
     GLint SavedViewport[4] = { 0, 0, 1280, 720 };
+
+    ~ShadowMapStorage() {
+        if (HasGLFramebufferSupport()) {
+            if (FramebufferID != 0) {
+                glDeleteFramebuffers(1, &FramebufferID);
+                FramebufferID = 0;
+            }
+            if (DepthTextureID != 0) {
+                glDeleteTextures(1, &DepthTextureID);
+                DepthTextureID = 0;
+            }
+        }
+    }
 };
 
-ShadowMapStorage* s_ShadowData = nullptr;
-
-bool HasGLFramebufferSupport() {
-    return glad_glGenFramebuffers != nullptr && glad_glGenTextures != nullptr;
-}
+std::unique_ptr<ShadowMapStorage> s_ShadowData = nullptr;
 
 } // namespace
 
@@ -30,7 +44,7 @@ void ShadowMap::Init(uint32_t resolution) {
         return;
     }
 
-    s_ShadowData = new ShadowMapStorage();
+    s_ShadowData = std::make_unique<ShadowMapStorage>();
     s_ShadowData->Resolution = std::clamp(resolution, 256u, 4096u);
 
     if (!HasGLFramebufferSupport()) {
@@ -82,16 +96,7 @@ void ShadowMap::Shutdown() {
     if (!s_ShadowData) {
         return;
     }
-    if (HasGLFramebufferSupport()) {
-        if (s_ShadowData->FramebufferID != 0) {
-            glDeleteFramebuffers(1, &s_ShadowData->FramebufferID);
-        }
-        if (s_ShadowData->DepthTextureID != 0) {
-            glDeleteTextures(1, &s_ShadowData->DepthTextureID);
-        }
-    }
-    delete s_ShadowData;
-    s_ShadowData = nullptr;
+    s_ShadowData.reset();
     ENGINE_CORE_INFO("ShadowMap shutdown completed");
 }
 

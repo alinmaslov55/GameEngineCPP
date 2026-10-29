@@ -35,7 +35,7 @@ struct TerrainRendererStorage {
     float BrushFalloff = 0.65f;
 };
 
-TerrainRendererStorage* s_TerrainData = nullptr;
+std::unique_ptr<TerrainRendererStorage> s_TerrainData = nullptr;
 
 } // namespace
 
@@ -45,7 +45,7 @@ void TerrainRenderer::Init() {
     }
 
     ENGINE_CORE_INFO("Initializing TerrainRenderer (4-Layer Splatmap + 2.5D Shadow & PointLight Shader)...");
-    s_TerrainData = new TerrainRendererStorage();
+    s_TerrainData = std::make_unique<TerrainRendererStorage>();
 
     // Unit [0, 1] x [0, 1] XZ quad with upward +Y normal
     const TerrainVertex vertices[4] = {
@@ -305,8 +305,7 @@ void TerrainRenderer::Shutdown() {
         return;
     }
     ENGINE_CORE_INFO("Shutting down TerrainRenderer...");
-    delete s_TerrainData;
-    s_TerrainData = nullptr;
+    s_TerrainData.reset();
 }
 
 void TerrainRenderer::SetBrushPreview(bool enabled,

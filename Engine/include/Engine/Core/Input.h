@@ -21,6 +21,10 @@ public:
     static bool IsGamepadButtonPressed(SDL_GamepadButton button);
     static float GetGamepadAxis(SDL_GamepadAxis axis); // Returns -1.0f to 1.0f
 
+    // SDL Event-driven Gamepad Notification Callbacks
+    static void OnGamepadAdded(SDL_JoystickID which);
+    static void OnGamepadRemoved(SDL_JoystickID which);
+
 private:
     static void ConnectFirstGamepad();
     static SDL_Gamepad* s_Gamepad;
