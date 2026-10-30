@@ -66,8 +66,11 @@ public:
 
 private:
     void UpdateSpriteRenderer() {
+        if (!m_CurrentClip || m_CurrentClip->frames.empty() || m_CurrentFrameIndex >= m_CurrentClip->frames.size()) {
+            return;
+        }
         auto spriteRenderer = GetGameObject()->GetComponent<SpriteRenderer>();
-        if (spriteRenderer && m_CurrentClip) {
+        if (spriteRenderer) {
             spriteRenderer->SetSubTexture(m_CurrentClip->frames[m_CurrentFrameIndex]);
         }
     }
