@@ -20,8 +20,7 @@ void SceneHierarchyPanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& ac
         for (const auto& gameObjectPtr : activeScene->GetGameObjects()) {
             Engine::GameObject* go = gameObjectPtr.get();
 
-            const std::string uuidStr = std::to_string(go->GetUUID());
-            ImGui::PushID(uuidStr.c_str());
+            ImGui::PushID(go);
 
             const bool isSelected = (selectedEntity == go);
             if (ImGui::Selectable(go->GetName().c_str(), isSelected)) {

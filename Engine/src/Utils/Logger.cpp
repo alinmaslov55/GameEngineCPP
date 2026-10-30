@@ -1,5 +1,6 @@
 #include "Engine/Utils/Logger.h"
 
+#include <atomic>
 #include <deque>
 #include <filesystem>
 #include <mutex>
@@ -19,9 +20,14 @@ public:
         return { m_Entries.begin(), m_Entries.end() };
     }
 
+    uint64_t GetRevision() const {
+        return m_Revision.load(std::memory_order_relaxed);
+    }
+
     void Clear() {
         std::lock_guard<std::mutex> lock(this->mutex_);
         m_Entries.clear();
+        m_Revision.fetch_add(1, std::memory_order_relaxed);
     }
 
 protected:
@@ -39,6 +45,7 @@ protected:
         }
 
         m_Entries.push_back({ msg.level, std::move(text) });
+        m_Revision.fetch_add(1, std::memory_order_relaxed);
     }
 
     void flush_() override {}
@@ -46,6 +53,7 @@ protected:
 private:
     size_t m_MaxEntries;
     std::deque<Logger::LogEntry> m_Entries;
+    std::atomic<uint64_t> m_Revision{ 1 };
 };
 
 std::shared_ptr<RingBufferLogSink> s_RingBufferSink{nullptr};
@@ -115,6 +123,10 @@ std::vector<Logger::LogEntry> Logger::GetRecentLogs() {
         return {};
     }
     return s_RingBufferSink->GetEntries();
+}
+
+uint64_t Logger::GetLogRevision() {
+    return s_RingBufferSink ? s_RingBufferSink->GetRevision() : 0;
 }
 
 void Logger::ClearLogs() {

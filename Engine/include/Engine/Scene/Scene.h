@@ -1,14 +1,17 @@
 #ifndef SCENE_SCENE_H
 #define SCENE_SCENE_H
 
+#include "Engine/Scene/GameObject.h"
+#include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Renderer/SceneLighting.h"
+
 #include <cstdint>
 #include <string>
 #include <vector>
 #include <memory>
 #include <utility>
-#include "Engine/Scene/GameObject.h"
-#include "Engine/Renderer/PerspectiveCamera.h"
-#include "Engine/Renderer/SceneLighting.h"
+
+#include <glm/vec3.hpp>
 
 namespace Engine {
 
@@ -17,6 +20,11 @@ class DirectionalLightComponent;
 class PostProcessComponent;
 class WindComponent;
 class SpriteRenderer;
+class TerrainComponent;
+class Tilemap;
+class ParticleSystem;
+class UIPanel;
+class UILabel;
 
 struct SceneRenderContext {
     const PerspectiveCamera* activeCam = nullptr;
@@ -102,8 +110,15 @@ private:
     // Hot-path scratch buffers to prevent per-frame dynamic heap allocations
     std::vector<GameObject*> m_StandeeScratch;
     std::vector<std::pair<GameObject*, glm::vec3>> m_FoliageScratch;
-    std::vector<ColliderCacheEntry> m_ColliderScratch;
+    std::vector<ColliderCacheEntry> m_DynamicColliders;
+    std::vector<ColliderCacheEntry> m_StaticColliders;
     std::vector<GameObject*> m_TilemapScratch;
+    std::vector<TerrainComponent*> m_TerrainScratch;
+    std::vector<std::pair<Tilemap*, Transform*>> m_TilemapRenderScratch;
+    std::vector<std::pair<SpriteRenderer*, Transform*>> m_FlatDecalScratch;
+    std::vector<ParticleSystem*> m_ParticleScratch;
+    std::vector<UIPanel*> m_UIPanelScratch;
+    std::vector<UILabel*> m_UILabelScratch;
 };
 
 } // namespace Engine

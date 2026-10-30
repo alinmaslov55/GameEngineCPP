@@ -115,11 +115,14 @@ public:
 
     void SetData(const void* data, uint32_t size);
 
+    uint32_t GetCapacity() const { return m_Capacity; }
+
     const BufferLayout& GetLayout() const { return m_Layout; }
     void SetLayout(const BufferLayout& layout) { m_Layout = layout; }
 
 private:
-    uint32_t m_RendererID = 0;
+    uint32_t m_RendererID{0};
+    uint32_t m_Capacity{0};
     BufferLayout m_Layout;
 };
 

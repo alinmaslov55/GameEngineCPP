@@ -125,10 +125,11 @@ float computeShadowVisibility(vec3 worldPos) {
 vec3 evaluatePointLights(vec3 worldPos) {
     vec3 accum = vec3(0.0);
     for (int i = 0; i < u_PointLightCount; ++i) {
-        vec3 lPos = u_PointLightPosRadius[i].xyz;
+        vec3 toLight = u_PointLightPosRadius[i].xyz - worldPos;
+        float distSq = dot(toLight, toLight);
         float radius = max(u_PointLightPosRadius[i].w, 0.05);
-        float dist = length(lPos - worldPos);
-        if (dist < radius) {
+        if (distSq < radius * radius) {
+            float dist = sqrt(distSq);
             float x = clamp(1.0 - (dist / radius), 0.0, 1.0);
             float atten = pow(x * x * (3.0 - 2.0 * x), max(u_PointLightFalloff[i], 0.25));
             accum += u_PointLightColorIntensity[i].rgb * (u_PointLightColorIntensity[i].a * atten);

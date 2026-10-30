@@ -2,7 +2,13 @@
 #define SANDBOX_CONTENTBROWSERPANEL_H
 
 #include <filesystem>
+#include <memory>
 #include <string>
+#include <vector>
+
+namespace Engine {
+class Texture;
+}
 
 namespace Sandbox {
 
@@ -19,13 +25,30 @@ class ContentBrowserPanel {
 public:
     void SetRootDirectory(const std::filesystem::path& rootDirectory);
     void OnImGuiRender(bool* pOpen);
+    void Refresh();
 
     DioramaDropArchetype GetDropArchetype() const { return m_DropArchetype; }
     void SetDropArchetype(DioramaDropArchetype archetype) { m_DropArchetype = archetype; }
 
 private:
+    struct CachedAssetEntry {
+        std::filesystem::path Path;
+        std::string Filename;
+        std::string FilenameLower;
+        std::string ItemPath;
+        bool IsDirectory = false;
+        bool IsImage = false;
+        std::shared_ptr<Engine::Texture> Thumbnail;
+    };
+
+    void RefreshEntries();
+
     std::filesystem::path m_BaseDirectory;
     std::filesystem::path m_CurrentDirectory;
+    std::filesystem::path m_LastScannedDirectory;
+    std::vector<CachedAssetEntry> m_CachedEntries;
+    bool m_NeedsRefresh = true;
+
     DioramaDropArchetype m_DropArchetype = DioramaDropArchetype::AutoDetect;
     float m_ThumbnailSize = 74.0f;
     char m_SearchFilter[128] = "";

@@ -50,6 +50,9 @@ public:
     // Unprojects Normalized Device Coordinates [-1, 1]^2 onto horizontal plane Y = planeY
     bool RaycastGroundPlane(const glm::vec2& ndc, float planeY, glm::vec3& outHitPoint) const;
 
+    // Computes visible ground plane bounds [minX, minZ] to [maxX, maxZ] on Y = planeY
+    bool GetGroundPlaneVisibleAABB(float planeY, glm::vec2& outMinXZ, glm::vec2& outMaxXZ) const;
+
 private:
     void RecalculateProjection();
     void RecalculateView();

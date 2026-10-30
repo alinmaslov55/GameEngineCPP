@@ -131,21 +131,26 @@ void Scene::Update(float deltaTime) {
 }
 
 void Scene::UpdateCollidersAndGravity(float deltaTime) {
-    m_ColliderScratch.clear();
+    m_DynamicColliders.clear();
+    m_StaticColliders.clear();
     m_TilemapScratch.clear();
+
     for (auto& gameObject : m_GameObjects) {
         if (auto* collider = gameObject->GetComponent<BoxCollider2D>()) {
             auto* transform = gameObject->GetTransform();
-            m_ColliderScratch.push_back({ gameObject.get(), transform, collider });
-
-            // Apply vertical isometric gravity & ground clamping for dynamic bodies
-            if (collider->isDynamic && collider->useGravity && transform) {
-                collider->verticalVelocity += collider->gravity * deltaTime;
-                transform->position.y += collider->verticalVelocity * deltaTime;
-                if (transform->position.y <= collider->groundLevel) {
-                    transform->position.y = collider->groundLevel;
-                    collider->verticalVelocity = 0.0f;
+            if (collider->isDynamic) {
+                m_DynamicColliders.push_back({ gameObject.get(), transform, collider });
+                // Apply vertical isometric gravity & ground clamping for dynamic bodies
+                if (collider->useGravity && transform) {
+                    collider->verticalVelocity += collider->gravity * deltaTime;
+                    transform->position.y += collider->verticalVelocity * deltaTime;
+                    if (transform->position.y <= collider->groundLevel) {
+                        transform->position.y = collider->groundLevel;
+                        collider->verticalVelocity = 0.0f;
+                    }
                 }
+            } else {
+                m_StaticColliders.push_back({ gameObject.get(), transform, collider });
             }
         }
         if (gameObject->GetComponent<Tilemap>()) {
@@ -155,67 +160,72 @@ void Scene::UpdateCollidersAndGravity(float deltaTime) {
 }
 
 void Scene::ResolveEntityCollisions() {
-    // 1. Entity-vs-Entity AABB Collision on XZ Ground Plane
-    for (size_t i = 0; i < m_ColliderScratch.size(); i++) {
-        for (size_t j = i + 1; j < m_ColliderScratch.size(); j++) {
-            const auto& entryA = m_ColliderScratch[i];
-            const auto& entryB = m_ColliderScratch[j];
+    auto resolveCollisionPair = [&](const ColliderCacheEntry& entryA, const ColliderCacheEntry& entryB) {
+        auto* cA = entryA.collider;
+        auto* cB = entryB.collider;
+        auto* tA = entryA.transform;
+        auto* tB = entryB.transform;
+        if (!tA || !tB) return;
 
-            auto* cA = entryA.collider;
-            auto* cB = entryB.collider;
+        // Calculate AABB bounds on the XZ ground plane for Object A
+        float aLeft  = tA->position.x + cA->offset.x - (cA->size.x * tA->scale.x) / 2.0f;
+        float aRight = tA->position.x + cA->offset.x + (cA->size.x * tA->scale.x) / 2.0f;
+        float aBack  = tA->position.z + cA->offset.y - (cA->size.y * tA->scale.z) / 2.0f;
+        float aFront = tA->position.z + cA->offset.y + (cA->size.y * tA->scale.z) / 2.0f;
 
-            if (!cA->isDynamic && !cB->isDynamic) continue;
+        // Calculate AABB bounds on the XZ ground plane for Object B
+        float bLeft  = tB->position.x + cB->offset.x - (cB->size.x * tB->scale.x) / 2.0f;
+        float bRight = tB->position.x + cB->offset.x + (cB->size.x * tB->scale.x) / 2.0f;
+        float bBack  = tB->position.z + cB->offset.y - (cB->size.y * tB->scale.z) / 2.0f;
+        float bFront = tB->position.z + cB->offset.y + (cB->size.y * tB->scale.z) / 2.0f;
 
-            auto* tA = entryA.transform;
-            auto* tB = entryB.transform;
-            if (!tA || !tB) continue;
+        float overlapX = std::min(aRight, bRight) - std::max(aLeft, bLeft);
+        float overlapZ = std::min(aFront, bFront) - std::max(aBack, bBack);
 
-            // Calculate AABB bounds on the XZ ground plane for Object A
-            float aLeft  = tA->position.x + cA->offset.x - (cA->size.x * tA->scale.x) / 2.0f;
-            float aRight = tA->position.x + cA->offset.x + (cA->size.x * tA->scale.x) / 2.0f;
-            float aBack  = tA->position.z + cA->offset.y - (cA->size.y * tA->scale.z) / 2.0f;
-            float aFront = tA->position.z + cA->offset.y + (cA->size.y * tA->scale.z) / 2.0f;
+        if (overlapX > 0.0f && overlapZ > 0.0f) {
+            ENGINE_CORE_TRACE("Scene '{}': Collision resolved between '{}' and '{}' (overlap: {:.3f}, {:.3f})",
+                              m_Name, entryA.gameObject->GetName(), entryB.gameObject->GetName(), overlapX, overlapZ);
+            glm::vec2 push(0.0f);
 
-            // Calculate AABB bounds on the XZ ground plane for Object B
-            float bLeft  = tB->position.x + cB->offset.x - (cB->size.x * tB->scale.x) / 2.0f;
-            float bRight = tB->position.x + cB->offset.x + (cB->size.x * tB->scale.x) / 2.0f;
-            float bBack  = tB->position.z + cB->offset.y - (cB->size.y * tB->scale.z) / 2.0f;
-            float bFront = tB->position.z + cB->offset.y + (cB->size.y * tB->scale.z) / 2.0f;
-
-            float overlapX = std::min(aRight, bRight) - std::max(aLeft, bLeft);
-            float overlapZ = std::min(aFront, bFront) - std::max(aBack, bBack);
-
-            if (overlapX > 0 && overlapZ > 0) {
-                ENGINE_CORE_TRACE("Scene '{}': Collision resolved between '{}' and '{}' (overlap: {:.3f}, {:.3f})",
-                                  m_Name, entryA.gameObject->GetName(), entryB.gameObject->GetName(), overlapX, overlapZ);
-                glm::vec2 push(0.0f);
-
-                if (overlapX < overlapZ) {
-                    push.x = (tA->position.x < tB->position.x) ? -overlapX : overlapX;
-                } else {
-                    push.y = (tA->position.z < tB->position.z) ? -overlapZ : overlapZ;
-                }
-
-                if (cA->isDynamic && !cB->isDynamic) {
-                    tA->position.x += push.x;
-                    tA->position.z += push.y;
-                } else if (!cA->isDynamic && cB->isDynamic) {
-                    tB->position.x -= push.x;
-                    tB->position.z -= push.y;
-                } else {
-                    tA->position.x += push.x * 0.5f;
-                    tA->position.z += push.y * 0.5f;
-                    tB->position.x -= push.x * 0.5f;
-                    tB->position.z -= push.y * 0.5f;
-                }
+            if (overlapX < overlapZ) {
+                push.x = (tA->position.x < tB->position.x) ? -overlapX : overlapX;
+            } else {
+                push.y = (tA->position.z < tB->position.z) ? -overlapZ : overlapZ;
             }
+
+            if (cA->isDynamic && !cB->isDynamic) {
+                tA->position.x += push.x;
+                tA->position.z += push.y;
+            } else if (!cA->isDynamic && cB->isDynamic) {
+                tB->position.x -= push.x;
+                tB->position.z -= push.y;
+            } else {
+                tA->position.x += push.x * 0.5f;
+                tA->position.z += push.y * 0.5f;
+                tB->position.x -= push.x * 0.5f;
+                tB->position.z -= push.y * 0.5f;
+            }
+        }
+    };
+
+    // 1. Dynamic vs Dynamic
+    for (size_t i = 0; i < m_DynamicColliders.size(); i++) {
+        for (size_t j = i + 1; j < m_DynamicColliders.size(); j++) {
+            resolveCollisionPair(m_DynamicColliders[i], m_DynamicColliders[j]);
+        }
+    }
+
+    // 2. Dynamic vs Static (O(N_dyn * N_stat) - skips all static-vs-static pairs)
+    for (size_t i = 0; i < m_DynamicColliders.size(); i++) {
+        for (size_t j = 0; j < m_StaticColliders.size(); j++) {
+            resolveCollisionPair(m_DynamicColliders[i], m_StaticColliders[j]);
         }
     }
 }
 
 void Scene::ResolveTilemapCollisions() {
     // 2. Dynamic Entity-vs-Tilemap Non-Walkable Tile Collision on XZ Ground Plane
-    for (const auto& entryA : m_ColliderScratch) {
+    for (const auto& entryA : m_DynamicColliders) {
         auto* cA = entryA.collider;
         if (!cA->isDynamic) continue;
 
@@ -472,6 +482,12 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
     m_StandeeScratch.reserve(m_GameObjects.size());
     m_FoliageScratch.clear();
     m_FoliageScratch.reserve(8);
+    m_TerrainScratch.clear();
+    m_TilemapRenderScratch.clear();
+    m_FlatDecalScratch.clear();
+    m_ParticleScratch.clear();
+    m_UIPanelScratch.clear();
+    m_UILabelScratch.clear();
 
     for (auto& gameObject : m_GameObjects) {
         if (!ctx.dirLight) {
@@ -512,10 +528,38 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
             }
         }
 
-        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
-        if (sprite && gameObject->GetTransform() &&
-            sprite->GetBillboardMode() != SpriteRenderer::BillboardMode::FlatGround) {
-            m_StandeeScratch.push_back(gameObject.get());
+        if (auto* terrain = gameObject->GetComponent<TerrainComponent>()) {
+            m_TerrainScratch.push_back(terrain);
+        }
+
+        if (auto* tilemap = gameObject->GetComponent<Tilemap>()) {
+            m_TilemapRenderScratch.emplace_back(tilemap, gameObject->GetTransform());
+        }
+
+        if (auto* sprite = gameObject->GetComponent<SpriteRenderer>()) {
+            if (auto* transform = gameObject->GetTransform()) {
+                if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::FlatGround) {
+                    m_FlatDecalScratch.emplace_back(sprite, transform);
+                } else {
+                    m_StandeeScratch.push_back(gameObject.get());
+                }
+            }
+        }
+
+        if (auto* ps = gameObject->GetComponent<ParticleSystem>()) {
+            m_ParticleScratch.push_back(ps);
+        }
+
+        if (gameObject->HasComponent<UIPanel>()) {
+            for (auto* panel : gameObject->GetComponents<UIPanel>()) {
+                m_UIPanelScratch.push_back(panel);
+            }
+        }
+
+        if (gameObject->HasComponent<UILabel>()) {
+            for (auto* label : gameObject->GetComponents<UILabel>()) {
+                m_UILabelScratch.push_back(label);
+            }
         }
     }
 
@@ -567,6 +611,8 @@ void Scene::RenderPassShadowMap(SceneRenderContext& ctx) {
         }
 
         auto* transform = gameObject->GetTransform();
+        if (!transform) continue;
+
         const float cutoff = std::max(0.05f, sprite->GetAlphaCutoff());
         glm::vec2 standeeSize{ 1.0f };
         float effectiveRotZ = 0.0f;
@@ -620,14 +666,13 @@ void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
     // 1A. Continuous 4-Layer Splatmap Terrain (Base Ground at Y = origin.y)
     bool hasSplatTerrain = false;
     Renderer::SetPolygonOffset(true, 1.0f, 1.0f);
-    for (auto& gameObject : m_GameObjects) {
-        if (auto* terrain = gameObject->GetComponent<TerrainComponent>()) {
-            auto* transform = gameObject->GetTransform();
-            const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
-            const glm::vec3 scale  = transform ? transform->scale    : glm::vec3(1.0f);
-            TerrainRenderer::RenderTerrain(*terrain, origin, scale, *ctx.activeCam, &ctx.lighting);
-            hasSplatTerrain = true;
-        }
+    for (auto* terrain : m_TerrainScratch) {
+        auto* owner = terrain->GetGameObject();
+        auto* transform = owner ? owner->GetTransform() : nullptr;
+        const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
+        const glm::vec3 scale  = transform ? transform->scale    : glm::vec3(1.0f);
+        TerrainRenderer::RenderTerrain(*terrain, origin, scale, *ctx.activeCam, &ctx.lighting);
+        hasSplatTerrain = true;
     }
 
     // 1B. Discrete XZ Tilemaps (layered cleanly at +0.002f above splatmap when coexisting)
@@ -637,43 +682,38 @@ void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
     const glm::mat4 groundFlatRotation = glm::rotate(glm::mat4(1.0f), glm::radians(-90.0f), glm::vec3(1.0f, 0.0f, 0.0f));
     const float tileOverlayLift = hasSplatTerrain ? 0.002f : 0.0f;
 
-    for (auto& gameObject : m_GameObjects) {
-        if (auto* tilemap = gameObject->GetComponent<Tilemap>()) {
-            auto* transform = gameObject->GetTransform();
-            const glm::vec3 mapOrigin = transform ? transform->position : glm::vec3(0.0f);
-            const glm::vec3 mapScale  = transform ? transform->scale    : glm::vec3(1.0f);
+    for (const auto& [tilemap, transform] : m_TilemapRenderScratch) {
+        if (!tilemap || !tilemap->tileSet) continue;
 
-            for (uint32_t z = 0; z < tilemap->GetHeight(); z++) {
-                for (uint32_t x = 0; x < tilemap->GetWidth(); x++) {
-                    const uint32_t tileId = tilemap->GetTile(x, z).id;
-                    if (tileId == 0) continue;
+        const glm::vec3 mapOrigin = transform ? transform->position : glm::vec3(0.0f);
+        const glm::vec3 mapScale  = transform ? transform->scale    : glm::vec3(1.0f);
 
-                    auto subTexture = tilemap->tileSet->GetTileTexture(tileId);
-                    if (!subTexture) continue;
+        for (uint32_t z = 0; z < tilemap->GetHeight(); z++) {
+            for (uint32_t x = 0; x < tilemap->GetWidth(); x++) {
+                const uint32_t tileId = tilemap->GetTile(x, z).id;
+                if (tileId == 0) continue;
 
-                    const glm::vec3 worldPos = mapOrigin + glm::vec3(
-                        static_cast<float>(x) * mapScale.x,
-                        tileOverlayLift,
-                        static_cast<float>(z) * mapScale.z
-                    );
+                const auto& subTexture = tilemap->tileSet->GetTileTexture(tileId);
+                if (!subTexture) continue;
 
-                    const glm::mat4 tileMatrix = glm::translate(glm::mat4(1.0f), worldPos) *
-                                                 groundFlatRotation *
-                                                 glm::scale(glm::mat4(1.0f), glm::vec3(mapScale.x, mapScale.z, 1.0f));
+                const glm::vec3 worldPos = mapOrigin + glm::vec3(
+                    static_cast<float>(x) * mapScale.x,
+                    tileOverlayLift,
+                    static_cast<float>(z) * mapScale.z
+                );
 
-                    Renderer2D::DrawQuad(tileMatrix, subTexture, glm::vec4(1.0f), 0.0f, 0.0f, 0.02f);
-                }
+                const glm::mat4 tileMatrix = glm::translate(glm::mat4(1.0f), worldPos) *
+                                             groundFlatRotation *
+                                             glm::scale(glm::mat4(1.0f), glm::vec3(mapScale.x, mapScale.z, 1.0f));
+
+                Renderer2D::DrawQuad(tileMatrix, subTexture, glm::vec4(1.0f), 0.0f, 0.0f, 0.02f);
             }
         }
     }
 
     // Render FlatGround decal sprites just above the tilemap
-    for (auto& gameObject : m_GameObjects) {
-        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
-        auto* transform = gameObject->GetTransform();
-        if (!sprite || !transform || sprite->GetBillboardMode() != SpriteRenderer::BillboardMode::FlatGround) {
-            continue;
-        }
+    for (const auto& [sprite, transform] : m_FlatDecalScratch) {
+        if (!sprite || !transform) continue;
 
         glm::vec3 decalPos = transform->position;
         decalPos.y += 0.004f;
@@ -699,6 +739,7 @@ void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
 void Scene::RenderPassCutoutStandees(SceneRenderContext& ctx) {
     const glm::vec3 camEye = ctx.activeCam->GetPosition();
     const glm::vec3 camForward = ctx.activeCam->GetForward();
+
     std::sort(m_StandeeScratch.begin(), m_StandeeScratch.end(), [&](GameObject* a, GameObject* b) {
         const float distA = glm::dot(a->GetTransform()->position - camEye, camForward);
         const float distB = glm::dot(b->GetTransform()->position - camEye, camForward);
@@ -714,6 +755,7 @@ void Scene::RenderPassCutoutStandees(SceneRenderContext& ctx) {
     for (GameObject* gameObject : m_StandeeScratch) {
         auto* sprite = gameObject->GetComponent<SpriteRenderer>();
         auto* transform = gameObject->GetTransform();
+        if (!sprite || !transform) continue;
         const float cutoff = sprite->GetAlphaCutoff();
         glm::vec2 standeeSize{ 1.0f };
         float effectiveRotZ = 0.0f;
@@ -775,29 +817,31 @@ void Scene::RenderPassParticles(SceneRenderContext& ctx) {
     Renderer::SetDepthMask(false);
     Renderer2D::BeginScene(*ctx.activeCam, ctx.lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.0f);
 
-    for (auto& gameObject : m_GameObjects) {
-        if (auto* particleSystem = gameObject->GetComponent<ParticleSystem>()) {
-            const float particleEmissive = particleSystem->EmissiveParticles ? 1.65f : 0.0f;
-            for (const auto& particle : particleSystem->GetParticles()) {
-                if (!particle.active) continue;
+    for (ParticleSystem* particleSystem : m_ParticleScratch) {
+        if (!particleSystem) continue;
 
-                const float lifeRatio = particle.lifeRemaining / particle.lifeTime;
-                const float size = glm::mix(particle.sizeEnd, particle.sizeBegin, lifeRatio);
-                const glm::vec4 color = glm::mix(particle.colorEnd, particle.colorBegin, lifeRatio);
+        const float particleEmissive = particleSystem->EmissiveParticles ? 1.65f : 0.0f;
+        const auto& particles = particleSystem->GetParticles();
+        const uint32_t activeCount = particleSystem->GetActiveParticleCount();
 
-                const glm::vec3 anchor = particle.position - ctx.activeCam->GetUp() * (0.5f * size);
-                Renderer2D::DrawBillboard(
-                    anchor,
-                    { size, size },
-                    ctx.activeCam->GetRight(),
-                    ctx.activeCam->GetUp(),
-                    glm::degrees(particle.rotation),
-                    color,
-                    0.0f,
-                    particleEmissive,
-                    0.25f
-                );
-            }
+        for (uint32_t i = 0; i < activeCount; ++i) {
+            const auto& particle = particles[i];
+            const float lifeRatio = particle.lifeRemaining / particle.lifeTime;
+            const float size = glm::mix(particle.sizeEnd, particle.sizeBegin, lifeRatio);
+            const glm::vec4 color = glm::mix(particle.colorEnd, particle.colorBegin, lifeRatio);
+
+            const glm::vec3 anchor = particle.position - ctx.activeCam->GetUp() * (0.5f * size);
+            Renderer2D::DrawBillboard(
+                anchor,
+                { size, size },
+                ctx.activeCam->GetRight(),
+                ctx.activeCam->GetUp(),
+                glm::degrees(particle.rotation),
+                color,
+                0.0f,
+                particleEmissive,
+                0.25f
+            );
         }
     }
 
@@ -814,38 +858,36 @@ void Scene::RenderPassScreenUI() {
 
     Renderer2D::BeginScene(uiProjection, /*depthTest=*/false, /*defaultAlphaCutoff=*/0.0f);
 
-    for (auto& gameObject : m_GameObjects) {
-        for (auto* uiPanel : gameObject->GetComponents<UIPanel>()) {
-            glm::mat4 uiTransform = glm::translate(glm::mat4(1.0f), glm::vec3(uiPanel->position, 0.0f)) *
-                                    glm::scale(glm::mat4(1.0f), glm::vec3(uiPanel->size, 1.0f));
+    for (UIPanel* uiPanel : m_UIPanelScratch) {
+        if (!uiPanel) continue;
 
-            if (uiPanel->texture) {
-                Renderer2D::DrawQuad(uiTransform, uiPanel->texture, uiPanel->color);
-            } else {
-                Renderer2D::DrawQuad(uiTransform, uiPanel->color);
-            }
+        glm::mat4 uiTransform = glm::translate(glm::mat4(1.0f), glm::vec3(uiPanel->position, 0.0f)) *
+                                glm::scale(glm::mat4(1.0f), glm::vec3(uiPanel->size, 1.0f));
+
+        if (uiPanel->texture) {
+            Renderer2D::DrawQuad(uiTransform, uiPanel->texture, uiPanel->color);
+        } else {
+            Renderer2D::DrawQuad(uiTransform, uiPanel->color);
         }
     }
 
-    for (auto& gameObject : m_GameObjects) {
-        for (auto* uiLabel : gameObject->GetComponents<UILabel>()) {
-            if (uiLabel->font) {
-                float cursorX = uiLabel->position.x;
-                float cursorY = uiLabel->position.y;
+    for (UILabel* uiLabel : m_UILabelScratch) {
+        if (!uiLabel || !uiLabel->font) continue;
 
-                for (char c : uiLabel->text) {
-                    const Character& ch = uiLabel->font->GetCharacter(c);
-                    float xPos = cursorX + (ch.bearing.x * uiLabel->scale);
-                    float yPos = cursorY - ((ch.size.y - ch.bearing.y) * uiLabel->scale);
-                    glm::vec2 currentSize = ch.size * uiLabel->scale;
+        float cursorX = uiLabel->position.x;
+        float cursorY = uiLabel->position.y;
 
-                    glm::mat4 charTransform = glm::translate(glm::mat4(1.0f), glm::vec3(xPos, yPos, 0.0f)) *
-                                              glm::scale(glm::mat4(1.0f), glm::vec3(currentSize, 1.0f));
+        for (char c : uiLabel->text) {
+            const Character& ch = uiLabel->font->GetCharacter(c);
+            float xPos = cursorX + (ch.bearing.x * uiLabel->scale);
+            float yPos = cursorY - ((ch.size.y - ch.bearing.y) * uiLabel->scale);
+            glm::vec2 currentSize = ch.size * uiLabel->scale;
 
-                    Renderer2D::DrawQuad(charTransform, ch.subTexture, uiLabel->color);
-                    cursorX += (ch.advance * uiLabel->scale);
-                }
-            }
+            glm::mat4 charTransform = glm::translate(glm::mat4(1.0f), glm::vec3(xPos, yPos, 0.0f)) *
+                                      glm::scale(glm::mat4(1.0f), glm::vec3(currentSize, 1.0f));
+
+            Renderer2D::DrawQuad(charTransform, ch.subTexture, uiLabel->color);
+            cursorX += (ch.advance * uiLabel->scale);
         }
     }
 

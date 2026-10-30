@@ -23,6 +23,7 @@ public:
     static spdlog::level::level_enum GetLevel();
 
     static std::vector<LogEntry> GetRecentLogs();
+    static uint64_t GetLogRevision();
     static void ClearLogs();
 
     static std::shared_ptr<spdlog::logger>& GetCoreLogger() {
@@ -72,22 +73,24 @@ private:
 
 } // namespace Engine
 
-// Core Engine & Client Logging Macros (Strip TRACE in Release builds)
+// Core Engine & Client Logging Macros (Strip TRACE & DEBUG in Release/NDEBUG builds)
 #ifdef NDEBUG
     #define ENGINE_CORE_TRACE(...)    ((void)0)
     #define ENGINE_TRACE(...)         ((void)0)
+    #define ENGINE_CORE_DEBUG(...)    ((void)0)
+    #define ENGINE_DEBUG(...)         ((void)0)
 #else
     #define ENGINE_CORE_TRACE(...)    ::Engine::Logger::GetCoreLogger()->trace(__VA_ARGS__)
     #define ENGINE_TRACE(...)         ::Engine::Logger::GetClientLogger()->trace(__VA_ARGS__)
+    #define ENGINE_CORE_DEBUG(...)    ::Engine::Logger::GetCoreLogger()->debug(__VA_ARGS__)
+    #define ENGINE_DEBUG(...)         ::Engine::Logger::GetClientLogger()->debug(__VA_ARGS__)
 #endif
 
-#define ENGINE_CORE_DEBUG(...)    ::Engine::Logger::GetCoreLogger()->debug(__VA_ARGS__)
 #define ENGINE_CORE_INFO(...)     ::Engine::Logger::GetCoreLogger()->info(__VA_ARGS__)
 #define ENGINE_CORE_WARN(...)     ::Engine::Logger::GetCoreLogger()->warn(__VA_ARGS__)
 #define ENGINE_CORE_ERROR(...)    ::Engine::Logger::GetCoreLogger()->error(__VA_ARGS__)
 #define ENGINE_CORE_CRITICAL(...) ::Engine::Logger::GetCoreLogger()->critical(__VA_ARGS__)
 
-#define ENGINE_DEBUG(...)         ::Engine::Logger::GetClientLogger()->debug(__VA_ARGS__)
 #define ENGINE_INFO(...)          ::Engine::Logger::GetClientLogger()->info(__VA_ARGS__)
 #define ENGINE_WARN(...)          ::Engine::Logger::GetClientLogger()->warn(__VA_ARGS__)
 #define ENGINE_ERROR(...)         ::Engine::Logger::GetClientLogger()->error(__VA_ARGS__)

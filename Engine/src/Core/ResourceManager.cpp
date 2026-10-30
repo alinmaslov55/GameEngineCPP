@@ -6,6 +6,7 @@ namespace Engine {
 
 namespace {
 std::filesystem::path s_AssetRoot{};
+std::unordered_map<std::string, ResourceManager::ResolvedPathInfo> s_PathResolutionCache;
 
 bool HasProjectMarkers(const std::filesystem::path& dir) {
     std::error_code ec;
@@ -22,6 +23,7 @@ void ResourceManager::SetAssetRoot(const std::filesystem::path& rootPath) {
     std::error_code ec;
     std::filesystem::path canonicalPath = std::filesystem::weakly_canonical(rootPath, ec);
     s_AssetRoot = ec ? rootPath.lexically_normal() : canonicalPath;
+    s_PathResolutionCache.clear();
     ENGINE_CORE_INFO("ResourceManager: Asset root set to '{}'", s_AssetRoot.generic_string());
 }
 
@@ -118,11 +120,7 @@ std::string ResourceManager::ToRelativePath(const std::string& filepath) {
     }
 
     std::error_code ec;
-    std::filesystem::path fullPath = std::filesystem::weakly_canonical(filepath, ec);
-    if (ec) {
-        fullPath = std::filesystem::path(filepath).lexically_normal();
-    }
-
+    std::filesystem::path fullPath = std::filesystem::path(filepath).lexically_normal();
     if (!s_AssetRoot.empty()) {
         std::filesystem::path rel = std::filesystem::proximate(fullPath, s_AssetRoot, ec);
         if (!ec) {
@@ -133,7 +131,38 @@ std::string ResourceManager::ToRelativePath(const std::string& filepath) {
         }
     }
 
+    fullPath = std::filesystem::weakly_canonical(filepath, ec);
+    if (!ec && !s_AssetRoot.empty()) {
+        std::filesystem::path rel = std::filesystem::proximate(fullPath, s_AssetRoot, ec);
+        if (!ec) {
+            std::string relStr = rel.generic_string();
+            if (!relStr.empty() && relStr.rfind("..", 0) != 0) {
+                return relStr;
+            }
+        }
+    }
+
     return fullPath.generic_string();
+}
+
+ResourceManager::ResolvedPathInfo ResourceManager::ResolvePathInfo(const std::string& filepath) {
+    if (filepath.empty()) {
+        return {};
+    }
+
+    auto it = s_PathResolutionCache.find(filepath);
+    if (it != s_PathResolutionCache.end()) {
+        return it->second;
+    }
+
+    std::string resolved = ResolvePath(filepath);
+    std::string key = ToRelativePath(resolved);
+    s_PathResolutionCache[filepath] = { resolved, key };
+    return { resolved, key };
+}
+
+void ResourceManager::ClearPathCache() {
+    s_PathResolutionCache.clear();
 }
 
 } // namespace Engine

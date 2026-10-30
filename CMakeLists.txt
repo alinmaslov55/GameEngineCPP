@@ -6,6 +6,19 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
+# Enable Link-Time Optimization (IPO/LTO) for Release builds
+include(CheckIPOSupported)
+check_ipo_supported(RESULT ipo_supported)
+if(ipo_supported)
+    set(CMAKE_INTERPROCEDURAL_OPTIMIZATION_RELEASE ON)
+endif()
+
+# SIMD Intrinsics and Math optimizations
+if(MSVC)
+    add_compile_options($<$<CONFIG:Release>:/arch:AVX2>)
+endif()
+add_compile_definitions(GLM_FORCE_INTRINSICS)
+
 # Build Configuration Options
 option(ENGINE_BUILD_EDITOR "Build the ImGui Editor UI" ON)
 option(ENGINE_BUILD_TESTS "Build the GTest unit test suite" ON)

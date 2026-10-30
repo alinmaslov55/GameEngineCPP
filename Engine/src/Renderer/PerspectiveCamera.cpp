@@ -120,5 +120,45 @@ bool PerspectiveCamera::RaycastGroundPlane(const glm::vec2& ndc, float planeY, g
     return true;
 }
 
+bool PerspectiveCamera::GetGroundPlaneVisibleAABB(float planeY, glm::vec2& outMinXZ, glm::vec2& outMaxXZ) const {
+    const glm::vec2 testPoints[] = {
+        { -1.0f, -1.0f },
+        {  1.0f, -1.0f },
+        {  1.0f,  1.0f },
+        { -1.0f,  1.0f },
+        {  0.0f, -1.0f },
+        {  0.0f,  0.0f },
+        {  0.0f,  0.5f },
+        { -1.0f,  0.0f },
+        {  1.0f,  0.0f }
+    };
+
+    float minX = 1e9f, maxX = -1e9f;
+    float minZ = 1e9f, maxZ = -1e9f;
+    int hitCount = 0;
+
+    for (const auto& pt : testPoints) {
+        glm::vec3 hit;
+        if (RaycastGroundPlane(pt, planeY, hit)) {
+            minX = std::min(minX, hit.x);
+            maxX = std::max(maxX, hit.x);
+            minZ = std::min(minZ, hit.z);
+            maxZ = std::max(maxZ, hit.z);
+            hitCount++;
+        }
+    }
+
+    if (hitCount > 0) {
+        const float margin = 4.0f;
+        outMinXZ = { minX - margin, minZ - margin };
+        outMaxXZ = { maxX + margin, maxZ + margin };
+        return true;
+    }
+
+    outMinXZ = { m_FocalPoint.x - 60.0f, m_FocalPoint.z - 60.0f };
+    outMaxXZ = { m_FocalPoint.x + 60.0f, m_FocalPoint.z + 60.0f };
+    return false;
+}
+
 } // namespace Engine
 

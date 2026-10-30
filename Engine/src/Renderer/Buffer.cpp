@@ -6,14 +6,16 @@
 
 namespace Engine {
 
-VertexBuffer::VertexBuffer(uint32_t size) {
+VertexBuffer::VertexBuffer(uint32_t size)
+    : m_Capacity(size) {
     glGenBuffers(1, &m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ARRAY_BUFFER, size, nullptr, GL_DYNAMIC_DRAW);
     ENGINE_CORE_DEBUG("Dynamic VertexBuffer created with ID: {} (capacity: {} bytes)", m_RendererID, size);
 }
 
-VertexBuffer::VertexBuffer(float* vertices, uint32_t size) {
+VertexBuffer::VertexBuffer(float* vertices, uint32_t size)
+    : m_Capacity(size) {
     glGenBuffers(1, &m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ARRAY_BUFFER, size, vertices, GL_STATIC_DRAW);
@@ -30,6 +32,7 @@ VertexBuffer::~VertexBuffer() {
 
 VertexBuffer::VertexBuffer(VertexBuffer&& other) noexcept
     : m_RendererID(std::exchange(other.m_RendererID, 0)),
+      m_Capacity(std::exchange(other.m_Capacity, 0)),
       m_Layout(std::move(other.m_Layout)) {
 }
 
@@ -39,6 +42,7 @@ VertexBuffer& VertexBuffer::operator=(VertexBuffer&& other) noexcept {
             glDeleteBuffers(1, &m_RendererID);
         }
         m_RendererID = std::exchange(other.m_RendererID, 0);
+        m_Capacity = std::exchange(other.m_Capacity, 0);
         m_Layout = std::move(other.m_Layout);
     }
     return *this;

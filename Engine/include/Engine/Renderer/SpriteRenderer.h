@@ -7,7 +7,7 @@
 #include "Engine/Utils/Logger.h"
 
 #include <algorithm>
-#include <glm/glm.hpp>
+#include <glm/vec4.hpp>
 #include <memory>
 
 namespace Engine {
@@ -27,7 +27,7 @@ public:
         m_Texture = texture;
         ENGINE_CORE_DEBUG("SpriteRenderer: SetTexture ID {}", texture ? texture->GetRendererID() : 0);
     }
-    std::shared_ptr<Texture> GetTexture() const { return m_Texture; }
+    const std::shared_ptr<Texture>& GetTexture() const { return m_Texture; }
 
     void SetColor(const glm::vec4& color) {
         m_Color = color;
@@ -40,7 +40,7 @@ public:
         m_SubTexture = subTexture;
         ENGINE_CORE_DEBUG("SpriteRenderer: SetSubTexture {}", subTexture ? "assigned" : "nullptr");
     }
-    std::shared_ptr<SubTexture2D> GetSubTexture() const { return m_SubTexture; }
+    const std::shared_ptr<SubTexture2D>& GetSubTexture() const { return m_SubTexture; }
 
     BillboardMode GetBillboardMode() const { return m_BillboardMode; }
     void SetBillboardMode(BillboardMode mode) {

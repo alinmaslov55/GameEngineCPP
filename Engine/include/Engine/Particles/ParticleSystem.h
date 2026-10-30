@@ -64,9 +64,10 @@ namespace Engine {
 
     private:
         std::vector<Particle> m_ParticlePool;
-        uint32_t m_PoolIndex;
-        uint32_t m_ActiveParticleCount = 0;
-        float m_EmitAccumulator = 0.0f;
+        uint32_t m_PoolIndex{0};
+        uint32_t m_ActiveParticleCount{0};
+        float m_EmitAccumulator{0.0f};
+        uint32_t m_RngState{0x853c49e6};
     };
 } // namespace Engine
 
