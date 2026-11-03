@@ -1,8 +1,10 @@
 #ifndef RENDERER_BUFFER_H
 #define RENDERER_BUFFER_H
 
+#include <cstddef>
 #include <cstdint>
 #include <initializer_list>
+#include <span>
 #include <string>
 #include <vector>
 
@@ -16,7 +18,7 @@ enum class ShaderDataType {
     Bool
 };
 
-constexpr inline uint32_t ShaderDataTypeSize(ShaderDataType type) noexcept {
+[[nodiscard]] constexpr inline uint32_t ShaderDataTypeSize(ShaderDataType type) noexcept {
     switch (type) {
         case ShaderDataType::Float:  return 4;
         case ShaderDataType::Float2: return 4 * 2;
@@ -46,7 +48,7 @@ struct BufferElement {
     BufferElement(ShaderDataType type, const std::string& name, bool normalized = false)
         : Name(name), Type(type), Size(ShaderDataTypeSize(type)), Offset(0), Normalized(normalized) {}
 
-    uint32_t GetComponentCount() const {
+    [[nodiscard]] constexpr uint32_t GetComponentCount() const noexcept {
         switch (Type) {
             case ShaderDataType::Float:  return 1;
             case ShaderDataType::Float2: return 2;
@@ -74,13 +76,13 @@ public:
         CalculateOffsetsAndStride();
     }
 
-    uint32_t GetStride() const { return m_Stride; }
-    const std::vector<BufferElement>& GetElements() const { return m_Elements; }
+    [[nodiscard]] uint32_t GetStride() const noexcept { return m_Stride; }
+    [[nodiscard]] const std::vector<BufferElement>& GetElements() const noexcept { return m_Elements; }
 
-    std::vector<BufferElement>::iterator begin() { return m_Elements.begin(); }
-    std::vector<BufferElement>::iterator end() { return m_Elements.end(); }
-    std::vector<BufferElement>::const_iterator begin() const { return m_Elements.begin(); }
-    std::vector<BufferElement>::const_iterator end() const { return m_Elements.end(); }
+    [[nodiscard]] std::vector<BufferElement>::iterator begin() noexcept { return m_Elements.begin(); }
+    [[nodiscard]] std::vector<BufferElement>::iterator end() noexcept { return m_Elements.end(); }
+    [[nodiscard]] std::vector<BufferElement>::const_iterator begin() const noexcept { return m_Elements.begin(); }
+    [[nodiscard]] std::vector<BufferElement>::const_iterator end() const noexcept { return m_Elements.end(); }
 
 private:
     void CalculateOffsetsAndStride() {
@@ -101,7 +103,9 @@ private:
 class VertexBuffer {
 public:
     VertexBuffer(uint32_t size);
+    VertexBuffer(const float* vertices, uint32_t size);
     VertexBuffer(float* vertices, uint32_t size);
+    VertexBuffer(std::span<const float> vertices);
     ~VertexBuffer();
 
     VertexBuffer(const VertexBuffer&) = delete;
@@ -115,9 +119,14 @@ public:
 
     void SetData(const void* data, uint32_t size);
 
-    uint32_t GetCapacity() const { return m_Capacity; }
+    template<typename T>
+    void SetData(std::span<const T> data) {
+        SetData(data.data(), static_cast<uint32_t>(data.size_bytes()));
+    }
 
-    const BufferLayout& GetLayout() const { return m_Layout; }
+    [[nodiscard]] uint32_t GetCapacity() const noexcept { return m_Capacity; }
+
+    [[nodiscard]] const BufferLayout& GetLayout() const noexcept { return m_Layout; }
     void SetLayout(const BufferLayout& layout) { m_Layout = layout; }
 
 private:
@@ -128,7 +137,9 @@ private:
 
 class IndexBuffer {
 public:
+    IndexBuffer(const uint32_t* indices, uint32_t count);
     IndexBuffer(uint32_t* indices, uint32_t count);
+    IndexBuffer(std::span<const uint32_t> indices);
     ~IndexBuffer();
 
     IndexBuffer(const IndexBuffer&) = delete;
@@ -139,7 +150,7 @@ public:
 
     void Bind() const;
     void Unbind() const;
-    uint32_t GetCount() const { return m_Count; }
+    [[nodiscard]] uint32_t GetCount() const noexcept { return m_Count; }
 
 private:
     uint32_t m_RendererID = 0;

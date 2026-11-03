@@ -59,8 +59,8 @@ namespace Engine {
             bool active = false;
         };
 
-        const std::vector<Particle>& GetParticles() const { return m_ParticlePool; }
-        uint32_t GetActiveParticleCount() const { return m_ActiveParticleCount; }
+        [[nodiscard]] const std::vector<Particle>& GetParticles() const noexcept { return m_ParticlePool; }
+        [[nodiscard]] uint32_t GetActiveParticleCount() const noexcept { return m_ActiveParticleCount; }
 
     private:
         std::vector<Particle> m_ParticlePool;

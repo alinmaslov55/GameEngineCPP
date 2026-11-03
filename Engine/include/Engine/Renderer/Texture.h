@@ -35,11 +35,11 @@ public:
                     const void* rgbaSubData);
     bool ReloadFromDisk();
 
-    int GetWidth() const { return m_Width; }
-    int GetHeight() const { return m_Height; }
-    bool IsWrapRepeat() const { return m_RepeatWrap; }
-    uint32_t GetRendererID() const { return m_RendererID; }
-    const std::string& GetFilepath() const { return m_Filepath; }
+    [[nodiscard]] int GetWidth() const noexcept { return m_Width; }
+    [[nodiscard]] int GetHeight() const noexcept { return m_Height; }
+    [[nodiscard]] bool IsWrapRepeat() const noexcept { return m_RepeatWrap; }
+    [[nodiscard]] uint32_t GetRendererID() const noexcept { return m_RendererID; }
+    [[nodiscard]] const std::string& GetFilepath() const noexcept { return m_Filepath; }
 
 private:
     uint32_t m_RendererID = 0;

@@ -4,6 +4,8 @@
 #include <cstdint>
 #include <memory>
 #include <string>
+#include <string_view>
+#include <span>
 #include <unordered_map>
 
 #include <glm/glm.hpp>
@@ -26,32 +28,41 @@ public:
     void Bind() const;
     void Unbind() const;
 
-    bool Reload();
-    bool IsValid() const { return m_RendererID != 0; }
-    const std::string& GetName() const { return m_Name; }
-    const std::string& GetFilePath() const { return m_FilePath; }
-    uint32_t GetRendererID() const { return m_RendererID; }
+    [[nodiscard]] bool Reload();
+    [[nodiscard]] bool IsValid() const noexcept { return m_RendererID != 0; }
+    [[nodiscard]] const std::string& GetName() const noexcept { return m_Name; }
+    [[nodiscard]] const std::string& GetFilePath() const noexcept { return m_FilePath; }
+    [[nodiscard]] uint32_t GetRendererID() const noexcept { return m_RendererID; }
 
-    void SetInt(const std::string& name, int value) const;
-    void SetIntArray(const std::string& name, const int* values, uint32_t count) const;
-    void SetFloat(const std::string& name, float value) const;
-    void SetFloatArray(const std::string& name, const float* values, uint32_t count) const;
-    void SetFloat2(const std::string& name, const glm::vec2& value) const;
-    void SetFloat3(const std::string& name, const glm::vec3& value) const;
-    void SetFloat4(const std::string& name, const glm::vec4& value) const;
-    void SetMat4(const std::string& name, const glm::mat4& matrix) const;
+    void SetInt(std::string_view name, int value) const;
+    void SetIntArray(std::string_view name, const int* values, uint32_t count) const;
+    void SetIntArray(std::string_view name, std::span<const int> values) const;
+    void SetFloat(std::string_view name, float value) const;
+    void SetFloatArray(std::string_view name, const float* values, uint32_t count) const;
+    void SetFloatArray(std::string_view name, std::span<const float> values) const;
+    void SetFloat2(std::string_view name, const glm::vec2& value) const;
+    void SetFloat3(std::string_view name, const glm::vec3& value) const;
+    void SetFloat4(std::string_view name, const glm::vec4& value) const;
+    void SetMat4(std::string_view name, const glm::mat4& matrix) const;
 
 private:
-    int GetUniformLocation(const std::string& name) const;
+    [[nodiscard]] int GetUniformLocation(std::string_view name) const;
     std::string ReadFile(const std::string& filepath);
     std::unordered_map<uint32_t, std::string> PreProcess(const std::string& source);
     bool Compile(const std::unordered_map<uint32_t, std::string>& shaderSources);
 
 private:
+    struct StringHash {
+        using is_transparent = void;
+        [[nodiscard]] size_t operator()(std::string_view sv) const noexcept {
+            return std::hash<std::string_view>{}(sv);
+        }
+    };
+
     uint32_t m_RendererID = 0;
     std::string m_FilePath;
     std::string m_Name;
-    mutable std::unordered_map<std::string, int> m_UniformLocationCache;
+    mutable std::unordered_map<std::string, int, StringHash, std::equal_to<>> m_UniformLocationCache;
 };
 
 } // namespace Engine

@@ -82,12 +82,12 @@ public:
         uint32_t DrawCalls = 0;
         uint32_t QuadCount = 0;
 
-        uint32_t GetTotalVertexCount() const { return QuadCount * 4; }
-        uint32_t GetTotalIndexCount() const { return QuadCount * 6; }
+        [[nodiscard]] uint32_t GetTotalVertexCount() const noexcept { return QuadCount * 4; }
+        [[nodiscard]] uint32_t GetTotalIndexCount() const noexcept { return QuadCount * 6; }
     };
 
     static void ResetStats();
-    static Statistics GetStats();
+    [[nodiscard]] static Statistics GetStats();
 
 private:
     static void StartBatch();

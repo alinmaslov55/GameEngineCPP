@@ -2,22 +2,20 @@
 #define CORE_RESOURCEMANAGER_H
 
 #include "Engine/Utils/Logger.h"
+#include <concepts>
 #include <filesystem>
-#include <unordered_map>
-#include <string>
 #include <memory>
+#include <string>
+#include <string_view>
+#include <unordered_map>
 
 namespace Engine {
 
 // Internal templated cache to hold specific asset types
 template<typename T>
 struct AssetCache {
-    static std::unordered_map<std::string, std::shared_ptr<T>> data;
+    inline static std::unordered_map<std::string, std::shared_ptr<T>> data;
 };
-
-// Define the static member
-template<typename T>
-std::unordered_map<std::string, std::shared_ptr<T>> AssetCache<T>::data;
 
 class ResourceManager {
 public:
@@ -28,26 +26,27 @@ public:
 
     // Configures the root directory used to resolve relative asset paths
     static void SetAssetRoot(const std::filesystem::path& rootPath);
-    static const std::filesystem::path& GetAssetRoot();
+    [[nodiscard]] static const std::filesystem::path& GetAssetRoot() noexcept;
 
     // Automatically discovers the asset root relative to working directory or executable location
     static std::filesystem::path DiscoverAssetRoot(const std::string& projectSubdir = "Sandbox");
 
     // Resolves a relative or absolute asset path against the configured AssetRoot
-    static std::string ResolvePath(const std::string& filepath);
+    [[nodiscard]] static std::string ResolvePath(const std::string& filepath);
 
     // Converts an absolute or resolved path into a portable forward-slash path relative to AssetRoot
-    static std::string ToRelativePath(const std::string& filepath);
+    [[nodiscard]] static std::string ToRelativePath(const std::string& filepath);
 
     // Resolves both target path and cache key with in-memory caching to avoid filesystem syscalls
-    static ResolvedPathInfo ResolvePathInfo(const std::string& filepath);
+    [[nodiscard]] static ResolvedPathInfo ResolvePathInfo(const std::string& filepath);
 
     // Clears the internal path resolution cache
     static void ClearPathCache();
 
     // Loads an asset from disk, or returns the cached version if it already exists
     template<typename T>
-    static std::shared_ptr<T> Load(const std::string& filepath) {
+        requires std::constructible_from<T, std::string>
+    [[nodiscard]] static std::shared_ptr<T> Load(const std::string& filepath) {
         if (filepath.empty()) {
             return nullptr;
         }
@@ -72,7 +71,7 @@ public:
 
     // Retrieves an asset without attempting to load it (returns nullptr if missing)
     template<typename T>
-    static std::shared_ptr<T> Get(const std::string& filepath) {
+    [[nodiscard]] static std::shared_ptr<T> Get(const std::string& filepath) {
         if (filepath.empty()) {
             return nullptr;
         }

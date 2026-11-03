@@ -10,7 +10,9 @@
 #include <array>
 #include <cmath>
 #include <cstring>
+#include <span>
 #include <string>
+#include <vector>
 
 namespace Engine {
 namespace {
@@ -26,7 +28,7 @@ void ComputeBillboardCorners(const glm::vec3& anchorPosition,
                              const glm::vec3& rightAxis,
                              const glm::vec3& upAxis,
                              float rotationZDegrees,
-                             glm::vec3 outPositions[4]) {
+                             std::span<glm::vec3, 4> outPositions) {
     glm::vec3 r = rightAxis;
     glm::vec3 u = upAxis;
     if (std::abs(rotationZDegrees) > 1e-4f) {
@@ -71,7 +73,7 @@ struct Renderer2DStorage {
     uint32_t WhiteTexture = 0;
 
     uint32_t QuadIndexCount = 0;
-    QuadVertex* QuadVertexBufferBase = nullptr;
+    std::unique_ptr<QuadVertex[]> QuadVertexBufferBase;
     QuadVertex* QuadVertexBufferPtr = nullptr;
 
     std::array<uint32_t, MaxTextureSlots> TextureSlots{};
@@ -88,8 +90,6 @@ struct Renderer2DStorage {
             glDeleteTextures(1, &WhiteTexture);
             WhiteTexture = 0;
         }
-        delete[] QuadVertexBufferBase;
-        QuadVertexBufferBase = nullptr;
     }
 };
 
@@ -120,9 +120,9 @@ void Renderer2D::Init() {
     });
     s_Data->QuadVertexArray->AddVertexBuffer(s_Data->QuadVertexBuffer);
 
-    s_Data->QuadVertexBufferBase = new QuadVertex[Renderer2DStorage::MaxVertices];
+    s_Data->QuadVertexBufferBase = std::make_unique<QuadVertex[]>(Renderer2DStorage::MaxVertices);
 
-    uint32_t* quadIndices = new uint32_t[Renderer2DStorage::MaxIndices];
+    std::vector<uint32_t> quadIndices(Renderer2DStorage::MaxIndices);
     uint32_t offset = 0;
     for (uint32_t i = 0; i < Renderer2DStorage::MaxIndices; i += 6) {
         quadIndices[i + 0] = offset + 0;
@@ -136,9 +136,8 @@ void Renderer2D::Init() {
         offset += 4;
     }
 
-    auto quadIB = std::make_shared<IndexBuffer>(quadIndices, Renderer2DStorage::MaxIndices);
+    auto quadIB = std::make_shared<IndexBuffer>(quadIndices);
     s_Data->QuadVertexArray->SetIndexBuffer(quadIB);
-    delete[] quadIndices;
 
     // Create 1x1 white texture for solid color rendering in slot 0 & fallback shadow slot 15
     glGenTextures(1, &s_Data->WhiteTexture);
@@ -329,7 +328,7 @@ void Renderer2D::EndScene() {
 
 void Renderer2D::StartBatch() {
     s_Data->QuadIndexCount = 0;
-    s_Data->QuadVertexBufferPtr = s_Data->QuadVertexBufferBase;
+    s_Data->QuadVertexBufferPtr = s_Data->QuadVertexBufferBase.get();
     s_Data->TextureSlotIndex = 1;
 }
 
@@ -345,9 +344,9 @@ void Renderer2D::Flush() {
 
     uint32_t dataSize = static_cast<uint32_t>(
         reinterpret_cast<const uint8_t*>(s_Data->QuadVertexBufferPtr) -
-        reinterpret_cast<const uint8_t*>(s_Data->QuadVertexBufferBase)
+        reinterpret_cast<const uint8_t*>(s_Data->QuadVertexBufferBase.get())
     );
-    s_Data->QuadVertexBuffer->SetData(s_Data->QuadVertexBufferBase, dataSize);
+    s_Data->QuadVertexBuffer->SetData(s_Data->QuadVertexBufferBase.get(), dataSize);
 
     for (uint32_t i = 0; i < s_Data->TextureSlotIndex; i++) {
         glActiveTexture(GL_TEXTURE0 + i);

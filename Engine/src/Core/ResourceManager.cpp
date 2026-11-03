@@ -27,7 +27,7 @@ void ResourceManager::SetAssetRoot(const std::filesystem::path& rootPath) {
     ENGINE_CORE_INFO("ResourceManager: Asset root set to '{}'", s_AssetRoot.generic_string());
 }
 
-const std::filesystem::path& ResourceManager::GetAssetRoot() {
+const std::filesystem::path& ResourceManager::GetAssetRoot() noexcept {
     return s_AssetRoot;
 }
 

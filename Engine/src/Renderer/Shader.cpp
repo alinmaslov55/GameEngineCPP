@@ -232,56 +232,65 @@ void Shader::Unbind() const {
     glUseProgram(0);
 }
 
-int Shader::GetUniformLocation(const std::string& name) const {
+int Shader::GetUniformLocation(std::string_view name) const {
     auto it = m_UniformLocationCache.find(name);
     if (it != m_UniformLocationCache.end()) {
         return it->second;
     }
 
-    int location = glGetUniformLocation(m_RendererID, name.c_str());
+    std::string nameStr(name);
+    int location = glGetUniformLocation(m_RendererID, nameStr.c_str());
     if (location == -1) {
         ENGINE_CORE_WARN("Shader ID {}: Uniform '{}' not found or unused", m_RendererID, name);
     }
-    m_UniformLocationCache[name] = location;
+    m_UniformLocationCache.emplace(std::move(nameStr), location);
     return location;
 }
 
-void Shader::SetInt(const std::string& name, int value) const {
+void Shader::SetInt(std::string_view name, int value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetInt: {} = {}", m_RendererID, name, value);
     glUniform1i(GetUniformLocation(name), value);
 }
 
-void Shader::SetIntArray(const std::string& name, const int* values, uint32_t count) const {
+void Shader::SetIntArray(std::string_view name, const int* values, uint32_t count) const {
     ENGINE_CORE_TRACE("Shader ID {} SetIntArray: {} (count: {})", m_RendererID, name, count);
     glUniform1iv(GetUniformLocation(name), static_cast<GLsizei>(count), values);
 }
 
-void Shader::SetFloat(const std::string& name, float value) const {
+void Shader::SetIntArray(std::string_view name, std::span<const int> values) const {
+    SetIntArray(name, values.data(), static_cast<uint32_t>(values.size()));
+}
+
+void Shader::SetFloat(std::string_view name, float value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloat: {} = {:.3f}", m_RendererID, name, value);
     glUniform1f(GetUniformLocation(name), value);
 }
 
-void Shader::SetFloatArray(const std::string& name, const float* values, uint32_t count) const {
+void Shader::SetFloatArray(std::string_view name, const float* values, uint32_t count) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloatArray: {} (count: {})", m_RendererID, name, count);
     glUniform1fv(GetUniformLocation(name), static_cast<GLsizei>(count), values);
 }
 
-void Shader::SetFloat2(const std::string& name, const glm::vec2& value) const {
+void Shader::SetFloatArray(std::string_view name, std::span<const float> values) const {
+    SetFloatArray(name, values.data(), static_cast<uint32_t>(values.size()));
+}
+
+void Shader::SetFloat2(std::string_view name, const glm::vec2& value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloat2: {} = ({:.2f}, {:.2f})", m_RendererID, name, value.x, value.y);
     glUniform2f(GetUniformLocation(name), value.x, value.y);
 }
 
-void Shader::SetFloat3(const std::string& name, const glm::vec3& value) const {
+void Shader::SetFloat3(std::string_view name, const glm::vec3& value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloat3: {} = ({:.2f}, {:.2f}, {:.2f})", m_RendererID, name, value.x, value.y, value.z);
     glUniform3f(GetUniformLocation(name), value.x, value.y, value.z);
 }
 
-void Shader::SetFloat4(const std::string& name, const glm::vec4& value) const {
+void Shader::SetFloat4(std::string_view name, const glm::vec4& value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloat4: {} = ({:.2f}, {:.2f}, {:.2f}, {:.2f})", m_RendererID, name, value.x, value.y, value.z, value.w);
     glUniform4f(GetUniformLocation(name), value.x, value.y, value.z, value.w);
 }
 
-void Shader::SetMat4(const std::string& name, const glm::mat4& matrix) const {
+void Shader::SetMat4(std::string_view name, const glm::mat4& matrix) const {
     ENGINE_CORE_TRACE("Shader ID {} SetMat4: {}", m_RendererID, name);
     glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, glm::value_ptr(matrix));
 }

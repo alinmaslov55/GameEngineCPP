@@ -15,12 +15,12 @@ public:
     virtual void LateUpdate(float deltaTime) {}
     virtual void OnDestroy() {}
 
-    GameObject* GetGameObject() const { return m_GameObject; }
+    [[nodiscard]] GameObject* GetGameObject() const noexcept { return m_GameObject; }
 
 private:
     friend class GameObject;
     GameObject* m_GameObject{nullptr};
 };
-}
+} // namespace Engine
 
 #endif // SCENE_COMPONENT_H

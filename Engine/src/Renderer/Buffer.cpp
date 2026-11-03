@@ -14,13 +14,19 @@ VertexBuffer::VertexBuffer(uint32_t size)
     ENGINE_CORE_DEBUG("Dynamic VertexBuffer created with ID: {} (capacity: {} bytes)", m_RendererID, size);
 }
 
-VertexBuffer::VertexBuffer(float* vertices, uint32_t size)
+VertexBuffer::VertexBuffer(const float* vertices, uint32_t size)
     : m_Capacity(size) {
     glGenBuffers(1, &m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ARRAY_BUFFER, size, vertices, GL_STATIC_DRAW);
     ENGINE_CORE_DEBUG("VertexBuffer created with ID: {} (size: {} bytes)", m_RendererID, size);
 }
+
+VertexBuffer::VertexBuffer(float* vertices, uint32_t size)
+    : VertexBuffer(static_cast<const float*>(vertices), size) {}
+
+VertexBuffer::VertexBuffer(std::span<const float> vertices)
+    : VertexBuffer(vertices.data(), static_cast<uint32_t>(vertices.size_bytes())) {}
 
 VertexBuffer::~VertexBuffer() {
     if (m_RendererID != 0) {
@@ -64,12 +70,18 @@ void VertexBuffer::SetData(const void* data, uint32_t size) {
     glBufferSubData(GL_ARRAY_BUFFER, 0, size, data);
 }
 
-IndexBuffer::IndexBuffer(uint32_t* indices, uint32_t count) : m_Count(count) {
+IndexBuffer::IndexBuffer(const uint32_t* indices, uint32_t count) : m_Count(count) {
     glGenBuffers(1, &m_RendererID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(uint32_t), indices, GL_STATIC_DRAW);
     ENGINE_CORE_DEBUG("IndexBuffer created with ID: {} (count: {})", m_RendererID, count);
 }
+
+IndexBuffer::IndexBuffer(uint32_t* indices, uint32_t count)
+    : IndexBuffer(static_cast<const uint32_t*>(indices), count) {}
+
+IndexBuffer::IndexBuffer(std::span<const uint32_t> indices)
+    : IndexBuffer(indices.data(), static_cast<uint32_t>(indices.size())) {}
 
 IndexBuffer::~IndexBuffer() {
     if (m_RendererID != 0) {

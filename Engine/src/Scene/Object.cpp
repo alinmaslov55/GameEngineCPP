@@ -10,11 +10,10 @@ static uint64_t GenerateUUID() {
     return s_UniformDistribution(s_Engine);
 }
 
-Object::Object(const std::string& name)
+Object::Object(std::string_view name)
     : m_UUID(GenerateUUID()), m_Name(name) {}
 
-Object::Object(uint64_t uuid, const std::string& name)
+Object::Object(uint64_t uuid, std::string_view name)
     : m_UUID(uuid != 0 ? uuid : GenerateUUID()), m_Name(name) {}
 
 } // namespace Engine
-

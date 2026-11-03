@@ -6,11 +6,15 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Utils/Logger.h"
 
-#include <vector>
-#include <memory>
-#include <type_traits>
-#include <cstdint>
 #include <atomic>
+#include <concepts>
+#include <cstdint>
+#include <memory>
+#include <string>
+#include <string_view>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace Engine {
 
@@ -29,33 +33,31 @@ inline uint64_t GetComponentTypeMask() {
 
 class GameObject : public Object {
 public:
-    GameObject(const std::string& name = "GameObject") : Object(name) {
+    explicit GameObject(std::string_view name = "GameObject") : Object(name) {
         ENGINE_CORE_DEBUG("GameObject '{}' created (UUID: {})", GetName(), GetUUID());
         m_Transform = AddComponent<Transform>();
     }
 
-    GameObject(uint64_t uuid, const std::string& name) : Object(uuid, name) {
+    GameObject(uint64_t uuid, std::string_view name) : Object(uuid, name) {
         ENGINE_CORE_DEBUG("GameObject '{}' created with UUID: {}", GetName(), GetUUID());
         m_Transform = AddComponent<Transform>();
     }
 
-    Transform* GetTransform() { return m_Transform; }
-    const Transform* GetTransform() const { return m_Transform; }
+    [[nodiscard]] Transform* GetTransform() noexcept { return m_Transform; }
+    [[nodiscard]] const Transform* GetTransform() const noexcept { return m_Transform; }
 
-    uint64_t GetComponentMask() const { return m_ComponentMask; }
+    [[nodiscard]] uint64_t GetComponentMask() const noexcept { return m_ComponentMask; }
 
-    template<typename T>
-    bool HasComponent() const {
+    template<std::derived_from<Component> T>
+    [[nodiscard]] bool HasComponent() const {
         if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
             return m_Transform != nullptr;
         }
         return (m_ComponentMask & Detail::GetComponentTypeMask<std::remove_cv_t<T>>()) != 0;
     }
 
-    template<typename T, typename... Args>
+    template<std::derived_from<Component> T, typename... Args>
     T* AddComponent(Args&&... args) {
-        static_assert(std::is_base_of<Component, T>::value, "T must inherit from Component");
-
         auto component = std::make_unique<T>(std::forward<Args>(args)...);
         T* rawPtr = component.get();
 
@@ -69,8 +71,8 @@ public:
         return rawPtr;
     }
 
-    template<typename T>
-    T* GetComponent() const {
+    template<std::derived_from<Component> T>
+    [[nodiscard]] T* GetComponent() const {
         if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
             return m_Transform;
         }
@@ -85,8 +87,8 @@ public:
         return nullptr;
     }
 
-    template<typename T>
-    std::vector<T*> GetComponents() const {
+    template<std::derived_from<Component> T>
+    [[nodiscard]] std::vector<T*> GetComponents() const {
         std::vector<T*> result;
         if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
             if (m_Transform) result.push_back(m_Transform);
@@ -103,9 +105,8 @@ public:
         return result;
     }
 
-    template<typename T>
+    template<std::derived_from<Component> T>
     bool RemoveComponent() {
-        static_assert(std::is_base_of<Component, T>::value, "T must inherit from Component");
         if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
             ENGINE_CORE_WARN("GameObject '{}': Cannot remove mandatory Transform component", GetName());
             return false;

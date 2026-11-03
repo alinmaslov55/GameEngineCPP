@@ -29,7 +29,7 @@ public:
                           eulerAngles.x, eulerAngles.y, eulerAngles.z, rotation.x, rotation.y, rotation.z);
     }
 
-    glm::mat4 GetTransformMatrix() const {
+    [[nodiscard]] glm::mat4 GetTransformMatrix() const {
         glm::mat4 rotMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(rotation.x), glm::vec3(1, 0, 0)) *
                               glm::rotate(glm::mat4(1.0f), glm::radians(rotation.y), glm::vec3(0, 1, 0)) *
                               glm::rotate(glm::mat4(1.0f), glm::radians(rotation.z), glm::vec3(0, 0, 1));
@@ -39,6 +39,6 @@ public:
                glm::scale(glm::mat4(1.0f), scale);
     }
 };
-}
+} // namespace Engine
 
 #endif // SCENE_TRANFORM_H
