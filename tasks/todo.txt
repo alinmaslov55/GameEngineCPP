@@ -80,7 +80,7 @@ ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
 
 [P4] GPU PIPELINE & SHADER MODERNIZATION
 --------------------------------------------------------------------------------
-[ ] 10. Bufferless Fullscreen Triangle for Post-Processing & Bloom
+[x] 10. Bufferless Fullscreen Triangle for Post-Processing & Bloom
     - Files: Engine/src/Renderer/PostProcessor.cpp, Sandbox/assets/shaders/PostProcess_*.glsl
     - Details:
       * Replace 6-vertex quad VAO/VBO for post-processing with glDrawArrays(GL_TRIANGLES, 0, 3) using gl_VertexID in vertex shader.
