@@ -816,40 +816,7 @@ void Scene::RenderPassShadowMap(SceneRenderContext& ctx) {
     }
     ShadowMap::BeginCapture();
 
-    for (const auto& cmd : m_ShadowStandeeCommands) {
-        const float cutoff = std::max(0.05f, cmd.alphaCutoff);
-        const auto* sprite = cmd.sprite;
-        const auto* transform = cmd.transform;
-        const auto billboardMode = sprite->GetBillboardMode();
-
-        if (billboardMode == SpriteRenderer::BillboardMode::ViewPlane ||
-            billboardMode == SpriteRenderer::BillboardMode::CylindricalY) {
-            if (const auto& subTexture = sprite->GetSubTexture()) {
-                Renderer2D::DrawBillboard(transform->position, cmd.size, sunRightXZ, worldUp,
-                                          cmd.rotationZ, subTexture, glm::vec4(1.0f),
-                                          cutoff, -1.0f, 0.0f,
-                                          cmd.windWeight, cmd.spatialPhase, cmd.shadowProximityBend);
-            } else {
-                Renderer2D::DrawBillboard(transform->position, cmd.size, sunRightXZ, worldUp,
-                                          cmd.rotationZ, sprite->GetTexture(), glm::vec4(1.0f),
-                                          cutoff, -1.0f, 0.0f,
-                                          cmd.windWeight, cmd.spatialPhase, cmd.shadowProximityBend);
-            }
-        } else {
-            const glm::vec3 scaled3D = { cmd.size.x, cmd.size.y, transform->scale.z };
-            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * cmd.size.y, 0.0f);
-            const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(cmd.rotationZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
-                                          glm::scale(glm::mat4(1.0f), scaled3D);
-            if (const auto& subTexture = sprite->GetSubTexture()) {
-                Renderer2D::DrawQuad(modelMatrix, subTexture, glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
-            } else {
-                Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
-            }
-        }
-    }
+    Renderer2D::DrawStandeesParallel(m_ShadowStandeeCommands, sunRightXZ, worldUp, sunRightXZ, /*isShadowPass=*/true);
 
     Renderer2D::EndScene();
     ShadowMap::EndCapture();
@@ -976,52 +943,7 @@ void Scene::RenderPassCutoutStandees(SceneRenderContext& ctx) {
         Renderer2D::SetWindData(ctx.BuildWindUniforms(camRightXZ));
     }
 
-    for (const auto& cmd : m_StandeeCommands) {
-        const auto* sprite = cmd.sprite;
-        const auto* transform = cmd.transform;
-        const auto billboardMode = sprite->GetBillboardMode();
-
-        if (billboardMode == SpriteRenderer::BillboardMode::ViewPlane) {
-            if (const auto& subTexture = sprite->GetSubTexture()) {
-                Renderer2D::DrawBillboard(transform->position, cmd.size, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(),
-                                          cmd.rotationZ, subTexture, cmd.color,
-                                          cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset,
-                                          cmd.windWeight, cmd.spatialPhase, cmd.camProximityBend);
-            } else {
-                Renderer2D::DrawBillboard(transform->position, cmd.size, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(),
-                                          cmd.rotationZ, sprite->GetTexture(), cmd.color,
-                                          cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset,
-                                          cmd.windWeight, cmd.spatialPhase, cmd.camProximityBend);
-            }
-        } else if (billboardMode == SpriteRenderer::BillboardMode::CylindricalY) {
-            if (const auto& subTexture = sprite->GetSubTexture()) {
-                Renderer2D::DrawBillboard(transform->position, cmd.size, camRightXZ, glm::vec3(0.0f, 1.0f, 0.0f),
-                                          cmd.rotationZ, subTexture, cmd.color,
-                                          cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset,
-                                          cmd.windWeight, cmd.spatialPhase, cmd.camProximityBend);
-            } else {
-                Renderer2D::DrawBillboard(transform->position, cmd.size, camRightXZ, glm::vec3(0.0f, 1.0f, 0.0f),
-                                          cmd.rotationZ, sprite->GetTexture(), cmd.color,
-                                          cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset,
-                                          cmd.windWeight, cmd.spatialPhase, cmd.camProximityBend);
-            }
-        } else {
-            const glm::vec3 scaled3D = { cmd.size.x, cmd.size.y, transform->scale.z };
-            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * cmd.size.y, 0.0f);
-            const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(cmd.rotationZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
-                                          glm::scale(glm::mat4(1.0f), scaled3D);
-            if (const auto& subTexture = sprite->GetSubTexture()) {
-                Renderer2D::DrawQuad(modelMatrix, subTexture, cmd.color,
-                                     cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset);
-            } else {
-                Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), cmd.color,
-                                     cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset);
-            }
-        }
-    }
+    Renderer2D::DrawStandeesParallel(m_StandeeCommands, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(), camRightXZ, /*isShadowPass=*/false);
 
     Renderer2D::EndScene();
 }
@@ -1032,30 +954,17 @@ void Scene::RenderPassParticles(SceneRenderContext& ctx) {
 
     for (ParticleSystem* particleSystem : m_ParticleScratch) {
         if (!particleSystem) continue;
+        const uint32_t activeCount = particleSystem->GetActiveParticleCount();
+        if (activeCount == 0) continue;
 
         const float particleEmissive = particleSystem->EmissiveParticles ? 1.65f : 0.0f;
-        const auto& particles = particleSystem->GetParticles();
-        const uint32_t activeCount = particleSystem->GetActiveParticleCount();
-
-        for (uint32_t i = 0; i < activeCount; ++i) {
-            const auto& particle = particles[i];
-            const float lifeRatio = particle.lifeRemaining / particle.lifeTime;
-            const float size = glm::mix(particle.sizeEnd, particle.sizeBegin, lifeRatio);
-            const glm::vec4 color = glm::mix(particle.colorEnd, particle.colorBegin, lifeRatio);
-
-            const glm::vec3 anchor = particle.position - ctx.activeCam->GetUp() * (0.5f * size);
-            Renderer2D::DrawBillboard(
-                anchor,
-                { size, size },
-                ctx.activeCam->GetRight(),
-                ctx.activeCam->GetUp(),
-                glm::degrees(particle.rotation),
-                color,
-                0.0f,
-                particleEmissive,
-                0.25f
-            );
-        }
+        Renderer2D::DrawParticlesParallel(
+            particleSystem->GetParticles().data(),
+            activeCount,
+            ctx.activeCam->GetRight(),
+            ctx.activeCam->GetUp(),
+            particleEmissive
+        );
     }
 
     Renderer2D::EndScene();

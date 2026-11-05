@@ -6,12 +6,33 @@
 #include "Engine/Renderer/SceneLighting.h"
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/SubTexture2D.h"
+#include "Engine/Scene/StandeeCommand.h"
+#include "Engine/Particles/ParticleSystem.h"
 
 #include <cstdint>
 #include <glm/glm.hpp>
 #include <memory>
+#include <span>
 
 namespace Engine {
+
+struct QuadVertex {
+    glm::vec3 Position;
+    glm::vec4 Color;
+    glm::vec2 TexCoord;
+    float TexIndex;
+    float AlphaCutoff;
+    float Emissive;     // < 0.0 = unlit; >= 0.0 = lit + self-illumination multiplier
+    float ShadowOffset; // World-space receiver offset along -SunDirection to prevent billboard self-shadowing
+    glm::vec3 WindParams; // x = top-anchored sway weight, y = anchor spatial phase, z = proximity bend (m)
+};
+
+void ComputeBillboardCorners(const glm::vec3& anchorPosition,
+                             const glm::vec2& size,
+                             const glm::vec3& rightAxis,
+                             const glm::vec3& upAxis,
+                             float rotationZDegrees,
+                             std::span<glm::vec3, 4> outPositions);
 
 class Renderer2D {
 public:
@@ -111,6 +132,19 @@ public:
 
     static void ResetStats();
     [[nodiscard]] static Statistics GetStats();
+
+    // Parallel batch rendering for standees and particles
+    static void DrawStandeesParallel(std::span<const StandeeRenderCommand> commands,
+                                     const glm::vec3& camRight,
+                                     const glm::vec3& camUp,
+                                     const glm::vec3& camRightXZ,
+                                     bool isShadowPass);
+
+    static void DrawParticlesParallel(const ParticleSystem::Particle* particles,
+                                      uint32_t count,
+                                      const glm::vec3& camRight,
+                                      const glm::vec3& camUp,
+                                      float emissive);
 
 private:
     static void StartBatch();

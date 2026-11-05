@@ -55,7 +55,7 @@ ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
       * Thread pool with (hardware_concurrency - 1) worker threads using std::jthread and cooperative cancellation.
       * Support parallel_for, task chaining, and std::latch synchronization.
 
-[ ] 7. Parallel Standee & Particle Vertex Generation
+[x] 7. Parallel Standee & Particle Vertex Generation
     - Files: Engine/src/Scene/Scene.cpp, Engine/src/Renderer/Renderer2D.cpp
     - Details:
       * Pre-assign texture slots on main thread.

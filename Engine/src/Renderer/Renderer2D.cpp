@@ -2,10 +2,14 @@
 #include "Engine/Renderer/VertexArray.h"
 #include "Engine/Renderer/Shader.h"
 #include "Engine/Renderer/Renderer.h"
+#include "Engine/Renderer/SpriteRenderer.h"
+#include "Engine/Scene/Transform.h"
+#include "Engine/Core/JobSystem.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>
+#include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -22,6 +26,7 @@ static const glm::vec2 kDefaultTexCoords[4] = {
     { 1.0f, 1.0f },
     { 0.0f, 1.0f }
 };
+} // namespace
 
 void ComputeBillboardCorners(const glm::vec3& anchorPosition,
                              const glm::vec2& size,
@@ -48,17 +53,6 @@ void ComputeBillboardCorners(const glm::vec3& anchorPosition,
     outPositions[2] = center + halfR + halfU;
     outPositions[3] = center - halfR + halfU;
 }
-} // namespace
-struct QuadVertex {
-    glm::vec3 Position;
-    glm::vec4 Color;
-    glm::vec2 TexCoord;
-    float TexIndex;
-    float AlphaCutoff;
-    float Emissive;     // < 0.0 = unlit; >= 0.0 = lit + self-illumination multiplier
-    float ShadowOffset; // World-space receiver offset along -SunDirection to prevent billboard self-shadowing
-    glm::vec3 WindParams; // x = top-anchored sway weight, y = anchor spatial phase, z = proximity bend (m)
-};
 
 struct Renderer2DStorage {
     static constexpr uint32_t MaxQuads = 10000;
@@ -85,6 +79,7 @@ struct Renderer2DStorage {
     glm::vec4 QuadVertexPositions[4]{};
     float DefaultAlphaCutoff = 0.0f;
     uint32_t BoundShadowTextureID = 0;
+    std::vector<float> PreassignedTexIndices;
 
     Renderer2D::Statistics Stats;
 
@@ -125,6 +120,7 @@ void Renderer2D::Init() {
     s_Data->QuadVertexArray->AddVertexBuffer(s_Data->QuadVertexBuffer);
 
     s_Data->QuadVertexBufferBase = std::make_unique<QuadVertex[]>(Renderer2DStorage::MaxVertices);
+    s_Data->PreassignedTexIndices.resize(Renderer2DStorage::MaxQuads);
 
     std::vector<uint32_t> quadIndices(Renderer2DStorage::MaxIndices);
     uint32_t offset = 0;
@@ -255,6 +251,7 @@ void Renderer2D::ApplyWindUniforms(const SceneWindData* wind) {
 }
 
 void Renderer2D::BeginScene(const PerspectiveCamera& camera, bool depthTest, float defaultAlphaCutoff) {
+    if (!s_Data) return;
     ENGINE_CORE_TRACE("Renderer2D::BeginScene (PerspectiveCamera, Unlit)");
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
@@ -268,6 +265,7 @@ void Renderer2D::BeginScene(const PerspectiveCamera& camera,
                             const SceneLightingData& lighting,
                             bool depthTest,
                             float defaultAlphaCutoff) {
+    if (!s_Data) return;
     ENGINE_CORE_TRACE("Renderer2D::BeginScene (PerspectiveCamera, 2.5D Lit)");
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
@@ -278,6 +276,7 @@ void Renderer2D::BeginScene(const PerspectiveCamera& camera,
 }
 
 void Renderer2D::BeginShadowPass(const glm::mat4& lightSpaceMatrix, float defaultAlphaCutoff) {
+    if (!s_Data) return;
     ENGINE_CORE_TRACE("Renderer2D::BeginShadowPass");
     Renderer::SetDepthTest(true);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
@@ -288,6 +287,7 @@ void Renderer2D::BeginShadowPass(const glm::mat4& lightSpaceMatrix, float defaul
 }
 
 void Renderer2D::BeginScene(const OrthographicCamera& camera) {
+    if (!s_Data) return;
     ENGINE_CORE_TRACE("Renderer2D::BeginScene (OrthographicCamera)");
     Renderer::SetDepthTest(false);
     s_Data->DefaultAlphaCutoff = 0.0f;
@@ -298,6 +298,7 @@ void Renderer2D::BeginScene(const OrthographicCamera& camera) {
 }
 
 void Renderer2D::BeginScene(const glm::mat4& projectionMatrix, bool depthTest, float defaultAlphaCutoff) {
+    if (!s_Data) return;
     ENGINE_CORE_TRACE("Renderer2D::BeginScene (Projection Matrix)");
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
@@ -326,23 +327,26 @@ void Renderer2D::SetWindData(const SceneWindData& wind) {
 }
 
 void Renderer2D::EndScene() {
+    if (!s_Data) return;
     ENGINE_CORE_TRACE("Renderer2D::EndScene");
     Flush();
 }
 
 void Renderer2D::StartBatch() {
+    if (!s_Data) return;
     s_Data->QuadIndexCount = 0;
     s_Data->QuadVertexBufferPtr = s_Data->QuadVertexBufferBase.get();
     s_Data->TextureSlotIndex = 1;
 }
 
 void Renderer2D::NextBatch() {
+    if (!s_Data) return;
     Flush();
     StartBatch();
 }
 
 void Renderer2D::Flush() {
-    if (s_Data->QuadIndexCount == 0) {
+    if (!s_Data || s_Data->QuadIndexCount == 0) {
         return;
     }
 
@@ -392,6 +396,7 @@ void Renderer2D::SubmitVertices(
     float shadowReceiverOffset,
     const glm::vec3 windParams[4])
 {
+    if (!s_Data) return;
     if (s_Data->QuadIndexCount >= Renderer2DStorage::MaxIndices) {
         NextBatch();
     }
@@ -639,6 +644,226 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
         SubmitVertices(corners, subTexture->GetTexture()->GetRendererID(), subTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, windParams);
     } else {
         SubmitVertices(corners, 0, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, windParams);
+    }
+}
+
+void Renderer2D::DrawStandeesParallel(
+    std::span<const StandeeRenderCommand> commands,
+    const glm::vec3& camRight,
+    const glm::vec3& camUp,
+    const glm::vec3& camRightXZ,
+    bool isShadowPass)
+{
+    if (commands.empty() || !s_Data) {
+        return;
+    }
+
+    size_t cmdIndex = 0;
+    const size_t totalCmds = commands.size();
+
+    while (cmdIndex < totalCmds) {
+        const size_t batchStart = cmdIndex;
+        size_t batchEnd = cmdIndex;
+
+        while (batchEnd < totalCmds) {
+            if ((s_Data->QuadIndexCount / 6) >= Renderer2DStorage::MaxQuads) {
+                break;
+            }
+
+            const auto& cmd = commands[batchEnd];
+            const auto* sprite = cmd.sprite;
+            uint32_t texID = 0;
+            if (sprite) {
+                if (const auto& subTexture = sprite->GetSubTexture()) {
+                    if (subTexture->GetTexture()) {
+                        texID = subTexture->GetTexture()->GetRendererID();
+                    }
+                } else if (const auto& texture = sprite->GetTexture()) {
+                    texID = texture->GetRendererID();
+                }
+            }
+
+            float texSlot = 0.0f;
+            if (texID != 0) {
+                for (uint32_t s = 1; s < s_Data->TextureSlotIndex; ++s) {
+                    if (s_Data->TextureSlots[s] == texID) {
+                        texSlot = static_cast<float>(s);
+                        break;
+                    }
+                }
+                if (texSlot == 0.0f) {
+                    if (s_Data->TextureSlotIndex >= Renderer2DStorage::MaxTextureSlots) {
+                        break;
+                    }
+                    texSlot = static_cast<float>(s_Data->TextureSlotIndex);
+                    s_Data->TextureSlots[s_Data->TextureSlotIndex++] = texID;
+                }
+            }
+
+            s_Data->PreassignedTexIndices[batchEnd - batchStart] = texSlot;
+            ++batchEnd;
+
+            if ((s_Data->QuadIndexCount / 6) + (batchEnd - batchStart) >= Renderer2DStorage::MaxQuads) {
+                break;
+            }
+        }
+
+        const uint32_t batchCount = static_cast<uint32_t>(batchEnd - batchStart);
+        if (batchCount == 0) {
+            NextBatch();
+            continue;
+        }
+
+        QuadVertex* batchBase = s_Data->QuadVertexBufferPtr;
+        s_Data->QuadVertexBufferPtr += batchCount * 4;
+        s_Data->QuadIndexCount += batchCount * 6;
+        s_Data->Stats.QuadCount += batchCount;
+
+        const float defaultAlphaCutoff = s_Data->DefaultAlphaCutoff;
+        const glm::vec4* quadLocalPositions = s_Data->QuadVertexPositions;
+        const float* texSlots = s_Data->PreassignedTexIndices.data();
+
+        JobSystem::ParallelFor(static_cast<size_t>(batchCount), [=](size_t i) {
+            const auto& cmd = commands[batchStart + i];
+            QuadVertex* v = &batchBase[i * 4];
+            const auto* sprite = cmd.sprite;
+            const auto billboardMode = sprite ? sprite->GetBillboardMode() : SpriteRenderer::BillboardMode::ViewPlane;
+
+            glm::vec3 corners[4];
+            if (billboardMode == SpriteRenderer::BillboardMode::ViewPlane ||
+                billboardMode == SpriteRenderer::BillboardMode::CylindricalY) {
+                glm::vec3 rAxis = camRight;
+                glm::vec3 uAxis = camUp;
+                if (isShadowPass) {
+                    rAxis = camRight;
+                    uAxis = glm::vec3(0.0f, 1.0f, 0.0f);
+                } else if (billboardMode == SpriteRenderer::BillboardMode::CylindricalY) {
+                    rAxis = camRightXZ;
+                    uAxis = glm::vec3(0.0f, 1.0f, 0.0f);
+                }
+                ComputeBillboardCorners(cmd.transform->position, cmd.size, rAxis, uAxis, cmd.rotationZ, corners);
+            } else {
+                const glm::vec3 scaled3D = { cmd.size.x, cmd.size.y, cmd.transform->scale.z };
+                const glm::vec3 centerPos = cmd.transform->position + glm::vec3(0.0f, 0.5f * cmd.size.y, 0.0f);
+                const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
+                                              glm::rotate(glm::mat4(1.0f), glm::radians(cmd.transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                              glm::rotate(glm::mat4(1.0f), glm::radians(cmd.transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
+                                              glm::rotate(glm::mat4(1.0f), glm::radians(cmd.rotationZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                              glm::scale(glm::mat4(1.0f), scaled3D);
+                for (int c = 0; c < 4; ++c) {
+                    corners[c] = glm::vec3(modelMatrix * quadLocalPositions[c]);
+                }
+            }
+
+            const glm::vec2* uv = kDefaultTexCoords;
+            glm::vec2 subUV[4];
+            if (sprite) {
+                if (const auto& subTexture = sprite->GetSubTexture()) {
+                    const glm::vec2 min = subTexture->GetMin();
+                    const glm::vec2 max = subTexture->GetMax();
+                    subUV[0] = { min.x, min.y };
+                    subUV[1] = { max.x, min.y };
+                    subUV[2] = { max.x, max.y };
+                    subUV[3] = { min.x, max.y };
+                    uv = subUV;
+                }
+            }
+
+            const float proxBend = isShadowPass ? cmd.shadowProximityBend : cmd.camProximityBend;
+            const glm::vec3 wind[4] = {
+                { 0.0f,           cmd.spatialPhase, 0.0f     },
+                { 0.0f,           cmd.spatialPhase, 0.0f     },
+                { cmd.windWeight, cmd.spatialPhase, proxBend },
+                { cmd.windWeight, cmd.spatialPhase, proxBend }
+            };
+
+            const float cutoff = (cmd.alphaCutoff < 0.0f) ? defaultAlphaCutoff : cmd.alphaCutoff;
+            const float resolvedCutoff = isShadowPass ? std::max(0.05f, cutoff) : cutoff;
+            const float emissive = isShadowPass ? -1.0f : cmd.emissive;
+            const float shadowOffset = isShadowPass ? 0.0f : cmd.receiverOffset;
+            const glm::vec4 tint = isShadowPass ? glm::vec4(1.0f) : cmd.color;
+            const float texIdx = texSlots[i];
+            const bool isBillboard = (billboardMode == SpriteRenderer::BillboardMode::ViewPlane ||
+                                      billboardMode == SpriteRenderer::BillboardMode::CylindricalY);
+
+            for (int c = 0; c < 4; ++c) {
+                v[c].Position     = corners[c];
+                v[c].Color        = tint;
+                v[c].TexCoord     = uv[c];
+                v[c].TexIndex     = texIdx;
+                v[c].AlphaCutoff  = resolvedCutoff;
+                v[c].Emissive     = emissive;
+                v[c].ShadowOffset = shadowOffset;
+                v[c].WindParams   = isBillboard ? wind[c] : glm::vec3(0.0f);
+            }
+        });
+
+        cmdIndex = batchEnd;
+
+        if (cmdIndex < totalCmds) {
+            NextBatch();
+        }
+    }
+}
+
+void Renderer2D::DrawParticlesParallel(
+    const ParticleSystem::Particle* particles,
+    uint32_t count,
+    const glm::vec3& camRight,
+    const glm::vec3& camUp,
+    float emissive)
+{
+    if (!particles || count == 0 || !s_Data) {
+        return;
+    }
+
+    size_t offset = 0;
+    while (offset < count) {
+        const uint32_t currentQuads = s_Data->QuadIndexCount / 6;
+        if (currentQuads >= Renderer2DStorage::MaxQuads) {
+            NextBatch();
+            continue;
+        }
+
+        const uint32_t remainingInBatch = Renderer2DStorage::MaxQuads - currentQuads;
+        const uint32_t batchCount = std::min<uint32_t>(static_cast<uint32_t>(count - offset), remainingInBatch);
+
+        QuadVertex* batchBase = s_Data->QuadVertexBufferPtr;
+        s_Data->QuadVertexBufferPtr += batchCount * 4;
+        s_Data->QuadIndexCount += batchCount * 6;
+        s_Data->Stats.QuadCount += batchCount;
+
+        const ParticleSystem::Particle* batchParticles = &particles[offset];
+
+        JobSystem::ParallelFor(static_cast<size_t>(batchCount), [=](size_t i) {
+            const auto& p = batchParticles[i];
+            QuadVertex* v = &batchBase[i * 4];
+
+            const float lifeRatio = (p.lifeTime > 1e-5f) ? (p.lifeRemaining / p.lifeTime) : 0.0f;
+            const float size = glm::mix(p.sizeEnd, p.sizeBegin, lifeRatio);
+            const glm::vec4 color = glm::mix(p.colorEnd, p.colorBegin, lifeRatio);
+
+            const glm::vec3 anchor = p.position - camUp * (0.5f * size);
+            glm::vec3 corners[4];
+            ComputeBillboardCorners(anchor, { size, size }, camRight, camUp, glm::degrees(p.rotation), corners);
+
+            for (int c = 0; c < 4; ++c) {
+                v[c].Position     = corners[c];
+                v[c].Color        = color;
+                v[c].TexCoord     = kDefaultTexCoords[c];
+                v[c].TexIndex     = 0.0f;
+                v[c].AlphaCutoff  = 0.0f;
+                v[c].Emissive     = emissive;
+                v[c].ShadowOffset = 0.25f;
+                v[c].WindParams   = glm::vec3(0.0f);
+            }
+        });
+
+        offset += batchCount;
+
+        if (offset < count) {
+            NextBatch();
+        }
     }
 }
 

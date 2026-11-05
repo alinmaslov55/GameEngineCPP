@@ -4,6 +4,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Renderer/SceneLighting.h"
+#include "Engine/Scene/StandeeCommand.h"
 
 #include <cstdint>
 #include <string>
@@ -28,27 +29,6 @@ class Tilemap;
 class ParticleSystem;
 class UIPanel;
 class UILabel;
-
-struct StandeeRenderCommand {
-    const Transform* transform = nullptr;
-    const SpriteRenderer* sprite = nullptr;
-
-    glm::vec2 size{ 1.0f };
-    float rotationZ = 0.0f;
-    float windWeight = 0.0f;
-    float spatialPhase = 0.0f;
-    float camProximityBend = 0.0f;
-    float shadowProximityBend = 0.0f;
-
-    float alphaCutoff = 0.15f;
-    float emissive = -1.0f;
-    float receiverOffset = 0.48f;
-    glm::vec4 color{ 1.0f };
-
-    float viewDepth = 0.0f;
-    glm::vec3 boundsCenter{ 0.0f };
-    float boundsRadius = 0.0f;
-};
 
 struct SceneRenderContext {
     const PerspectiveCamera* activeCam = nullptr;
