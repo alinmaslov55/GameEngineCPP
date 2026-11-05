@@ -12,7 +12,7 @@ ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
       * Standee & Light culling: Fast SIMD sphere/AABB visibility test before adding to m_StandeeScratch and point light passes.
     - Impact: 5x-20x reduction in CPU vertex submissions and GPU vertex processing on medium/large scenes.
 
-[ ] 2. Standee Render Command Caching & Motion Math Deduplication
+[x] 2. Standee Render Command Caching & Motion Math Deduplication
     - Files: Engine/src/Scene/Scene.cpp, Engine/include/Engine/Scene/Scene.h
     - Details:
       * Stop calling GetComponent<T>() up to 11 times per entity across GatherRenderContext, RenderPassShadowMap, and RenderPassCutoutStandees.

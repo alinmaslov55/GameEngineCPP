@@ -426,64 +426,33 @@ SceneWindData SceneRenderContext::BuildWindUniforms(const glm::vec3& swayRightAx
     return windData;
 }
 
-void SceneRenderContext::ResolveStandeeMotion(GameObject* go,
-                                            const SpriteRenderer* sprite,
-                                            const glm::vec3& swayRightAxis,
-                                            const std::vector<std::pair<GameObject*, glm::vec3>>& foliageInteractors,
-                                            glm::vec2& outSize,
-                                            float& outRotationZ,
-                                            float& outWindWeight,
-                                            float& outSpatialPhase,
-                                            float& outProximityBend) const {
-    const auto* transform = go->GetTransform();
-    glm::vec2 scaleMult = { 1.0f, 1.0f };
-    float tiltOffset = 0.0f;
-    if (const auto* ss = go->GetComponent<SquashStretchComponent>()) {
-        scaleMult = ss->GetScaleMultiplier();
-        tiltOffset = ss->GetVisualTiltDegrees();
-    }
-
-    outSize = { transform->scale.x * scaleMult.x, transform->scale.y * scaleMult.y };
-    outRotationZ = transform->rotation.z + tiltOffset;
-
-    const float rawWindWeight = sprite->GetWindSwayWeight();
-    const float heightFactor = std::clamp(0.55f + 0.25f * std::abs(outSize.y), 0.50f, 1.45f);
-    outWindWeight = rawWindWeight * heightFactor;
-    outSpatialPhase = windComp
-        ? windComp->ComputeSpatialPhase(transform->position, sprite->GetWindPhaseOffset())
-        : sprite->GetWindPhaseOffset();
-
-    outProximityBend = 0.0f;
-    if (windComp && windComp->InteractiveRustle && rawWindWeight > 0.0001f) {
-        float bendSum = 0.0f;
-        for (const auto& [interactorObj, interactorPos] : foliageInteractors) {
-            if (interactorObj == go) {
-                continue;
-            }
-            bendSum += windComp->EvaluateProximityBend(
-                transform->position,
-                interactorPos,
-                swayRightAxis,
-                rawWindWeight,
-                totalTime,
-                1.2f
-            );
-        }
-        outProximityBend = std::clamp(bendSum, -0.65f, 0.65f);
-    }
-}
-
 SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideCamera) {
     SceneRenderContext ctx;
     ctx.totalTime = Time::GetTotalTime();
 
+    static const uint64_t kCameraMask = Detail::GetComponentTypeMask<CameraComponent>();
+    static const uint64_t kDirLightMask = Detail::GetComponentTypeMask<DirectionalLightComponent>();
+    static const uint64_t kPostProcessMask = Detail::GetComponentTypeMask<PostProcessComponent>();
+    static const uint64_t kWindMask = Detail::GetComponentTypeMask<WindComponent>();
+    static const uint64_t kBoxColliderMask = Detail::GetComponentTypeMask<BoxCollider2D>();
+    static const uint64_t kPointLightMask = Detail::GetComponentTypeMask<PointLightComponent>();
+    static const uint64_t kTerrainMask = Detail::GetComponentTypeMask<TerrainComponent>();
+    static const uint64_t kTilemapMask = Detail::GetComponentTypeMask<Tilemap>();
+    static const uint64_t kSpriteMask = Detail::GetComponentTypeMask<SpriteRenderer>();
+    static const uint64_t kSquashStretchMask = Detail::GetComponentTypeMask<SquashStretchComponent>();
+    static const uint64_t kParticleMask = Detail::GetComponentTypeMask<ParticleSystem>();
+    static const uint64_t kUIPanelMask = Detail::GetComponentTypeMask<UIPanel>();
+    static const uint64_t kUILabelMask = Detail::GetComponentTypeMask<UILabel>();
+
     ctx.activeCam = overrideCamera;
     if (!ctx.activeCam) {
         for (auto& go : m_GameObjects) {
-            if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
-                cameraComp->SyncFromTransform(go->GetTransform());
-                ctx.activeCam = &cameraComp->Camera;
-                break;
+            if (go->GetComponentMask() & kCameraMask) {
+                if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
+                    cameraComp->SyncFromTransform(go->GetTransform());
+                    ctx.activeCam = &cameraComp->Camera;
+                    break;
+                }
             }
         }
         if (!ctx.activeCam) {
@@ -492,11 +461,14 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
     }
 
     const Frustum& camFrustum = ctx.activeCam->GetFrustum();
+    const glm::vec3 camEye = ctx.activeCam->GetPosition();
+    const glm::vec3 camForward = ctx.activeCam->GetForward();
+    const glm::vec3 camRightXZ = ctx.activeCam->GetRightXZ();
 
-    m_StandeeScratch.clear();
-    m_StandeeScratch.reserve(m_GameObjects.size());
-    m_ShadowStandeeScratch.clear();
-    m_ShadowStandeeScratch.reserve(m_GameObjects.size());
+    m_StandeeCommands.clear();
+    m_StandeeCommands.reserve(m_GameObjects.size());
+    m_ShadowStandeeCommands.clear();
+    m_ShadowStandeeCommands.reserve(m_GameObjects.size());
     m_FoliageScratch.clear();
     m_FoliageScratch.reserve(8);
     m_TerrainScratch.clear();
@@ -506,91 +478,29 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
     m_UIPanelScratch.clear();
     m_UILabelScratch.clear();
 
+    // Pass 1: Scene-level singletons (directional sun, post process, global wind field, dynamic foliage colliders)
     for (auto& gameObject : m_GameObjects) {
-        if (!ctx.dirLight) {
+        const uint64_t mask = gameObject->GetComponentMask();
+        if (!ctx.dirLight && (mask & kDirLightMask)) {
             ctx.dirLight = gameObject->GetComponent<DirectionalLightComponent>();
         }
-        if (!ctx.postProcess) {
+        if (!ctx.postProcess && (mask & kPostProcessMask)) {
             if (auto* pp = gameObject->GetComponent<PostProcessComponent>(); pp && pp->Enabled) {
                 ctx.postProcess = pp;
             }
         }
-        if (auto* wc = gameObject->GetComponent<WindComponent>()) {
-            if (!ctx.windComp || (!ctx.windComp->Enabled && wc->Enabled)) {
-                ctx.windComp = wc;
+        if ((!ctx.windComp || !ctx.windComp->Enabled) && (mask & kWindMask)) {
+            if (auto* wc = gameObject->GetComponent<WindComponent>()) {
+                if (!ctx.windComp || (!ctx.windComp->Enabled && wc->Enabled)) {
+                    ctx.windComp = wc;
+                }
             }
         }
-        if (m_FoliageScratch.size() < 8) {
+        if (m_FoliageScratch.size() < 8 && (mask & kBoxColliderMask)) {
             if (auto* bc = gameObject->GetComponent<BoxCollider2D>(); bc && bc->isDynamic) {
                 if (auto* t = gameObject->GetTransform()) {
                     m_FoliageScratch.emplace_back(gameObject.get(), t->position);
                 }
-            }
-        }
-
-        if (auto* pl = gameObject->GetComponent<PointLightComponent>()) {
-            if (ctx.lighting.PointLightCount < SceneLightingData::MaxPointLights) {
-                auto* t = gameObject->GetTransform();
-                const glm::vec3 basePos = t ? t->position : glm::vec3(0.0f);
-                const glm::vec3 lightWorldPos = basePos + glm::vec3(0.0f, pl->HeightOffset, 0.0f);
-                const float effectiveRadius = std::max(0.05f, pl->Radius);
-
-                if (camFrustum.IntersectsSphere(lightWorldPos, effectiveRadius)) {
-                    const float effectiveIntensity = pl->EvaluateEffectiveIntensity(
-                        ctx.totalTime,
-                        static_cast<uint32_t>(gameObject->GetUUID())
-                    );
-
-                    PointLightUniform& uniformSlot = ctx.lighting.PointLights[ctx.lighting.PointLightCount++];
-                    uniformSlot.PositionAndRadius = { lightWorldPos.x, lightWorldPos.y, lightWorldPos.z, effectiveRadius };
-                    uniformSlot.ColorAndIntensity = { pl->Color.r, pl->Color.g, pl->Color.b, effectiveIntensity };
-                    uniformSlot.Falloff = std::max(0.1f, pl->Falloff);
-                }
-            }
-        }
-
-        if (auto* terrain = gameObject->GetComponent<TerrainComponent>()) {
-            m_TerrainScratch.push_back(terrain);
-        }
-
-        if (auto* tilemap = gameObject->GetComponent<Tilemap>()) {
-            m_TilemapRenderScratch.emplace_back(tilemap, gameObject->GetTransform());
-        }
-
-        if (auto* sprite = gameObject->GetComponent<SpriteRenderer>()) {
-            if (auto* transform = gameObject->GetTransform()) {
-                if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::FlatGround) {
-                    const float decalRadius = 0.75f * std::max(std::abs(transform->scale.x), std::abs(transform->scale.z)) + 0.5f;
-                    if (camFrustum.IntersectsSphere(transform->position, decalRadius)) {
-                        m_FlatDecalScratch.emplace_back(sprite, transform);
-                    }
-                } else {
-                    if (sprite->GetCastShadows()) {
-                        m_ShadowStandeeScratch.push_back(gameObject.get());
-                    }
-                    glm::vec3 boundsCenter{ 0.0f };
-                    float boundsRadius = 0.0f;
-                    ComputeStandeeBoundingSphere(*transform, boundsCenter, boundsRadius);
-                    if (camFrustum.IntersectsSphere(boundsCenter, boundsRadius)) {
-                        m_StandeeScratch.push_back(gameObject.get());
-                    }
-                }
-            }
-        }
-
-        if (auto* ps = gameObject->GetComponent<ParticleSystem>()) {
-            m_ParticleScratch.push_back(ps);
-        }
-
-        if (gameObject->HasComponent<UIPanel>()) {
-            for (auto* panel : gameObject->GetComponents<UIPanel>()) {
-                m_UIPanelScratch.push_back(panel);
-            }
-        }
-
-        if (gameObject->HasComponent<UILabel>()) {
-            for (auto* label : gameObject->GetComponents<UILabel>()) {
-                m_UILabelScratch.push_back(label);
             }
         }
     }
@@ -604,7 +514,166 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
         ctx.lighting.AmbientIntensity = std::max(0.0f, ctx.dirLight->AmbientIntensity);
         ctx.lighting.ShadowSoftness = std::max(0.0f, ctx.dirLight->ShadowSoftness);
         ctx.lighting.ShadowBias = std::clamp(ctx.dirLight->ShadowBias, 0.0001f, 0.05f);
-    } else if (ctx.lighting.PointLightCount > 0) {
+    }
+
+    const bool shadowsActive = (ctx.dirLight && ctx.dirLight->CastShadows && ctx.dirLight->SunIntensity > 0.001f && ShadowMap::IsValid());
+    Frustum shadowFrustum;
+    glm::vec3 sunRightXZ{ 1.0f, 0.0f, 0.0f };
+    if (shadowsActive) {
+        const float orthoRadius = std::clamp(ctx.activeCam->GetDistance() * 0.95f, 10.0f, 35.0f);
+        ctx.lighting.LightSpaceMatrix = ctx.dirLight->ComputeLightSpaceMatrix(
+            ctx.activeCam->GetFocalPoint(),
+            orthoRadius,
+            ShadowMap::GetResolution()
+        );
+        shadowFrustum = Frustum::FromViewProjection(ctx.lighting.LightSpaceMatrix);
+        sunRightXZ = ctx.dirLight->GetSunRightXZ();
+    }
+
+    // Pass 2: Renderable entity dispatch, frustum culling, and StandeeRenderCommand caching
+    for (auto& gameObject : m_GameObjects) {
+        const uint64_t mask = gameObject->GetComponentMask();
+
+        if (mask & kPointLightMask) {
+            if (auto* pl = gameObject->GetComponent<PointLightComponent>()) {
+                if (ctx.lighting.PointLightCount < SceneLightingData::MaxPointLights) {
+                    auto* t = gameObject->GetTransform();
+                    const glm::vec3 basePos = t ? t->position : glm::vec3(0.0f);
+                    const glm::vec3 lightWorldPos = basePos + glm::vec3(0.0f, pl->HeightOffset, 0.0f);
+                    const float effectiveRadius = std::max(0.05f, pl->Radius);
+
+                    if (camFrustum.IntersectsSphere(lightWorldPos, effectiveRadius)) {
+                        const float effectiveIntensity = pl->EvaluateEffectiveIntensity(
+                            ctx.totalTime,
+                            static_cast<uint32_t>(gameObject->GetUUID())
+                        );
+
+                        PointLightUniform& uniformSlot = ctx.lighting.PointLights[ctx.lighting.PointLightCount++];
+                        uniformSlot.PositionAndRadius = { lightWorldPos.x, lightWorldPos.y, lightWorldPos.z, effectiveRadius };
+                        uniformSlot.ColorAndIntensity = { pl->Color.r, pl->Color.g, pl->Color.b, effectiveIntensity };
+                        uniformSlot.Falloff = std::max(0.1f, pl->Falloff);
+                    }
+                }
+            }
+        }
+
+        if (mask & kTerrainMask) {
+            if (auto* terrain = gameObject->GetComponent<TerrainComponent>()) {
+                m_TerrainScratch.emplace_back(terrain, gameObject->GetTransform());
+            }
+        }
+
+        if (mask & kTilemapMask) {
+            if (auto* tilemap = gameObject->GetComponent<Tilemap>()) {
+                m_TilemapRenderScratch.emplace_back(tilemap, gameObject->GetTransform());
+            }
+        }
+
+        if (mask & kSpriteMask) {
+            if (auto* sprite = gameObject->GetComponent<SpriteRenderer>()) {
+                if (auto* transform = gameObject->GetTransform()) {
+                    if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::FlatGround) {
+                        const float decalRadius = 0.75f * std::max(std::abs(transform->scale.x), std::abs(transform->scale.z)) + 0.5f;
+                        if (camFrustum.IntersectsSphere(transform->position, decalRadius)) {
+                            m_FlatDecalScratch.emplace_back(sprite, transform);
+                        }
+                    } else {
+                        glm::vec3 boundsCenter{ 0.0f };
+                        float boundsRadius = 0.0f;
+                        ComputeStandeeBoundingSphere(*transform, boundsCenter, boundsRadius);
+
+                        const bool inCamera = camFrustum.IntersectsSphere(boundsCenter, boundsRadius);
+                        const bool inShadow = shadowsActive && sprite->GetCastShadows() && shadowFrustum.IntersectsSphere(boundsCenter, boundsRadius);
+
+                        if (inCamera || inShadow) {
+                            glm::vec2 scaleMult{ 1.0f, 1.0f };
+                            float tiltOffset = 0.0f;
+                            if (mask & kSquashStretchMask) {
+                                if (const auto* ss = gameObject->GetComponent<SquashStretchComponent>()) {
+                                    scaleMult = ss->GetScaleMultiplier();
+                                    tiltOffset = ss->GetVisualTiltDegrees();
+                                }
+                            }
+
+                            const glm::vec2 standeeSize = { transform->scale.x * scaleMult.x, transform->scale.y * scaleMult.y };
+                            const float effectiveRotZ = transform->rotation.z + tiltOffset;
+
+                            const float rawWindWeight = sprite->GetWindSwayWeight();
+                            const float heightFactor = std::clamp(0.55f + 0.25f * std::abs(standeeSize.y), 0.50f, 1.45f);
+                            const float windWeight = rawWindWeight * heightFactor;
+                            const float spatialPhase = ctx.windComp
+                                ? ctx.windComp->ComputeSpatialPhase(transform->position, sprite->GetWindPhaseOffset())
+                                : sprite->GetWindPhaseOffset();
+
+                            float camProximityBend = 0.0f;
+                            float shadowProximityBend = 0.0f;
+                            if (ctx.windComp && ctx.windComp->InteractiveRustle && rawWindWeight > 0.0001f && !m_FoliageScratch.empty()) {
+                                float camBendSum = 0.0f;
+                                float shadowBendSum = 0.0f;
+                                for (const auto& [interactorObj, interactorPos] : m_FoliageScratch) {
+                                    if (interactorObj == gameObject.get()) continue;
+                                    if (inCamera) {
+                                        camBendSum += ctx.windComp->EvaluateProximityBend(
+                                            transform->position, interactorPos, camRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
+                                    }
+                                    if (inShadow) {
+                                        shadowBendSum += ctx.windComp->EvaluateProximityBend(
+                                            transform->position, interactorPos, sunRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
+                                    }
+                                }
+                                if (inCamera) camProximityBend = std::clamp(camBendSum, -0.65f, 0.65f);
+                                if (inShadow) shadowProximityBend = std::clamp(shadowBendSum, -0.65f, 0.65f);
+                            }
+
+                            StandeeRenderCommand cmd;
+                            cmd.transform = transform;
+                            cmd.sprite = sprite;
+                            cmd.size = standeeSize;
+                            cmd.rotationZ = effectiveRotZ;
+                            cmd.windWeight = windWeight;
+                            cmd.spatialPhase = spatialPhase;
+                            cmd.camProximityBend = camProximityBend;
+                            cmd.shadowProximityBend = shadowProximityBend;
+                            cmd.alphaCutoff = sprite->GetAlphaCutoff();
+                            cmd.emissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
+                            cmd.receiverOffset = std::max(0.48f, 0.55f * std::abs(standeeSize.x));
+                            cmd.color = sprite->GetColor();
+                            cmd.viewDepth = glm::dot(transform->position - camEye, camForward);
+                            cmd.boundsCenter = boundsCenter;
+                            cmd.boundsRadius = boundsRadius;
+
+                            if (inCamera) {
+                                m_StandeeCommands.push_back(cmd);
+                            }
+                            if (inShadow) {
+                                m_ShadowStandeeCommands.push_back(cmd);
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        if (mask & kParticleMask) {
+            if (auto* ps = gameObject->GetComponent<ParticleSystem>()) {
+                m_ParticleScratch.push_back(ps);
+            }
+        }
+
+        if (mask & kUIPanelMask) {
+            for (auto* panel : gameObject->GetComponents<UIPanel>()) {
+                m_UIPanelScratch.push_back(panel);
+            }
+        }
+
+        if (mask & kUILabelMask) {
+            for (auto* label : gameObject->GetComponents<UILabel>()) {
+                m_UILabelScratch.push_back(label);
+            }
+        }
+    }
+
+    if (!ctx.dirLight && ctx.lighting.PointLightCount > 0) {
         ctx.lighting.LightingActive = true;
         ctx.lighting.AmbientColor = { 0.55f, 0.55f, 0.62f };
         ctx.lighting.AmbientIntensity = 1.0f;
@@ -620,14 +689,6 @@ void Scene::RenderPassShadowMap(SceneRenderContext& ctx) {
         return;
     }
 
-    const float orthoRadius = std::clamp(ctx.activeCam->GetDistance() * 0.95f, 10.0f, 35.0f);
-    ctx.lighting.LightSpaceMatrix = ctx.dirLight->ComputeLightSpaceMatrix(
-        ctx.activeCam->GetFocalPoint(),
-        orthoRadius,
-        ShadowMap::GetResolution()
-    );
-
-    const Frustum shadowFrustum = Frustum::FromViewProjection(ctx.lighting.LightSpaceMatrix);
     const glm::vec3 sunRightXZ = ctx.dirLight->GetSunRightXZ();
     const glm::vec3 worldUp = { 0.0f, 1.0f, 0.0f };
 
@@ -637,54 +698,35 @@ void Scene::RenderPassShadowMap(SceneRenderContext& ctx) {
     }
     ShadowMap::BeginCapture();
 
-    for (GameObject* gameObject : m_ShadowStandeeScratch) {
-        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
-        if (!sprite || !sprite->GetCastShadows()) {
-            continue;
-        }
+    for (const auto& cmd : m_ShadowStandeeCommands) {
+        const float cutoff = std::max(0.05f, cmd.alphaCutoff);
+        const auto* sprite = cmd.sprite;
+        const auto* transform = cmd.transform;
+        const auto billboardMode = sprite->GetBillboardMode();
 
-        auto* transform = gameObject->GetTransform();
-        if (!transform) continue;
-
-        glm::vec3 boundsCenter{ 0.0f };
-        float boundsRadius = 0.0f;
-        ComputeStandeeBoundingSphere(*transform, boundsCenter, boundsRadius);
-        if (!shadowFrustum.IntersectsSphere(boundsCenter, boundsRadius)) {
-            continue;
-        }
-
-        const float cutoff = std::max(0.05f, sprite->GetAlphaCutoff());
-        glm::vec2 standeeSize{ 1.0f };
-        float effectiveRotZ = 0.0f;
-        float windWeight = 0.0f;
-        float spatialPhase = 0.0f;
-        float proximityBend = 0.0f;
-        ctx.ResolveStandeeMotion(gameObject, sprite, sunRightXZ, m_FoliageScratch,
-                                 standeeSize, effectiveRotZ, windWeight, spatialPhase, proximityBend);
-
-        if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane ||
-            sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::CylindricalY) {
-            if (sprite->GetSubTexture()) {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
-                                          effectiveRotZ, sprite->GetSubTexture(), glm::vec4(1.0f),
+        if (billboardMode == SpriteRenderer::BillboardMode::ViewPlane ||
+            billboardMode == SpriteRenderer::BillboardMode::CylindricalY) {
+            if (const auto& subTexture = sprite->GetSubTexture()) {
+                Renderer2D::DrawBillboard(transform->position, cmd.size, sunRightXZ, worldUp,
+                                          cmd.rotationZ, subTexture, glm::vec4(1.0f),
                                           cutoff, -1.0f, 0.0f,
-                                          windWeight, spatialPhase, proximityBend);
+                                          cmd.windWeight, cmd.spatialPhase, cmd.shadowProximityBend);
             } else {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, sunRightXZ, worldUp,
-                                          effectiveRotZ, sprite->GetTexture(), glm::vec4(1.0f),
+                Renderer2D::DrawBillboard(transform->position, cmd.size, sunRightXZ, worldUp,
+                                          cmd.rotationZ, sprite->GetTexture(), glm::vec4(1.0f),
                                           cutoff, -1.0f, 0.0f,
-                                          windWeight, spatialPhase, proximityBend);
+                                          cmd.windWeight, cmd.spatialPhase, cmd.shadowProximityBend);
             }
         } else {
-            const glm::vec3 scaled3D = { standeeSize.x, standeeSize.y, transform->scale.z };
-            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * standeeSize.y, 0.0f);
+            const glm::vec3 scaled3D = { cmd.size.x, cmd.size.y, transform->scale.z };
+            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * cmd.size.y, 0.0f);
             const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
                                           glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
                                           glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(effectiveRotZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(cmd.rotationZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
                                           glm::scale(glm::mat4(1.0f), scaled3D);
-            if (sprite->GetSubTexture()) {
-                Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
+            if (const auto& subTexture = sprite->GetSubTexture()) {
+                Renderer2D::DrawQuad(modelMatrix, subTexture, glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
             } else {
                 Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), glm::vec4(1.0f), cutoff, -1.0f, 0.0f);
             }
@@ -706,9 +748,7 @@ void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
     // 1A. Continuous 4-Layer Splatmap Terrain (Base Ground at Y = origin.y)
     bool hasSplatTerrain = false;
     Renderer::SetPolygonOffset(true, 1.0f, 1.0f);
-    for (auto* terrain : m_TerrainScratch) {
-        auto* owner = terrain->GetGameObject();
-        auto* transform = owner ? owner->GetTransform() : nullptr;
+    for (const auto& [terrain, transform] : m_TerrainScratch) {
         const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
         const glm::vec3 scale  = transform ? transform->scale    : glm::vec3(1.0f);
         TerrainRenderer::RenderTerrain(*terrain, origin, scale, *ctx.activeCam, &ctx.lighting);
@@ -797,13 +837,9 @@ void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
 }
 
 void Scene::RenderPassCutoutStandees(SceneRenderContext& ctx) {
-    const glm::vec3 camEye = ctx.activeCam->GetPosition();
-    const glm::vec3 camForward = ctx.activeCam->GetForward();
-
-    std::sort(m_StandeeScratch.begin(), m_StandeeScratch.end(), [&](GameObject* a, GameObject* b) {
-        const float distA = glm::dot(a->GetTransform()->position - camEye, camForward);
-        const float distB = glm::dot(b->GetTransform()->position - camEye, camForward);
-        return distA > distB; // Back-to-front for clean outline anti-aliasing alongside Z-buffer cutout
+    // Schwartzian transform sort: back-to-front by precalculated viewDepth
+    std::sort(m_StandeeCommands.begin(), m_StandeeCommands.end(), [](const auto& a, const auto& b) noexcept {
+        return a.viewDepth > b.viewDepth;
     });
 
     const glm::vec3 camRightXZ = ctx.activeCam->GetRightXZ();
@@ -812,60 +848,49 @@ void Scene::RenderPassCutoutStandees(SceneRenderContext& ctx) {
         Renderer2D::SetWindData(ctx.BuildWindUniforms(camRightXZ));
     }
 
-    for (GameObject* gameObject : m_StandeeScratch) {
-        auto* sprite = gameObject->GetComponent<SpriteRenderer>();
-        auto* transform = gameObject->GetTransform();
-        if (!sprite || !transform) continue;
-        const float cutoff = sprite->GetAlphaCutoff();
-        glm::vec2 standeeSize{ 1.0f };
-        float effectiveRotZ = 0.0f;
-        float windWeight = 0.0f;
-        float spatialPhase = 0.0f;
-        float proximityBend = 0.0f;
-        ctx.ResolveStandeeMotion(gameObject, sprite, camRightXZ, m_FoliageScratch,
-                                 standeeSize, effectiveRotZ, windWeight, spatialPhase, proximityBend);
+    for (const auto& cmd : m_StandeeCommands) {
+        const auto* sprite = cmd.sprite;
+        const auto* transform = cmd.transform;
+        const auto billboardMode = sprite->GetBillboardMode();
 
-        const float standeeEmissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
-        const float receiverOffset = std::max(0.48f, 0.55f * std::abs(standeeSize.x));
-
-        if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::ViewPlane) {
-            if (sprite->GetSubTexture()) {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(),
-                                          effectiveRotZ, sprite->GetSubTexture(), sprite->GetColor(),
-                                          cutoff, standeeEmissive, receiverOffset,
-                                          windWeight, spatialPhase, proximityBend);
+        if (billboardMode == SpriteRenderer::BillboardMode::ViewPlane) {
+            if (const auto& subTexture = sprite->GetSubTexture()) {
+                Renderer2D::DrawBillboard(transform->position, cmd.size, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(),
+                                          cmd.rotationZ, subTexture, cmd.color,
+                                          cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset,
+                                          cmd.windWeight, cmd.spatialPhase, cmd.camProximityBend);
             } else {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(),
-                                          effectiveRotZ, sprite->GetTexture(), sprite->GetColor(),
-                                          cutoff, standeeEmissive, receiverOffset,
-                                          windWeight, spatialPhase, proximityBend);
+                Renderer2D::DrawBillboard(transform->position, cmd.size, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(),
+                                          cmd.rotationZ, sprite->GetTexture(), cmd.color,
+                                          cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset,
+                                          cmd.windWeight, cmd.spatialPhase, cmd.camProximityBend);
             }
-        } else if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::CylindricalY) {
-            if (sprite->GetSubTexture()) {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, camRightXZ, glm::vec3(0.0f, 1.0f, 0.0f),
-                                          effectiveRotZ, sprite->GetSubTexture(), sprite->GetColor(),
-                                          cutoff, standeeEmissive, receiverOffset,
-                                          windWeight, spatialPhase, proximityBend);
+        } else if (billboardMode == SpriteRenderer::BillboardMode::CylindricalY) {
+            if (const auto& subTexture = sprite->GetSubTexture()) {
+                Renderer2D::DrawBillboard(transform->position, cmd.size, camRightXZ, glm::vec3(0.0f, 1.0f, 0.0f),
+                                          cmd.rotationZ, subTexture, cmd.color,
+                                          cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset,
+                                          cmd.windWeight, cmd.spatialPhase, cmd.camProximityBend);
             } else {
-                Renderer2D::DrawBillboard(transform->position, standeeSize, camRightXZ, glm::vec3(0.0f, 1.0f, 0.0f),
-                                          effectiveRotZ, sprite->GetTexture(), sprite->GetColor(),
-                                          cutoff, standeeEmissive, receiverOffset,
-                                          windWeight, spatialPhase, proximityBend);
+                Renderer2D::DrawBillboard(transform->position, cmd.size, camRightXZ, glm::vec3(0.0f, 1.0f, 0.0f),
+                                          cmd.rotationZ, sprite->GetTexture(), cmd.color,
+                                          cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset,
+                                          cmd.windWeight, cmd.spatialPhase, cmd.camProximityBend);
             }
         } else {
-            const glm::vec3 scaled3D = { standeeSize.x, standeeSize.y, transform->scale.z };
-            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * standeeSize.y, 0.0f);
+            const glm::vec3 scaled3D = { cmd.size.x, cmd.size.y, transform->scale.z };
+            const glm::vec3 centerPos = transform->position + glm::vec3(0.0f, 0.5f * cmd.size.y, 0.0f);
             const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
                                           glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
                                           glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(effectiveRotZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(cmd.rotationZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
                                           glm::scale(glm::mat4(1.0f), scaled3D);
-            if (sprite->GetSubTexture()) {
-                Renderer2D::DrawQuad(modelMatrix, sprite->GetSubTexture(), sprite->GetColor(),
-                                     cutoff, standeeEmissive, receiverOffset);
+            if (const auto& subTexture = sprite->GetSubTexture()) {
+                Renderer2D::DrawQuad(modelMatrix, subTexture, cmd.color,
+                                     cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset);
             } else {
-                Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), sprite->GetColor(),
-                                     cutoff, standeeEmissive, receiverOffset);
+                Renderer2D::DrawQuad(modelMatrix, sprite->GetTexture(), cmd.color,
+                                     cmd.alphaCutoff, cmd.emissive, cmd.receiverOffset);
             }
         }
     }

@@ -11,7 +11,9 @@
 #include <memory>
 #include <utility>
 
+#include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
+#include <glm/vec4.hpp>
 
 namespace Engine {
 
@@ -26,6 +28,27 @@ class ParticleSystem;
 class UIPanel;
 class UILabel;
 
+struct StandeeRenderCommand {
+    const Transform* transform = nullptr;
+    const SpriteRenderer* sprite = nullptr;
+
+    glm::vec2 size{ 1.0f };
+    float rotationZ = 0.0f;
+    float windWeight = 0.0f;
+    float spatialPhase = 0.0f;
+    float camProximityBend = 0.0f;
+    float shadowProximityBend = 0.0f;
+
+    float alphaCutoff = 0.15f;
+    float emissive = -1.0f;
+    float receiverOffset = 0.48f;
+    glm::vec4 color{ 1.0f };
+
+    float viewDepth = 0.0f;
+    glm::vec3 boundsCenter{ 0.0f };
+    float boundsRadius = 0.0f;
+};
+
 struct SceneRenderContext {
     const PerspectiveCamera* activeCam = nullptr;
     SceneLightingData lighting;
@@ -36,15 +59,6 @@ struct SceneRenderContext {
     bool useHDRPostProcess = false;
 
     SceneWindData BuildWindUniforms(const glm::vec3& swayRightAxis) const;
-    void ResolveStandeeMotion(GameObject* go,
-                             const SpriteRenderer* sprite,
-                             const glm::vec3& swayRightAxis,
-                             const std::vector<std::pair<GameObject*, glm::vec3>>& foliageInteractors,
-                             glm::vec2& outSize,
-                             float& outRotationZ,
-                             float& outWindWeight,
-                             float& outSpatialPhase,
-                             float& outProximityBend) const;
 };
 
 class Scene {
@@ -108,13 +122,13 @@ private:
     uint32_t m_PhysicsWorldId = 0;
 
     // Hot-path scratch buffers to prevent per-frame dynamic heap allocations
-    std::vector<GameObject*> m_StandeeScratch;
-    std::vector<GameObject*> m_ShadowStandeeScratch;
+    std::vector<StandeeRenderCommand> m_StandeeCommands;
+    std::vector<StandeeRenderCommand> m_ShadowStandeeCommands;
     std::vector<std::pair<GameObject*, glm::vec3>> m_FoliageScratch;
     std::vector<ColliderCacheEntry> m_DynamicColliders;
     std::vector<ColliderCacheEntry> m_StaticColliders;
     std::vector<GameObject*> m_TilemapScratch;
-    std::vector<TerrainComponent*> m_TerrainScratch;
+    std::vector<std::pair<TerrainComponent*, Transform*>> m_TerrainScratch;
     std::vector<std::pair<Tilemap*, Transform*>> m_TilemapRenderScratch;
     std::vector<std::pair<SpriteRenderer*, Transform*>> m_FlatDecalScratch;
     std::vector<ParticleSystem*> m_ParticleScratch;
