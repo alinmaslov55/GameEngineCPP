@@ -3,6 +3,8 @@ build/
 build-dist/
 logs/
 *.log
+.vscode
+.cache
 
 # ImGui local workspace layouts
 imgui.ini

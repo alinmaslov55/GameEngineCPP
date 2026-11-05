@@ -316,11 +316,9 @@ CutoutProcessResult CutoutProcessor::ProcessFile(const std::filesystem::path& in
     ENGINE_CORE_INFO("CutoutProcessor: Starting processing of '{}'...", inStr);
 
     // Load in top-down PNG row order (row 0 = top, row H-1 = bottom ground contact)
-    stbi_set_flip_vertically_on_load(0);
+    stbi_set_flip_vertically_on_load_thread(0);
     int w = 0, h = 0, channels = 0;
     unsigned char* rawPixels = stbi_load(inStr.c_str(), &w, &h, &channels, 4);
-    // Restore Engine::Texture's expected bottom-up OpenGL load convention immediately
-    stbi_set_flip_vertically_on_load(1);
 
     if (!rawPixels || w <= 0 || h <= 0) {
         if (rawPixels) {
@@ -365,6 +363,26 @@ CutoutProcessResult CutoutProcessor::ProcessFile(const std::filesystem::path& in
     ENGINE_CORE_INFO("CutoutProcessor: Processed '{}' -> '{}' ({}x{}, aspect {:.3f})",
                      inStr, outStr, result.OutputWidth, result.OutputHeight, result.SuggestedAspectRatio);
     return result;
+}
+
+JobHandle CutoutProcessor::ProcessFileAsync(const std::filesystem::path& inputPath,
+                                            const std::filesystem::path& outputPath,
+                                            const CutoutProcessSettings& settings,
+                                            std::function<void(const CutoutProcessResult&)> onComplete) {
+    if (!JobSystem::IsInitialized() || JobSystem::GetWorkerCount() == 0) {
+        CutoutProcessResult result = ProcessFile(inputPath, outputPath, settings);
+        if (onComplete) {
+            onComplete(result);
+        }
+        return JobHandle{};
+    }
+
+    return JobSystem::Dispatch([inputPath, outputPath, settings, onComplete = std::move(onComplete)]() {
+        CutoutProcessResult result = ProcessFile(inputPath, outputPath, settings);
+        if (onComplete) {
+            onComplete(result);
+        }
+    });
 }
 
 } // namespace Engine

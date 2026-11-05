@@ -70,7 +70,7 @@ ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
       * Box2D v3 natively parallelizes physics island solving and contact generation across worker threads.
     - Impact: Physics simulation scales across all CPU cores.
 
-[ ] 9. Asynchronous Texture Loading & Cutout Processing
+[x] 9. Asynchronous Texture Loading & Cutout Processing
     - Files: Engine/src/Core/ResourceManager.cpp, Engine/src/Utils/CutoutProcessor.cpp
     - Details:
       * Offload stbi_load and CutoutProcessor::ProcessFile from main thread into background tasks.

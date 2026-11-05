@@ -1,4 +1,5 @@
 #include "Engine/Renderer/SubTexture2D.h"
+#include "Engine/Core/ResourceManager.h"
 #include "Engine/Utils/Logger.h"
 
 namespace Engine {
@@ -16,6 +17,10 @@ std::shared_ptr<SubTexture2D> SubTexture2D::CreateFromCoords(
     if (!texture) {
         ENGINE_CORE_ERROR("SubTexture2D::CreateFromCoords failed: texture is null");
         return nullptr;
+    }
+
+    if (!texture->IsLoaded()) {
+        ResourceManager::WaitForPendingUploads();
     }
 
     // OpenGL UVs go from 0.0 to 1.0. We divide the pixel coords by the total width/height.

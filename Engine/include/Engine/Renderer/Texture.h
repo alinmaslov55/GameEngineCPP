@@ -3,6 +3,7 @@
 
 #include <string>
 #include <cstdint>
+#include <memory>
 
 namespace Engine {
 class Texture {
@@ -35,6 +36,15 @@ public:
                     const void* rgbaSubData);
     bool ReloadFromDisk();
 
+    // Async loading support: queries whether image data has been decoded and uploaded to OpenGL
+    [[nodiscard]] bool IsLoaded() const noexcept { return m_IsLoaded; }
+
+    // Replaces the texture content in-place with decoded pixel data and updates OpenGL state
+    void PopulateFromData(int width, int height, int bpp, const void* rgbaData);
+
+    // Creates an immediate 1x1 neutral white placeholder texture for async loading
+    static std::shared_ptr<Texture> CreatePlaceholder(const std::string& filepath);
+
     [[nodiscard]] int GetWidth() const noexcept { return m_Width; }
     [[nodiscard]] int GetHeight() const noexcept { return m_Height; }
     [[nodiscard]] bool IsWrapRepeat() const noexcept { return m_RepeatWrap; }
@@ -51,6 +61,7 @@ private:
     bool m_LinearFilter = true;
     bool m_HasMipmaps = false;
     bool m_RepeatWrap = false;
+    bool m_IsLoaded = false;
 };
 } // namespace Engine
 

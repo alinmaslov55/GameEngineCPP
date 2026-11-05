@@ -1,12 +1,35 @@
 #include "Engine/Core/ResourceManager.h"
+#include "Engine/Core/JobSystem.h"
+#include "Engine/Renderer/Texture.h"
+
+#include <stb_image.h>
 #include <SDL3/SDL.h>
+
 #include <system_error>
+#include <mutex>
+#include <atomic>
+#include <thread>
+#include <vector>
 
 namespace Engine {
 
 namespace {
 std::filesystem::path s_AssetRoot{};
 std::unordered_map<std::string, ResourceManager::ResolvedPathInfo> s_PathResolutionCache;
+std::mutex s_ResourceManagerMutex;
+
+struct PendingTextureUpload {
+    std::shared_ptr<Texture> TargetTexture;
+    unsigned char* PixelData = nullptr;
+    int Width = 0;
+    int Height = 0;
+    int BPP = 0;
+};
+
+std::mutex s_PendingUploadsMutex;
+std::vector<PendingTextureUpload> s_PendingUploads;
+std::atomic<uint32_t> s_ActiveAsyncLoads{ 0 };
+std::atomic<bool> s_AsyncTextureLoadingEnabled{ true };
 
 bool HasProjectMarkers(const std::filesystem::path& dir) {
     std::error_code ec;
@@ -150,6 +173,7 @@ ResourceManager::ResolvedPathInfo ResourceManager::ResolvePathInfo(const std::st
         return {};
     }
 
+    std::lock_guard lock(s_ResourceManagerMutex);
     auto it = s_PathResolutionCache.find(filepath);
     if (it != s_PathResolutionCache.end()) {
         return it->second;
@@ -162,7 +186,142 @@ ResourceManager::ResolvedPathInfo ResourceManager::ResolvePathInfo(const std::st
 }
 
 void ResourceManager::ClearPathCache() {
+    std::lock_guard lock(s_ResourceManagerMutex);
     s_PathResolutionCache.clear();
+}
+
+void ResourceManager::SetAsyncTextureLoading(bool enabled) noexcept {
+    s_AsyncTextureLoadingEnabled.store(enabled, std::memory_order_release);
+}
+
+bool ResourceManager::IsAsyncTextureLoadingEnabled() noexcept {
+    return s_AsyncTextureLoadingEnabled.load(std::memory_order_acquire);
+}
+
+std::shared_ptr<Texture> ResourceManager::LoadTexture(const std::string& filepath) {
+    if (filepath.empty()) {
+        return nullptr;
+    }
+
+    ResolvedPathInfo info = ResolvePathInfo(filepath);
+
+    {
+        std::lock_guard lock(s_ResourceManagerMutex);
+        auto& cache = AssetCache<Texture>::data;
+        auto it = cache.find(info.CacheKey);
+        if (it != cache.end()) {
+            return it->second;
+        }
+    }
+
+    auto asset = std::make_shared<Texture>(info.ResolvedPath);
+
+    {
+        std::lock_guard lock(s_ResourceManagerMutex);
+        AssetCache<Texture>::data[info.CacheKey] = asset;
+    }
+
+    ENGINE_CORE_INFO("ResourceManager: Loaded texture synchronously: '{}' (from '{}')", info.CacheKey, info.ResolvedPath);
+    return asset;
+}
+
+std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& filepath) {
+    if (filepath.empty()) {
+        return nullptr;
+    }
+
+    ResolvedPathInfo info = ResolvePathInfo(filepath);
+
+    {
+        std::lock_guard lock(s_ResourceManagerMutex);
+        auto& cache = AssetCache<Texture>::data;
+        auto it = cache.find(info.CacheKey);
+        if (it != cache.end()) {
+            ENGINE_CORE_TRACE("ResourceManager::LoadTextureAsync: Returning cached asset '{}'", info.CacheKey);
+            return it->second;
+        }
+    }
+
+    // If JobSystem is not initialized with active workers, fallback to synchronous decode
+    if (!JobSystem::IsInitialized() || JobSystem::GetWorkerCount() == 0) {
+        return LoadTexture(filepath);
+    }
+
+    // 1. Create 1x1 placeholder texture immediately
+    auto placeholder = Texture::CreatePlaceholder(info.ResolvedPath);
+
+    {
+        std::lock_guard lock(s_ResourceManagerMutex);
+        AssetCache<Texture>::data[info.CacheKey] = placeholder;
+    }
+
+    s_ActiveAsyncLoads.fetch_add(1, std::memory_order_release);
+    ENGINE_CORE_INFO("ResourceManager: Dispatched async load for '{}' (placeholder ID: {})",
+                     info.CacheKey, placeholder->GetRendererID());
+
+    // 2. Offload stbi_load to background worker thread
+    JobSystem::Dispatch([placeholder, resolvedPath = info.ResolvedPath]() {
+        stbi_set_flip_vertically_on_load_thread(1);
+        int w = 0, h = 0, bpp = 0;
+        unsigned char* data = stbi_load(resolvedPath.c_str(), &w, &h, &bpp, 4);
+
+        if (!data) {
+            ENGINE_CORE_ERROR("ResourceManager::LoadTextureAsync: Failed to load '{}'", resolvedPath);
+            s_ActiveAsyncLoads.fetch_sub(1, std::memory_order_acq_rel);
+            return;
+        }
+
+        // 3. Enqueue upload on main thread via PendingUploads queue
+        {
+            std::lock_guard lock(s_PendingUploadsMutex);
+            s_PendingUploads.push_back({ placeholder, data, w, h, bpp });
+        }
+        s_ActiveAsyncLoads.fetch_sub(1, std::memory_order_acq_rel);
+    });
+
+    return placeholder;
+}
+
+size_t ResourceManager::ProcessPendingUploads(uint32_t maxUploads) {
+    std::vector<PendingTextureUpload> batch;
+    {
+        std::lock_guard lock(s_PendingUploadsMutex);
+        if (s_PendingUploads.empty()) {
+            return 0;
+        }
+
+        if (maxUploads == 0 || maxUploads >= s_PendingUploads.size()) {
+            batch = std::move(s_PendingUploads);
+            s_PendingUploads.clear();
+        } else {
+            batch.assign(s_PendingUploads.begin(), s_PendingUploads.begin() + maxUploads);
+            s_PendingUploads.erase(s_PendingUploads.begin(), s_PendingUploads.begin() + maxUploads);
+        }
+    }
+
+    for (auto& upload : batch) {
+        if (upload.TargetTexture && upload.PixelData) {
+            upload.TargetTexture->PopulateFromData(upload.Width, upload.Height, upload.BPP, upload.PixelData);
+        }
+        if (upload.PixelData) {
+            stbi_image_free(upload.PixelData);
+        }
+    }
+
+    return batch.size();
+}
+
+void ResourceManager::WaitForPendingUploads() {
+    while (s_ActiveAsyncLoads.load(std::memory_order_acquire) > 0) {
+        if (!JobSystem::ExecuteOneJob()) {
+            std::this_thread::yield();
+        }
+    }
+    ProcessPendingUploads();
+}
+
+uint32_t ResourceManager::GetPendingUploadCount() noexcept {
+    return s_ActiveAsyncLoads.load(std::memory_order_acquire);
 }
 
 } // namespace Engine

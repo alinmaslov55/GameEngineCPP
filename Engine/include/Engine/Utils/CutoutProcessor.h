@@ -1,8 +1,11 @@
 #ifndef UTILS_CUTOUTPROCESSOR_H
 #define UTILS_CUTOUTPROCESSOR_H
 
+#include "Engine/Core/JobSystem.h"
+
 #include <cstdint>
 #include <filesystem>
+#include <functional>
 #include <string>
 #include <vector>
 
@@ -51,6 +54,13 @@ public:
     static CutoutProcessResult ProcessFile(const std::filesystem::path& inputPath,
                                            const std::filesystem::path& outputPath,
                                            const CutoutProcessSettings& settings = {});
+
+    // Asynchronously loads an image file, runs the 2.5D cutout pipeline on a worker thread,
+    // and writes a lossless RGBA8 PNG to disk without blocking the main thread.
+    static JobHandle ProcessFileAsync(const std::filesystem::path& inputPath,
+                                      const std::filesystem::path& outputPath,
+                                      const CutoutProcessSettings& settings = {},
+                                      std::function<void(const CutoutProcessResult&)> onComplete = nullptr);
 };
 
 } // namespace Engine

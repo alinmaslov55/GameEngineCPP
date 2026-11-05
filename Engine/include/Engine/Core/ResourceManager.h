@@ -2,6 +2,7 @@
 #define CORE_RESOURCEMANAGER_H
 
 #include "Engine/Utils/Logger.h"
+#include "Engine/Renderer/Texture.h"
 #include <concepts>
 #include <filesystem>
 #include <memory>
@@ -42,6 +43,28 @@ public:
 
     // Clears the internal path resolution cache
     static void ClearPathCache();
+
+    // Loads a texture asynchronously. Returns a 1x1 placeholder texture immediately,
+    // decoding image bytes on a background worker thread and uploading to OpenGL on the main thread.
+    [[nodiscard]] static std::shared_ptr<Texture> LoadTextureAsync(const std::string& filepath);
+
+    // Loads a texture synchronously (blocking calling thread until decode & upload complete).
+    [[nodiscard]] static std::shared_ptr<Texture> LoadTexture(const std::string& filepath);
+
+    // Configures whether generic Load<Texture>() defaults to asynchronous background loading.
+    static void SetAsyncTextureLoading(bool enabled) noexcept;
+    [[nodiscard]] static bool IsAsyncTextureLoadingEnabled() noexcept;
+
+    // Flushes and processes pending OpenGL texture uploads on the main thread.
+    // If maxUploads > 0, processes at most maxUploads to bound frame time; otherwise processes all ready uploads.
+    // Returns the number of uploads processed.
+    static size_t ProcessPendingUploads(uint32_t maxUploads = 0);
+
+    // Blocks the calling thread until all background texture decoding tasks complete and uploads them to OpenGL.
+    static void WaitForPendingUploads();
+
+    // Returns the number of background texture decoding jobs currently in flight.
+    [[nodiscard]] static uint32_t GetPendingUploadCount() noexcept;
 
     // Loads an asset from disk, or returns the cached version if it already exists
     template<typename T>
@@ -116,6 +139,23 @@ public:
         cache.clear();
     }
 };
+
+template<>
+[[nodiscard]] inline std::shared_ptr<Texture> ResourceManager::Load<Texture>(const std::string& filepath) {
+    if (IsAsyncTextureLoadingEnabled()) {
+        return LoadTextureAsync(filepath);
+    }
+    return LoadTexture(filepath);
+}
+
+template<>
+inline void ResourceManager::ClearType<Texture>() {
+    WaitForPendingUploads();
+    auto& cache = AssetCache<Texture>::data;
+    ENGINE_CORE_INFO("ResourceManager: Cleared Texture cache (freed {} entries)", cache.size());
+    cache.clear();
+}
+
 } // namespace Engine
 
 #endif // CORE_RESOURCEMANAGER_H

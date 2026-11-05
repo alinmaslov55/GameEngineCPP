@@ -1,5 +1,6 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Core/JobSystem.h"
+#include "Engine/Core/ResourceManager.h"
 #include "Engine/Core/Time.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/FoliageWindComponents.h"
@@ -1131,6 +1132,7 @@ void Scene::RenderPassScreenUI() {
 void Scene::Render(const PerspectiveCamera* overrideCamera) {
     ENGINE_CORE_TRACE("Scene '{}': Render (2.5D Diorama)", m_Name);
 
+    ResourceManager::ProcessPendingUploads();
     SceneRenderContext ctx = GatherRenderContext(overrideCamera);
 
     RenderPassShadowMap(ctx);

@@ -13,10 +13,10 @@ bool HasActiveGLContext() {
 } // namespace
 
 Texture::Texture(const std::string& path)
-    : m_RendererID(0), m_Filepath(path), m_Width(0), m_Height(0), m_BPP(0) {
+    : m_RendererID(0), m_Filepath(path), m_Width(0), m_Height(0), m_BPP(0), m_IsLoaded(false) {
 
     ENGINE_CORE_INFO("Loading texture from: '{}'", path);
-    stbi_set_flip_vertically_on_load(1);
+    stbi_set_flip_vertically_on_load_thread(1);
 
     unsigned char* localBuffer = stbi_load(path.c_str(), &m_Width, &m_Height, &m_BPP, 4);
 
@@ -28,6 +28,7 @@ Texture::Texture(const std::string& path)
     m_LinearFilter = (m_Width >= 64 && m_Height >= 64);
     m_HasMipmaps = m_LinearFilter;
     m_RepeatWrap = false;
+    m_IsLoaded = true;
 
     if (!HasActiveGLContext()) {
         stbi_image_free(localBuffer);
@@ -71,7 +72,8 @@ Texture::Texture(uint32_t width,
       m_BPP(4),
       m_LinearFilter(linearFilter),
       m_HasMipmaps(false),
-      m_RepeatWrap(repeatWrap) {
+      m_RepeatWrap(repeatWrap),
+      m_IsLoaded(true) {
     if (width == 0 || height == 0 || !HasActiveGLContext()) {
         return;
     }
@@ -110,7 +112,8 @@ Texture::Texture(Texture&& other) noexcept
       m_BPP(std::exchange(other.m_BPP, 4)),
       m_LinearFilter(other.m_LinearFilter),
       m_HasMipmaps(other.m_HasMipmaps),
-      m_RepeatWrap(other.m_RepeatWrap) {
+      m_RepeatWrap(other.m_RepeatWrap),
+      m_IsLoaded(std::exchange(other.m_IsLoaded, false)) {
 }
 
 Texture& Texture::operator=(Texture&& other) noexcept {
@@ -126,6 +129,7 @@ Texture& Texture::operator=(Texture&& other) noexcept {
         m_LinearFilter = other.m_LinearFilter;
         m_HasMipmaps = other.m_HasMipmaps;
         m_RepeatWrap = other.m_RepeatWrap;
+        m_IsLoaded = std::exchange(other.m_IsLoaded, false);
     }
     return *this;
 }
@@ -231,7 +235,7 @@ bool Texture::ReloadFromDisk() {
         return false;
     }
 
-    stbi_set_flip_vertically_on_load(1);
+    stbi_set_flip_vertically_on_load_thread(1);
     int newW = 0, newH = 0, newBPP = 0;
     unsigned char* localBuffer = stbi_load(m_Filepath.c_str(), &newW, &newH, &newBPP, 4);
     if (!localBuffer) {
@@ -244,6 +248,7 @@ bool Texture::ReloadFromDisk() {
     m_BPP = newBPP;
     m_LinearFilter = (m_Width >= 64 && m_Height >= 64);
     m_HasMipmaps = m_LinearFilter;
+    m_IsLoaded = true;
 
     if (!HasActiveGLContext()) {
         stbi_image_free(localBuffer);
@@ -274,5 +279,57 @@ bool Texture::ReloadFromDisk() {
     stbi_image_free(localBuffer);
     ENGINE_CORE_INFO("Texture reloaded in-place: '{}' (ID: {}, {}x{})", m_Filepath, m_RendererID, m_Width, m_Height);
     return true;
+}
+
+void Texture::PopulateFromData(int width, int height, int bpp, const void* rgbaData) {
+    if (!rgbaData || width <= 0 || height <= 0) {
+        return;
+    }
+
+    m_Width = width;
+    m_Height = height;
+    m_BPP = bpp;
+    m_LinearFilter = (m_Width >= 64 && m_Height >= 64);
+    m_HasMipmaps = m_LinearFilter;
+
+    if (!HasActiveGLContext()) {
+        m_IsLoaded = true;
+        ENGINE_CORE_DEBUG("Texture '{}': Populated metadata ({}x{}) in headless mode", m_Filepath, m_Width, m_Height);
+        return;
+    }
+
+    if (m_RendererID == 0) {
+        glGenTextures(1, &m_RendererID);
+    }
+
+    glBindTexture(GL_TEXTURE_2D, m_RendererID);
+
+    const GLint minFilter = m_LinearFilter ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST;
+    const GLint magFilter = m_LinearFilter ? GL_LINEAR : GL_NEAREST;
+    const GLint wrap = m_RepeatWrap ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaData);
+    if (m_HasMipmaps) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    m_IsLoaded = true;
+    ENGINE_CORE_INFO("Texture async upload complete: '{}' (ID: {}, {}x{}, BPP: {})",
+                     m_Filepath, m_RendererID, m_Width, m_Height, m_BPP);
+}
+
+std::shared_ptr<Texture> Texture::CreatePlaceholder(const std::string& filepath) {
+    static const uint32_t whitePixel = 0xFFFFFFFF;
+    auto tex = std::make_shared<Texture>(1u, 1u, &whitePixel, true, false);
+    tex->m_Filepath = filepath;
+    tex->m_IsLoaded = false;
+    return tex;
 }
 } // namespace Engine
