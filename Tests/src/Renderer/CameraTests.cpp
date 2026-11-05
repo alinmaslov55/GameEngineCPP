@@ -3,6 +3,7 @@
 #include "Engine/Renderer/EditorCamera.h"
 #include "Engine/Renderer/OrthographicCamera.h"
 #include "Engine/Scene/CameraComponent.h"
+#include "Engine/Scene/LightComponents.h"
 #include "Engine/Scene/Transform.h"
 
 namespace {
@@ -114,6 +115,68 @@ TEST(CameraComponentTest, SettingsAndTransformSync) {
 
     camComp.SetViewportSize(1920, 1080);
     EXPECT_NEAR(camComp.Camera.GetAspectRatio(), 1920.0f / 1080.0f, 1e-4f);
+}
+
+TEST(FrustumCullingTest, PerspectiveFrustumSphereAndAABBCulling) {
+    Engine::PerspectiveCamera cam(32.0f, 16.0f / 9.0f, 0.1f, 100.0f);
+    cam.SetFocalPoint({ 0.0f, 0.0f, 0.0f });
+    cam.SetDistance(15.0f);
+    cam.SetPitchDegrees(40.0f);
+    cam.SetYawDegrees(0.0f);
+
+    const Engine::Frustum& frustum = cam.GetFrustum();
+
+    // 1. Focal point at (0, 0, 0) is inside the frustum
+    EXPECT_TRUE(frustum.IntersectsSphere({ 0.0f, 0.0f, 0.0f }, 0.5f));
+    EXPECT_TRUE(frustum.IntersectsAABB({ -0.5f, 0.0f, -0.5f }, { 0.5f, 1.0f, 0.5f }));
+
+    // 2. Point directly behind the camera eye is culled
+    const glm::vec3 behindEye = cam.GetPosition() - cam.GetForward() * 5.0f;
+    EXPECT_FALSE(frustum.IntersectsSphere(behindEye, 1.0f));
+    EXPECT_FALSE(frustum.IntersectsAABB(behindEye - glm::vec3(0.5f), behindEye + glm::vec3(0.5f)));
+
+    // 3. Point far to the East/West outside horizontal FOV is culled
+    EXPECT_FALSE(frustum.IntersectsSphere({ 50.0f, 0.0f, 0.0f }, 1.0f));
+    EXPECT_FALSE(frustum.IntersectsSphere({ -50.0f, 0.0f, 0.0f }, 1.0f));
+
+    // 4. Point beyond FarClip (100m) along forward ray is culled
+    const glm::vec3 beyondFar = cam.GetPosition() + cam.GetForward() * 120.0f;
+    EXPECT_FALSE(frustum.IntersectsSphere(beyondFar, 1.0f));
+}
+
+TEST(FrustumCullingTest, ShadowOrthographicFrustumAndGroundPlaneVisibleAABB) {
+    Engine::DirectionalLightComponent dirLight;
+    dirLight.ElevationDegrees = 45.0f;
+    dirLight.AzimuthDegrees = -35.0f;
+
+    const glm::vec3 focus = { 6.5f, 0.0f, 6.5f };
+    const float orthoRadius = 15.0f;
+    const glm::mat4 lightSpaceVP = dirLight.ComputeLightSpaceMatrix(focus, orthoRadius, 2048u);
+    const Engine::Frustum shadowFrustum = Engine::Frustum::FromViewProjection(lightSpaceVP);
+
+    // Standee at focus is inside the orthographic shadow frustum
+    EXPECT_TRUE(shadowFrustum.IntersectsSphere(focus, 1.0f));
+    // Standee 80m away is outside the 15m orthographic shadow frustum
+    EXPECT_FALSE(shadowFrustum.IntersectsSphere({ 90.0f, 0.0f, 90.0f }, 1.5f));
+
+    // Ground plane visible AABB bounds focal point across yaw & pitch angles
+    Engine::PerspectiveCamera cam(32.0f, 16.0f / 9.0f, 0.1f, 250.0f);
+    cam.SetFocalPoint(focus);
+    cam.SetDistance(15.0f);
+
+    for (float pitch : { 20.0f, 40.0f, 70.0f }) {
+        for (float yaw : { 0.0f, 45.0f, 135.0f, 270.0f }) {
+            cam.SetPitchDegrees(pitch);
+            cam.SetYawDegrees(yaw);
+
+            glm::vec2 minXZ{ 0.0f }, maxXZ{ 0.0f };
+            EXPECT_TRUE(cam.GetGroundPlaneVisibleAABB(0.0f, minXZ, maxXZ));
+            EXPECT_LT(minXZ.x, focus.x);
+            EXPECT_GT(maxXZ.x, focus.x);
+            EXPECT_LT(minXZ.y, focus.z);
+            EXPECT_GT(maxXZ.y, focus.z);
+        }
+    }
 }
 
 } // namespace

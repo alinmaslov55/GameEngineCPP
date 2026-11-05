@@ -34,6 +34,19 @@
 #include <vector>
 
 namespace Engine {
+namespace {
+inline void ComputeStandeeBoundingSphere(const Transform& transform,
+                                         glm::vec3& outCenter,
+                                         float& outRadius) noexcept {
+    const float width  = std::abs(transform.scale.x);
+    const float height = std::abs(transform.scale.y);
+    const float depth  = std::abs(transform.scale.z);
+    outCenter = transform.position + glm::vec3(0.0f, 0.5f * height, 0.0f);
+    // Generous bounding radius accounting for diagonal corners, squash/stretch, and wind sway
+    outRadius = 0.85f * std::max({ width, height, depth }) + 0.75f;
+}
+} // namespace
+
 Scene::Scene(const std::string& name)
     : m_Name(name), m_Camera(32.0f, 16.0f / 9.0f, 0.1f, 250.0f) {
     m_Camera.SetFocalPoint({ 6.5f, 0.0f, 6.5f });
@@ -478,8 +491,12 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
         }
     }
 
+    const Frustum& camFrustum = ctx.activeCam->GetFrustum();
+
     m_StandeeScratch.clear();
     m_StandeeScratch.reserve(m_GameObjects.size());
+    m_ShadowStandeeScratch.clear();
+    m_ShadowStandeeScratch.reserve(m_GameObjects.size());
     m_FoliageScratch.clear();
     m_FoliageScratch.reserve(8);
     m_TerrainScratch.clear();
@@ -516,15 +533,19 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
                 auto* t = gameObject->GetTransform();
                 const glm::vec3 basePos = t ? t->position : glm::vec3(0.0f);
                 const glm::vec3 lightWorldPos = basePos + glm::vec3(0.0f, pl->HeightOffset, 0.0f);
-                const float effectiveIntensity = pl->EvaluateEffectiveIntensity(
-                    ctx.totalTime,
-                    static_cast<uint32_t>(gameObject->GetUUID())
-                );
+                const float effectiveRadius = std::max(0.05f, pl->Radius);
 
-                PointLightUniform& uniformSlot = ctx.lighting.PointLights[ctx.lighting.PointLightCount++];
-                uniformSlot.PositionAndRadius = { lightWorldPos.x, lightWorldPos.y, lightWorldPos.z, std::max(0.05f, pl->Radius) };
-                uniformSlot.ColorAndIntensity = { pl->Color.r, pl->Color.g, pl->Color.b, effectiveIntensity };
-                uniformSlot.Falloff = std::max(0.1f, pl->Falloff);
+                if (camFrustum.IntersectsSphere(lightWorldPos, effectiveRadius)) {
+                    const float effectiveIntensity = pl->EvaluateEffectiveIntensity(
+                        ctx.totalTime,
+                        static_cast<uint32_t>(gameObject->GetUUID())
+                    );
+
+                    PointLightUniform& uniformSlot = ctx.lighting.PointLights[ctx.lighting.PointLightCount++];
+                    uniformSlot.PositionAndRadius = { lightWorldPos.x, lightWorldPos.y, lightWorldPos.z, effectiveRadius };
+                    uniformSlot.ColorAndIntensity = { pl->Color.r, pl->Color.g, pl->Color.b, effectiveIntensity };
+                    uniformSlot.Falloff = std::max(0.1f, pl->Falloff);
+                }
             }
         }
 
@@ -539,9 +560,20 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
         if (auto* sprite = gameObject->GetComponent<SpriteRenderer>()) {
             if (auto* transform = gameObject->GetTransform()) {
                 if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::FlatGround) {
-                    m_FlatDecalScratch.emplace_back(sprite, transform);
+                    const float decalRadius = 0.75f * std::max(std::abs(transform->scale.x), std::abs(transform->scale.z)) + 0.5f;
+                    if (camFrustum.IntersectsSphere(transform->position, decalRadius)) {
+                        m_FlatDecalScratch.emplace_back(sprite, transform);
+                    }
                 } else {
-                    m_StandeeScratch.push_back(gameObject.get());
+                    if (sprite->GetCastShadows()) {
+                        m_ShadowStandeeScratch.push_back(gameObject.get());
+                    }
+                    glm::vec3 boundsCenter{ 0.0f };
+                    float boundsRadius = 0.0f;
+                    ComputeStandeeBoundingSphere(*transform, boundsCenter, boundsRadius);
+                    if (camFrustum.IntersectsSphere(boundsCenter, boundsRadius)) {
+                        m_StandeeScratch.push_back(gameObject.get());
+                    }
                 }
             }
         }
@@ -595,6 +627,7 @@ void Scene::RenderPassShadowMap(SceneRenderContext& ctx) {
         ShadowMap::GetResolution()
     );
 
+    const Frustum shadowFrustum = Frustum::FromViewProjection(ctx.lighting.LightSpaceMatrix);
     const glm::vec3 sunRightXZ = ctx.dirLight->GetSunRightXZ();
     const glm::vec3 worldUp = { 0.0f, 1.0f, 0.0f };
 
@@ -604,7 +637,7 @@ void Scene::RenderPassShadowMap(SceneRenderContext& ctx) {
     }
     ShadowMap::BeginCapture();
 
-    for (GameObject* gameObject : m_StandeeScratch) {
+    for (GameObject* gameObject : m_ShadowStandeeScratch) {
         auto* sprite = gameObject->GetComponent<SpriteRenderer>();
         if (!sprite || !sprite->GetCastShadows()) {
             continue;
@@ -612,6 +645,13 @@ void Scene::RenderPassShadowMap(SceneRenderContext& ctx) {
 
         auto* transform = gameObject->GetTransform();
         if (!transform) continue;
+
+        glm::vec3 boundsCenter{ 0.0f };
+        float boundsRadius = 0.0f;
+        ComputeStandeeBoundingSphere(*transform, boundsCenter, boundsRadius);
+        if (!shadowFrustum.IntersectsSphere(boundsCenter, boundsRadius)) {
+            continue;
+        }
 
         const float cutoff = std::max(0.05f, sprite->GetAlphaCutoff());
         glm::vec2 standeeSize{ 1.0f };
@@ -687,10 +727,30 @@ void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
 
         const glm::vec3 mapOrigin = transform ? transform->position : glm::vec3(0.0f);
         const glm::vec3 mapScale  = transform ? transform->scale    : glm::vec3(1.0f);
+        const float scaleX = (std::abs(mapScale.x) > 1e-4f) ? std::abs(mapScale.x) : 1.0f;
+        const float scaleZ = (std::abs(mapScale.z) > 1e-4f) ? std::abs(mapScale.z) : 1.0f;
 
-        for (uint32_t z = 0; z < tilemap->GetHeight(); z++) {
-            for (uint32_t x = 0; x < tilemap->GetWidth(); x++) {
-                const uint32_t tileId = tilemap->GetTile(x, z).id;
+        glm::vec2 visMinXZ{ 0.0f };
+        glm::vec2 visMaxXZ{ 0.0f };
+        ctx.activeCam->GetGroundPlaneVisibleAABB(mapOrigin.y + tileOverlayLift, visMinXZ, visMaxXZ);
+
+        const int mapW = static_cast<int>(tilemap->GetWidth());
+        const int mapH = static_cast<int>(tilemap->GetHeight());
+
+        const int minX = std::max(0, static_cast<int>(std::floor((visMinXZ.x - mapOrigin.x) / scaleX)) - 1);
+        const int maxX = std::min(mapW - 1, static_cast<int>(std::ceil((visMaxXZ.x - mapOrigin.x) / scaleX)) + 1);
+        const int minZ = std::max(0, static_cast<int>(std::floor((visMinXZ.y - mapOrigin.z) / scaleZ)) - 1);
+        const int maxZ = std::min(mapH - 1, static_cast<int>(std::ceil((visMaxXZ.y - mapOrigin.z) / scaleZ)) + 1);
+
+        if (minX > maxX || minZ > maxZ) {
+            continue;
+        }
+
+        for (int z = minZ; z <= maxZ; ++z) {
+            for (int x = minX; x <= maxX; ++x) {
+                const uint32_t ux = static_cast<uint32_t>(x);
+                const uint32_t uz = static_cast<uint32_t>(z);
+                const uint32_t tileId = tilemap->GetTile(ux, uz).id;
                 if (tileId == 0) continue;
 
                 const auto& subTexture = tilemap->tileSet->GetTileTexture(tileId);

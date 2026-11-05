@@ -3,6 +3,7 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <algorithm>
+#include <array>
 #include <cmath>
 
 namespace Engine {
@@ -63,9 +64,15 @@ void PerspectiveCamera::SetYawDegrees(float yawDegrees) {
     RecalculateView();
 }
 
+void PerspectiveCamera::UpdateDerivedMatrices() {
+    m_ViewProjectionMatrix = m_ProjectionMatrix * m_ViewMatrix;
+    m_InverseViewProjectionMatrix = glm::inverse(m_ViewProjectionMatrix);
+    m_Frustum = Frustum::FromViewProjection(m_ViewProjectionMatrix);
+}
+
 void PerspectiveCamera::RecalculateProjection() {
     m_ProjectionMatrix = glm::perspective(glm::radians(m_FOVDegrees), m_AspectRatio, m_NearClip, m_FarClip);
-    m_ViewProjectionMatrix = m_ProjectionMatrix * m_ViewMatrix;
+    UpdateDerivedMatrices();
 }
 
 void PerspectiveCamera::RecalculateView() {
@@ -87,14 +94,12 @@ void PerspectiveCamera::RecalculateView() {
 
     m_Position = m_FocalPoint - m_Forward * m_Distance;
     m_ViewMatrix = glm::lookAt(m_Position, m_FocalPoint, m_Up);
-    m_ViewProjectionMatrix = m_ProjectionMatrix * m_ViewMatrix;
+    UpdateDerivedMatrices();
 }
 
 bool PerspectiveCamera::RaycastGroundPlane(const glm::vec2& ndc, float planeY, glm::vec3& outHitPoint) const {
-    const glm::mat4 invVP = glm::inverse(m_ViewProjectionMatrix);
-
-    glm::vec4 nearPoint = invVP * glm::vec4(ndc.x, ndc.y, -1.0f, 1.0f);
-    glm::vec4 farPoint  = invVP * glm::vec4(ndc.x, ndc.y,  1.0f, 1.0f);
+    glm::vec4 nearPoint = m_InverseViewProjectionMatrix * glm::vec4(ndc.x, ndc.y, -1.0f, 1.0f);
+    glm::vec4 farPoint  = m_InverseViewProjectionMatrix * glm::vec4(ndc.x, ndc.y,  1.0f, 1.0f);
     if (std::abs(nearPoint.w) < 1e-6f || std::abs(farPoint.w) < 1e-6f) {
         return false;
     }
@@ -121,25 +126,48 @@ bool PerspectiveCamera::RaycastGroundPlane(const glm::vec2& ndc, float planeY, g
 }
 
 bool PerspectiveCamera::GetGroundPlaneVisibleAABB(float planeY, glm::vec2& outMinXZ, glm::vec2& outMaxXZ) const {
-    const glm::vec2 testPoints[] = {
-        { -1.0f, -1.0f },
-        {  1.0f, -1.0f },
-        {  1.0f,  1.0f },
-        { -1.0f,  1.0f },
-        {  0.0f, -1.0f },
-        {  0.0f,  0.0f },
-        {  0.0f,  0.5f },
-        { -1.0f,  0.0f },
-        {  1.0f,  0.0f }
-    };
+    // Unproject all 8 NDC corners of the view frustum polyhedron
+    static const std::array<glm::vec3, 8> kNdcCorners = {{
+        { -1.0f, -1.0f, -1.0f }, // 0: Near Bottom-Left
+        {  1.0f, -1.0f, -1.0f }, // 1: Near Bottom-Right
+        {  1.0f,  1.0f, -1.0f }, // 2: Near Top-Right
+        { -1.0f,  1.0f, -1.0f }, // 3: Near Top-Left
+        { -1.0f, -1.0f,  1.0f }, // 4: Far Bottom-Left
+        {  1.0f, -1.0f,  1.0f }, // 5: Far Bottom-Right
+        {  1.0f,  1.0f,  1.0f }, // 6: Far Top-Right
+        { -1.0f,  1.0f,  1.0f }  // 7: Far Top-Left
+    }};
+
+    std::array<glm::vec3, 8> worldCorners{};
+    for (size_t i = 0; i < 8; ++i) {
+        glm::vec4 wp = m_InverseViewProjectionMatrix * glm::vec4(kNdcCorners[i], 1.0f);
+        if (std::abs(wp.w) > 1e-6f) {
+            wp /= wp.w;
+        }
+        worldCorners[i] = glm::vec3(wp);
+    }
+
+    // 12 edges of the frustum hexahedron: 4 side rays, 4 near-plane edges, 4 far-plane edges
+    static constexpr std::array<std::pair<uint8_t, uint8_t>, 12> kFrustumEdges = {{
+        { 0, 4 }, { 1, 5 }, { 2, 6 }, { 3, 7 }, // Side rays (Near -> Far)
+        { 0, 1 }, { 1, 2 }, { 2, 3 }, { 3, 0 }, // Near quad
+        { 4, 5 }, { 5, 6 }, { 6, 7 }, { 7, 4 }  // Far quad
+    }};
 
     float minX = 1e9f, maxX = -1e9f;
     float minZ = 1e9f, maxZ = -1e9f;
     int hitCount = 0;
 
-    for (const auto& pt : testPoints) {
-        glm::vec3 hit;
-        if (RaycastGroundPlane(pt, planeY, hit)) {
+    for (const auto& [idxA, idxB] : kFrustumEdges) {
+        const glm::vec3& a = worldCorners[idxA];
+        const glm::vec3& b = worldCorners[idxB];
+        const float dyA = a.y - planeY;
+        const float dyB = b.y - planeY;
+
+        if (dyA * dyB <= 0.0f) {
+            const float denom = b.y - a.y;
+            const float t = (std::abs(denom) > 1e-6f) ? ((planeY - a.y) / denom) : 0.0f;
+            const glm::vec3 hit = a + (b - a) * std::clamp(t, 0.0f, 1.0f);
             minX = std::min(minX, hit.x);
             maxX = std::max(maxX, hit.x);
             minZ = std::min(minZ, hit.z);
@@ -149,7 +177,7 @@ bool PerspectiveCamera::GetGroundPlaneVisibleAABB(float planeY, glm::vec2& outMi
     }
 
     if (hitCount > 0) {
-        const float margin = 4.0f;
+        const float margin = 2.5f;
         outMinXZ = { minX - margin, minZ - margin };
         outMaxXZ = { maxX + margin, maxZ + margin };
         return true;
@@ -161,4 +189,3 @@ bool PerspectiveCamera::GetGroundPlaneVisibleAABB(float planeY, glm::vec2& outMi
 }
 
 } // namespace Engine
-

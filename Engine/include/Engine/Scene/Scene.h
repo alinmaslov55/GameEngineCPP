@@ -64,19 +64,19 @@ public:
     void OnRuntimeStart();
     void OnRuntimeStop();
     void UpdateRuntime(float deltaTime);
-    bool IsRuntimeRunning() const { return m_IsRuntimeRunning; }
+    [[nodiscard]] bool IsRuntimeRunning() const noexcept { return m_IsRuntimeRunning; }
 
-    const std::string& GetName() const { return m_Name; }
+    [[nodiscard]] const std::string& GetName() const noexcept { return m_Name; }
     void SetName(const std::string& name) { m_Name = name; }
 
-    PerspectiveCamera& GetCamera() { return m_Camera; }
-    const PerspectiveCamera& GetCamera() const { return m_Camera; }
-    const PerspectiveCamera& GetActiveCamera() const;
+    [[nodiscard]] PerspectiveCamera& GetCamera() noexcept { return m_Camera; }
+    [[nodiscard]] const PerspectiveCamera& GetCamera() const noexcept { return m_Camera; }
+    [[nodiscard]] const PerspectiveCamera& GetActiveCamera() const;
 
-    float GetOrthographicSize() const { return m_OrthographicSize; }
+    [[nodiscard]] float GetOrthographicSize() const noexcept { return m_OrthographicSize; }
     void SetOrthographicSize(float size);
 
-    const std::vector<std::unique_ptr<GameObject>>& GetGameObjects() const { return m_GameObjects; }
+    [[nodiscard]] const std::vector<std::unique_ptr<GameObject>>& GetGameObjects() const noexcept { return m_GameObjects; }
 
 private:
     void UpdateCollidersAndGravity(float deltaTime);
@@ -109,6 +109,7 @@ private:
 
     // Hot-path scratch buffers to prevent per-frame dynamic heap allocations
     std::vector<GameObject*> m_StandeeScratch;
+    std::vector<GameObject*> m_ShadowStandeeScratch;
     std::vector<std::pair<GameObject*, glm::vec3>> m_FoliageScratch;
     std::vector<ColliderCacheEntry> m_DynamicColliders;
     std::vector<ColliderCacheEntry> m_StaticColliders;

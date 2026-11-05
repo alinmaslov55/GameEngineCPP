@@ -1,0 +1,90 @@
+================================================================================
+ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
+================================================================================
+
+[P1] IMMEDIATE HIGH-ROI ALGORITHMIC & DATA-ORIENTED OPTIMIZATIONS
+--------------------------------------------------------------------------------
+[x] 1. Camera & Shadow Frustum Culling
+    - Files: Engine/src/Scene/Scene.cpp, Engine/include/Engine/Renderer/PerspectiveCamera.h
+    - Details:
+      * Extract 6 frustum planes from ViewProjection matrix (Gribb-Hartmann method).
+      * Tilemap culling: Intersect camera frustum rays with Y=0 XZ plane to get tight [minX..maxX, minZ..maxZ] bounds and skip off-screen tiles (currently loops all WxH tiles every frame).
+      * Standee & Light culling: Fast SIMD sphere/AABB visibility test before adding to m_StandeeScratch and point light passes.
+    - Impact: 5x-20x reduction in CPU vertex submissions and GPU vertex processing on medium/large scenes.
+
+[ ] 2. Standee Render Command Caching & Motion Math Deduplication
+    - Files: Engine/src/Scene/Scene.cpp, Engine/include/Engine/Scene/Scene.h
+    - Details:
+      * Stop calling GetComponent<T>() up to 11 times per entity across GatherRenderContext, RenderPassShadowMap, and RenderPassCutoutStandees.
+      * Deduplicate ResolveStandeeMotion() which currently recalculates wind phase and proximity rustle twice per frame for every shadow-casting standee.
+      * Flatten into StandeeRenderCommand struct storing pointers, precomputed size/rot/wind/bend, and viewDepth.
+      * Schwartzian Transform for sorting: Precompute viewDepth once in O(N) rather than re-evaluating glm::dot in std::sort comparator (O(N log N) redundant math).
+    - Impact: 2x faster CPU Scene::Render preparation, removes RTTI dynamic_cast bottlenecks.
+
+[ ] 3. Ring-Buffered VBO Allocations in Renderer2D
+    - Files: Engine/src/Renderer/Renderer2D.cpp, Engine/include/Engine/Renderer/Buffer.h
+    - Details:
+      * Current issue: Renderer2D::Flush() is called 5+ times per frame (shadow, terrain, standees, particles, UI), writing to offset 0 with glBufferSubData while previous draw calls may still be in-flight on GPU.
+      * Allocate VBO with 3x capacity and monotonically increment vertex offset (m_CurrentVertexOffset), wrapping only between frames, or implement persistent mapped buffers (glBufferStorage + GL_MAP_PERSISTENT_BIT).
+    - Impact: Eliminates GPU driver CPU stalls and internal driver buffer ghosting.
+
+[ ] 4. Direct Quad Emission for Ground Tiles
+    - Files: Engine/src/Scene/Scene.cpp, Engine/src/Renderer/Renderer2D.cpp
+    - Details:
+      * Bypass 4x4 matrix multiplication (glm::translate * groundFlatRotation * glm::scale) for every tilemap quad.
+      * Add dedicated Renderer2D::DrawGroundTile(center, sizeXZ, subTexture, ...) directly calculating XZ corner positions.
+    - Impact: Saves 4 matrix-vector multiplies per tile, streamlining ground rendering.
+
+
+[P2] SPATIAL PARTITIONING & COLLISION SCALING
+--------------------------------------------------------------------------------
+[ ] 5. 2D Spatial Hash Grid for Ground Plane Collisions & Rustle
+    - Files: Engine/src/Scene/Scene.cpp, Engine/include/Engine/Scene/Scene.h
+    - Details:
+      * Current issue: Scene::ResolveEntityCollisions() evaluates O(N_dyn * N_stat) collider pairs with nested loops.
+      * Implement a 2D uniform grid (e.g. 2m x 2m cells on XZ plane). Static colliders register once; dynamic entities query 4-9 neighboring cells.
+      * Use spatial grid for foliage interactors in EvaluateProximityBend() so grass tufts only check interactors within 1.2m radius.
+    - Impact: Reduces collision detection complexity from O(N^2) to O(N).
+
+
+[P3] MULTITHREADING & ASYNC PIPELINE ARCHITECTURE
+--------------------------------------------------------------------------------
+[ ] 6. C++20 Work-Stealing JobSystem (std::jthread)
+    - Files: Engine/include/Engine/Core/JobSystem.h, Engine/src/Core/JobSystem.cpp
+    - Details:
+      * Thread pool with (hardware_concurrency - 1) worker threads using std::jthread and cooperative cancellation.
+      * Support parallel_for, task chaining, and std::latch synchronization.
+
+[ ] 7. Parallel Standee & Particle Vertex Generation
+    - Files: Engine/src/Scene/Scene.cpp, Engine/src/Renderer/Renderer2D.cpp
+    - Details:
+      * Pre-assign texture slots on main thread.
+      * Parallelize billboard corner transformations and QuadVertex buffer filling across worker threads into non-overlapping memory slices.
+      * Main thread performs single glBufferSubData + glDrawElements once workers finish.
+    - Impact: 3x-6x speedup in CPU-side frame rendering preparation.
+
+[ ] 8. Enable Built-in Box2D v3 Worker Multithreading
+    - Files: Engine/src/Scene/Scene.cpp
+    - Details:
+      * Hook JobSystem into b2WorldDef (enqueueTask, finishTask, workerCount).
+      * Box2D v3 natively parallelizes physics island solving and contact generation across worker threads.
+    - Impact: Physics simulation scales across all CPU cores.
+
+[ ] 9. Asynchronous Texture Loading & Cutout Processing
+    - Files: Engine/src/Core/ResourceManager.cpp, Engine/src/Utils/CutoutProcessor.cpp
+    - Details:
+      * Offload stbi_load and CutoutProcessor::ProcessFile from main thread into background tasks.
+      * Return placeholder 1x1 texture immediately; swap OpenGL texture handle on main thread via PendingUploads queue upon completion.
+    - Impact: Eliminates main thread frame hitching / stuttering during scene or asset load.
+
+
+[P4] GPU PIPELINE & SHADER MODERNIZATION
+--------------------------------------------------------------------------------
+[ ] 10. Bufferless Fullscreen Triangle for Post-Processing & Bloom
+    - Files: Engine/src/Renderer/PostProcessor.cpp, Sandbox/assets/shaders/PostProcess_*.glsl
+    - Details:
+      * Replace 6-vertex quad VAO/VBO for post-processing with glDrawArrays(GL_TRIANGLES, 0, 3) using gl_VertexID in vertex shader.
+      * Eliminates VAO/VBO bindings and avoids GPU quad diagonal seam warp occupancy penalty.
+    - Impact: Improves post-processing rasterization efficiency and reduces driver state changes.
+================================================================================
+
