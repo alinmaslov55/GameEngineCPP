@@ -35,6 +35,28 @@ public:
     static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor = glm::vec4(1.0f), float alphaCutoff = -1.0f, float emissive = 0.0f, float shadowReceiverOffset = 0.02f);
     static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor = glm::vec4(1.0f), float alphaCutoff = -1.0f, float emissive = 0.0f, float shadowReceiverOffset = 0.02f);
 
+    // Draw a ground-plane XZ aligned tile directly bypassing 4x4 matrix multiplications
+    static void DrawGroundTile(const glm::vec3& center,
+                               const glm::vec2& sizeXZ,
+                               const std::shared_ptr<SubTexture2D>& subTexture,
+                               const glm::vec4& tintColor = glm::vec4(1.0f),
+                               float alphaCutoff = 0.0f,
+                               float emissive = 0.0f,
+                               float shadowReceiverOffset = 0.02f);
+    static void DrawGroundTile(const glm::vec3& center,
+                               const glm::vec2& sizeXZ,
+                               const std::shared_ptr<Texture>& texture,
+                               const glm::vec4& tintColor = glm::vec4(1.0f),
+                               float alphaCutoff = 0.0f,
+                               float emissive = 0.0f,
+                               float shadowReceiverOffset = 0.02f);
+    static void DrawGroundTile(const glm::vec3& center,
+                               const glm::vec2& sizeXZ,
+                               const glm::vec4& color = glm::vec4(1.0f),
+                               float alphaCutoff = 0.0f,
+                               float emissive = 0.0f,
+                               float shadowReceiverOffset = 0.02f);
+
     // Draw a bottom-center anchored 3D upright billboard ("cardboard standee")
     static void DrawBillboard(const glm::vec3& anchorPosition,
                               const glm::vec2& size,
@@ -81,6 +103,7 @@ public:
     struct Statistics {
         uint32_t DrawCalls = 0;
         uint32_t QuadCount = 0;
+        uint32_t RingBufferVBOOffset = 0;
 
         [[nodiscard]] uint32_t GetTotalVertexCount() const noexcept { return QuadCount * 4; }
         [[nodiscard]] uint32_t GetTotalIndexCount() const noexcept { return QuadCount * 6; }

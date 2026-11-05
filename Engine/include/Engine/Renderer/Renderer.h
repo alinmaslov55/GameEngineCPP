@@ -17,7 +17,7 @@ public:
     static void SetPolygonOffset(bool enabled, float factor = 1.0f, float units = 1.0f);
     static void SetClearColor(const glm::vec4& color);
     static void Clear();
-    static void DrawIndexed(const std::shared_ptr<VertexArray>& vertexArray, uint32_t indexCount = 0);
+    static void DrawIndexed(const std::shared_ptr<VertexArray>& vertexArray, uint32_t indexCount = 0, uint32_t baseVertex = 0);
 };
 
 } // namespace Engine

@@ -21,14 +21,14 @@ ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
       * Schwartzian Transform for sorting: Precompute viewDepth once in O(N) rather than re-evaluating glm::dot in std::sort comparator (O(N log N) redundant math).
     - Impact: 2x faster CPU Scene::Render preparation, removes RTTI dynamic_cast bottlenecks.
 
-[ ] 3. Ring-Buffered VBO Allocations in Renderer2D
+[x] 3. Ring-Buffered VBO Allocations in Renderer2D
     - Files: Engine/src/Renderer/Renderer2D.cpp, Engine/include/Engine/Renderer/Buffer.h
     - Details:
       * Current issue: Renderer2D::Flush() is called 5+ times per frame (shadow, terrain, standees, particles, UI), writing to offset 0 with glBufferSubData while previous draw calls may still be in-flight on GPU.
       * Allocate VBO with 3x capacity and monotonically increment vertex offset (m_CurrentVertexOffset), wrapping only between frames, or implement persistent mapped buffers (glBufferStorage + GL_MAP_PERSISTENT_BIT).
     - Impact: Eliminates GPU driver CPU stalls and internal driver buffer ghosting.
 
-[ ] 4. Direct Quad Emission for Ground Tiles
+[x] 4. Direct Quad Emission for Ground Tiles
     - Files: Engine/src/Scene/Scene.cpp, Engine/src/Renderer/Renderer2D.cpp
     - Details:
       * Bypass 4x4 matrix multiplication (glm::translate * groundFlatRotation * glm::scale) for every tilemap quad.

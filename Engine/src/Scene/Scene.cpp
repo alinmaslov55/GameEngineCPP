@@ -786,6 +786,8 @@ void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
             continue;
         }
 
+        const glm::vec2 tileSize = { mapScale.x, mapScale.z };
+
         for (int z = minZ; z <= maxZ; ++z) {
             for (int x = minX; x <= maxX; ++x) {
                 const uint32_t ux = static_cast<uint32_t>(x);
@@ -802,11 +804,7 @@ void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
                     static_cast<float>(z) * mapScale.z
                 );
 
-                const glm::mat4 tileMatrix = glm::translate(glm::mat4(1.0f), worldPos) *
-                                             groundFlatRotation *
-                                             glm::scale(glm::mat4(1.0f), glm::vec3(mapScale.x, mapScale.z, 1.0f));
-
-                Renderer2D::DrawQuad(tileMatrix, subTexture, glm::vec4(1.0f), 0.0f, 0.0f, 0.02f);
+                Renderer2D::DrawGroundTile(worldPos, tileSize, subTexture, glm::vec4(1.0f), 0.0f, 0.0f, 0.02f);
             }
         }
     }
@@ -817,18 +815,30 @@ void Scene::RenderPassGroundPlane(SceneRenderContext& ctx) {
 
         glm::vec3 decalPos = transform->position;
         decalPos.y += 0.004f;
-        const glm::mat4 decalMatrix = glm::translate(glm::mat4(1.0f), decalPos) *
-                                      glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
-                                      groundFlatRotation *
-                                      glm::scale(glm::mat4(1.0f), glm::vec3(transform->scale.x, transform->scale.z, 1.0f));
-
         const float decalEmissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
-        if (sprite->GetSubTexture()) {
-            Renderer2D::DrawQuad(decalMatrix, sprite->GetSubTexture(), sprite->GetColor(),
-                                 sprite->GetAlphaCutoff(), decalEmissive, 0.02f);
+
+        if (std::abs(transform->rotation.y) < 1e-4f) {
+            const glm::vec2 decalSize = { transform->scale.x, transform->scale.z };
+            if (sprite->GetSubTexture()) {
+                Renderer2D::DrawGroundTile(decalPos, decalSize, sprite->GetSubTexture(), sprite->GetColor(),
+                                           sprite->GetAlphaCutoff(), decalEmissive, 0.02f);
+            } else {
+                Renderer2D::DrawGroundTile(decalPos, decalSize, sprite->GetTexture(), sprite->GetColor(),
+                                           sprite->GetAlphaCutoff(), decalEmissive, 0.02f);
+            }
         } else {
-            Renderer2D::DrawQuad(decalMatrix, sprite->GetTexture(), sprite->GetColor(),
-                                 sprite->GetAlphaCutoff(), decalEmissive, 0.02f);
+            const glm::mat4 decalMatrix = glm::translate(glm::mat4(1.0f), decalPos) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                          groundFlatRotation *
+                                          glm::scale(glm::mat4(1.0f), glm::vec3(transform->scale.x, transform->scale.z, 1.0f));
+
+            if (sprite->GetSubTexture()) {
+                Renderer2D::DrawQuad(decalMatrix, sprite->GetSubTexture(), sprite->GetColor(),
+                                     sprite->GetAlphaCutoff(), decalEmissive, 0.02f);
+            } else {
+                Renderer2D::DrawQuad(decalMatrix, sprite->GetTexture(), sprite->GetColor(),
+                                     sprite->GetAlphaCutoff(), decalEmissive, 0.02f);
+            }
         }
     }
 

@@ -65,9 +65,19 @@ void VertexBuffer::Unbind() const {
 }
 
 void VertexBuffer::SetData(const void* data, uint32_t size) {
-    ENGINE_CORE_TRACE("VertexBuffer ID {} SetData ({} bytes)", m_RendererID, size);
+    SetSubData(data, size, 0);
+}
+
+void VertexBuffer::SetSubData(const void* data, uint32_t size, uint32_t offset) {
+    ENGINE_CORE_TRACE("VertexBuffer ID {} SetSubData ({} bytes at offset {})", m_RendererID, size, offset);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
-    glBufferSubData(GL_ARRAY_BUFFER, 0, size, data);
+    glBufferSubData(GL_ARRAY_BUFFER, offset, size, data);
+}
+
+void VertexBuffer::Orphan() {
+    ENGINE_CORE_TRACE("VertexBuffer ID {} Orphan (capacity: {} bytes)", m_RendererID, m_Capacity);
+    glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
+    glBufferData(GL_ARRAY_BUFFER, m_Capacity, nullptr, GL_DYNAMIC_DRAW);
 }
 
 IndexBuffer::IndexBuffer(const uint32_t* indices, uint32_t count) : m_Count(count) {

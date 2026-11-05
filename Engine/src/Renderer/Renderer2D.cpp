@@ -64,6 +64,8 @@ struct Renderer2DStorage {
     static constexpr uint32_t MaxQuads = 10000;
     static constexpr uint32_t MaxVertices = MaxQuads * 4;
     static constexpr uint32_t MaxIndices = MaxQuads * 6;
+    static constexpr uint32_t RingBufferMultiplier = 3;
+    static constexpr uint32_t TotalVertices = MaxVertices * RingBufferMultiplier;
     static constexpr uint32_t MaxTextureSlots = 15; // Slots 0..14 = batched color textures; Slot 15 = ShadowMap
     static constexpr uint32_t ShadowMapTextureSlot = 15;
 
@@ -75,6 +77,7 @@ struct Renderer2DStorage {
     uint32_t QuadIndexCount = 0;
     std::unique_ptr<QuadVertex[]> QuadVertexBufferBase;
     QuadVertex* QuadVertexBufferPtr = nullptr;
+    uint32_t CurrentVertexOffset = 0;
 
     std::array<uint32_t, MaxTextureSlots> TextureSlots{};
     uint32_t TextureSlotIndex = 1; // Slot 0 = 1x1 WhiteTexture
@@ -97,8 +100,9 @@ static std::unique_ptr<Renderer2DStorage> s_Data{nullptr};
 
 
 void Renderer2D::Init() {
-    ENGINE_CORE_INFO("Initializing Renderer2D (MaxQuads: {}, MaxTextureSlots: {} + ShadowSlot {})...",
+    ENGINE_CORE_INFO("Initializing Renderer2D (MaxQuads: {}, TotalRingVertices: {}, MaxTextureSlots: {} + ShadowSlot {})...",
                      Renderer2DStorage::MaxQuads,
+                     Renderer2DStorage::TotalVertices,
                      Renderer2DStorage::MaxTextureSlots,
                      Renderer2DStorage::ShadowMapTextureSlot);
     s_Data = std::make_unique<Renderer2DStorage>();
@@ -106,7 +110,7 @@ void Renderer2D::Init() {
     s_Data->QuadVertexArray = std::make_shared<VertexArray>();
 
     s_Data->QuadVertexBuffer = std::make_shared<VertexBuffer>(
-        Renderer2DStorage::MaxVertices * static_cast<uint32_t>(sizeof(QuadVertex))
+        Renderer2DStorage::TotalVertices * static_cast<uint32_t>(sizeof(QuadVertex))
     );
     s_Data->QuadVertexBuffer->SetLayout({
         { ShaderDataType::Float3, "a_Position"     },
@@ -342,11 +346,22 @@ void Renderer2D::Flush() {
         return;
     }
 
-    uint32_t dataSize = static_cast<uint32_t>(
-        reinterpret_cast<const uint8_t*>(s_Data->QuadVertexBufferPtr) -
-        reinterpret_cast<const uint8_t*>(s_Data->QuadVertexBufferBase.get())
+    const uint32_t vertexCount = static_cast<uint32_t>(
+        s_Data->QuadVertexBufferPtr - s_Data->QuadVertexBufferBase.get()
     );
-    s_Data->QuadVertexBuffer->SetData(s_Data->QuadVertexBufferBase.get(), dataSize);
+    const uint32_t dataSize = vertexCount * static_cast<uint32_t>(sizeof(QuadVertex));
+
+    const bool supportsBaseVertex = (glad_glDrawElementsBaseVertex != nullptr);
+    if (!supportsBaseVertex) {
+        s_Data->CurrentVertexOffset = 0;
+    } else if (s_Data->CurrentVertexOffset + vertexCount > Renderer2DStorage::TotalVertices) {
+        // Ring buffer wrap: orphan GPU buffer storage to prevent pipeline sync stalls
+        s_Data->QuadVertexBuffer->Orphan();
+        s_Data->CurrentVertexOffset = 0;
+    }
+
+    const uint32_t byteOffset = s_Data->CurrentVertexOffset * static_cast<uint32_t>(sizeof(QuadVertex));
+    s_Data->QuadVertexBuffer->SetSubData(s_Data->QuadVertexBufferBase.get(), dataSize, byteOffset);
 
     for (uint32_t i = 0; i < s_Data->TextureSlotIndex; i++) {
         glActiveTexture(GL_TEXTURE0 + i);
@@ -358,8 +373,13 @@ void Renderer2D::Flush() {
 
     s_Data->TextureShader->Bind();
     s_Data->QuadVertexArray->Bind();
-    Renderer::DrawIndexed(s_Data->QuadVertexArray, s_Data->QuadIndexCount);
+    Renderer::DrawIndexed(s_Data->QuadVertexArray, s_Data->QuadIndexCount, s_Data->CurrentVertexOffset);
     s_Data->Stats.DrawCalls++;
+    s_Data->Stats.RingBufferVBOOffset = byteOffset + dataSize;
+
+    if (supportsBaseVertex) {
+        s_Data->CurrentVertexOffset += vertexCount;
+    }
 }
 
 void Renderer2D::SubmitVertices(
@@ -460,6 +480,84 @@ void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubT
     }
 }
 
+void Renderer2D::DrawGroundTile(const glm::vec3& center,
+                               const glm::vec2& sizeXZ,
+                               const std::shared_ptr<SubTexture2D>& subTexture,
+                               const glm::vec4& tintColor,
+                               float alphaCutoff,
+                               float emissive,
+                               float shadowReceiverOffset) {
+    static const glm::vec3 kZeroWindParams[4] = {
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f }
+    };
+
+    const float hx = 0.5f * sizeXZ.x;
+    const float hz = 0.5f * sizeXZ.y;
+    const float y = center.y;
+
+    const glm::vec3 positions[4] = {
+        { center.x - hx, y, center.z + hz },
+        { center.x + hx, y, center.z + hz },
+        { center.x + hx, y, center.z - hz },
+        { center.x - hx, y, center.z - hz }
+    };
+
+    if (subTexture && subTexture->GetTexture() && subTexture->GetTexture()->GetRendererID() != 0) {
+        const glm::vec2 min = subTexture->GetMin();
+        const glm::vec2 max = subTexture->GetMax();
+        const glm::vec2 subTexCoords[4] = {
+            { min.x, min.y },
+            { max.x, min.y },
+            { max.x, max.y },
+            { min.x, max.y }
+        };
+        SubmitVertices(positions, subTexture->GetTexture()->GetRendererID(), subTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, kZeroWindParams);
+    } else {
+        SubmitVertices(positions, 0, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, kZeroWindParams);
+    }
+}
+
+void Renderer2D::DrawGroundTile(const glm::vec3& center,
+                               const glm::vec2& sizeXZ,
+                               const std::shared_ptr<Texture>& texture,
+                               const glm::vec4& tintColor,
+                               float alphaCutoff,
+                               float emissive,
+                               float shadowReceiverOffset) {
+    static const glm::vec3 kZeroWindParams[4] = {
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f }
+    };
+
+    const float hx = 0.5f * sizeXZ.x;
+    const float hz = 0.5f * sizeXZ.y;
+    const float y = center.y;
+
+    const glm::vec3 positions[4] = {
+        { center.x - hx, y, center.z + hz },
+        { center.x + hx, y, center.z + hz },
+        { center.x + hx, y, center.z - hz },
+        { center.x - hx, y, center.z - hz }
+    };
+
+    uint32_t texID = (texture && texture->GetRendererID() != 0) ? texture->GetRendererID() : 0;
+    SubmitVertices(positions, texID, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, kZeroWindParams);
+}
+
+void Renderer2D::DrawGroundTile(const glm::vec3& center,
+                               const glm::vec2& sizeXZ,
+                               const glm::vec4& color,
+                               float alphaCutoff,
+                               float emissive,
+                               float shadowReceiverOffset) {
+    DrawGroundTile(center, sizeXZ, std::shared_ptr<Texture>(nullptr), color, alphaCutoff, emissive, shadowReceiverOffset);
+}
+
 void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
                                const glm::vec2& size,
                                const glm::vec3& rightAxis,
@@ -547,6 +645,12 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
 void Renderer2D::ResetStats() {
     if (s_Data) {
         std::memset(&s_Data->Stats, 0, sizeof(Statistics));
+        // Wrap ring buffer at frame boundary if next batch cannot fit entirely
+        if (s_Data->CurrentVertexOffset + Renderer2DStorage::MaxVertices > Renderer2DStorage::TotalVertices) {
+            s_Data->QuadVertexBuffer->Orphan();
+            s_Data->CurrentVertexOffset = 0;
+        }
+        s_Data->Stats.RingBufferVBOOffset = s_Data->CurrentVertexOffset * static_cast<uint32_t>(sizeof(QuadVertex));
     }
 }
 

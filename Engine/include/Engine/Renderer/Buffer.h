@@ -118,10 +118,17 @@ public:
     void Unbind() const;
 
     void SetData(const void* data, uint32_t size);
+    void SetSubData(const void* data, uint32_t size, uint32_t offset = 0);
+    void Orphan();
 
     template<typename T>
     void SetData(std::span<const T> data) {
         SetData(data.data(), static_cast<uint32_t>(data.size_bytes()));
+    }
+
+    template<typename T>
+    void SetSubData(std::span<const T> data, uint32_t offset = 0) {
+        SetSubData(data.data(), static_cast<uint32_t>(data.size_bytes()), offset);
     }
 
     [[nodiscard]] uint32_t GetCapacity() const noexcept { return m_Capacity; }
