@@ -6,6 +6,9 @@
 #include "Engine/Renderer/SceneLighting.h"
 #include "Engine/Scene/StandeeCommand.h"
 
+#include <box2d/types.h>
+#include <array>
+#include <atomic>
 #include <cstdint>
 #include <string>
 #include <vector>
@@ -85,7 +88,26 @@ public:
     [[nodiscard]] size_t GetStaticGridCellCount() const noexcept { return m_StaticGrid.size(); }
     [[nodiscard]] size_t GetStaticColliderCount() const noexcept { return m_StaticColliders.size(); }
 
+    [[nodiscard]] uint64_t GetBox2DParallelTasksDispatched() const noexcept { return m_Box2DParallelTasksDispatched; }
+    [[nodiscard]] uint64_t GetBox2DSerialTasksExecuted() const noexcept { return m_Box2DSerialTasksExecuted; }
+    [[nodiscard]] uint64_t GetBox2DTotalTasks() const noexcept { return m_Box2DParallelTasksDispatched + m_Box2DSerialTasksExecuted; }
+
 private:
+    struct Box2DTask {
+        std::atomic<int> remaining{ 0 };
+        std::atomic<bool> done{ false };
+        std::atomic<bool> inUse{ false };
+
+        Box2DTask() = default;
+        Box2DTask(const Box2DTask&) = delete;
+        Box2DTask& operator=(const Box2DTask&) = delete;
+        Box2DTask(Box2DTask&&) = delete;
+        Box2DTask& operator=(Box2DTask&&) = delete;
+    };
+
+    static void* Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int minRange, void* taskContext, void* userContext);
+    static void Box2DFinishTask(void* userTask, void* userContext);
+
     void UpdateCollidersAndGravity(float deltaTime);
     void ResolveEntityCollisions();
     void ResolveTilemapCollisions();
@@ -113,6 +135,12 @@ private:
 
     bool m_IsRuntimeRunning = false;
     uint32_t m_PhysicsWorldId = 0;
+
+    // Box2D v3 multithreaded task management pool (zero heap allocation)
+    static constexpr size_t kMaxBox2DTasks = 16;
+    std::array<Box2DTask, kMaxBox2DTasks> m_Box2DTasks;
+    uint64_t m_Box2DParallelTasksDispatched = 0;
+    uint64_t m_Box2DSerialTasksExecuted = 0;
 
     // 2D Spatial Hash Grid for static colliders and foliage interactors
     std::unordered_map<uint64_t, std::vector<uint32_t>> m_StaticGrid;

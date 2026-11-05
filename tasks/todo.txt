@@ -63,7 +63,7 @@ ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
       * Main thread performs single glBufferSubData + glDrawElements once workers finish.
     - Impact: 3x-6x speedup in CPU-side frame rendering preparation.
 
-[ ] 8. Enable Built-in Box2D v3 Worker Multithreading
+[x] 8. Enable Built-in Box2D v3 Worker Multithreading
     - Files: Engine/src/Scene/Scene.cpp
     - Details:
       * Hook JobSystem into b2WorldDef (enqueueTask, finishTask, workerCount).

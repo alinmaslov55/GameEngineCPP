@@ -1,4 +1,5 @@
 #include "Engine/Scene/Scene.h"
+#include "Engine/Core/JobSystem.h"
 #include "Engine/Core/Time.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/FoliageWindComponents.h"
@@ -396,6 +397,101 @@ void Scene::ResolveTilemapCollisions() {
     }
 }
 
+void* Scene::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int minRange, void* taskContext, void* userContext) {
+    if (!task || itemCount <= 0) {
+        return nullptr;
+    }
+
+    auto* scene = static_cast<Scene*>(userContext);
+    const uint32_t workers = JobSystem::GetWorkerCount();
+
+    if (minRange <= 0) {
+        minRange = 1;
+    }
+
+    const int maxChunks = itemCount / minRange;
+    const int availableThreads = static_cast<int>(workers + 1);
+    const int chunkCount = std::min(availableThreads, maxChunks);
+
+    // If chunkCount <= 1 or JobSystem is not initialized with workers, execute serially on calling thread
+    if (chunkCount <= 1 || !JobSystem::IsInitialized() || workers == 0 || !scene) {
+        const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
+        const uint32_t callerWorker = (currentWorker >= 0 && currentWorker < static_cast<int32_t>(workers))
+                                          ? static_cast<uint32_t>(currentWorker)
+                                          : workers;
+        task(0, itemCount, callerWorker, taskContext);
+        if (scene) {
+            ++scene->m_Box2DSerialTasksExecuted;
+        }
+        return nullptr;
+    }
+
+    // Acquire an idle task slot from the preallocated pool (zero dynamic allocation)
+    Box2DTask* taskSlot = nullptr;
+    for (auto& slot : scene->m_Box2DTasks) {
+        bool expected = false;
+        if (slot.inUse.compare_exchange_strong(expected, true, std::memory_order_acq_rel)) {
+            taskSlot = &slot;
+            break;
+        }
+    }
+
+    // If all preallocated slots are occupied, fallback to executing serially
+    if (!taskSlot) {
+        const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
+        const uint32_t callerWorker = (currentWorker >= 0 && currentWorker < static_cast<int32_t>(workers))
+                                          ? static_cast<uint32_t>(currentWorker)
+                                          : workers;
+        task(0, itemCount, callerWorker, taskContext);
+        ++scene->m_Box2DSerialTasksExecuted;
+        return nullptr;
+    }
+
+    taskSlot->remaining.store(chunkCount, std::memory_order_release);
+    taskSlot->done.store(false, std::memory_order_release);
+    ++scene->m_Box2DParallelTasksDispatched;
+
+    const int baseSize = itemCount / chunkCount;
+    const int remainder = itemCount % chunkCount;
+
+    for (int c = 0; c < chunkCount; ++c) {
+        const int start = c * baseSize + std::min(c, remainder);
+        const int end = start + baseSize + (c < remainder ? 1 : 0);
+
+        JobSystem::Dispatch([task, start, end, taskContext, taskSlot, workers]() {
+            const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
+            const uint32_t wIdx = (currentWorker >= 0 && currentWorker < static_cast<int32_t>(workers))
+                                      ? static_cast<uint32_t>(currentWorker)
+                                      : workers;
+            task(start, end, wIdx, taskContext);
+
+            if (taskSlot->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+                taskSlot->done.store(true, std::memory_order_release);
+                taskSlot->done.notify_all();
+            }
+        });
+    }
+
+    return taskSlot;
+}
+
+void Scene::Box2DFinishTask(void* userTask, void* userContext) {
+    if (!userTask) {
+        return;
+    }
+
+    (void)userContext;
+    auto* taskSlot = static_cast<Box2DTask*>(userTask);
+
+    while (!taskSlot->done.load(std::memory_order_acquire)) {
+        if (!JobSystem::ExecuteOneJob()) {
+            taskSlot->done.wait(false, std::memory_order_acquire);
+        }
+    }
+
+    taskSlot->inUse.store(false, std::memory_order_release);
+}
+
 void Scene::OnRuntimeStart() {
     if (m_IsRuntimeRunning) {
         ENGINE_CORE_WARN("Scene '{}': OnRuntimeStart called while already running", m_Name);
@@ -406,6 +502,16 @@ void Scene::OnRuntimeStart() {
 
     b2WorldDef worldDef = b2DefaultWorldDef();
     worldDef.gravity = b2Vec2{ 0.0f, -9.8f };
+
+    const uint32_t workers = JobSystem::GetWorkerCount();
+    if (JobSystem::IsInitialized() && workers > 0) {
+        worldDef.workerCount = static_cast<int>(workers + 1);
+        worldDef.enqueueTask = &Scene::Box2DEnqueueTask;
+        worldDef.finishTask = &Scene::Box2DFinishTask;
+        worldDef.userTaskContext = this;
+        ENGINE_CORE_INFO("Scene '{}': Enabling Box2D v3 worker multithreading with {} workers", m_Name, worldDef.workerCount);
+    }
+
     b2WorldId worldId = b2CreateWorld(&worldDef);
     m_PhysicsWorldId = b2StoreWorldId(worldId);
     m_IsRuntimeRunning = true;
@@ -465,6 +571,12 @@ void Scene::OnRuntimeStop() {
     }
     m_PhysicsWorldId = 0;
     m_IsRuntimeRunning = false;
+
+    for (auto& slot : m_Box2DTasks) {
+        slot.inUse.store(false, std::memory_order_relaxed);
+        slot.done.store(true, std::memory_order_relaxed);
+        slot.remaining.store(0, std::memory_order_relaxed);
+    }
 
     for (auto& go : m_GameObjects) {
         if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {

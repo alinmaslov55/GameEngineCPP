@@ -40,7 +40,16 @@ JobSystem::JobSystem(uint32_t workerCount)
 
 JobSystem::~JobSystem() {
     if (m_Initialized) {
-        Shutdown();
+        for (auto& worker : m_Workers) {
+            worker.request_stop();
+        }
+        {
+            std::lock_guard lock(m_WakeMutex);
+            m_WakeCV.notify_all();
+        }
+        m_Workers.clear();
+        m_WorkerQueues.clear();
+        m_Initialized = false;
     }
 }
 
@@ -91,6 +100,10 @@ bool JobSystem::IsInitialized() noexcept {
 
 uint32_t JobSystem::GetWorkerCount() noexcept {
     return (s_Instance && s_Instance->m_Initialized) ? s_Instance->m_WorkerCount : 0;
+}
+
+int32_t JobSystem::GetCurrentWorkerIndex() noexcept {
+    return t_WorkerIndex;
 }
 
 JobHandle JobSystem::Dispatch(std::function<void()> job) {

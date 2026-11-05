@@ -1,4 +1,5 @@
 #include <gtest/gtest.h>
+#include "Engine/Core/JobSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
@@ -141,6 +142,74 @@ TEST(Box2DPhysicsTest, DynamicBodyFallsUnderGravityDuringRuntime) {
     EXPECT_EQ(ballRb->RuntimeBody, nullptr);
     EXPECT_EQ(groundRb->RuntimeBody, nullptr);
     EXPECT_EQ(ballBox->RuntimeFixture, nullptr);
+}
+
+TEST(Box2DPhysicsTest, MultithreadedStepWithWorkerPool) {
+    // 1. Initialize JobSystem with 4 worker threads
+    Engine::JobSystem::Shutdown();
+    Engine::JobSystem::Init(4);
+    EXPECT_TRUE(Engine::JobSystem::IsInitialized());
+    EXPECT_EQ(Engine::JobSystem::GetWorkerCount(), 4u);
+
+    {
+        Engine::Scene scene("MultithreadedPhysicsScene");
+
+        // Static ground floor
+        auto* ground = scene.CreateGameObject("Ground");
+        ground->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+        auto* groundRb = ground->AddComponent<Engine::Rigidbody2D>();
+        groundRb->Type = Engine::Rigidbody2D::BodyType::Static;
+        auto* groundBox = ground->AddComponent<Engine::BoxCollider2D>();
+        groundBox->size = { 100.0f, 2.0f };
+
+        // Create 40 dynamic bodies across different columns and heights to produce multiple islands
+        constexpr int kNumBodies = 40;
+        std::vector<Engine::GameObject*> bodies;
+        bodies.reserve(kNumBodies);
+        std::vector<float> initialY(kNumBodies);
+
+        for (int i = 0; i < kNumBodies; ++i) {
+            auto* ball = scene.CreateGameObject("DynamicBody_" + std::to_string(i));
+            const float x = -30.0f + static_cast<float>(i) * 1.5f;
+            const float y = 10.0f + static_cast<float>(i % 5) * 3.0f;
+            ball->GetTransform()->position = { x, y, 0.0f };
+            initialY[i] = y;
+
+            auto* rb = ball->AddComponent<Engine::Rigidbody2D>();
+            rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+            rb->FixedRotation = false;
+
+            auto* box = ball->AddComponent<Engine::BoxCollider2D>();
+            box->size = { 0.8f, 0.8f };
+            box->density = 1.0f;
+            box->friction = 0.3f;
+            box->restitution = 0.2f;
+
+            bodies.push_back(ball);
+        }
+
+        scene.OnRuntimeStart();
+
+        for (int step = 0; step < 30; ++step) {
+            scene.UpdateRuntime(0.016f);
+        }
+
+        // All dynamic bodies should have accelerated and fallen downward under gravity
+        for (int i = 0; i < kNumBodies; ++i) {
+            const float currentY = bodies[i]->GetTransform()->position.y;
+            EXPECT_LT(currentY, initialY[i]);
+            EXPECT_FALSE(std::isnan(currentY));
+            EXPECT_FALSE(std::isnan(bodies[i]->GetTransform()->position.x));
+        }
+
+        // Box2D should have invoked our multithreaded task callbacks during simulation steps
+        EXPECT_GT(scene.GetBox2DTotalTasks(), 0u);
+
+        scene.OnRuntimeStop();
+    }
+
+    Engine::JobSystem::Shutdown();
+    EXPECT_FALSE(Engine::JobSystem::IsInitialized());
 }
 
 TEST(SpatialGrid2DTest, CellKeyGeneration) {

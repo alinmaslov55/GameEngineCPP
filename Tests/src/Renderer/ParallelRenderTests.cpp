@@ -122,6 +122,8 @@ TEST(ParallelRenderTest, ParallelVertexGenerationAlgorithm) {
         EXPECT_FLOAT_EQ(v[0].AlphaCutoff, 0.15f);
         EXPECT_FLOAT_EQ(v[0].TexIndex, 1.0f);
     }
+
+    Engine::JobSystem::Shutdown();
 }
 
 } // namespace

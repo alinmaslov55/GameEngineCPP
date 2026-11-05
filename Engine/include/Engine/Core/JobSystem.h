@@ -53,6 +53,10 @@ public:
     [[nodiscard]] static bool IsInitialized() noexcept;
     [[nodiscard]] static uint32_t GetWorkerCount() noexcept;
 
+    // Returns the worker index [0, GetWorkerCount() - 1] if called from a JobSystem worker thread,
+    // or -1 if called from the main thread or an external calling thread.
+    [[nodiscard]] static int32_t GetCurrentWorkerIndex() noexcept;
+
     // Dispatches a job to the worker pool and returns a JobHandle
     static JobHandle Dispatch(std::function<void()> job);
 
