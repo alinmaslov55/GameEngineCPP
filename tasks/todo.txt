@@ -49,7 +49,7 @@ ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
 
 [P3] MULTITHREADING & ASYNC PIPELINE ARCHITECTURE
 --------------------------------------------------------------------------------
-[ ] 6. C++20 Work-Stealing JobSystem (std::jthread)
+[x] 6. C++20 Work-Stealing JobSystem (std::jthread)
     - Files: Engine/include/Engine/Core/JobSystem.h, Engine/src/Core/JobSystem.cpp
     - Details:
       * Thread pool with (hardware_concurrency - 1) worker threads using std::jthread and cooperative cancellation.

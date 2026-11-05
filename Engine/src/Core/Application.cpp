@@ -1,6 +1,7 @@
 #include "Engine/Core/Application.h"
 #include "Engine/Core/Time.h"
 #include "Engine/Core/Input.h"
+#include "Engine/Core/JobSystem.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/Renderer2D.h"
@@ -44,6 +45,7 @@ void Application::Initialize() {
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
     Time::Init();
     Input::Init();
+    JobSystem::Init();
     AudioManager::Init();
     Renderer::Init();
     Renderer2D::Init();
@@ -197,6 +199,7 @@ void Application::Shutdown() {
     TerrainRenderer::Shutdown();
     Renderer2D::Shutdown();
     AudioManager::Shutdown();
+    JobSystem::Shutdown();
     Input::Shutdown();
     m_Window.reset();
     ENGINE_CORE_INFO("Isometric Engine shutdown complete");
