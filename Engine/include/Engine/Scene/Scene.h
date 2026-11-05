@@ -10,6 +10,7 @@
 #include <vector>
 #include <memory>
 #include <utility>
+#include <unordered_map>
 
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
@@ -92,6 +93,18 @@ public:
 
     [[nodiscard]] const std::vector<std::unique_ptr<GameObject>>& GetGameObjects() const noexcept { return m_GameObjects; }
 
+    static constexpr float kSpatialCellSize = 2.0f;
+
+    [[nodiscard]] static constexpr uint64_t GetCellKey(int32_t cx, int32_t cz) noexcept {
+        return (static_cast<uint64_t>(static_cast<uint32_t>(cx)) << 32) |
+               static_cast<uint64_t>(static_cast<uint32_t>(cz));
+    }
+
+    void InvalidateSpatialGrid() noexcept { m_StaticCollidersDirty = true; }
+    [[nodiscard]] bool IsSpatialGridDirty() const noexcept { return m_StaticCollidersDirty; }
+    [[nodiscard]] size_t GetStaticGridCellCount() const noexcept { return m_StaticGrid.size(); }
+    [[nodiscard]] size_t GetStaticColliderCount() const noexcept { return m_StaticColliders.size(); }
+
 private:
     void UpdateCollidersAndGravity(float deltaTime);
     void ResolveEntityCollisions();
@@ -120,6 +133,13 @@ private:
 
     bool m_IsRuntimeRunning = false;
     uint32_t m_PhysicsWorldId = 0;
+
+    // 2D Spatial Hash Grid for static colliders and foliage interactors
+    std::unordered_map<uint64_t, std::vector<uint32_t>> m_StaticGrid;
+    std::unordered_map<uint64_t, std::vector<uint32_t>> m_FoliageInteractorGrid;
+    std::vector<uint32_t> m_StaticTestedStamp;
+    uint32_t m_SpatialQueryStamp = 0;
+    bool m_StaticCollidersDirty = true;
 
     // Hot-path scratch buffers to prevent per-frame dynamic heap allocations
     std::vector<StandeeRenderCommand> m_StandeeCommands;

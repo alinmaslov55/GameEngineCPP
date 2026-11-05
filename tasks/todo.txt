@@ -38,7 +38,7 @@ ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
 
 [P2] SPATIAL PARTITIONING & COLLISION SCALING
 --------------------------------------------------------------------------------
-[ ] 5. 2D Spatial Hash Grid for Ground Plane Collisions & Rustle
+[x] 5. 2D Spatial Hash Grid for Ground Plane Collisions & Rustle
     - Files: Engine/src/Scene/Scene.cpp, Engine/include/Engine/Scene/Scene.h
     - Details:
       * Current issue: Scene::ResolveEntityCollisions() evaluates O(N_dyn * N_stat) collider pairs with nested loops.

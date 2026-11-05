@@ -68,6 +68,7 @@ GameObject* Scene::CreateGameObject(const std::string& name) {
     auto gameObject = std::make_unique<GameObject>(name);
     GameObject* rawPtr = gameObject.get();
     m_GameObjects.push_back(std::move(gameObject));
+    m_StaticCollidersDirty = true;
     return rawPtr;
 }
 
@@ -76,6 +77,7 @@ GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& na
     auto gameObject = std::make_unique<GameObject>(uuid, name);
     GameObject* rawPtr = gameObject.get();
     m_GameObjects.push_back(std::move(gameObject));
+    m_StaticCollidersDirty = true;
     return rawPtr;
 }
 
@@ -130,6 +132,7 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
             }),
         m_GameObjects.end()
     );
+    m_StaticCollidersDirty = true;
 }
 
 void Scene::Update(float deltaTime) {
@@ -145,9 +148,9 @@ void Scene::Update(float deltaTime) {
 
 void Scene::UpdateCollidersAndGravity(float deltaTime) {
     m_DynamicColliders.clear();
-    m_StaticColliders.clear();
     m_TilemapScratch.clear();
 
+    size_t staticCount = 0;
     for (auto& gameObject : m_GameObjects) {
         if (auto* collider = gameObject->GetComponent<BoxCollider2D>()) {
             auto* transform = gameObject->GetTransform();
@@ -163,12 +166,60 @@ void Scene::UpdateCollidersAndGravity(float deltaTime) {
                     }
                 }
             } else {
-                m_StaticColliders.push_back({ gameObject.get(), transform, collider });
+                ++staticCount;
             }
         }
         if (gameObject->GetComponent<Tilemap>()) {
             m_TilemapScratch.push_back(gameObject.get());
         }
+    }
+
+    if (staticCount != m_StaticColliders.size()) {
+        m_StaticCollidersDirty = true;
+    }
+
+    if (m_StaticCollidersDirty) {
+        m_StaticColliders.clear();
+        m_StaticGrid.clear();
+
+        for (auto& gameObject : m_GameObjects) {
+            if (auto* collider = gameObject->GetComponent<BoxCollider2D>()) {
+                if (!collider->isDynamic) {
+                    m_StaticColliders.push_back({ gameObject.get(), gameObject->GetTransform(), collider });
+                }
+            }
+        }
+
+        m_StaticTestedStamp.assign(m_StaticColliders.size(), 0);
+        m_SpatialQueryStamp = 0;
+
+        for (size_t i = 0; i < m_StaticColliders.size(); ++i) {
+            const auto& entry = m_StaticColliders[i];
+            auto* t = entry.transform;
+            auto* c = entry.collider;
+            if (!t || !c) continue;
+
+            float sLeft  = t->position.x + c->offset.x - (c->size.x * t->scale.x) * 0.5f;
+            float sRight = t->position.x + c->offset.x + (c->size.x * t->scale.x) * 0.5f;
+            float sBack  = t->position.z + c->offset.y - (c->size.y * t->scale.z) * 0.5f;
+            float sFront = t->position.z + c->offset.y + (c->size.y * t->scale.z) * 0.5f;
+
+            if (sLeft > sRight) std::swap(sLeft, sRight);
+            if (sBack > sFront) std::swap(sBack, sFront);
+
+            const int32_t minCX = static_cast<int32_t>(std::floor(sLeft / kSpatialCellSize));
+            const int32_t maxCX = static_cast<int32_t>(std::floor(sRight / kSpatialCellSize));
+            const int32_t minCZ = static_cast<int32_t>(std::floor(sBack / kSpatialCellSize));
+            const int32_t maxCZ = static_cast<int32_t>(std::floor(sFront / kSpatialCellSize));
+
+            for (int32_t cz = minCZ; cz <= maxCZ; ++cz) {
+                for (int32_t cx = minCX; cx <= maxCX; ++cx) {
+                    m_StaticGrid[GetCellKey(cx, cz)].push_back(static_cast<uint32_t>(i));
+                }
+            }
+        }
+
+        m_StaticCollidersDirty = false;
     }
 }
 
@@ -191,6 +242,11 @@ void Scene::ResolveEntityCollisions() {
         float bRight = tB->position.x + cB->offset.x + (cB->size.x * tB->scale.x) / 2.0f;
         float bBack  = tB->position.z + cB->offset.y - (cB->size.y * tB->scale.z) / 2.0f;
         float bFront = tB->position.z + cB->offset.y + (cB->size.y * tB->scale.z) / 2.0f;
+
+        if (aLeft > aRight) std::swap(aLeft, aRight);
+        if (aBack > aFront) std::swap(aBack, aFront);
+        if (bLeft > bRight) std::swap(bLeft, bRight);
+        if (bBack > bFront) std::swap(bBack, bFront);
 
         float overlapX = std::min(aRight, bRight) - std::max(aLeft, bLeft);
         float overlapZ = std::min(aFront, bFront) - std::max(aBack, bBack);
@@ -228,10 +284,45 @@ void Scene::ResolveEntityCollisions() {
         }
     }
 
-    // 2. Dynamic vs Static (O(N_dyn * N_stat) - skips all static-vs-static pairs)
-    for (size_t i = 0; i < m_DynamicColliders.size(); i++) {
-        for (size_t j = 0; j < m_StaticColliders.size(); j++) {
-            resolveCollisionPair(m_DynamicColliders[i], m_StaticColliders[j]);
+    // 2. Dynamic vs Static (using 2D uniform spatial hash grid)
+    if (!m_StaticColliders.empty()) {
+        for (const auto& dynEntry : m_DynamicColliders) {
+            auto* tA = dynEntry.transform;
+            auto* cA = dynEntry.collider;
+            if (!tA || !cA) continue;
+
+            float aLeft  = tA->position.x + cA->offset.x - (cA->size.x * tA->scale.x) / 2.0f;
+            float aRight = tA->position.x + cA->offset.x + (cA->size.x * tA->scale.x) / 2.0f;
+            float aBack  = tA->position.z + cA->offset.y - (cA->size.y * tA->scale.z) / 2.0f;
+            float aFront = tA->position.z + cA->offset.y + (cA->size.y * tA->scale.z) / 2.0f;
+
+            if (aLeft > aRight) std::swap(aLeft, aRight);
+            if (aBack > aFront) std::swap(aBack, aFront);
+
+            const int32_t minCX = static_cast<int32_t>(std::floor(aLeft / kSpatialCellSize));
+            const int32_t maxCX = static_cast<int32_t>(std::floor(aRight / kSpatialCellSize));
+            const int32_t minCZ = static_cast<int32_t>(std::floor(aBack / kSpatialCellSize));
+            const int32_t maxCZ = static_cast<int32_t>(std::floor(aFront / kSpatialCellSize));
+
+            ++m_SpatialQueryStamp;
+            if (m_SpatialQueryStamp == 0) {
+                m_StaticTestedStamp.assign(m_StaticColliders.size(), 0);
+                m_SpatialQueryStamp = 1;
+            }
+
+            for (int32_t cz = minCZ; cz <= maxCZ; ++cz) {
+                for (int32_t cx = minCX; cx <= maxCX; ++cx) {
+                    auto it = m_StaticGrid.find(GetCellKey(cx, cz));
+                    if (it != m_StaticGrid.end()) {
+                        for (uint32_t staticIdx : it->second) {
+                            if (staticIdx < m_StaticColliders.size() && m_StaticTestedStamp[staticIdx] != m_SpatialQueryStamp) {
+                                m_StaticTestedStamp[staticIdx] = m_SpatialQueryStamp;
+                                resolveCollisionPair(dynEntry, m_StaticColliders[staticIdx]);
+                            }
+                        }
+                    }
+                }
+            }
         }
     }
 }
@@ -358,6 +449,7 @@ void Scene::OnRuntimeStart() {
             }
         }
     }
+    m_StaticCollidersDirty = true;
 }
 
 void Scene::OnRuntimeStop() {
@@ -382,6 +474,7 @@ void Scene::OnRuntimeStop() {
             bc2d->RuntimeFixture = nullptr;
         }
     }
+    m_StaticCollidersDirty = true;
 }
 
 void Scene::UpdateRuntime(float deltaTime) {
@@ -530,6 +623,25 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
         sunRightXZ = ctx.dirLight->GetSunRightXZ();
     }
 
+    // Populate 2D spatial hash grid for foliage interactors
+    m_FoliageInteractorGrid.clear();
+    static constexpr float kFoliageInteractionRadius = 1.25f;
+    if (ctx.windComp && ctx.windComp->InteractiveRustle && !m_FoliageScratch.empty()) {
+        for (uint32_t i = 0; i < static_cast<uint32_t>(m_FoliageScratch.size()); ++i) {
+            const glm::vec3& pos = m_FoliageScratch[i].second;
+            const int32_t minCX = static_cast<int32_t>(std::floor((pos.x - kFoliageInteractionRadius) / kSpatialCellSize));
+            const int32_t maxCX = static_cast<int32_t>(std::floor((pos.x + kFoliageInteractionRadius) / kSpatialCellSize));
+            const int32_t minCZ = static_cast<int32_t>(std::floor((pos.z - kFoliageInteractionRadius) / kSpatialCellSize));
+            const int32_t maxCZ = static_cast<int32_t>(std::floor((pos.z + kFoliageInteractionRadius) / kSpatialCellSize));
+
+            for (int32_t cz = minCZ; cz <= maxCZ; ++cz) {
+                for (int32_t cx = minCX; cx <= maxCX; ++cx) {
+                    m_FoliageInteractorGrid[GetCellKey(cx, cz)].push_back(i);
+                }
+            }
+        }
+    }
+
     // Pass 2: Renderable entity dispatch, frustum culling, and StandeeRenderCommand caching
     for (auto& gameObject : m_GameObjects) {
         const uint64_t mask = gameObject->GetComponentMask();
@@ -607,22 +719,28 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
 
                             float camProximityBend = 0.0f;
                             float shadowProximityBend = 0.0f;
-                            if (ctx.windComp && ctx.windComp->InteractiveRustle && rawWindWeight > 0.0001f && !m_FoliageScratch.empty()) {
-                                float camBendSum = 0.0f;
-                                float shadowBendSum = 0.0f;
-                                for (const auto& [interactorObj, interactorPos] : m_FoliageScratch) {
-                                    if (interactorObj == gameObject.get()) continue;
-                                    if (inCamera) {
-                                        camBendSum += ctx.windComp->EvaluateProximityBend(
-                                            transform->position, interactorPos, camRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
+                            if (ctx.windComp && ctx.windComp->InteractiveRustle && rawWindWeight > 0.0001f && !m_FoliageInteractorGrid.empty()) {
+                                const int32_t scx = static_cast<int32_t>(std::floor(transform->position.x / kSpatialCellSize));
+                                const int32_t scz = static_cast<int32_t>(std::floor(transform->position.z / kSpatialCellSize));
+                                const auto it = m_FoliageInteractorGrid.find(GetCellKey(scx, scz));
+                                if (it != m_FoliageInteractorGrid.end() && !it->second.empty()) {
+                                    float camBendSum = 0.0f;
+                                    float shadowBendSum = 0.0f;
+                                    for (uint32_t interactorIdx : it->second) {
+                                        const auto& [interactorObj, interactorPos] = m_FoliageScratch[interactorIdx];
+                                        if (interactorObj == gameObject.get()) continue;
+                                        if (inCamera) {
+                                            camBendSum += ctx.windComp->EvaluateProximityBend(
+                                                transform->position, interactorPos, camRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
+                                        }
+                                        if (inShadow) {
+                                            shadowBendSum += ctx.windComp->EvaluateProximityBend(
+                                                transform->position, interactorPos, sunRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
+                                        }
                                     }
-                                    if (inShadow) {
-                                        shadowBendSum += ctx.windComp->EvaluateProximityBend(
-                                            transform->position, interactorPos, sunRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
-                                    }
+                                    if (inCamera) camProximityBend = std::clamp(camBendSum, -0.65f, 0.65f);
+                                    if (inShadow) shadowProximityBend = std::clamp(shadowBendSum, -0.65f, 0.65f);
                                 }
-                                if (inCamera) camProximityBend = std::clamp(camBendSum, -0.65f, 0.65f);
-                                if (inShadow) shadowProximityBend = std::clamp(shadowBendSum, -0.65f, 0.65f);
                             }
 
                             StandeeRenderCommand cmd;
