@@ -67,8 +67,72 @@ public:
         m_ComponentMask |= Detail::GetComponentTypeMask<std::remove_cv_t<T>>();
         ENGINE_CORE_DEBUG("GameObject '{}': Added component", GetName());
         rawPtr->Awake();
+        if (IsActiveInHierarchy() && rawPtr->IsEnabled()) {
+            rawPtr->OnEnable();
+        }
 
         return rawPtr;
+    }
+
+    void SetActive(bool active) noexcept {
+        if (m_Active == active) return;
+        m_Active = active;
+        for (auto& comp : m_Components) {
+            if (comp->IsEnabled()) {
+                if (m_Active) {
+                    comp->OnEnable();
+                } else {
+                    comp->OnDisable();
+                }
+            }
+        }
+    }
+
+    [[nodiscard]] bool IsActive() const noexcept { return m_Active; }
+    [[nodiscard]] bool IsActiveInHierarchy() const noexcept { return m_Active && !m_PendingDestroy; }
+    [[nodiscard]] bool IsPendingDestroy() const noexcept { return m_PendingDestroy; }
+
+    void ProcessPendingStarts() {
+        if (!IsActiveInHierarchy()) return;
+        for (auto& component : m_Components) {
+            if (component->IsEnabled() && !component->m_HasStarted) {
+                component->m_HasStarted = true;
+                component->Start();
+            }
+        }
+    }
+
+    void Update(float deltaTime) {
+        if (!IsActiveInHierarchy()) return;
+        ENGINE_CORE_TRACE("GameObject '{}': Updating components", GetName());
+        for (auto& component : m_Components) {
+            if (!component->IsEnabled()) continue;
+            if (!component->m_HasStarted) {
+                component->m_HasStarted = true;
+                component->Start();
+            }
+            component->Update(deltaTime);
+        }
+    }
+
+    void FixedUpdate(float fixedDeltaTime) {
+        if (!IsActiveInHierarchy()) return;
+        for (auto& component : m_Components) {
+            if (!component->IsEnabled()) continue;
+            if (!component->m_HasStarted) {
+                component->m_HasStarted = true;
+                component->Start();
+            }
+            component->FixedUpdate(fixedDeltaTime);
+        }
+    }
+
+    void LateUpdate(float deltaTime) {
+        if (!IsActiveInHierarchy()) return;
+        for (auto& component : m_Components) {
+            if (!component->IsEnabled()) continue;
+            component->LateUpdate(deltaTime);
+        }
     }
 
     template<std::derived_from<Component> T>
@@ -134,18 +198,28 @@ public:
         return false;
     }
 
-    void Update(float deltaTime) {
-        ENGINE_CORE_TRACE("GameObject '{}': Updating components", GetName());
-        for (auto& component : m_Components) {
-            component->Update(deltaTime);
-        }
-    }
-
 private:
+    friend class Scene;
+
     Transform* m_Transform{nullptr};
     std::vector<std::unique_ptr<Component>> m_Components;
     uint64_t m_ComponentMask{0};
+    bool m_Active{ true };
+    bool m_PendingDestroy{ false };
 };
+
+inline void Component::SetEnabled(bool enabled) noexcept {
+    if (m_Enabled == enabled) return;
+    m_Enabled = enabled;
+    if (m_GameObject && m_GameObject->IsActiveInHierarchy()) {
+        if (m_Enabled) {
+            OnEnable();
+        } else {
+            OnDisable();
+        }
+    }
+}
+
 } // namespace Engine
 
 #endif // SCENE_GAMEOBJECT_H

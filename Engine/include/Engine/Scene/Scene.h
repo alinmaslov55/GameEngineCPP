@@ -53,6 +53,10 @@ public:
     GameObject* CreateGameObject(const std::string& name);
     GameObject* CreateGameObjectWithUUID(uint64_t uuid, const std::string& name);
     void DestroyGameObject(GameObject* gameObject);
+    void FlushEntityLifecycleQueues();
+    [[nodiscard]] GameObject* FindGameObjectByUUID(uint64_t uuid) const noexcept;
+    [[nodiscard]] size_t GetEntityUUIDMapCount() const noexcept { return m_EntityUUIDMap.size(); }
+    [[nodiscard]] bool IsIteratingEntities() const noexcept { return m_IsIteratingEntities; }
 
     void Update(float deltaTime);
     void Render(const PerspectiveCamera* overrideCamera = nullptr);
@@ -128,6 +132,10 @@ private:
 
     std::string m_Name;
     std::vector<std::unique_ptr<GameObject>> m_GameObjects;
+    std::vector<std::unique_ptr<GameObject>> m_PendingSpawnQueue;
+    std::vector<GameObject*> m_PendingDestroyQueue;
+    std::unordered_map<uint64_t, GameObject*> m_EntityUUIDMap;
+    bool m_IsIteratingEntities = false;
     PerspectiveCamera m_Camera;
     uint32_t m_ViewportWidth = 1280;
     uint32_t m_ViewportHeight = 720;

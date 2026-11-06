@@ -62,6 +62,9 @@ Scene::~Scene() {
     if (m_IsRuntimeRunning) {
         OnRuntimeStop();
     }
+    m_PendingDestroyQueue.clear();
+    m_PendingSpawnQueue.clear();
+    m_EntityUUIDMap.clear();
     ENGINE_CORE_INFO("Scene destroyed: '{}'", m_Name);
 }
 
@@ -69,8 +72,14 @@ GameObject* Scene::CreateGameObject(const std::string& name) {
     ENGINE_CORE_DEBUG("Scene '{}': Creating GameObject '{}'", m_Name, name);
     auto gameObject = std::make_unique<GameObject>(name);
     GameObject* rawPtr = gameObject.get();
-    m_GameObjects.push_back(std::move(gameObject));
-    m_StaticCollidersDirty = true;
+    m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
+
+    if (m_IsIteratingEntities) {
+        m_PendingSpawnQueue.push_back(std::move(gameObject));
+    } else {
+        m_GameObjects.push_back(std::move(gameObject));
+        m_StaticCollidersDirty = true;
+    }
     return rawPtr;
 }
 
@@ -78,8 +87,14 @@ GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& na
     ENGINE_CORE_DEBUG("Scene '{}': Creating GameObject '{}' with UUID {}", m_Name, name, uuid);
     auto gameObject = std::make_unique<GameObject>(uuid, name);
     GameObject* rawPtr = gameObject.get();
-    m_GameObjects.push_back(std::move(gameObject));
-    m_StaticCollidersDirty = true;
+    m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
+
+    if (m_IsIteratingEntities) {
+        m_PendingSpawnQueue.push_back(std::move(gameObject));
+    } else {
+        m_GameObjects.push_back(std::move(gameObject));
+        m_StaticCollidersDirty = true;
+    }
     return rawPtr;
 }
 
@@ -95,6 +110,7 @@ void Scene::OnViewportResize(uint32_t width, uint32_t height) {
     m_Camera.SetAspectRatio(aspectRatio);
 
     for (auto& go : m_GameObjects) {
+        if (!go->IsActiveInHierarchy()) continue;
         if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
             if (!cameraComp->FixedAspectRatio) {
                 cameraComp->SetViewportSize(width, height);
@@ -107,6 +123,7 @@ void Scene::OnViewportResize(uint32_t width, uint32_t height) {
 
 const PerspectiveCamera& Scene::GetActiveCamera() const {
     for (const auto& go : m_GameObjects) {
+        if (!go->IsActiveInHierarchy()) continue;
         if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
             return cameraComp->Camera;
         }
@@ -126,22 +143,106 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
         ENGINE_CORE_WARN("Scene '{}': Attempted to destroy null GameObject", m_Name);
         return;
     }
-    ENGINE_CORE_DEBUG("Scene '{}': Destroying GameObject '{}'", m_Name, gameObject->GetName());
-    m_GameObjects.erase(
-        std::remove_if(m_GameObjects.begin(), m_GameObjects.end(),
-            [gameObject](const std::unique_ptr<GameObject>& ptr) {
-                return ptr.get() == gameObject;
-            }),
-        m_GameObjects.end()
-    );
-    m_StaticCollidersDirty = true;
+    if (gameObject->IsPendingDestroy()) {
+        return;
+    }
+    ENGINE_CORE_DEBUG("Scene '{}': Destroying GameObject '{}' (UUID: {})", m_Name, gameObject->GetName(), gameObject->GetUUID());
+    gameObject->m_PendingDestroy = true;
+    m_PendingDestroyQueue.push_back(gameObject);
+
+    if (!m_IsIteratingEntities) {
+        FlushEntityLifecycleQueues();
+    }
+}
+
+GameObject* Scene::FindGameObjectByUUID(uint64_t uuid) const noexcept {
+    auto it = m_EntityUUIDMap.find(uuid);
+    if (it != m_EntityUUIDMap.end() && !it->second->IsPendingDestroy()) {
+        return it->second;
+    }
+    return nullptr;
+}
+
+void Scene::FlushEntityLifecycleQueues() {
+    // 1. Move pending spawns into m_GameObjects
+    if (!m_PendingSpawnQueue.empty()) {
+        for (auto& pending : m_PendingSpawnQueue) {
+            if (pending->IsPendingDestroy()) {
+                for (auto& comp : pending->m_Components) {
+                    comp->OnDestroy();
+                }
+                m_EntityUUIDMap.erase(pending->GetUUID());
+            } else {
+                pending->ProcessPendingStarts();
+                m_GameObjects.push_back(std::move(pending));
+                m_StaticCollidersDirty = true;
+            }
+        }
+        m_PendingSpawnQueue.clear();
+    }
+
+    // 2. Process pending destroys
+    if (!m_PendingDestroyQueue.empty()) {
+        bool colliderDestroyed = false;
+        b2WorldId worldId = m_IsRuntimeRunning ? b2LoadWorldId(m_PhysicsWorldId) : b2_nullWorldId;
+
+        for (auto* go : m_PendingDestroyQueue) {
+            if (!go) continue;
+
+            // Destroy runtime Box2D body if active
+            if (m_IsRuntimeRunning && b2World_IsValid(worldId)) {
+                if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
+                    if (rb2d->RuntimeBody) {
+                        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+                        if (b2Body_IsValid(bodyId)) {
+                            b2DestroyBody(bodyId);
+                        }
+                        rb2d->RuntimeBody = nullptr;
+                    }
+                }
+                if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
+                    bc2d->RuntimeFixture = nullptr;
+                }
+            }
+
+            if (go->GetComponent<BoxCollider2D>() || go->GetComponent<Tilemap>() || go->GetComponent<TerrainComponent>()) {
+                colliderDestroyed = true;
+            }
+
+            // Invoke OnDestroy() on all components
+            for (auto& comp : go->m_Components) {
+                comp->OnDestroy();
+            }
+
+            m_EntityUUIDMap.erase(go->GetUUID());
+        }
+
+        // Erase destroyed GameObjects from m_GameObjects in a single erase_if pass
+        std::erase_if(m_GameObjects, [](const std::unique_ptr<GameObject>& ptr) {
+            return ptr->IsPendingDestroy();
+        });
+
+        m_PendingDestroyQueue.clear();
+
+        if (colliderDestroyed) {
+            m_StaticCollidersDirty = true;
+        }
+    }
 }
 
 void Scene::Update(float deltaTime) {
     ENGINE_CORE_TRACE("Scene '{}': Update (deltaTime: {:.4f}s, {} GameObjects)", m_Name, deltaTime, m_GameObjects.size());
-    for (auto& gameObject : m_GameObjects) {
-        gameObject->Update(deltaTime);
+
+    m_IsIteratingEntities = true;
+    for (size_t i = 0; i < m_GameObjects.size(); ++i) {
+        auto& gameObject = m_GameObjects[i];
+        if (gameObject->IsActiveInHierarchy()) {
+            gameObject->Update(deltaTime);
+        }
     }
+    m_IsIteratingEntities = false;
+
+    FlushEntityLifecycleQueues();
 
     UpdateCollidersAndGravity(deltaTime);
     ResolveEntityCollisions();
@@ -154,6 +255,9 @@ void Scene::UpdateCollidersAndGravity(float deltaTime) {
 
     size_t staticCount = 0;
     for (auto& gameObject : m_GameObjects) {
+        if (!gameObject->IsActiveInHierarchy()) {
+            continue;
+        }
         if (auto* collider = gameObject->GetComponent<BoxCollider2D>()) {
             auto* transform = gameObject->GetTransform();
             if (collider->isDynamic) {
@@ -587,6 +691,14 @@ void Scene::OnRuntimeStop() {
             bc2d->RuntimeFixture = nullptr;
         }
     }
+    for (auto& go : m_PendingSpawnQueue) {
+        if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
+            rb2d->RuntimeBody = nullptr;
+        }
+        if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
+            bc2d->RuntimeFixture = nullptr;
+        }
+    }
     m_StaticCollidersDirty = true;
 }
 
@@ -686,6 +798,9 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
 
     // Pass 1: Scene-level singletons (directional sun, post process, global wind field, dynamic foliage colliders)
     for (auto& gameObject : m_GameObjects) {
+        if (!gameObject->IsActiveInHierarchy()) {
+            continue;
+        }
         const uint64_t mask = gameObject->GetComponentMask();
         if (!ctx.dirLight && (mask & kDirLightMask)) {
             ctx.dirLight = gameObject->GetComponent<DirectionalLightComponent>();
@@ -757,6 +872,9 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
 
     // Pass 2: Renderable entity dispatch, frustum culling, and StandeeRenderCommand caching
     for (auto& gameObject : m_GameObjects) {
+        if (!gameObject->IsActiveInHierarchy()) {
+            continue;
+        }
         const uint64_t mask = gameObject->GetComponentMask();
 
         if (mask & kPointLightMask) {
