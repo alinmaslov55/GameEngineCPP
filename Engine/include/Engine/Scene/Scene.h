@@ -40,6 +40,7 @@ struct SceneRenderContext {
     const PostProcessComponent* postProcess = nullptr;
     const WindComponent* windComp = nullptr;
     float totalTime = 0.0f;
+    float physicsAlpha = 0.0f;
     bool useHDRPostProcess = false;
 
     SceneWindData BuildWindUniforms(const glm::vec3& swayRightAxis) const;
@@ -95,6 +96,8 @@ public:
     [[nodiscard]] uint64_t GetBox2DParallelTasksDispatched() const noexcept { return m_Box2DParallelTasksDispatched; }
     [[nodiscard]] uint64_t GetBox2DSerialTasksExecuted() const noexcept { return m_Box2DSerialTasksExecuted; }
     [[nodiscard]] uint64_t GetBox2DTotalTasks() const noexcept { return m_Box2DParallelTasksDispatched + m_Box2DSerialTasksExecuted; }
+    [[nodiscard]] float GetPhysicsAlpha() const noexcept { return m_PhysicsAlpha; }
+    void ResetPhysicsAccumulator() noexcept { m_PhysicsAccumulator = 0.0f; m_PhysicsAlpha = 0.0f; }
 
 private:
     struct Box2DTask {
@@ -143,6 +146,8 @@ private:
 
     bool m_IsRuntimeRunning = false;
     uint32_t m_PhysicsWorldId = 0;
+    float m_PhysicsAccumulator = 0.0f;
+    float m_PhysicsAlpha = 0.0f;
 
     // Box2D v3 multithreaded task management pool (zero heap allocation)
     static constexpr size_t kMaxBox2DTasks = 16;

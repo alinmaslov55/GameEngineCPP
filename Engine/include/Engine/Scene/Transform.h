@@ -11,11 +11,26 @@ namespace Engine {
 class Transform : public Component {
 public:
     glm::vec3 position{ 0.0f, 0.0f, 0.0f };
+    glm::vec3 prevPosition{ 0.0f, 0.0f, 0.0f };
     glm::vec3 rotation{ 0.0f, 0.0f, 0.0f }; // Euler angles in degrees
+    glm::vec3 prevRotation{ 0.0f, 0.0f, 0.0f };
     glm::vec3 scale{ 1.0f, 1.0f, 1.0f };
 
     Transform() = default;
     ~Transform() override = default;
+
+    void SnapshotPrevious() noexcept {
+        prevPosition = position;
+        prevRotation = rotation;
+    }
+
+    [[nodiscard]] glm::vec3 GetInterpolatedPosition(float alpha) const noexcept {
+        return glm::mix(prevPosition, position, glm::clamp(alpha, 0.0f, 1.0f));
+    }
+
+    [[nodiscard]] glm::vec3 GetInterpolatedRotation(float alpha) const noexcept {
+        return glm::mix(prevRotation, rotation, glm::clamp(alpha, 0.0f, 1.0f));
+    }
 
     void Translate(const glm::vec3& translation) {
         position += translation;
@@ -35,6 +50,18 @@ public:
                               glm::rotate(glm::mat4(1.0f), glm::radians(rotation.z), glm::vec3(0, 0, 1));
 
         return glm::translate(glm::mat4(1.0f), position) *
+               rotMatrix *
+               glm::scale(glm::mat4(1.0f), scale);
+    }
+
+    [[nodiscard]] glm::mat4 GetInterpolatedTransformMatrix(float alpha) const {
+        glm::vec3 interpPos = GetInterpolatedPosition(alpha);
+        glm::vec3 interpRot = GetInterpolatedRotation(alpha);
+        glm::mat4 rotMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(interpRot.x), glm::vec3(1, 0, 0)) *
+                              glm::rotate(glm::mat4(1.0f), glm::radians(interpRot.y), glm::vec3(0, 1, 0)) *
+                              glm::rotate(glm::mat4(1.0f), glm::radians(interpRot.z), glm::vec3(0, 0, 1));
+
+        return glm::translate(glm::mat4(1.0f), interpPos) *
                rotMatrix *
                glm::scale(glm::mat4(1.0f), scale);
     }

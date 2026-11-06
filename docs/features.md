@@ -187,7 +187,7 @@ flowchart TD
 | Codename | Feature Title | Status | Prio | Wave | Hard Prerequisites (`Depends On`) | Soft / Synergy Couplings | Downstream Dependents (`Unlocks`) |
 | :--- | :--- | :---: | :---: | :---: | :--- | :--- | :--- |
 | **`ECS-01`** | Deferred Entity Spawn/Destroy & Active Flags | `DONE` | **P0** | W0 | *None (Root)* | `ECS-05` | `ECS-03`, `ECS-04`, `PHY-01`, `TER-01`, `SAV-02` |
-| **`ECS-02`** | Fixed-Timestep Physics Loop & Time-Scale API | `TODO` | **P0** | W0 | *None (Root)* | `AUD-02` (pitch/pause) | `PHY-01`, `CAM-02`, `UIX-04` (wheel slow-mo) |
+| **`ECS-02`** | Fixed-Timestep Physics Loop & Time-Scale API | `DONE` | **P0** | W0 | *None (Root)* | `AUD-02` (pitch/pause) | `PHY-01`, `CAM-02`, `UIX-04` (wheel slow-mo) |
 | **`ECS-03`** | Parent-Child Transform Hierarchy & Sockets | `TODO` | **P0** | W1 | `ECS-01` | `ANI-01` (socket flip) | `ECS-04`, Hero Torch & Weapon attachment |
 | **`ECS-04`** | Prefab Templates & Entity Object Pooling | `TODO` | **P1** | W2 | `ECS-01`, `ECS-03`, `ECS-05` | `SAV-01` | `TER-02`, `EDT-03`, Horde/Pickup spawning |
 | **`ECS-05`** | Entity Tags, Layers & 128-bit Component Mask | `TODO` | **P1** | W0 | *None (Root)* | `ECS-01` | `ECS-04`, `PHY-04`, `AIX-01`, `LGT-03` |
@@ -271,7 +271,7 @@ flowchart TD
 ---
 
 #### `ECS-02` — Fixed-Timestep Physics Loop & Time-Scale API
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `PHY-01`, `CAM-02`, `UIX-04`
 - **Current Gap:** `Time` (`Time.h`) exposes only variable `GetDeltaTime()` and `GetTotalTime()`. `Scene::UpdateRuntime` steps Box2D with raw variable `deltaTime`, causing non-deterministic impulse launches across 60Hz vs. 240Hz monitors.
 - **Proposed C++ Specification:**
@@ -1457,7 +1457,7 @@ Without these 15 features, the core physics + torch shadow + surface interaction
 | Codename | Status | Alpha Scope & Why It Is Mandatory for Concept Testing |
 | :--- | :---: | :--- |
 | **`ECS-01`** | `DONE` | **Full:** Deferred spawn/destroy & active flags. Smashing crates into wood pickups and killing enemies mid-frame will crash `Scene::m_GameObjects` without this. |
-| **`ECS-02`** | `TODO` | **Full:** `60 Hz` `FixedUpdate` + `Time::SetTimeScale()`. Required for deterministic Box2D knockback impulses and `50ms` heavy-hit freeze frames (hit-stop). |
+| **`ECS-02`** | `DONE` | **Full:** `60 Hz` `FixedUpdate` + `Time::SetTimeScale()`. Required for deterministic Box2D knockback impulses and `50ms` heavy-hit freeze frames (hit-stop). |
 | **`ECS-03`** | `TODO` | **Lean:** Parent-child transform or socket offset so the Hero's Torch light, flame emitter, and weapon hitbox follow the Hero cleanly. |
 | **`ECS-05`** | `TODO` | **Lean:** `EntityTag` / `Layer` enum (`Player`, `Enemy`, `Destructible`, `Pickup`) on `GameObject`. *(Defer 128-bit component mask until >64 components exist).* |
 | **`PHY-01`** | `TODO` | **Full:** Remap Box2D `(x, y)` to world `(X, Z)` with `(0, 0)` gravity, disable legacy `ResolveEntityCollisions()`, and add vertical `Y` parabola for knock-ups & hops. |

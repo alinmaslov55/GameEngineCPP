@@ -620,6 +620,7 @@ void Scene::OnRuntimeStart() {
     b2WorldId worldId = b2CreateWorld(&worldDef);
     m_PhysicsWorldId = b2StoreWorldId(worldId);
     m_IsRuntimeRunning = true;
+    ResetPhysicsAccumulator();
 
     for (auto& go : m_GameObjects) {
         auto* transform = go->GetTransform();
@@ -660,6 +661,11 @@ void Scene::OnRuntimeStart() {
             }
         }
     }
+    for (auto& go : m_GameObjects) {
+        if (auto* transform = go->GetTransform()) {
+            transform->SnapshotPrevious();
+        }
+    }
     m_StaticCollidersDirty = true;
 }
 
@@ -676,6 +682,7 @@ void Scene::OnRuntimeStop() {
     }
     m_PhysicsWorldId = 0;
     m_IsRuntimeRunning = false;
+    ResetPhysicsAccumulator();
 
     for (auto& slot : m_Box2DTasks) {
         slot.inUse.store(false, std::memory_order_relaxed);
@@ -704,27 +711,64 @@ void Scene::OnRuntimeStop() {
 
 void Scene::UpdateRuntime(float deltaTime) {
     if (m_IsRuntimeRunning) {
-        b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
-        if (b2World_IsValid(worldId)) {
-            b2World_Step(worldId, deltaTime, 4);
+        const float fixedDt = std::max(0.001f, Time::GetFixedDeltaTime());
+        constexpr uint32_t kMaxFixedSteps = 6;
+        const float maxAccumulation = static_cast<float>(kMaxFixedSteps) * fixedDt;
+
+        m_PhysicsAccumulator += deltaTime;
+        if (m_PhysicsAccumulator > maxAccumulation) {
+            m_PhysicsAccumulator = maxAccumulation;
         }
 
-        // Sync Box2D physics simulation results back to Engine Transform
-        for (auto& go : m_GameObjects) {
-            auto* transform = go->GetTransform();
-            auto* rb2d = go->GetComponent<Rigidbody2D>();
+        b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
 
-            if (rb2d && transform && rb2d->RuntimeBody) {
-                b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
-                if (b2Body_IsValid(bodyId)) {
-                    b2Vec2 pos = b2Body_GetPosition(bodyId);
-                    b2Rot rot = b2Body_GetRotation(bodyId);
-                    transform->position.x = pos.x;
-                    transform->position.y = pos.y;
-                    transform->rotation.z = glm::degrees(b2Rot_GetAngle(rot));
+        while (m_PhysicsAccumulator >= fixedDt) {
+            // Snapshot previous positions for sub-frame visual interpolation
+            for (auto& go : m_GameObjects) {
+                if (!go->IsActiveInHierarchy()) continue;
+                if (auto* transform = go->GetTransform()) {
+                    transform->SnapshotPrevious();
                 }
             }
+
+            // Fixed update dispatch on active components
+            for (size_t i = 0; i < m_GameObjects.size(); ++i) {
+                auto& go = m_GameObjects[i];
+                if (go->IsActiveInHierarchy()) {
+                    go->FixedUpdate(fixedDt);
+                }
+            }
+
+            // Step Box2D simulation
+            if (b2World_IsValid(worldId)) {
+                b2World_Step(worldId, fixedDt, 4);
+            }
+
+            // Sync Box2D physics simulation results back to Engine Transform
+            for (auto& go : m_GameObjects) {
+                if (!go->IsActiveInHierarchy()) continue;
+                auto* transform = go->GetTransform();
+                auto* rb2d = go->GetComponent<Rigidbody2D>();
+
+                if (rb2d && transform && rb2d->RuntimeBody) {
+                    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+                    if (b2Body_IsValid(bodyId)) {
+                        b2Vec2 pos = b2Body_GetPosition(bodyId);
+                        b2Rot rot = b2Body_GetRotation(bodyId);
+                        transform->position.x = pos.x;
+                        transform->position.y = pos.y;
+                        transform->rotation.z = glm::degrees(b2Rot_GetAngle(rot));
+                    }
+                }
+            }
+
+            m_PhysicsAccumulator -= fixedDt;
         }
+
+        m_PhysicsAlpha = (fixedDt > 0.0f) ? (m_PhysicsAccumulator / fixedDt) : 0.0f;
+    } else {
+        m_PhysicsAccumulator = 0.0f;
+        m_PhysicsAlpha = 0.0f;
     }
 
     Update(deltaTime);
@@ -747,6 +791,7 @@ SceneWindData SceneRenderContext::BuildWindUniforms(const glm::vec3& swayRightAx
 SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideCamera) {
     SceneRenderContext ctx;
     ctx.totalTime = Time::GetTotalTime();
+    ctx.physicsAlpha = m_PhysicsAlpha;
 
     static const uint64_t kCameraMask = Detail::GetComponentTypeMask<CameraComponent>();
     static const uint64_t kDirLightMask = Detail::GetComponentTypeMask<DirectionalLightComponent>();
