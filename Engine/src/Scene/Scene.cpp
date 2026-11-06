@@ -163,6 +163,60 @@ GameObject* Scene::FindGameObjectByUUID(uint64_t uuid) const noexcept {
     return nullptr;
 }
 
+void Scene::FindGameObjectsWithTag(EntityTag tag, std::vector<GameObject*>& out) const {
+    out.clear();
+    for (const auto& go : m_GameObjects) {
+        if (go->IsActiveInHierarchy() && !go->IsPendingDestroy() && go->GetTag() == tag) {
+            out.push_back(go.get());
+        }
+    }
+    for (const auto& go : m_PendingSpawnQueue) {
+        if (go->IsActiveInHierarchy() && !go->IsPendingDestroy() && go->GetTag() == tag) {
+            out.push_back(go.get());
+        }
+    }
+}
+
+std::vector<GameObject*> Scene::FindGameObjectsWithTag(EntityTag tag) const {
+    std::vector<GameObject*> result;
+    FindGameObjectsWithTag(tag, result);
+    return result;
+}
+
+GameObject* Scene::FindFirstGameObjectWithTag(EntityTag tag) const noexcept {
+    for (const auto& go : m_GameObjects) {
+        if (go->IsActiveInHierarchy() && !go->IsPendingDestroy() && go->GetTag() == tag) {
+            return go.get();
+        }
+    }
+    for (const auto& go : m_PendingSpawnQueue) {
+        if (go->IsActiveInHierarchy() && !go->IsPendingDestroy() && go->GetTag() == tag) {
+            return go.get();
+        }
+    }
+    return nullptr;
+}
+
+void Scene::FindGameObjectsInLayer(uint32_t layerMask, std::vector<GameObject*>& out) const {
+    out.clear();
+    for (const auto& go : m_GameObjects) {
+        if (go->IsActiveInHierarchy() && !go->IsPendingDestroy() && go->IsInLayer(layerMask)) {
+            out.push_back(go.get());
+        }
+    }
+    for (const auto& go : m_PendingSpawnQueue) {
+        if (go->IsActiveInHierarchy() && !go->IsPendingDestroy() && go->IsInLayer(layerMask)) {
+            out.push_back(go.get());
+        }
+    }
+}
+
+std::vector<GameObject*> Scene::FindGameObjectsInLayer(uint32_t layerMask) const {
+    std::vector<GameObject*> result;
+    FindGameObjectsInLayer(layerMask, result);
+    return result;
+}
+
 void Scene::FlushEntityLifecycleQueues() {
     // 1. Move pending spawns into m_GameObjects
     if (!m_PendingSpawnQueue.empty()) {
@@ -793,19 +847,19 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
     ctx.totalTime = Time::GetTotalTime();
     ctx.physicsAlpha = m_PhysicsAlpha;
 
-    static const uint64_t kCameraMask = Detail::GetComponentTypeMask<CameraComponent>();
-    static const uint64_t kDirLightMask = Detail::GetComponentTypeMask<DirectionalLightComponent>();
-    static const uint64_t kPostProcessMask = Detail::GetComponentTypeMask<PostProcessComponent>();
-    static const uint64_t kWindMask = Detail::GetComponentTypeMask<WindComponent>();
-    static const uint64_t kBoxColliderMask = Detail::GetComponentTypeMask<BoxCollider2D>();
-    static const uint64_t kPointLightMask = Detail::GetComponentTypeMask<PointLightComponent>();
-    static const uint64_t kTerrainMask = Detail::GetComponentTypeMask<TerrainComponent>();
-    static const uint64_t kTilemapMask = Detail::GetComponentTypeMask<Tilemap>();
-    static const uint64_t kSpriteMask = Detail::GetComponentTypeMask<SpriteRenderer>();
-    static const uint64_t kSquashStretchMask = Detail::GetComponentTypeMask<SquashStretchComponent>();
-    static const uint64_t kParticleMask = Detail::GetComponentTypeMask<ParticleSystem>();
-    static const uint64_t kUIPanelMask = Detail::GetComponentTypeMask<UIPanel>();
-    static const uint64_t kUILabelMask = Detail::GetComponentTypeMask<UILabel>();
+    static const auto kCameraMask = Detail::GetComponentTypeMask<CameraComponent>();
+    static const auto kDirLightMask = Detail::GetComponentTypeMask<DirectionalLightComponent>();
+    static const auto kPostProcessMask = Detail::GetComponentTypeMask<PostProcessComponent>();
+    static const auto kWindMask = Detail::GetComponentTypeMask<WindComponent>();
+    static const auto kBoxColliderMask = Detail::GetComponentTypeMask<BoxCollider2D>();
+    static const auto kPointLightMask = Detail::GetComponentTypeMask<PointLightComponent>();
+    static const auto kTerrainMask = Detail::GetComponentTypeMask<TerrainComponent>();
+    static const auto kTilemapMask = Detail::GetComponentTypeMask<Tilemap>();
+    static const auto kSpriteMask = Detail::GetComponentTypeMask<SpriteRenderer>();
+    static const auto kSquashStretchMask = Detail::GetComponentTypeMask<SquashStretchComponent>();
+    static const auto kParticleMask = Detail::GetComponentTypeMask<ParticleSystem>();
+    static const auto kUIPanelMask = Detail::GetComponentTypeMask<UIPanel>();
+    static const auto kUILabelMask = Detail::GetComponentTypeMask<UILabel>();
 
     ctx.activeCam = overrideCamera;
     if (!ctx.activeCam) {
@@ -846,7 +900,7 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
         if (!gameObject->IsActiveInHierarchy()) {
             continue;
         }
-        const uint64_t mask = gameObject->GetComponentMask();
+        const auto mask = gameObject->GetComponentMask();
         if (!ctx.dirLight && (mask & kDirLightMask)) {
             ctx.dirLight = gameObject->GetComponent<DirectionalLightComponent>();
         }
@@ -920,7 +974,7 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
         if (!gameObject->IsActiveInHierarchy()) {
             continue;
         }
-        const uint64_t mask = gameObject->GetComponentMask();
+        const auto mask = gameObject->GetComponentMask();
 
         if (mask & kPointLightMask) {
             if (auto* pl = gameObject->GetComponent<PointLightComponent>()) {

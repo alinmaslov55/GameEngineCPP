@@ -190,7 +190,7 @@ flowchart TD
 | **`ECS-02`** | Fixed-Timestep Physics Loop & Time-Scale API | `DONE` | **P0** | W0 | *None (Root)* | `AUD-02` (pitch/pause) | `PHY-01`, `CAM-02`, `UIX-04` (wheel slow-mo) |
 | **`ECS-03`** | Parent-Child Transform Hierarchy & Sockets | `TODO` | **P0** | W1 | `ECS-01` | `ANI-01` (socket flip) | `ECS-04`, Hero Torch & Weapon attachment |
 | **`ECS-04`** | Prefab Templates & Entity Object Pooling | `TODO` | **P1** | W2 | `ECS-01`, `ECS-03`, `ECS-05` | `SAV-01` | `TER-02`, `EDT-03`, Horde/Pickup spawning |
-| **`ECS-05`** | Entity Tags, Layers & 128-bit Component Mask | `TODO` | **P1** | W0 | *None (Root)* | `ECS-01` | `ECS-04`, `PHY-04`, `AIX-01`, `LGT-03` |
+| **`ECS-05`** | Entity Tags, Layers & 128-bit Component Mask | `DONE` | **P1** | W0 | *None (Root)* | `ECS-01` | `ECS-04`, `PHY-04`, `AIX-01`, `LGT-03` |
 | **`PHY-01`** | XZ Ground-Plane Box2D Mapping & 2.5D Y-Arc | `TODO` | **P0** | W1 | `ECS-01`, `ECS-02` | `SquashStretchComponent` | `PHY-02`, `AIX-02` |
 | **`PHY-02`** | Runtime Rigidbody Lifecycle & Force/Impulse API | `TODO` | **P0** | W2 | `PHY-01` | `ECS-04` (pool reset) | `PHY-03`, `TER-04` |
 | **`PHY-03`** | Contact Events, Sensor Triggers & Circle Shapes | `TODO` | **P0** | W3 | `PHY-02` | `AUD-02` (impact SFX) | `PHY-04`, `PHY-05`, `EDT-02` |
@@ -359,7 +359,7 @@ flowchart TD
 ---
 
 #### `ECS-05` — Entity Tags, Layers & 128-bit Component Bitmask
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `ECS-04`, `PHY-04`, `AIX-01`
 - **Current Gap:** `Detail::GetComponentTypeMask<T>()` (`GameObject.h:29`) computes `1ULL << (id % 64)`—once gameplay adds >50 components alongside ~18 engine components, modulo wrap causes false-positive `HasComponent<T>()` aliasing! Also no fast entity category tags exist.
 - **Proposed C++ Specification:**
@@ -1459,7 +1459,7 @@ Without these 15 features, the core physics + torch shadow + surface interaction
 | **`ECS-01`** | `DONE` | **Full:** Deferred spawn/destroy & active flags. Smashing crates into wood pickups and killing enemies mid-frame will crash `Scene::m_GameObjects` without this. |
 | **`ECS-02`** | `DONE` | **Full:** `60 Hz` `FixedUpdate` + `Time::SetTimeScale()`. Required for deterministic Box2D knockback impulses and `50ms` heavy-hit freeze frames (hit-stop). |
 | **`ECS-03`** | `TODO` | **Lean:** Parent-child transform or socket offset so the Hero's Torch light, flame emitter, and weapon hitbox follow the Hero cleanly. |
-| **`ECS-05`** | `TODO` | **Lean:** `EntityTag` / `Layer` enum (`Player`, `Enemy`, `Destructible`, `Pickup`) on `GameObject`. *(Defer 128-bit component mask until >64 components exist).* |
+| **`ECS-05`** | `DONE` | **Full:** `EntityTag` enum, `EntityLayer` bitflags, 128-bit `ComponentMask128` (zero collision across 128 components), `Scene` tag/layer queries, and JSON serialization. |
 | **`PHY-01`** | `TODO` | **Full:** Remap Box2D `(x, y)` to world `(X, Z)` with `(0, 0)` gravity, disable legacy `ResolveEntityCollisions()`, and add vertical `Y` parabola for knock-ups & hops. |
 | **`PHY-02`** | `TODO` | **Full:** Runtime `b2BodyId` spawn/destroy + `ApplyLinearImpulseXZ`, `SetLinearVelocityXZ`, and `LinearDamping` (powers all knockback bowling). |
 | **`PHY-03`** | `TODO` | **Full:** `CircleCollider2D` (prevents crowd snagging), sensor triggers (pickups/torch rim), and `b2ContactEvents` with `approachSpeed` (domino body-slam damage). |

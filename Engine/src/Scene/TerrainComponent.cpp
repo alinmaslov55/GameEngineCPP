@@ -367,11 +367,13 @@ bool TerrainComponent::LoadSplatmapFromPNG(const std::string& resolvedFilepath) 
     }
 
     // Preserve row 0 = minZ orientation without vertical inversion, then restore engine default (1)
+    stbi_set_flip_vertically_on_load_thread(0);
     stbi_set_flip_vertically_on_load(0);
     int w = 0;
     int h = 0;
     int channels = 0;
     unsigned char* pixels = stbi_load(resolvedFilepath.c_str(), &w, &h, &channels, 4);
+    stbi_set_flip_vertically_on_load_thread(1);
     stbi_set_flip_vertically_on_load(1);
 
     if (!pixels || w <= 0 || h <= 0) {

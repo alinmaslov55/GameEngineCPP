@@ -4,9 +4,12 @@
 #include "Engine/Scene/Object.h"
 #include "Engine/Scene/Component.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Scene/ComponentMask128.h"
+#include "Engine/Scene/EntityTag.h"
 #include "Engine/Utils/Logger.h"
 
 #include <atomic>
+#include <cassert>
 #include <concepts>
 #include <cstdint>
 #include <memory>
@@ -19,14 +22,19 @@
 namespace Engine {
 
 namespace Detail {
-inline uint64_t GetNextComponentTypeID() {
-    static std::atomic<uint64_t> s_Counter{0};
-    return s_Counter.fetch_add(1);
+inline uint32_t GetNextComponentTypeID() {
+    static std::atomic<uint32_t> s_Counter{0};
+    uint32_t id = s_Counter.fetch_add(1);
+    assert(id < 128 && "Exceeded maximum allowed 128 unique Component types in ComponentMask128!");
+    return id;
 }
 
 template<typename T>
-inline uint64_t GetComponentTypeMask() {
-    static const uint64_t s_Mask = (1ULL << (GetNextComponentTypeID() % 64));
+inline ComponentMask128 GetComponentTypeMask() {
+    static const ComponentMask128 s_Mask = []() {
+        uint32_t id = GetNextComponentTypeID();
+        return ComponentMask128::FromBit(id);
+    }();
     return s_Mask;
 }
 } // namespace Detail
@@ -46,14 +54,22 @@ public:
     [[nodiscard]] Transform* GetTransform() noexcept { return m_Transform; }
     [[nodiscard]] const Transform* GetTransform() const noexcept { return m_Transform; }
 
-    [[nodiscard]] uint64_t GetComponentMask() const noexcept { return m_ComponentMask; }
+    [[nodiscard]] ComponentMask128 GetComponentMask() const noexcept { return m_ComponentMask; }
+
+    void SetTag(EntityTag tag) noexcept { m_Tag = tag; }
+    [[nodiscard]] EntityTag GetTag() const noexcept { return m_Tag; }
+    [[nodiscard]] bool HasTag(EntityTag tag) const noexcept { return m_Tag == tag; }
+
+    void SetLayer(uint32_t layerMask) noexcept { m_LayerMask = layerMask; }
+    [[nodiscard]] uint32_t GetLayer() const noexcept { return m_LayerMask; }
+    [[nodiscard]] bool IsInLayer(uint32_t layerMask) const noexcept { return (m_LayerMask & layerMask) != 0; }
 
     template<std::derived_from<Component> T>
     [[nodiscard]] bool HasComponent() const {
         if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
             return m_Transform != nullptr;
         }
-        return (m_ComponentMask & Detail::GetComponentTypeMask<std::remove_cv_t<T>>()) != 0;
+        return m_ComponentMask.Intersects(Detail::GetComponentTypeMask<std::remove_cv_t<T>>());
     }
 
     template<std::derived_from<Component> T, typename... Args>
@@ -140,7 +156,7 @@ public:
         if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
             return m_Transform;
         }
-        if (!(m_ComponentMask & Detail::GetComponentTypeMask<std::remove_cv_t<T>>())) {
+        if (!m_ComponentMask.Intersects(Detail::GetComponentTypeMask<std::remove_cv_t<T>>())) {
             return nullptr;
         }
         for (const auto& component : m_Components) {
@@ -158,7 +174,7 @@ public:
             if (m_Transform) result.push_back(m_Transform);
             return result;
         }
-        if (!(m_ComponentMask & Detail::GetComponentTypeMask<std::remove_cv_t<T>>())) {
+        if (!m_ComponentMask.Intersects(Detail::GetComponentTypeMask<std::remove_cv_t<T>>())) {
             return result;
         }
         for (const auto& component : m_Components) {
@@ -203,7 +219,9 @@ private:
 
     Transform* m_Transform{nullptr};
     std::vector<std::unique_ptr<Component>> m_Components;
-    uint64_t m_ComponentMask{0};
+    ComponentMask128 m_ComponentMask;
+    EntityTag m_Tag{ EntityTag::Untagged };
+    uint32_t m_LayerMask{ EntityLayer::Default };
     bool m_Active{ true };
     bool m_PendingDestroy{ false };
 };

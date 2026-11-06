@@ -12,6 +12,7 @@
 #include <Engine/Scene/TerrainComponent.h>
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Scene/Transform.h>
+#include <Engine/Scene/EntityTag.h>
 #include <Engine/Utils/Logger.h>
 
 #include <imgui.h>
@@ -138,7 +139,24 @@ void InspectorPanel::DrawEntityHeader(Engine::GameObject* entity) {
             entity->SetName(nameBuffer);
         }
     }
+
+    bool active = entity->IsActive();
+    if (ImGui::Checkbox("Active", &active)) {
+        entity->SetActive(active);
+    }
+    ImGui::SameLine();
     ImGui::TextDisabled("UUID: %llu", static_cast<unsigned long long>(entity->GetUUID()));
+
+    static const char* kTagLabels[] = {
+        "Untagged", "Player", "Enemy", "Companion", "Foliage",
+        "HarvestableTree", "DestructibleProp", "TacticalStructure",
+        "SafeZoneBrazier", "Shrine", "ResourcePickup", "Projectile"
+    };
+    int currentTagIdx = static_cast<int>(entity->GetTag());
+    if (ImGui::Combo("Tag", &currentTagIdx, kTagLabels, IM_ARRAYSIZE(kTagLabels))) {
+        entity->SetTag(static_cast<Engine::EntityTag>(currentTagIdx));
+    }
+
     ImGui::Separator();
 }
 

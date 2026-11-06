@@ -2,6 +2,7 @@
 #define SCENE_SCENE_H
 
 #include "Engine/Scene/GameObject.h"
+#include "Engine/Scene/EntityTag.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Renderer/SceneLighting.h"
 #include "Engine/Scene/StandeeCommand.h"
@@ -56,6 +57,11 @@ public:
     void DestroyGameObject(GameObject* gameObject);
     void FlushEntityLifecycleQueues();
     [[nodiscard]] GameObject* FindGameObjectByUUID(uint64_t uuid) const noexcept;
+    void FindGameObjectsWithTag(EntityTag tag, std::vector<GameObject*>& out) const;
+    [[nodiscard]] std::vector<GameObject*> FindGameObjectsWithTag(EntityTag tag) const;
+    [[nodiscard]] GameObject* FindFirstGameObjectWithTag(EntityTag tag) const noexcept;
+    void FindGameObjectsInLayer(uint32_t layerMask, std::vector<GameObject*>& out) const;
+    [[nodiscard]] std::vector<GameObject*> FindGameObjectsInLayer(uint32_t layerMask) const;
     [[nodiscard]] size_t GetEntityUUIDMapCount() const noexcept { return m_EntityUUIDMap.size(); }
     [[nodiscard]] bool IsIteratingEntities() const noexcept { return m_IsIteratingEntities; }
 

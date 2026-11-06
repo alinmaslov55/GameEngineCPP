@@ -1,6 +1,7 @@
 #include "Engine/Scene/SceneSerializer.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Scene/GameObject.h"
+#include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/TerrainComponent.h"
 #include "Engine/Scene/Tilemap.h"
@@ -542,6 +543,8 @@ json SerializeEntity(const GameObject* go) {
     json entityJson;
     entityJson["UUID"] = go->GetUUID();
     entityJson["Name"] = go->GetName();
+    entityJson["Tag"] = EntityTagToString(go->GetTag());
+    entityJson["LayerMask"] = go->GetLayer();
     json& compsJson = entityJson["Components"];
 
     for (auto serializerFn : s_ComponentSerializers) {
@@ -1088,6 +1091,17 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 ? m_Scene->CreateGameObjectWithUUID(entityJson["UUID"].get<uint64_t>(), name)
                 : m_Scene->CreateGameObject(name);
             loadedCount++;
+
+            if (entityJson.contains("Tag")) {
+                if (entityJson["Tag"].is_string()) {
+                    go->SetTag(StringToEntityTag(entityJson["Tag"].get<std::string>()));
+                } else if (entityJson["Tag"].is_number()) {
+                    go->SetTag(static_cast<EntityTag>(entityJson["Tag"].get<uint16_t>()));
+                }
+            }
+            if (entityJson.contains("LayerMask") && entityJson["LayerMask"].is_number()) {
+                go->SetLayer(entityJson["LayerMask"].get<uint32_t>());
+            }
 
             if (entityJson.contains("Components")) {
                 DeserializeEntityComponents(go, entityJson["Components"], name);
