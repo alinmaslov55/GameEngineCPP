@@ -17,6 +17,8 @@
 #include "Engine/Scene/TerrainComponent.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Scene/Prefab.h"
+#include "Engine/Scene/SceneSerializer.h"
 #include "Engine/Math/Isometric.h"
 #include "Engine/Utils/Logger.h"
 #include "Engine/UI/UIPanel.h"
@@ -62,6 +64,7 @@ Scene::~Scene() {
     if (m_IsRuntimeRunning) {
         OnRuntimeStop();
     }
+    ClearAllPools();
     m_PendingDestroyQueue.clear();
     m_PendingSpawnQueue.clear();
     m_EntityUUIDMap.clear();
@@ -150,6 +153,14 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
     gameObject->m_PendingDestroy = true;
     m_PendingDestroyQueue.push_back(gameObject);
 
+    if (gameObject->IsPooled()) {
+        auto poolIt = m_EntityPools.find(gameObject->GetPoolKey());
+        if (poolIt != m_EntityPools.end()) {
+            std::erase(poolIt->second.freeList, gameObject);
+            std::erase(poolIt->second.allInstances, gameObject);
+        }
+    }
+
     // Recursively cascade destruction to all child GameObjects in hierarchy
     if (auto* transform = gameObject->GetTransform()) {
         auto children = transform->GetChildren(); // Copy to avoid mutation while queueing
@@ -163,6 +174,299 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
     if (!m_IsIteratingEntities) {
         FlushEntityLifecycleQueues();
     }
+}
+
+void Scene::CreateRuntimePhysicsBody(GameObject* go) {
+    if (!m_IsRuntimeRunning || !go) return;
+    b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
+    if (!b2World_IsValid(worldId)) return;
+
+    auto* transform = go->GetTransform();
+    auto* rb2d = go->GetComponent<Rigidbody2D>();
+    if (!rb2d || !transform) return;
+
+    if (rb2d->RuntimeBody != nullptr) {
+        return;
+    }
+
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    if (rb2d->Type == Rigidbody2D::BodyType::Static) {
+        bodyDef.type = b2_staticBody;
+    } else if (rb2d->Type == Rigidbody2D::BodyType::Dynamic) {
+        bodyDef.type = b2_dynamicBody;
+    } else if (rb2d->Type == Rigidbody2D::BodyType::Kinematic) {
+        bodyDef.type = b2_kinematicBody;
+    }
+
+    const glm::vec3 worldPos = transform->GetWorldPosition();
+    bodyDef.position = b2Vec2{ worldPos.x, worldPos.y };
+    bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.z));
+    bodyDef.fixedRotation = rb2d->FixedRotation;
+    bodyDef.name = go->GetName().c_str();
+
+    b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
+    rb2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
+
+    if (!go->IsActiveInHierarchy()) {
+        b2Body_Disable(bodyId);
+    }
+
+    if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
+        b2ShapeDef shapeDef = b2DefaultShapeDef();
+        shapeDef.density = bc2d->density;
+        shapeDef.material.friction = bc2d->friction;
+        shapeDef.material.restitution = bc2d->restitution;
+
+        b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
+        b2Rot rot = b2MakeRot(0.0f);
+        float halfW = std::max(0.001f, bc2d->size.x * std::abs(transform->scale.x) * 0.5f);
+        float halfH = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.y) * 0.5f);
+        b2Polygon box = b2MakeOffsetBox(halfW, halfH, center, rot);
+
+        b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
+        bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+    }
+}
+
+GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worldPos) {
+    const auto& rootJson = prefab.GetJson();
+    if (!rootJson.contains("Entities") || !rootJson["Entities"].is_array() || rootJson["Entities"].empty()) {
+        ENGINE_CORE_ERROR("Scene::InstantiatePrefab: Invalid prefab JSON");
+        return nullptr;
+    }
+
+    const auto& entitiesArray = rootJson["Entities"];
+    std::unordered_map<uint64_t, uint64_t> oldToNewUUID;
+    std::unordered_map<uint64_t, GameObject*> createdEntities;
+    std::vector<std::pair<GameObject*, uint64_t>> parentLinks;
+    GameObject* rootGameObject = nullptr;
+
+    // Pass 1: Instantiate GameObjects with fresh UUIDs and deserialize components
+    for (const auto& entityJson : entitiesArray) {
+        const uint64_t oldUUID = entityJson.value("UUID", 0ULL);
+        const std::string name = entityJson.value("Name", "GameObject");
+
+        GameObject* go = CreateGameObject(name);
+        const uint64_t newUUID = go->GetUUID();
+        if (oldUUID != 0) {
+            oldToNewUUID[oldUUID] = newUUID;
+        }
+        createdEntities[newUUID] = go;
+
+        if (entityJson.contains("Tag")) {
+            if (entityJson["Tag"].is_string()) {
+                go->SetTag(StringToEntityTag(entityJson["Tag"].get<std::string>()));
+            } else if (entityJson["Tag"].is_number()) {
+                go->SetTag(static_cast<EntityTag>(entityJson["Tag"].get<uint16_t>()));
+            }
+        }
+        if (entityJson.contains("LayerMask") && entityJson["LayerMask"].is_number()) {
+            go->SetLayer(entityJson["LayerMask"].get<uint32_t>());
+        }
+
+        if (entityJson.contains("Components")) {
+            SceneSerializer::DeserializeEntityComponents(go, entityJson["Components"], name);
+        }
+
+        const uint64_t oldParentUUID = entityJson.value("ParentUUID", 0ULL);
+        if (oldParentUUID != 0) {
+            parentLinks.emplace_back(go, oldParentUUID);
+        } else if (!rootGameObject) {
+            rootGameObject = go;
+        }
+    }
+
+    if (!rootGameObject && !createdEntities.empty()) {
+        rootGameObject = createdEntities.begin()->second;
+    }
+
+    // Pass 2: Position root entity at requested world position
+    if (rootGameObject) {
+        if (auto* tr = rootGameObject->GetTransform()) {
+            tr->position = worldPos;
+            tr->SetDirty();
+        }
+    }
+
+    // Pass 3: Re-link parent-child hierarchy using remapped UUIDs
+    for (const auto& [childGo, oldParentUUID] : parentLinks) {
+        auto mapIt = oldToNewUUID.find(oldParentUUID);
+        if (mapIt != oldToNewUUID.end()) {
+            const uint64_t newParentUUID = mapIt->second;
+            auto parentGoIt = createdEntities.find(newParentUUID);
+            if (parentGoIt != createdEntities.end() && parentGoIt->second) {
+                childGo->GetTransform()->SetParent(parentGoIt->second->GetTransform(), /*keepWorldTransform=*/false);
+            }
+        }
+    }
+
+    // Pass 4: Create runtime physics bodies if runtime is active
+    if (m_IsRuntimeRunning) {
+        for (const auto& [uuid, go] : createdEntities) {
+            CreateRuntimePhysicsBody(go);
+        }
+    }
+
+    return rootGameObject;
+}
+
+void Scene::PrewarmPool(const std::string& poolKey, const Prefab& prefab, uint32_t count) {
+    auto& pool = m_EntityPools[poolKey];
+    pool.freeList.reserve(pool.freeList.size() + count);
+    pool.allInstances.reserve(pool.allInstances.size() + count);
+
+    for (uint32_t i = 0; i < count; ++i) {
+        GameObject* instance = InstantiatePrefab(prefab, glm::vec3(0.0f));
+        if (instance) {
+            instance->SetPoolKey(poolKey);
+            instance->SetActive(false);
+            pool.freeList.push_back(instance);
+            pool.allInstances.push_back(instance);
+        }
+    }
+}
+
+GameObject* Scene::AcquirePooled(const std::string& poolKey, const Prefab& prefab, const glm::vec3& worldPos) {
+    auto& pool = m_EntityPools[poolKey];
+    GameObject* instance = nullptr;
+
+    while (!pool.freeList.empty()) {
+        GameObject* candidate = pool.freeList.back();
+        pool.freeList.pop_back();
+        if (candidate && !candidate->IsPendingDestroy()) {
+            instance = candidate;
+            break;
+        }
+    }
+
+    if (!instance) {
+        // Pool exhausted or empty: dynamically allocate fresh instance
+        instance = InstantiatePrefab(prefab, worldPos);
+        if (instance) {
+            instance->SetPoolKey(poolKey);
+            pool.allInstances.push_back(instance);
+        }
+    } else {
+        // Reposition existing pooled instance
+        if (auto* transform = instance->GetTransform()) {
+            transform->SetWorldPosition(worldPos);
+            transform->SnapshotPrevious();
+        }
+    }
+
+    if (instance) {
+        // Reset Box2D physics if in runtime
+        if (m_IsRuntimeRunning) {
+            if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
+                if (rb2d->RuntimeBody) {
+                    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody));
+                    if (b2Body_IsValid(bodyId)) {
+                        b2Body_Enable(bodyId);
+                        b2Vec2 p{ worldPos.x, worldPos.y };
+                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.z));
+                        b2Body_SetTransform(bodyId, p, r);
+                        b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+                        b2Body_SetAngularVelocity(bodyId, 0.0f);
+                        b2Body_SetAwake(bodyId, true);
+                    }
+                }
+            }
+        }
+        if (auto* bc2d = instance->GetComponent<BoxCollider2D>()) {
+            bc2d->verticalVelocity = 0.0f;
+        }
+
+        instance->SetActive(true);
+    }
+
+    return instance;
+}
+
+void Scene::ReleaseToPool(const std::string& poolKey, GameObject* instance) {
+    if (!instance) return;
+
+    // Reset physics state
+    if (m_IsRuntimeRunning) {
+        if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
+            if (rb2d->RuntimeBody) {
+                b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody));
+                if (b2Body_IsValid(bodyId)) {
+                    b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+                    b2Body_SetAngularVelocity(bodyId, 0.0f);
+                    b2Body_SetAwake(bodyId, false);
+                    b2Body_Disable(bodyId);
+                }
+            }
+        }
+    }
+    if (auto* bc2d = instance->GetComponent<BoxCollider2D>()) {
+        bc2d->verticalVelocity = 0.0f;
+    }
+
+    // Reset particles on root and children
+    if (auto* ps = instance->GetComponent<ParticleSystem>()) {
+        ps->Reset();
+    }
+    if (auto* tr = instance->GetTransform()) {
+        for (auto* childTr : tr->GetChildren()) {
+            if (childTr && childTr->GetGameObject()) {
+                if (auto* childPs = childTr->GetGameObject()->GetComponent<ParticleSystem>()) {
+                    childPs->Reset();
+                }
+            }
+        }
+    }
+
+    // Deactivate hierarchy (propagates IsActiveInHierarchy() == false to all children)
+    instance->SetActive(false);
+
+    // Push back to free-list if not already present
+    auto& pool = m_EntityPools[poolKey];
+    auto it = std::find(pool.freeList.begin(), pool.freeList.end(), instance);
+    if (it == pool.freeList.end()) {
+        pool.freeList.push_back(instance);
+    }
+}
+
+void Scene::ReleaseToPool(GameObject* instance) {
+    if (instance && instance->IsPooled()) {
+        ReleaseToPool(instance->GetPoolKey(), instance);
+    }
+}
+
+size_t Scene::GetPoolFreeCount(const std::string& poolKey) const noexcept {
+    auto it = m_EntityPools.find(poolKey);
+    if (it == m_EntityPools.end()) return 0;
+    return it->second.freeList.size();
+}
+
+size_t Scene::GetPoolTotalCount(const std::string& poolKey) const noexcept {
+    auto it = m_EntityPools.find(poolKey);
+    if (it == m_EntityPools.end()) return 0;
+    return it->second.allInstances.size();
+}
+
+void Scene::ClearPool(const std::string& poolKey) {
+    auto it = m_EntityPools.find(poolKey);
+    if (it == m_EntityPools.end()) return;
+
+    for (auto* instance : it->second.allInstances) {
+        if (instance && !instance->IsPendingDestroy()) {
+            DestroyGameObject(instance);
+        }
+    }
+    m_EntityPools.erase(it);
+}
+
+void Scene::ClearAllPools() {
+    for (auto& [key, pool] : m_EntityPools) {
+        for (auto* instance : pool.allInstances) {
+            if (instance && !instance->IsPendingDestroy()) {
+                DestroyGameObject(instance);
+            }
+        }
+    }
+    m_EntityPools.clear();
 }
 
 GameObject* Scene::FindGameObjectByUUID(uint64_t uuid) const noexcept {
@@ -238,6 +542,9 @@ void Scene::FlushEntityLifecycleQueues() {
                 m_EntityUUIDMap.erase(pending->GetUUID());
             } else {
                 pending->ProcessPendingStarts();
+                if (m_IsRuntimeRunning) {
+                    CreateRuntimePhysicsBody(pending.get());
+                }
                 m_GameObjects.push_back(std::move(pending));
                 m_StaticCollidersDirty = true;
             }
@@ -687,43 +994,7 @@ void Scene::OnRuntimeStart() {
     ResetPhysicsAccumulator();
 
     for (auto& go : m_GameObjects) {
-        auto* transform = go->GetTransform();
-        auto* rb2d = go->GetComponent<Rigidbody2D>();
-
-        if (rb2d && transform) {
-            b2BodyDef bodyDef = b2DefaultBodyDef();
-            if (rb2d->Type == Rigidbody2D::BodyType::Static) {
-                bodyDef.type = b2_staticBody;
-            } else if (rb2d->Type == Rigidbody2D::BodyType::Dynamic) {
-                bodyDef.type = b2_dynamicBody;
-            } else if (rb2d->Type == Rigidbody2D::BodyType::Kinematic) {
-                bodyDef.type = b2_kinematicBody;
-            }
-
-            bodyDef.position = b2Vec2{ transform->position.x, transform->position.y };
-            bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.z));
-            bodyDef.fixedRotation = rb2d->FixedRotation;
-            bodyDef.name = go->GetName().c_str();
-
-            b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
-            rb2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
-
-            if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
-                b2ShapeDef shapeDef = b2DefaultShapeDef();
-                shapeDef.density = bc2d->density;
-                shapeDef.material.friction = bc2d->friction;
-                shapeDef.material.restitution = bc2d->restitution;
-
-                b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
-                b2Rot rot = b2MakeRot(0.0f);
-                float halfW = std::max(0.001f, bc2d->size.x * std::abs(transform->scale.x) * 0.5f);
-                float halfH = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.y) * 0.5f);
-                b2Polygon box = b2MakeOffsetBox(halfW, halfH, center, rot);
-
-                b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-                bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
-            }
-        }
+        CreateRuntimePhysicsBody(go.get());
     }
     for (auto& go : m_GameObjects) {
         if (auto* transform = go->GetTransform()) {

@@ -118,6 +118,10 @@ public:
 
     [[nodiscard]] bool IsActive() const noexcept { return m_Active; }
 
+    void SetPoolKey(std::string_view key) { m_PoolKey = key; }
+    [[nodiscard]] const std::string& GetPoolKey() const noexcept { return m_PoolKey; }
+    [[nodiscard]] bool IsPooled() const noexcept { return !m_PoolKey.empty(); }
+
     [[nodiscard]] bool IsActiveInHierarchy() const noexcept {
         if (!m_Active || m_PendingDestroy) {
             return false;
@@ -246,6 +250,7 @@ private:
     ComponentMask128 m_ComponentMask;
     EntityTag m_Tag{ EntityTag::Untagged };
     uint32_t m_LayerMask{ EntityLayer::Default };
+    std::string m_PoolKey;
     bool m_Active{ true };
     bool m_PendingDestroy{ false };
 };

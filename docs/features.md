@@ -189,7 +189,7 @@ flowchart TD
 | **`ECS-01`** | Deferred Entity Spawn/Destroy & Active Flags | `DONE` | **P0** | W0 | *None (Root)* | `ECS-05` | `ECS-03`, `ECS-04`, `PHY-01`, `TER-01`, `SAV-02` |
 | **`ECS-02`** | Fixed-Timestep Physics Loop & Time-Scale API | `DONE` | **P0** | W0 | *None (Root)* | `AUD-02` (pitch/pause) | `PHY-01`, `CAM-02`, `UIX-04` (wheel slow-mo) |
 | **`ECS-03`** | Parent-Child Transform Hierarchy & Sockets | `DONE` | **P0** | W1 | `ECS-01` | `ANI-01` (socket flip) | `ECS-04`, Hero Torch & Weapon attachment |
-| **`ECS-04`** | Prefab Templates & Entity Object Pooling | `TODO` | **P1** | W2 | `ECS-01`, `ECS-03`, `ECS-05` | `SAV-01` | `TER-02`, `EDT-03`, Horde/Pickup spawning |
+| **`ECS-04`** | Prefab Templates & Entity Object Pooling | `DONE` | **P1** | W2 | `ECS-01`, `ECS-03`, `ECS-05` | `SAV-01` | `TER-02`, `EDT-03`, Horde/Pickup spawning |
 | **`ECS-05`** | Entity Tags, Layers & 128-bit Component Mask | `DONE` | **P1** | W0 | *None (Root)* | `ECS-01` | `ECS-04`, `PHY-04`, `AIX-01`, `LGT-03` |
 | **`PHY-01`** | XZ Ground-Plane Box2D Mapping & 2.5D Y-Arc | `TODO` | **P0** | W1 | `ECS-01`, `ECS-02` | `SquashStretchComponent` | `PHY-02`, `AIX-02` |
 | **`PHY-02`** | Runtime Rigidbody Lifecycle & Force/Impulse API | `TODO` | **P0** | W2 | `PHY-01` | `ECS-04` (pool reset) | `PHY-03`, `TER-04` |
@@ -334,7 +334,7 @@ flowchart TD
 ---
 
 #### `ECS-04` — Prefab Templates & Entity Object Pooling
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `ECS-01`, `ECS-03`, `ECS-05` | Unlocks: `TER-02`, `EDT-03`
 - **Current Gap:** `SceneSerializer` only serializes entire scenes; spawning 8 wood splinters on barricade break or 30 Thralls allocates heap `GameObject`s and re-parses data from scratch.
 - **Proposed C++ Specification:**
@@ -1494,7 +1494,7 @@ Do **not** build these before playtesting the Alpha arena (all 21 features marke
 
 - **Infinite World & Advanced Terrain (`TER-01`, `TER-02`, `TER-03` — `DEFERRED`):** A single `128m × 128m` hand-painted 4-layer `TerrainComponent` arena tests 100% of the combat, torch, and tar/chalk mechanics without chunk streaming, Perlin worldgen, or 8-layer `GL_TEXTURE_2D_ARRAY` normal/height shaders.
 - **Tactical Wheel & Minimap (`UIX-04`, `UIX-03` — `DEFERRED`):** Bind structure drops directly to number keys (`1` = Spike Barricade, `2` = Fire Beacon, `3` = Tar Siphon) instead of building the slow-mo Radial Drop Wheel; skip the Fog-of-War Minimap inside a single clearing; use existing `.ttf` font rendering instead of `.fnt` BMFont.
-- **Data Registries, Prefabs & Save System (`SAV-01`, `SAV-02`, `ECS-04` — `DEFERRED`):** Configure the Alpha Hero, 2 Weapons (Maul, Halberd), 3 Enemies (Ghoul, Jiangshi, Wendigo), and 6 test Branch buffs directly in C++ factory functions; skip persistent Ashes saves and Sanctuary Hub transitions.
+- **Data Registries, Prefabs & Save System (`SAV-01`, `SAV-02` — `DEFERRED`; `ECS-04` — `DONE`):** Configure the Alpha Hero, 2 Weapons (Maul, Halberd), 3 Enemies (Ghoul, Jiangshi, Wendigo), and 6 test Branch buffs directly in C++ factory functions; skip persistent Ashes saves and Sanctuary Hub transitions.
 - **Streaming OGG & 3-Stem Music (`AUD-01`, `AUD-03` — `DEFERRED`):** Use `.wav` assets for Alpha combat SFX and a single looping ambient `.wav` track.
 - **Portrait Aspect & Editor Tooling (`CAM-01`, `EDT-01`, `EDT-03` — `DEFERRED`):** Playtest Alpha exclusively in desktop `16:9` landscape.
 - **Production Visual Polish & VRAM Compression (`LGT-02`, `RND-01`, `RND-02`, `RND-03`, `ANI-02`, `ANI-03`, `VFX-02`, `PHY-04` — `DEFERRED`):** The current engine's `8` point lights (`MaxPointLights = 8`) already support 1 Hero Torch + 4 Beacons + 3 Wisps; skip BC7 DDS compression, custom ash-dissolve shaders, and ground decal pools until the core loop is proven fun.

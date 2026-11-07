@@ -103,4 +103,15 @@ void ParticleSystem::Update(float deltaTime) {
         }
     }
 }
+
+void ParticleSystem::Reset() noexcept {
+    for (uint32_t i = 0; i < m_ActiveParticleCount; ++i) {
+        m_ParticlePool[i].active = false;
+        m_ParticlePool[i].lifeRemaining = 0.0f;
+    }
+    m_ActiveParticleCount = 0;
+    m_PoolIndex = 0;
+    m_EmitAccumulator = 0.0f;
+}
+
 } // namespace Engine

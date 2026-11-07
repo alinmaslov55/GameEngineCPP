@@ -142,6 +142,14 @@ std::string ResourceManager::ToRelativePath(const std::string& filepath) {
         return {};
     }
 
+    std::filesystem::path p(filepath);
+    if (p.is_relative()) {
+        std::string gen = p.lexically_normal().generic_string();
+        if (!gen.empty() && gen.rfind("..", 0) != 0) {
+            return gen;
+        }
+    }
+
     std::error_code ec;
     std::filesystem::path fullPath = std::filesystem::path(filepath).lexically_normal();
     if (!s_AssetRoot.empty()) {

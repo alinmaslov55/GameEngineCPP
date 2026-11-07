@@ -1,0 +1,153 @@
+{
+    "Entities": [
+        {
+            "Components": {
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.25,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        0.8999999761581421,
+                        0.800000011920929,
+                        1.0
+                    ],
+                    "Emissive": 0.0,
+                    "ReceiveLighting": true,
+                    "WindPhaseOffset": 0.0,
+                    "WindSwayWeight": 0.0
+                },
+                "Transform": {
+                    "Position": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                }
+            },
+            "LayerMask": 2,
+            "Name": "RitualBrazier",
+            "ParentUUID": 0,
+            "Tag": "SafeZoneBrazier",
+            "UUID": 16826844321975005472
+        },
+        {
+            "Components": {
+                "PointLight": {
+                    "Color": [
+                        1.0,
+                        0.6000000238418579,
+                        0.20000000298023224
+                    ],
+                    "Falloff": 1.7999999523162842,
+                    "Flicker": true,
+                    "FlickerAmount": 0.14000000059604645,
+                    "FlickerSpeed": 7.5,
+                    "HeightOffset": 0.8500000238418579,
+                    "Intensity": 3.5,
+                    "Radius": 6.0
+                },
+                "Transform": {
+                    "Position": [
+                        0.0,
+                        1.2000000476837158,
+                        0.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                }
+            },
+            "LayerMask": 1,
+            "Name": "BrazierLight",
+            "ParentUUID": 16826844321975005472,
+            "Tag": "Untagged",
+            "UUID": 2521362483727851456
+        },
+        {
+            "Components": {
+                "ParticleSystem": {
+                    "AutoEmit": true,
+                    "EmissiveParticles": false,
+                    "EmitRate": 15.0,
+                    "PoolSize": 50,
+                    "SpawnOffset": [
+                        0.0,
+                        0.949999988079071,
+                        0.0
+                    ],
+                    "TemplateProps": {
+                        "ColorBegin": [
+                            1.0,
+                            0.7200000286102295,
+                            0.2199999988079071,
+                            0.949999988079071
+                        ],
+                        "ColorEnd": [
+                            0.8999999761581421,
+                            0.18000000715255737,
+                            0.07999999821186066,
+                            0.0
+                        ],
+                        "LifeTime": 1.149999976158142,
+                        "SizeBegin": 0.11999999731779099,
+                        "SizeEnd": 0.019999999552965164,
+                        "SizeVariation": 0.03999999910593033,
+                        "Velocity": [
+                            0.0,
+                            1.149999976158142,
+                            0.0
+                        ],
+                        "VelocityVariation": [
+                            0.3499999940395355,
+                            0.3499999940395355,
+                            0.3499999940395355
+                        ]
+                    }
+                },
+                "Transform": {
+                    "Position": [
+                        0.0,
+                        0.8999999761581421,
+                        0.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                }
+            },
+            "LayerMask": 1,
+            "Name": "BrazierFlames",
+            "ParentUUID": 16826844321975005472,
+            "Tag": "Untagged",
+            "UUID": 17363017399258420995
+        }
+    ],
+    "Format": "EnginePrefab",
+    "RootUUID": 16826844321975005472,
+    "Version": 1
+}

@@ -33,6 +33,7 @@ class Tilemap;
 class ParticleSystem;
 class UIPanel;
 class UILabel;
+class Prefab;
 
 struct SceneRenderContext {
     const PerspectiveCamera* activeCam = nullptr;
@@ -65,6 +66,20 @@ public:
     [[nodiscard]] size_t GetEntityUUIDMapCount() const noexcept { return m_EntityUUIDMap.size(); }
     [[nodiscard]] bool IsIteratingEntities() const noexcept { return m_IsIteratingEntities; }
     void SetIsIteratingEntities(bool iterating) noexcept { m_IsIteratingEntities = iterating; }
+
+    // Prefab instantiation with recursive UUID remapping and world positioning
+    GameObject* InstantiatePrefab(const Prefab& prefab, const glm::vec3& worldPos = glm::vec3(0.0f));
+
+    // High-performance object pooling
+    void PrewarmPool(const std::string& poolKey, const Prefab& prefab, uint32_t count);
+    GameObject* AcquirePooled(const std::string& poolKey, const Prefab& prefab, const glm::vec3& worldPos = glm::vec3(0.0f));
+    void ReleaseToPool(const std::string& poolKey, GameObject* instance);
+    void ReleaseToPool(GameObject* instance); // Uses instance->GetPoolKey()
+
+    [[nodiscard]] size_t GetPoolFreeCount(const std::string& poolKey) const noexcept;
+    [[nodiscard]] size_t GetPoolTotalCount(const std::string& poolKey) const noexcept;
+    void ClearPool(const std::string& poolKey);
+    void ClearAllPools();
 
     void Update(float deltaTime);
     void Render(const PerspectiveCamera* overrideCamera = nullptr);
@@ -133,7 +148,15 @@ private:
     void RenderPassParticles(SceneRenderContext& ctx);
     void RenderPassScreenUI();
 
+    void CreateRuntimePhysicsBody(GameObject* go);
+
 private:
+    struct EntityPool {
+        std::vector<GameObject*> freeList;
+        std::vector<GameObject*> allInstances;
+    };
+    std::unordered_map<std::string, EntityPool> m_EntityPools;
+
     struct ColliderCacheEntry {
         GameObject* gameObject = nullptr;
         Transform* transform = nullptr;

@@ -29,6 +29,7 @@ namespace Engine {
 
         void Emit(const ParticleProps& particleProps);
         void Update(float deltaTime) override;
+        void Reset() noexcept;
 
         // Optional continuous ambient emission (fire embers, shrine wisps, chimneys)
         bool AutoEmit = false;

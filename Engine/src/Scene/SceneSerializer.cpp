@@ -539,7 +539,7 @@ static const ComponentSerializerFn s_ComponentSerializers[] = {
     SerializeAnimator
 };
 
-json SerializeEntity(const GameObject* go) {
+json SerializeEntityInternal(const GameObject* go) {
     json entityJson;
     entityJson["UUID"] = go->GetUUID();
     entityJson["Name"] = go->GetName();
@@ -979,7 +979,7 @@ static const ComponentDeserializerEntry s_ComponentDeserializers[] = {
     { "Animator",         DeserializeAnimator },
 };
 
-void DeserializeEntityComponents(GameObject* go, const json& componentsJson, const std::string& name) {
+void DeserializeEntityComponentsInternal(GameObject* go, const json& componentsJson, const std::string& name) {
     if (!componentsJson.is_object()) return;
 
     for (const auto& entry : s_ComponentDeserializers) {
@@ -995,6 +995,14 @@ void DeserializeEntityComponents(GameObject* go, const json& componentsJson, con
 // =========================================================================
 // SceneSerializer Class Implementation
 // =========================================================================
+
+nlohmann::json SceneSerializer::SerializeEntity(const GameObject* go) {
+    return SerializeEntityInternal(go);
+}
+
+void SceneSerializer::DeserializeEntityComponents(GameObject* go, const json& componentsJson, const std::string& name) {
+    DeserializeEntityComponentsInternal(go, componentsJson, name);
+}
 
 SceneSerializer::SceneSerializer(const std::shared_ptr<Scene>& scene)
     : m_Scene(scene) {}
