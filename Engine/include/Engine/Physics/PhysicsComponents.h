@@ -15,7 +15,12 @@ public:
     };
 
     BodyType Type = BodyType::Dynamic;
-    bool FixedRotation = false;
+    bool FixedRotation = true;    // Default: true for top-down standees
+    float LinearDamping = 4.5f;   // Top-down ground stopping friction
+    float AngularDamping = 6.0f;  // Top-down rotational stopping friction
+    float GravityScaleY = 1.0f;   // Multiplier for vertical 2.5D gravity
+    float MassMultiplier = 1.0f;  // Scaled by physical roots ("Anvil", "Iron Bone")
+    bool IsBullet = false;        // Continuous Collision Detection (CCD) for high-speed bowling
 
     // Pointer or handle to internal Box2D body (only valid during runtime / play mode)
     void* RuntimeBody = nullptr;
@@ -44,12 +49,38 @@ public:
     [[nodiscard]] bool IsGrounded(float currentY) const noexcept { return !IsAirborne(currentY); }
     [[nodiscard]] bool IsGrounded() const noexcept { return !IsAirborne(); }
 
-    void SetLinearVelocityXZ(const glm::vec2& velocityXZ) noexcept;
-    void SetLinearVelocityXZ(float vx, float vz) noexcept { SetLinearVelocityXZ(glm::vec2{ vx, vz }); }
-    [[nodiscard]] glm::vec2 GetLinearVelocityXZ() const noexcept;
+    // Kinetic manipulation APIs
+    void ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake = true);
+    void ApplyImpulseXZ(float ix, float iz, bool wake = true) { ApplyImpulseXZ(glm::vec2{ ix, iz }, wake); }
+    void ApplyForceXZ(const glm::vec2& forceXZ, bool wake = true);
+    void ApplyForceXZ(float fx, float fz, bool wake = true) { ApplyForceXZ(glm::vec2{ fx, fz }, wake); }
+    void SetVelocityXZ(const glm::vec2& velocityXZ);
+    void SetVelocityXZ(float vx, float vz) { SetVelocityXZ(glm::vec2{ vx, vz }); }
+    [[nodiscard]] glm::vec2 GetVelocityXZ() const noexcept;
+    void SetPositionXZ(const glm::vec2& worldXZ);
+    void SetPositionXZ(float x, float z) { SetPositionXZ(glm::vec2{ x, z }); }
 
-    void ApplyLinearImpulseXZ(const glm::vec2& impulseXZ, bool wake = true) noexcept;
-    void ApplyLinearImpulseXZ(float ix, float iz, bool wake = true) noexcept { ApplyLinearImpulseXZ(glm::vec2{ ix, iz }, wake); }
+    void SetLinearDampingRuntime(float damping);
+    [[nodiscard]] float GetLinearDamping() const noexcept;
+    void SetAngularDampingRuntime(float damping);
+    [[nodiscard]] float GetAngularDamping() const noexcept;
+    void SetMassMultiplier(float multiplier);
+    [[nodiscard]] float GetMassMultiplier() const noexcept { return MassMultiplier; }
+    [[nodiscard]] float GetMass() const noexcept;
+    void SetBullet(bool bullet);
+    [[nodiscard]] bool GetBullet() const noexcept;
+
+    // Component lifecycle hooks
+    void OnEnable() override;
+    void OnDisable() override;
+    void OnDestroy() override;
+
+    // Backward-compatible aliases for PHY-01
+    void SetLinearVelocityXZ(const glm::vec2& velocityXZ) noexcept { SetVelocityXZ(velocityXZ); }
+    void SetLinearVelocityXZ(float vx, float vz) noexcept { SetVelocityXZ(glm::vec2{ vx, vz }); }
+    [[nodiscard]] glm::vec2 GetLinearVelocityXZ() const noexcept { return GetVelocityXZ(); }
+    void ApplyLinearImpulseXZ(const glm::vec2& impulseXZ, bool wake = true) noexcept { ApplyImpulseXZ(impulseXZ, wake); }
+    void ApplyLinearImpulseXZ(float ix, float iz, bool wake = true) noexcept { ApplyImpulseXZ(glm::vec2{ ix, iz }, wake); }
 };
 
 class BoxCollider2D : public Component {
@@ -79,6 +110,10 @@ public:
     bool IsGrounded(float currentY) const {
         return currentY <= (groundLevel + 1e-4f) && verticalVelocity <= 0.0f;
     }
+
+    void OnEnable() override;
+    void OnDisable() override;
+    void OnDestroy() override;
 };
 
 } // namespace Engine

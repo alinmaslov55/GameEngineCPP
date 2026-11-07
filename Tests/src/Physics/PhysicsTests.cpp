@@ -29,7 +29,12 @@ TEST(BoxCollider2DTest, DefaultValuesAndGroundedCheck) {
 TEST(Rigidbody2DTest, DefaultsAndType) {
     Engine::Rigidbody2D rb;
     EXPECT_EQ(rb.Type, Engine::Rigidbody2D::BodyType::Dynamic);
-    EXPECT_FALSE(rb.FixedRotation);
+    EXPECT_TRUE(rb.FixedRotation);
+    EXPECT_FLOAT_EQ(rb.LinearDamping, 4.5f);
+    EXPECT_FLOAT_EQ(rb.AngularDamping, 6.0f);
+    EXPECT_FLOAT_EQ(rb.GravityScaleY, 1.0f);
+    EXPECT_FLOAT_EQ(rb.MassMultiplier, 1.0f);
+    EXPECT_FALSE(rb.IsBullet);
     EXPECT_EQ(rb.RuntimeBody, nullptr);
 }
 

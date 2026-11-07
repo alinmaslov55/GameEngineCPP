@@ -75,6 +75,7 @@ GameObject* Scene::CreateGameObject(const std::string& name) {
     ENGINE_CORE_DEBUG("Scene '{}': Creating GameObject '{}'", m_Name, name);
     auto gameObject = std::make_unique<GameObject>(name);
     GameObject* rawPtr = gameObject.get();
+    rawPtr->m_Scene = this;
     m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
 
     if (m_IsIteratingEntities) {
@@ -90,6 +91,7 @@ GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& na
     ENGINE_CORE_DEBUG("Scene '{}': Creating GameObject '{}' with UUID {}", m_Name, name, uuid);
     auto gameObject = std::make_unique<GameObject>(uuid, name);
     GameObject* rawPtr = gameObject.get();
+    rawPtr->m_Scene = this;
     m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
 
     if (m_IsIteratingEntities) {
@@ -153,6 +155,17 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
     gameObject->m_PendingDestroy = true;
     m_PendingDestroyQueue.push_back(gameObject);
 
+    if (m_IsRuntimeRunning) {
+        if (auto* rb2d = gameObject->GetComponent<Rigidbody2D>()) {
+            if (rb2d->RuntimeBody) {
+                b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+                if (b2Body_IsValid(bodyId)) {
+                    b2Body_Disable(bodyId);
+                }
+            }
+        }
+    }
+
     if (gameObject->IsPooled()) {
         auto poolIt = m_EntityPools.find(gameObject->GetPoolKey());
         if (poolIt != m_EntityPools.end()) {
@@ -176,7 +189,7 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
     }
 }
 
-void Scene::CreateRuntimePhysicsBody(GameObject* go) {
+void Scene::RegisterRuntimeBody(GameObject* go) {
     if (!m_IsRuntimeRunning || !go) return;
     b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
     if (!b2World_IsValid(worldId)) return;
@@ -186,43 +199,105 @@ void Scene::CreateRuntimePhysicsBody(GameObject* go) {
 
     auto* rb2d = go->GetComponent<Rigidbody2D>();
     auto* bc2d = go->GetComponent<BoxCollider2D>();
+    auto* tilemap = go->GetComponent<Tilemap>();
 
     if (rb2d) {
-        if (rb2d->RuntimeBody != nullptr) {
-            return;
+        // If there was a static body from a previous standalone BoxCollider2D, destroy it
+        if (bc2d && bc2d->RuntimeBody != nullptr && bc2d->RuntimeBody != rb2d->RuntimeBody) {
+            b2BodyId oldStaticBody = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody)));
+            if (b2Body_IsValid(oldStaticBody)) {
+                b2DestroyBody(oldStaticBody);
+            }
+            bc2d->RuntimeBody = nullptr;
+            bc2d->RuntimeFixture = nullptr;
         }
 
-        b2BodyDef bodyDef = b2DefaultBodyDef();
-        if (rb2d->Type == Rigidbody2D::BodyType::Static) {
-            bodyDef.type = b2_staticBody;
-        } else if (rb2d->Type == Rigidbody2D::BodyType::Dynamic) {
-            bodyDef.type = b2_dynamicBody;
-        } else if (rb2d->Type == Rigidbody2D::BodyType::Kinematic) {
-            bodyDef.type = b2_kinematicBody;
+        b2BodyId bodyId;
+        if (rb2d->RuntimeBody == nullptr) {
+            b2BodyDef bodyDef = b2DefaultBodyDef();
+            if (rb2d->Type == Rigidbody2D::BodyType::Static) {
+                bodyDef.type = b2_staticBody;
+            } else if (rb2d->Type == Rigidbody2D::BodyType::Dynamic) {
+                bodyDef.type = b2_dynamicBody;
+            } else if (rb2d->Type == Rigidbody2D::BodyType::Kinematic) {
+                bodyDef.type = b2_kinematicBody;
+            }
+
+            const glm::vec3 worldPos = transform->GetWorldPosition();
+            bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
+            bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.y));
+            bodyDef.fixedRotation = rb2d->FixedRotation;
+            bodyDef.linearDamping = rb2d->LinearDamping;
+            bodyDef.angularDamping = rb2d->AngularDamping;
+            bodyDef.isBullet = rb2d->IsBullet;
+            bodyDef.name = go->GetName().c_str();
+            bodyDef.userData = go;
+
+            bodyId = b2CreateBody(worldId, &bodyDef);
+            rb2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
+
+            if (rb2d->InitialLinearVelocityXZ.x != 0.0f || rb2d->InitialLinearVelocityXZ.y != 0.0f) {
+                b2Body_SetLinearVelocity(bodyId, b2Vec2{ rb2d->InitialLinearVelocityXZ.x, rb2d->InitialLinearVelocityXZ.y });
+            }
+
+            if (!go->IsActiveInHierarchy()) {
+                b2Body_Disable(bodyId);
+            }
+        } else {
+            bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+            if (b2Body_IsValid(bodyId)) {
+                b2Body_SetUserData(bodyId, go);
+                b2Body_SetFixedRotation(bodyId, rb2d->FixedRotation);
+                b2Body_SetLinearDamping(bodyId, rb2d->LinearDamping);
+                b2Body_SetAngularDamping(bodyId, rb2d->AngularDamping);
+                b2Body_SetBullet(bodyId, rb2d->IsBullet);
+            }
         }
 
-        const glm::vec3 worldPos = transform->GetWorldPosition();
-        bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
-        bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.y));
-        bodyDef.fixedRotation = rb2d->FixedRotation;
-        bodyDef.name = go->GetName().c_str();
-
-        b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
-        rb2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
-
-        if (rb2d->InitialLinearVelocityXZ.x != 0.0f || rb2d->InitialLinearVelocityXZ.y != 0.0f) {
-            b2Body_SetLinearVelocity(bodyId, b2Vec2{ rb2d->InitialLinearVelocityXZ.x, rb2d->InitialLinearVelocityXZ.y });
-        }
-
-        if (!go->IsActiveInHierarchy()) {
-            b2Body_Disable(bodyId);
-        }
-
-        if (bc2d) {
+        if (bc2d && bc2d->RuntimeFixture == nullptr && b2Body_IsValid(bodyId)) {
             b2ShapeDef shapeDef = b2DefaultShapeDef();
             shapeDef.density = bc2d->density;
             shapeDef.material.friction = bc2d->friction;
             shapeDef.material.restitution = bc2d->restitution;
+            shapeDef.userData = bc2d;
+
+            b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
+            b2Rot rot = b2MakeRot(0.0f);
+            float halfW = std::max(0.001f, bc2d->size.x * std::abs(transform->scale.x) * 0.5f);
+            float halfD = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.z) * 0.5f);
+            b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
+
+            b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
+            bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+
+            if (rb2d->MassMultiplier != 1.0f) {
+                b2MassData massData = b2Body_GetMassData(bodyId);
+                massData.mass *= rb2d->MassMultiplier;
+                b2Body_SetMassData(bodyId, massData);
+            }
+        }
+    } else if (bc2d) {
+        if (bc2d->RuntimeBody == nullptr && bc2d->RuntimeFixture == nullptr) {
+            b2BodyDef bodyDef = b2DefaultBodyDef();
+            bodyDef.type = b2_staticBody;
+            const glm::vec3 worldPos = transform->GetWorldPosition();
+            bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
+            bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.y));
+            bodyDef.name = go->GetName().c_str();
+            bodyDef.userData = go;
+
+            b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
+            bc2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
+
+            if (!go->IsActiveInHierarchy()) {
+                b2Body_Disable(bodyId);
+            }
+
+            b2ShapeDef shapeDef = b2DefaultShapeDef();
+            shapeDef.density = bc2d->density;
+            shapeDef.material.friction = bc2d->friction;
+            shapeDef.material.restitution = bc2d->restitution;
+            shapeDef.userData = bc2d;
 
             b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
             b2Rot rot = b2MakeRot(0.0f);
@@ -233,39 +308,50 @@ void Scene::CreateRuntimePhysicsBody(GameObject* go) {
             b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
             bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
         }
-    } else if (bc2d) {
-        if (bc2d->RuntimeBody != nullptr || bc2d->RuntimeFixture != nullptr) {
-            return;
-        }
-
-        b2BodyDef bodyDef = b2DefaultBodyDef();
-        bodyDef.type = b2_staticBody;
-        const glm::vec3 worldPos = transform->GetWorldPosition();
-        bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
-        bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.y));
-        bodyDef.name = go->GetName().c_str();
-
-        b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
-        bc2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
-
-        if (!go->IsActiveInHierarchy()) {
-            b2Body_Disable(bodyId);
-        }
-
-        b2ShapeDef shapeDef = b2DefaultShapeDef();
-        shapeDef.density = bc2d->density;
-        shapeDef.material.friction = bc2d->friction;
-        shapeDef.material.restitution = bc2d->restitution;
-
-        b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
-        b2Rot rot = b2MakeRot(0.0f);
-        float halfW = std::max(0.001f, bc2d->size.x * std::abs(transform->scale.x) * 0.5f);
-        float halfD = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.z) * 0.5f);
-        b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
-
-        b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-        bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
     }
+
+    if (tilemap && tilemap->RuntimeBody == nullptr) {
+        CreateRuntimeTilemapBody(go);
+    }
+}
+
+void Scene::UnregisterRuntimeBody(GameObject* go) {
+    if (!m_IsRuntimeRunning || !go) return;
+
+    if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
+        if (rb2d->RuntimeBody) {
+            b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+            if (b2Body_IsValid(bodyId)) {
+                b2DestroyBody(bodyId);
+            }
+            rb2d->RuntimeBody = nullptr;
+        }
+    }
+
+    if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
+        if (bc2d->RuntimeBody) {
+            b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody)));
+            if (b2Body_IsValid(bodyId)) {
+                b2DestroyBody(bodyId);
+            }
+            bc2d->RuntimeBody = nullptr;
+        }
+        bc2d->RuntimeFixture = nullptr;
+    }
+
+    if (auto* tilemap = go->GetComponent<Tilemap>()) {
+        if (tilemap->RuntimeBody) {
+            b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(tilemap->RuntimeBody)));
+            if (b2Body_IsValid(bodyId)) {
+                b2DestroyBody(bodyId);
+            }
+            tilemap->RuntimeBody = nullptr;
+        }
+    }
+}
+
+void Scene::CreateRuntimePhysicsBody(GameObject* go) {
+    RegisterRuntimeBody(go);
 }
 
 void Scene::CreateRuntimeTilemapBody(GameObject* go) {
@@ -287,6 +373,7 @@ void Scene::CreateRuntimeTilemapBody(GameObject* go) {
     bodyDef.type = b2_staticBody;
     bodyDef.position = b2Vec2{ 0.0f, 0.0f };
     bodyDef.name = go->GetName().c_str();
+    bodyDef.userData = go;
 
     b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
     tilemap->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
@@ -402,8 +489,7 @@ GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worl
     // Pass 4: Create runtime physics bodies if runtime is active
     if (m_IsRuntimeRunning) {
         for (const auto& [uuid, go] : createdEntities) {
-            CreateRuntimePhysicsBody(go);
-            CreateRuntimeTilemapBody(go);
+            RegisterRuntimeBody(go);
         }
     }
 
@@ -665,8 +751,7 @@ void Scene::FlushEntityLifecycleQueues() {
             } else {
                 pending->ProcessPendingStarts();
                 if (m_IsRuntimeRunning) {
-                    CreateRuntimePhysicsBody(pending.get());
-                    CreateRuntimeTilemapBody(pending.get());
+                    RegisterRuntimeBody(pending.get());
                 }
                 m_GameObjects.push_back(std::move(pending));
                 m_StaticCollidersDirty = true;
@@ -678,41 +763,13 @@ void Scene::FlushEntityLifecycleQueues() {
     // 2. Process pending destroys
     if (!m_PendingDestroyQueue.empty()) {
         bool colliderDestroyed = false;
-        b2WorldId worldId = m_IsRuntimeRunning ? b2LoadWorldId(m_PhysicsWorldId) : b2_nullWorldId;
 
         for (auto* go : m_PendingDestroyQueue) {
             if (!go) continue;
 
             // Destroy runtime Box2D body if active
-            if (m_IsRuntimeRunning && b2World_IsValid(worldId)) {
-                if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
-                    if (rb2d->RuntimeBody) {
-                        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
-                        if (b2Body_IsValid(bodyId)) {
-                            b2DestroyBody(bodyId);
-                        }
-                        rb2d->RuntimeBody = nullptr;
-                    }
-                }
-                if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
-                    if (bc2d->RuntimeBody) {
-                        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody)));
-                        if (b2Body_IsValid(bodyId)) {
-                            b2DestroyBody(bodyId);
-                        }
-                        bc2d->RuntimeBody = nullptr;
-                    }
-                    bc2d->RuntimeFixture = nullptr;
-                }
-                if (auto* tilemap = go->GetComponent<Tilemap>()) {
-                    if (tilemap->RuntimeBody) {
-                        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(tilemap->RuntimeBody)));
-                        if (b2Body_IsValid(bodyId)) {
-                            b2DestroyBody(bodyId);
-                        }
-                        tilemap->RuntimeBody = nullptr;
-                    }
-                }
+            if (m_IsRuntimeRunning) {
+                UnregisterRuntimeBody(go);
             }
 
             if (go->GetComponent<BoxCollider2D>() || go->GetComponent<Tilemap>() || go->GetComponent<TerrainComponent>()) {
@@ -1135,8 +1192,7 @@ void Scene::OnRuntimeStart() {
     ResetPhysicsAccumulator();
 
     for (auto& go : m_GameObjects) {
-        CreateRuntimePhysicsBody(go.get());
-        CreateRuntimeTilemapBody(go.get());
+        RegisterRuntimeBody(go.get());
     }
     for (auto& go : m_GameObjects) {
         if (auto* transform = go->GetTransform()) {
@@ -1274,7 +1330,7 @@ void Scene::IntegrateVerticalElevation(float fixedDt) {
         auto* bc2d = go->GetComponent<BoxCollider2D>();
 
         if (rb2d && rb2d->Type == Rigidbody2D::BodyType::Dynamic && rb2d->UseGravityY) {
-            rb2d->VerticalVelocity += rb2d->GravityY * fixedDt;
+            rb2d->VerticalVelocity += (rb2d->GravityY * rb2d->GravityScaleY) * fixedDt;
             transform->position.y += rb2d->VerticalVelocity * fixedDt;
 
             if (transform->position.y <= rb2d->GroundLevelY && rb2d->VerticalVelocity < 0.0f) {

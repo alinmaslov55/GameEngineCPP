@@ -76,6 +76,10 @@ public:
     void ReleaseToPool(const std::string& poolKey, GameObject* instance);
     void ReleaseToPool(GameObject* instance); // Uses instance->GetPoolKey()
 
+    // Runtime Box2D Body Registration & Lifecycle Synchronization
+    void RegisterRuntimeBody(GameObject* go);
+    void UnregisterRuntimeBody(GameObject* go);
+
     [[nodiscard]] size_t GetPoolFreeCount(const std::string& poolKey) const noexcept;
     [[nodiscard]] size_t GetPoolTotalCount(const std::string& poolKey) const noexcept;
     void ClearPool(const std::string& poolKey);

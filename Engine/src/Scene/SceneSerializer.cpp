@@ -372,6 +372,11 @@ void SerializeRigidbody2D(const GameObject* go, json& compsJson) {
     compsJson["Rigidbody2D"] = {
         {"BodyType", static_cast<int>(rb2d->Type)},
         {"FixedRotation", rb2d->FixedRotation},
+        {"LinearDamping", rb2d->LinearDamping},
+        {"AngularDamping", rb2d->AngularDamping},
+        {"GravityScaleY", rb2d->GravityScaleY},
+        {"MassMultiplier", rb2d->MassMultiplier},
+        {"IsBullet", rb2d->IsBullet},
         {"UseGravityY", rb2d->UseGravityY},
         {"GravityY", rb2d->GravityY},
         {"GroundLevelY", rb2d->GroundLevelY},
@@ -812,7 +817,12 @@ void DeserializeSquashStretch(GameObject* go, const json& ssJson, const std::str
 void DeserializeRigidbody2D(GameObject* go, const json& rbJson, const std::string&) {
     auto* rb2d = go->AddComponent<Rigidbody2D>();
     rb2d->Type = static_cast<Rigidbody2D::BodyType>(rbJson.value("BodyType", 1));
-    rb2d->FixedRotation = rbJson.value("FixedRotation", false);
+    rb2d->FixedRotation = rbJson.value("FixedRotation", true);
+    rb2d->LinearDamping = rbJson.value("LinearDamping", 4.5f);
+    rb2d->AngularDamping = rbJson.value("AngularDamping", 6.0f);
+    rb2d->GravityScaleY = rbJson.value("GravityScaleY", 1.0f);
+    rb2d->MassMultiplier = rbJson.value("MassMultiplier", 1.0f);
+    rb2d->IsBullet = rbJson.value("IsBullet", false);
     rb2d->UseGravityY = rbJson.value("UseGravityY", true);
     rb2d->GravityY = rbJson.value("GravityY", -22.0f);
     rb2d->GroundLevelY = rbJson.value("GroundLevelY", 0.0f);

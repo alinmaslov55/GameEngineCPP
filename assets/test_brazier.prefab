@@ -39,7 +39,7 @@
             "Name": "RitualBrazier",
             "ParentUUID": 0,
             "Tag": "SafeZoneBrazier",
-            "UUID": 16826844321975005472
+            "UUID": 15749033060371525826
         },
         {
             "Components": {
@@ -77,9 +77,9 @@
             },
             "LayerMask": 1,
             "Name": "BrazierLight",
-            "ParentUUID": 16826844321975005472,
+            "ParentUUID": 15749033060371525826,
             "Tag": "Untagged",
-            "UUID": 2521362483727851456
+            "UUID": 11919723716431549425
         },
         {
             "Components": {
@@ -142,12 +142,12 @@
             },
             "LayerMask": 1,
             "Name": "BrazierFlames",
-            "ParentUUID": 16826844321975005472,
+            "ParentUUID": 15749033060371525826,
             "Tag": "Untagged",
-            "UUID": 17363017399258420995
+            "UUID": 6234000807190687579
         }
     ],
     "Format": "EnginePrefab",
-    "RootUUID": 16826844321975005472,
+    "RootUUID": 15749033060371525826,
     "Version": 1
 }

@@ -523,12 +523,28 @@ void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObje
         ImGui::EndCombo();
     }
     ImGui::Checkbox("Fixed Rotation (Lock Yaw)", &rb2d.FixedRotation);
+    if (ImGui::DragFloat("Linear Damping", &rb2d.LinearDamping, 0.1f, 0.0f, 50.0f, "%.2f")) {
+        rb2d.SetLinearDampingRuntime(rb2d.LinearDamping);
+    }
+    if (ImGui::DragFloat("Angular Damping", &rb2d.AngularDamping, 0.1f, 0.0f, 50.0f, "%.2f")) {
+        rb2d.SetAngularDampingRuntime(rb2d.AngularDamping);
+    }
+    if (ImGui::DragFloat("Mass Multiplier", &rb2d.MassMultiplier, 0.05f, 0.01f, 100.0f, "%.2f")) {
+        rb2d.SetMassMultiplier(rb2d.MassMultiplier);
+    }
+    if (ImGui::Checkbox("Continuous Collision (Bullet CCD)", &rb2d.IsBullet)) {
+        rb2d.SetBullet(rb2d.IsBullet);
+    }
+    ImGui::TextDisabled("Effective Mass: %.2f kg", rb2d.GetMass());
+    glm::vec2 vel = rb2d.GetVelocityXZ();
+    ImGui::TextDisabled("Velocity XZ: (%.2f, %.2f) m/s", vel.x, vel.y);
 
     ImGui::Spacing();
     ImGui::Text("2.5D Vertical Elevation (Y Axis)");
     ImGui::Checkbox("Use Gravity Y", &rb2d.UseGravityY);
     if (rb2d.UseGravityY) {
         ImGui::DragFloat("Gravity Y", &rb2d.GravityY, 0.2f, -100.0f, 0.0f);
+        ImGui::DragFloat("Gravity Scale Y", &rb2d.GravityScaleY, 0.05f, 0.0f, 10.0f);
     }
     ImGui::DragFloat("Ground Level Y", &rb2d.GroundLevelY, 0.05f);
     ImGui::SliderFloat("Restitution Y", &rb2d.GroundRestitutionY, 0.0f, 1.0f);

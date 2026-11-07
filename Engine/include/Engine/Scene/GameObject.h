@@ -21,6 +21,11 @@
 
 namespace Engine {
 
+class Scene;
+class Rigidbody2D;
+class BoxCollider2D;
+class Tilemap;
+
 namespace Detail {
 inline uint32_t GetNextComponentTypeID() {
     static std::atomic<uint32_t> s_Counter{0};
@@ -54,6 +59,8 @@ public:
     [[nodiscard]] Transform* GetTransform() noexcept { return m_Transform; }
     [[nodiscard]] const Transform* GetTransform() const noexcept { return m_Transform; }
 
+    [[nodiscard]] Scene* GetScene() const noexcept { return m_Scene; }
+
     [[nodiscard]] ComponentMask128 GetComponentMask() const noexcept { return m_ComponentMask; }
 
     void SetTag(EntityTag tag) noexcept { m_Tag = tag; }
@@ -85,6 +92,12 @@ public:
         rawPtr->Awake();
         if (IsActiveInHierarchy() && rawPtr->IsEnabled()) {
             rawPtr->OnEnable();
+        }
+
+        if constexpr (std::is_same_v<std::remove_cv_t<T>, Rigidbody2D> ||
+                      std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
+                      std::is_same_v<std::remove_cv_t<T>, Tilemap>) {
+            NotifyPhysicsComponentAdded();
         }
 
         return rawPtr;
@@ -236,6 +249,11 @@ public:
                 if (!hasMore) {
                     m_ComponentMask &= ~Detail::GetComponentTypeMask<std::remove_cv_t<T>>();
                 }
+                if constexpr (std::is_same_v<std::remove_cv_t<T>, Rigidbody2D> ||
+                              std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
+                              std::is_same_v<std::remove_cv_t<T>, Tilemap>) {
+                    NotifyPhysicsComponentRemoved();
+                }
                 return true;
             }
         }
@@ -245,6 +263,10 @@ public:
 private:
     friend class Scene;
 
+    void NotifyPhysicsComponentAdded();
+    void NotifyPhysicsComponentRemoved();
+
+    Scene* m_Scene{ nullptr };
     Transform* m_Transform{nullptr};
     std::vector<std::unique_ptr<Component>> m_Components;
     ComponentMask128 m_ComponentMask;
