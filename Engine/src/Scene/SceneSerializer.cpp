@@ -371,7 +371,11 @@ void SerializeRigidbody2D(const GameObject* go, json& compsJson) {
 
     compsJson["Rigidbody2D"] = {
         {"BodyType", static_cast<int>(rb2d->Type)},
-        {"FixedRotation", rb2d->FixedRotation}
+        {"FixedRotation", rb2d->FixedRotation},
+        {"UseGravityY", rb2d->UseGravityY},
+        {"GravityY", rb2d->GravityY},
+        {"GroundLevelY", rb2d->GroundLevelY},
+        {"GroundRestitutionY", rb2d->GroundRestitutionY}
     };
 }
 
@@ -809,6 +813,10 @@ void DeserializeRigidbody2D(GameObject* go, const json& rbJson, const std::strin
     auto* rb2d = go->AddComponent<Rigidbody2D>();
     rb2d->Type = static_cast<Rigidbody2D::BodyType>(rbJson.value("BodyType", 1));
     rb2d->FixedRotation = rbJson.value("FixedRotation", false);
+    rb2d->UseGravityY = rbJson.value("UseGravityY", true);
+    rb2d->GravityY = rbJson.value("GravityY", -22.0f);
+    rb2d->GroundLevelY = rbJson.value("GroundLevelY", 0.0f);
+    rb2d->GroundRestitutionY = rbJson.value("GroundRestitutionY", 0.0f);
 }
 
 void DeserializeBoxCollider2D(GameObject* go, const json& bcJson, const std::string&) {

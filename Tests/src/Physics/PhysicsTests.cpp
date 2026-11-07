@@ -102,17 +102,18 @@ TEST(Box2DPhysicsTest, DynamicBodyFallsUnderGravityDuringRuntime) {
     Engine::Scene scene("Box2DScene");
 
     auto* ground = scene.CreateGameObject("Ground");
-    ground->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    ground->GetTransform()->position = { 0.0f, 0.0f, -10.0f };
     auto* groundRb = ground->AddComponent<Engine::Rigidbody2D>();
     groundRb->Type = Engine::Rigidbody2D::BodyType::Static;
     auto* groundBox = ground->AddComponent<Engine::BoxCollider2D>();
-    groundBox->size = { 10.0f, 1.0f };
+    groundBox->size = { 10.0f, 10.0f };
 
     auto* ball = scene.CreateGameObject("Ball");
     ball->GetTransform()->position = { 0.0f, 10.0f, 0.0f };
     auto* ballRb = ball->AddComponent<Engine::Rigidbody2D>();
     ballRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     ballRb->FixedRotation = true;
+    ballRb->InitialLinearVelocityXZ = { 2.0f, 3.0f };
     auto* ballBox = ball->AddComponent<Engine::BoxCollider2D>();
     ballBox->size = { 1.0f, 1.0f };
     ballBox->density = 1.0f;
@@ -135,8 +136,10 @@ TEST(Box2DPhysicsTest, DynamicBodyFallsUnderGravityDuringRuntime) {
         scene.UpdateRuntime(0.016f);
     }
 
-    // Ball should have accelerated and fallen downward
+    // Ball should have fallen downward under vertical gravity and translated across XZ
     EXPECT_LT(ball->GetTransform()->position.y, initialY);
+    EXPECT_GT(ball->GetTransform()->position.x, 0.0f);
+    EXPECT_GT(ball->GetTransform()->position.z, 0.0f);
 
     scene.OnRuntimeStop();
     EXPECT_EQ(ballRb->RuntimeBody, nullptr);
@@ -160,7 +163,7 @@ TEST(Box2DPhysicsTest, MultithreadedStepWithWorkerPool) {
         auto* groundRb = ground->AddComponent<Engine::Rigidbody2D>();
         groundRb->Type = Engine::Rigidbody2D::BodyType::Static;
         auto* groundBox = ground->AddComponent<Engine::BoxCollider2D>();
-        groundBox->size = { 100.0f, 2.0f };
+        groundBox->size = { 100.0f, 100.0f };
 
         // Create 40 dynamic bodies across different columns and heights to produce multiple islands
         constexpr int kNumBodies = 40;
@@ -172,12 +175,14 @@ TEST(Box2DPhysicsTest, MultithreadedStepWithWorkerPool) {
             auto* ball = scene.CreateGameObject("DynamicBody_" + std::to_string(i));
             const float x = -30.0f + static_cast<float>(i) * 1.5f;
             const float y = 10.0f + static_cast<float>(i % 5) * 3.0f;
-            ball->GetTransform()->position = { x, y, 0.0f };
+            const float z = -10.0f + static_cast<float>(i % 7) * 2.5f;
+            ball->GetTransform()->position = { x, y, z };
             initialY[i] = y;
 
             auto* rb = ball->AddComponent<Engine::Rigidbody2D>();
             rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
             rb->FixedRotation = false;
+            rb->InitialLinearVelocityXZ = { 1.0f, 1.5f };
 
             auto* box = ball->AddComponent<Engine::BoxCollider2D>();
             box->size = { 0.8f, 0.8f };

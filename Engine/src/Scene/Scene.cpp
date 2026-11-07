@@ -182,36 +182,76 @@ void Scene::CreateRuntimePhysicsBody(GameObject* go) {
     if (!b2World_IsValid(worldId)) return;
 
     auto* transform = go->GetTransform();
+    if (!transform) return;
+
     auto* rb2d = go->GetComponent<Rigidbody2D>();
-    if (!rb2d || !transform) return;
+    auto* bc2d = go->GetComponent<BoxCollider2D>();
 
-    if (rb2d->RuntimeBody != nullptr) {
-        return;
-    }
+    if (rb2d) {
+        if (rb2d->RuntimeBody != nullptr) {
+            return;
+        }
 
-    b2BodyDef bodyDef = b2DefaultBodyDef();
-    if (rb2d->Type == Rigidbody2D::BodyType::Static) {
+        b2BodyDef bodyDef = b2DefaultBodyDef();
+        if (rb2d->Type == Rigidbody2D::BodyType::Static) {
+            bodyDef.type = b2_staticBody;
+        } else if (rb2d->Type == Rigidbody2D::BodyType::Dynamic) {
+            bodyDef.type = b2_dynamicBody;
+        } else if (rb2d->Type == Rigidbody2D::BodyType::Kinematic) {
+            bodyDef.type = b2_kinematicBody;
+        }
+
+        const glm::vec3 worldPos = transform->GetWorldPosition();
+        bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
+        bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.y));
+        bodyDef.fixedRotation = rb2d->FixedRotation;
+        bodyDef.name = go->GetName().c_str();
+
+        b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
+        rb2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
+
+        if (rb2d->InitialLinearVelocityXZ.x != 0.0f || rb2d->InitialLinearVelocityXZ.y != 0.0f) {
+            b2Body_SetLinearVelocity(bodyId, b2Vec2{ rb2d->InitialLinearVelocityXZ.x, rb2d->InitialLinearVelocityXZ.y });
+        }
+
+        if (!go->IsActiveInHierarchy()) {
+            b2Body_Disable(bodyId);
+        }
+
+        if (bc2d) {
+            b2ShapeDef shapeDef = b2DefaultShapeDef();
+            shapeDef.density = bc2d->density;
+            shapeDef.material.friction = bc2d->friction;
+            shapeDef.material.restitution = bc2d->restitution;
+
+            b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
+            b2Rot rot = b2MakeRot(0.0f);
+            float halfW = std::max(0.001f, bc2d->size.x * std::abs(transform->scale.x) * 0.5f);
+            float halfD = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.z) * 0.5f);
+            b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
+
+            b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
+            bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+        }
+    } else if (bc2d) {
+        if (bc2d->RuntimeBody != nullptr || bc2d->RuntimeFixture != nullptr) {
+            return;
+        }
+
+        b2BodyDef bodyDef = b2DefaultBodyDef();
         bodyDef.type = b2_staticBody;
-    } else if (rb2d->Type == Rigidbody2D::BodyType::Dynamic) {
-        bodyDef.type = b2_dynamicBody;
-    } else if (rb2d->Type == Rigidbody2D::BodyType::Kinematic) {
-        bodyDef.type = b2_kinematicBody;
-    }
+        const glm::vec3 worldPos = transform->GetWorldPosition();
+        bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
+        bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.y));
+        bodyDef.name = go->GetName().c_str();
 
-    const glm::vec3 worldPos = transform->GetWorldPosition();
-    bodyDef.position = b2Vec2{ worldPos.x, worldPos.y };
-    bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.z));
-    bodyDef.fixedRotation = rb2d->FixedRotation;
-    bodyDef.name = go->GetName().c_str();
+        b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
+        bc2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
 
-    b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
-    rb2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
+        if (!go->IsActiveInHierarchy()) {
+            b2Body_Disable(bodyId);
+        }
 
-    if (!go->IsActiveInHierarchy()) {
-        b2Body_Disable(bodyId);
-    }
-
-    if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
         b2ShapeDef shapeDef = b2DefaultShapeDef();
         shapeDef.density = bc2d->density;
         shapeDef.material.friction = bc2d->friction;
@@ -220,11 +260,70 @@ void Scene::CreateRuntimePhysicsBody(GameObject* go) {
         b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
         b2Rot rot = b2MakeRot(0.0f);
         float halfW = std::max(0.001f, bc2d->size.x * std::abs(transform->scale.x) * 0.5f);
-        float halfH = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.y) * 0.5f);
-        b2Polygon box = b2MakeOffsetBox(halfW, halfH, center, rot);
+        float halfD = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.z) * 0.5f);
+        b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
 
         b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
         bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+    }
+}
+
+void Scene::CreateRuntimeTilemapBody(GameObject* go) {
+    if (!m_IsRuntimeRunning || !go) return;
+    b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
+    if (!b2World_IsValid(worldId)) return;
+
+    auto* tilemap = go->GetComponent<Tilemap>();
+    auto* transform = go->GetTransform();
+    if (!tilemap || !transform) return;
+
+    if (tilemap->RuntimeBody != nullptr) return;
+
+    const uint32_t width = tilemap->GetWidth();
+    const uint32_t height = tilemap->GetHeight();
+    if (width == 0 || height == 0) return;
+
+    b2BodyDef bodyDef = b2DefaultBodyDef();
+    bodyDef.type = b2_staticBody;
+    bodyDef.position = b2Vec2{ 0.0f, 0.0f };
+    bodyDef.name = go->GetName().c_str();
+
+    b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
+    tilemap->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
+
+    if (!go->IsActiveInHierarchy()) {
+        b2Body_Disable(bodyId);
+    }
+
+    const glm::vec3 origin = transform->position;
+    const glm::vec3 scale = transform->scale;
+
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.material.friction = 0.5f;
+    shapeDef.material.restitution = 0.0f;
+
+    for (uint32_t gz = 0; gz < height; ++gz) {
+        for (uint32_t gx = 0; gx < width; ++gx) {
+            if (tilemap->GetTile(gx, gz).walkable) {
+                continue;
+            }
+
+            uint32_t startGx = gx;
+            while (gx + 1 < width && !tilemap->GetTile(gx + 1, gz).walkable) {
+                ++gx;
+            }
+            uint32_t endGx = gx;
+
+            const float spanTiles = static_cast<float>(endGx - startGx + 1);
+            const float halfW = spanTiles * scale.x * 0.5f;
+            const float halfD = 1.0f * scale.z * 0.5f;
+
+            const float centerX = origin.x + 0.5f * static_cast<float>(startGx + endGx) * scale.x;
+            const float centerZ = origin.z + static_cast<float>(gz) * scale.z;
+
+            b2Polygon tileBox = b2MakeOffsetBox(halfW, halfD, b2Vec2{ centerX, centerZ }, b2MakeRot(0.0f));
+            b2CreatePolygonShape(bodyId, &shapeDef, &tileBox);
+        }
     }
 }
 
@@ -304,6 +403,7 @@ GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worl
     if (m_IsRuntimeRunning) {
         for (const auto& [uuid, go] : createdEntities) {
             CreateRuntimePhysicsBody(go);
+            CreateRuntimeTilemapBody(go);
         }
     }
 
@@ -362,15 +462,31 @@ GameObject* Scene::AcquirePooled(const std::string& poolKey, const Prefab& prefa
                     b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody));
                     if (b2Body_IsValid(bodyId)) {
                         b2Body_Enable(bodyId);
-                        b2Vec2 p{ worldPos.x, worldPos.y };
-                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.z));
+                        b2Vec2 p{ worldPos.x, worldPos.z };
+                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.y));
                         b2Body_SetTransform(bodyId, p, r);
                         b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
                         b2Body_SetAngularVelocity(bodyId, 0.0f);
                         b2Body_SetAwake(bodyId, true);
                     }
                 }
+                rb2d->VerticalVelocity = 0.0f;
             }
+            if (auto* bc2d = instance->GetComponent<BoxCollider2D>()) {
+                if (bc2d->RuntimeBody) {
+                    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody));
+                    if (b2Body_IsValid(bodyId)) {
+                        b2Body_Enable(bodyId);
+                        b2Vec2 p{ worldPos.x, worldPos.z };
+                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.y));
+                        b2Body_SetTransform(bodyId, p, r);
+                    }
+                }
+                bc2d->verticalVelocity = 0.0f;
+            }
+        }
+        if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
+            rb2d->VerticalVelocity = 0.0f;
         }
         if (auto* bc2d = instance->GetComponent<BoxCollider2D>()) {
             bc2d->verticalVelocity = 0.0f;
@@ -386,20 +502,26 @@ void Scene::ReleaseToPool(const std::string& poolKey, GameObject* instance) {
     if (!instance) return;
 
     // Reset physics state
-    if (m_IsRuntimeRunning) {
-        if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
-            if (rb2d->RuntimeBody) {
-                b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody));
-                if (b2Body_IsValid(bodyId)) {
-                    b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
-                    b2Body_SetAngularVelocity(bodyId, 0.0f);
-                    b2Body_SetAwake(bodyId, false);
-                    b2Body_Disable(bodyId);
-                }
+    if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
+        if (m_IsRuntimeRunning && rb2d->RuntimeBody) {
+            b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody));
+            if (b2Body_IsValid(bodyId)) {
+                b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+                b2Body_SetAngularVelocity(bodyId, 0.0f);
+                b2Body_SetAwake(bodyId, false);
+                b2Body_Disable(bodyId);
             }
         }
+        rb2d->VerticalVelocity = 0.0f;
     }
     if (auto* bc2d = instance->GetComponent<BoxCollider2D>()) {
+        if (m_IsRuntimeRunning && bc2d->RuntimeBody) {
+            b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody));
+            if (b2Body_IsValid(bodyId)) {
+                b2Body_SetAwake(bodyId, false);
+                b2Body_Disable(bodyId);
+            }
+        }
         bc2d->verticalVelocity = 0.0f;
     }
 
@@ -544,6 +666,7 @@ void Scene::FlushEntityLifecycleQueues() {
                 pending->ProcessPendingStarts();
                 if (m_IsRuntimeRunning) {
                     CreateRuntimePhysicsBody(pending.get());
+                    CreateRuntimeTilemapBody(pending.get());
                 }
                 m_GameObjects.push_back(std::move(pending));
                 m_StaticCollidersDirty = true;
@@ -572,7 +695,23 @@ void Scene::FlushEntityLifecycleQueues() {
                     }
                 }
                 if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
+                    if (bc2d->RuntimeBody) {
+                        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody)));
+                        if (b2Body_IsValid(bodyId)) {
+                            b2DestroyBody(bodyId);
+                        }
+                        bc2d->RuntimeBody = nullptr;
+                    }
                     bc2d->RuntimeFixture = nullptr;
+                }
+                if (auto* tilemap = go->GetComponent<Tilemap>()) {
+                    if (tilemap->RuntimeBody) {
+                        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(tilemap->RuntimeBody)));
+                        if (b2Body_IsValid(bodyId)) {
+                            b2DestroyBody(bodyId);
+                        }
+                        tilemap->RuntimeBody = nullptr;
+                    }
                 }
             }
 
@@ -615,9 +754,11 @@ void Scene::Update(float deltaTime) {
 
     FlushEntityLifecycleQueues();
 
-    UpdateCollidersAndGravity(deltaTime);
-    ResolveEntityCollisions();
-    ResolveTilemapCollisions();
+    if (!m_IsRuntimeRunning) {
+        UpdateCollidersAndGravity(deltaTime);
+        ResolveEntityCollisions();
+        ResolveTilemapCollisions();
+    }
 }
 
 void Scene::UpdateCollidersAndGravity(float deltaTime) {
@@ -977,7 +1118,7 @@ void Scene::OnRuntimeStart() {
     ENGINE_CORE_INFO("Scene '{}': Starting Box2D runtime physics", m_Name);
 
     b2WorldDef worldDef = b2DefaultWorldDef();
-    worldDef.gravity = b2Vec2{ 0.0f, -9.8f };
+    worldDef.gravity = b2Vec2{ 0.0f, 0.0f };
 
     const uint32_t workers = JobSystem::GetWorkerCount();
     if (JobSystem::IsInitialized() && workers > 0) {
@@ -995,6 +1136,7 @@ void Scene::OnRuntimeStart() {
 
     for (auto& go : m_GameObjects) {
         CreateRuntimePhysicsBody(go.get());
+        CreateRuntimeTilemapBody(go.get());
     }
     for (auto& go : m_GameObjects) {
         if (auto* transform = go->GetTransform()) {
@@ -1031,6 +1173,10 @@ void Scene::OnRuntimeStop() {
         }
         if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
             bc2d->RuntimeFixture = nullptr;
+            bc2d->RuntimeBody = nullptr;
+        }
+        if (auto* tilemap = go->GetComponent<Tilemap>()) {
+            tilemap->RuntimeBody = nullptr;
         }
     }
     for (auto& go : m_PendingSpawnQueue) {
@@ -1039,6 +1185,10 @@ void Scene::OnRuntimeStop() {
         }
         if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
             bc2d->RuntimeFixture = nullptr;
+            bc2d->RuntimeBody = nullptr;
+        }
+        if (auto* tilemap = go->GetComponent<Tilemap>()) {
+            tilemap->RuntimeBody = nullptr;
         }
     }
     m_StaticCollidersDirty = true;
@@ -1091,11 +1241,16 @@ void Scene::UpdateRuntime(float deltaTime) {
                         b2Vec2 pos = b2Body_GetPosition(bodyId);
                         b2Rot rot = b2Body_GetRotation(bodyId);
                         transform->position.x = pos.x;
-                        transform->position.y = pos.y;
-                        transform->rotation.z = glm::degrees(b2Rot_GetAngle(rot));
+                        transform->position.z = pos.y;
+                        if (!rb2d->FixedRotation) {
+                            transform->rotation.y = glm::degrees(b2Rot_GetAngle(rot));
+                        }
                     }
                 }
             }
+
+            // Integrate 2.5D vertical elevation and ground bounces
+            IntegrateVerticalElevation(fixedDt);
 
             m_PhysicsAccumulator -= fixedDt;
         }
@@ -1107,6 +1262,48 @@ void Scene::UpdateRuntime(float deltaTime) {
     }
 
     Update(deltaTime);
+}
+
+void Scene::IntegrateVerticalElevation(float fixedDt) {
+    for (auto& go : m_GameObjects) {
+        if (!go->IsActiveInHierarchy()) continue;
+        auto* transform = go->GetTransform();
+        if (!transform) continue;
+
+        auto* rb2d = go->GetComponent<Rigidbody2D>();
+        auto* bc2d = go->GetComponent<BoxCollider2D>();
+
+        if (rb2d && rb2d->Type == Rigidbody2D::BodyType::Dynamic && rb2d->UseGravityY) {
+            rb2d->VerticalVelocity += rb2d->GravityY * fixedDt;
+            transform->position.y += rb2d->VerticalVelocity * fixedDt;
+
+            if (transform->position.y <= rb2d->GroundLevelY && rb2d->VerticalVelocity < 0.0f) {
+                if (rb2d->GroundRestitutionY > 0.05f && std::abs(rb2d->VerticalVelocity) > 0.8f) {
+                    transform->position.y = rb2d->GroundLevelY;
+                    rb2d->VerticalVelocity = -rb2d->VerticalVelocity * rb2d->GroundRestitutionY;
+                } else {
+                    transform->position.y = rb2d->GroundLevelY;
+                    rb2d->VerticalVelocity = 0.0f;
+                }
+            }
+            if (bc2d) {
+                bc2d->verticalVelocity = rb2d->VerticalVelocity;
+            }
+        } else if (!rb2d && bc2d && bc2d->isDynamic && bc2d->useGravity) {
+            bc2d->verticalVelocity += bc2d->gravity * fixedDt;
+            transform->position.y += bc2d->verticalVelocity * fixedDt;
+
+            if (transform->position.y <= bc2d->groundLevel && bc2d->verticalVelocity < 0.0f) {
+                if (bc2d->restitution > 0.05f && std::abs(bc2d->verticalVelocity) > 0.8f) {
+                    transform->position.y = bc2d->groundLevel;
+                    bc2d->verticalVelocity = -bc2d->verticalVelocity * bc2d->restitution;
+                } else {
+                    transform->position.y = bc2d->groundLevel;
+                    bc2d->verticalVelocity = 0.0f;
+                }
+            }
+        }
+    }
 }
 
 SceneWindData SceneRenderContext::BuildWindUniforms(const glm::vec3& swayRightAxis) const {

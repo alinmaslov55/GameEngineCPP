@@ -191,7 +191,7 @@ flowchart TD
 | **`ECS-03`** | Parent-Child Transform Hierarchy & Sockets | `DONE` | **P0** | W1 | `ECS-01` | `ANI-01` (socket flip) | `ECS-04`, Hero Torch & Weapon attachment |
 | **`ECS-04`** | Prefab Templates & Entity Object Pooling | `DONE` | **P1** | W2 | `ECS-01`, `ECS-03`, `ECS-05` | `SAV-01` | `TER-02`, `EDT-03`, Horde/Pickup spawning |
 | **`ECS-05`** | Entity Tags, Layers & 128-bit Component Mask | `DONE` | **P1** | W0 | *None (Root)* | `ECS-01` | `ECS-04`, `PHY-04`, `AIX-01`, `LGT-03` |
-| **`PHY-01`** | XZ Ground-Plane Box2D Mapping & 2.5D Y-Arc | `TODO` | **P0** | W1 | `ECS-01`, `ECS-02` | `SquashStretchComponent` | `PHY-02`, `AIX-02` |
+| **`PHY-01`** | XZ Ground-Plane Box2D Mapping & 2.5D Y-Arc | `DONE` | **P0** | W1 | `ECS-01`, `ECS-02` | `SquashStretchComponent` | `PHY-02`, `AIX-02` |
 | **`PHY-02`** | Runtime Rigidbody Lifecycle & Force/Impulse API | `TODO` | **P0** | W2 | `PHY-01` | `ECS-04` (pool reset) | `PHY-03`, `TER-04` |
 | **`PHY-03`** | Contact Events, Sensor Triggers & Circle Shapes | `TODO` | **P0** | W3 | `PHY-02` | `AUD-02` (impact SFX) | `PHY-04`, `PHY-05`, `EDT-02` |
 | **`PHY-04`** | Collision Filter Masks & Elevation Pass-Through | `TODO` | **P1** | W4 | `PHY-03`, `ECS-05` | `AIX-02` (Jiangshi hop) | Airborne combat & clean pickup filtering |
@@ -384,7 +384,7 @@ flowchart TD
 ---
 
 #### `PHY-01` — XZ Ground-Plane Box2D Mapping & 2.5D Y-Arc Decoupling
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `ECS-01`, `ECS-02` | Unlocks: `PHY-02`, `AIX-02`
 - **Current Gap:** `Scene::OnRuntimeStart` (`Scene.cpp:505, 534, 610`) sets `gravity = {0.0f, -9.8f}` and maps `b2Vec2(x, y)` to `Transform(x, y)`, causing dynamic bodies to fall down `-Y` instead of moving across the `XZ` ground plane, while `Scene::Update` runs `ResolveEntityCollisions()` a second time.
 - **Proposed C++ & Coordinate Specification:**
@@ -1460,7 +1460,7 @@ Without these 15 features, the core physics + torch shadow + surface interaction
 | **`ECS-02`** | `DONE` | **Full:** `60 Hz` `FixedUpdate` + `Time::SetTimeScale()`. Required for deterministic Box2D knockback impulses and `50ms` heavy-hit freeze frames (hit-stop). |
 | **`ECS-03`** | `DONE` | **Lean:** Parent-child transform or socket offset so the Hero's Torch light, flame emitter, and weapon hitbox follow the Hero cleanly. |
 | **`ECS-05`** | `DONE` | **Full:** `EntityTag` enum, `EntityLayer` bitflags, 128-bit `ComponentMask128` (zero collision across 128 components), `Scene` tag/layer queries, and JSON serialization. |
-| **`PHY-01`** | `TODO` | **Full:** Remap Box2D `(x, y)` to world `(X, Z)` with `(0, 0)` gravity, disable legacy `ResolveEntityCollisions()`, and add vertical `Y` parabola for knock-ups & hops. |
+| **`PHY-01`** | `DONE` | **Full:** Remap Box2D `(x, y)` to world `(X, Z)` with `(0, 0)` gravity, disable legacy `ResolveEntityCollisions()`, and add vertical `Y` parabola for knock-ups & hops. |
 | **`PHY-02`** | `TODO` | **Full:** Runtime `b2BodyId` spawn/destroy + `ApplyLinearImpulseXZ`, `SetLinearVelocityXZ`, and `LinearDamping` (powers all knockback bowling). |
 | **`PHY-03`** | `TODO` | **Full:** `CircleCollider2D` (prevents crowd snagging), sensor triggers (pickups/torch rim), and `b2ContactEvents` with `approachSpeed` (domino body-slam damage). |
 | **`PHY-05`** | `TODO` | **Lean:** `OverlapCircleXZ` and `OverlapArcXZ` for melee weapon cleave cones and ground-slam shockwaves. *(Defer raycasts & Chronos stasis rune).* |

@@ -522,16 +522,26 @@ void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObje
         }
         ImGui::EndCombo();
     }
-    ImGui::Checkbox("Fixed Rotation", &rb2d.FixedRotation);
+    ImGui::Checkbox("Fixed Rotation (Lock Yaw)", &rb2d.FixedRotation);
+
+    ImGui::Spacing();
+    ImGui::Text("2.5D Vertical Elevation (Y Axis)");
+    ImGui::Checkbox("Use Gravity Y", &rb2d.UseGravityY);
+    if (rb2d.UseGravityY) {
+        ImGui::DragFloat("Gravity Y", &rb2d.GravityY, 0.2f, -100.0f, 0.0f);
+    }
+    ImGui::DragFloat("Ground Level Y", &rb2d.GroundLevelY, 0.05f);
+    ImGui::SliderFloat("Restitution Y", &rb2d.GroundRestitutionY, 0.0f, 1.0f);
+    ImGui::TextDisabled("Vertical Vel: %.2f m/s (%s)", rb2d.VerticalVelocity, rb2d.IsAirborne() ? "Airborne" : "Grounded");
 }
 
 void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engine::GameObject* entity) {
     (void)entity;
-    ImGui::DragFloat2("Size", &boxCollider.size.x, 0.05f, 0.01f, 100.0f);
-    ImGui::DragFloat2("Offset", &boxCollider.offset.x, 0.05f);
+    ImGui::DragFloat2("Size (Width X, Depth Z)", &boxCollider.size.x, 0.05f, 0.01f, 100.0f);
+    ImGui::DragFloat2("Offset (X, Z)", &boxCollider.offset.x, 0.05f);
     ImGui::DragFloat("Density", &boxCollider.density, 0.01f, 0.0f, 100.0f);
     ImGui::DragFloat("Friction", &boxCollider.friction, 0.01f, 0.0f, 1.0f);
-    ImGui::DragFloat("Restitution", &boxCollider.restitution, 0.01f, 0.0f, 1.0f);
+    ImGui::DragFloat("Restitution (XZ)", &boxCollider.restitution, 0.01f, 0.0f, 1.0f);
     ImGui::Separator();
     ImGui::Checkbox("Is Dynamic (Isometric)", &boxCollider.isDynamic);
     if (boxCollider.isDynamic) {

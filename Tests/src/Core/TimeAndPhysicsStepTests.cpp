@@ -178,6 +178,7 @@ TEST(TimeAndPhysicsStepTest, MultiFrameratePhysicsDeterminism) {
 
         auto* rb2d = bodyObj->AddComponent<Engine::Rigidbody2D>();
         rb2d->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+        rb2d->InitialLinearVelocityXZ = { 5.0f, 10.0f };
 
         auto* col = bodyObj->AddComponent<Engine::BoxCollider2D>();
         col->size = { 1.0f, 1.0f };
@@ -199,14 +200,18 @@ TEST(TimeAndPhysicsStepTest, MultiFrameratePhysicsDeterminism) {
     glm::vec3 pos60  = runSimulation(60);
     glm::vec3 pos240 = runSimulation(240);
 
-    // Verify gravity pulled the object downwards
+    // Verify vertical gravity and XZ ground translation
     EXPECT_LT(pos60.y, 50.0f);
+    EXPECT_GT(pos60.x, 0.0f);
+    EXPECT_GT(pos60.z, 0.0f);
 
-    // Verify trajectory determinism: final positions must match within < 1e-4m
+    // Verify trajectory determinism: final positions must match within < 1e-4m across X, Y, Z
     EXPECT_NEAR(pos30.y, pos60.y, 1e-4f);
     EXPECT_NEAR(pos60.y, pos240.y, 1e-4f);
     EXPECT_NEAR(pos30.x, pos60.x, 1e-4f);
     EXPECT_NEAR(pos60.x, pos240.x, 1e-4f);
+    EXPECT_NEAR(pos30.z, pos60.z, 1e-4f);
+    EXPECT_NEAR(pos60.z, pos240.z, 1e-4f);
 }
 
 } // namespace

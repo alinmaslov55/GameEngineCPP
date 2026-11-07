@@ -149,6 +149,8 @@ private:
     void RenderPassScreenUI();
 
     void CreateRuntimePhysicsBody(GameObject* go);
+    void CreateRuntimeTilemapBody(GameObject* go);
+    void IntegrateVerticalElevation(float fixedDt);
 
 private:
     struct EntityPool {
