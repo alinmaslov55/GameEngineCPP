@@ -162,9 +162,26 @@ void InspectorPanel::DrawEntityHeader(Engine::GameObject* entity) {
 
 void InspectorPanel::DrawTransform(Engine::Transform* transform) {
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-        ImGui::DragFloat3("Position", &transform->position.x, 0.1f);
-        ImGui::DragFloat3("Rotation", &transform->rotation.x, 1.0f);
-        ImGui::DragFloat3("Scale", &transform->scale.x, 0.1f);
+        if (auto* parent = transform->GetParent()) {
+            std::string parentName = "Unknown";
+            if (auto* parentGo = parent->GetGameObject()) {
+                parentName = parentGo->GetName();
+            }
+            ImGui::Text("Parent: %s", parentName.c_str());
+            ImGui::SameLine();
+            if (ImGui::SmallButton("Unparent")) {
+                transform->SetParent(nullptr, /*keepWorldTransform=*/true);
+            }
+            ImGui::DragFloat3("Position (Local)", &transform->position.x, 0.1f);
+            ImGui::DragFloat3("Rotation (Local)", &transform->rotation.x, 1.0f);
+            ImGui::DragFloat3("Scale (Local)", &transform->scale.x, 0.1f);
+            const glm::vec3 worldPos = transform->GetWorldPosition();
+            ImGui::TextDisabled("World Pos: (%.2f, %.2f, %.2f)", worldPos.x, worldPos.y, worldPos.z);
+        } else {
+            ImGui::DragFloat3("Position", &transform->position.x, 0.1f);
+            ImGui::DragFloat3("Rotation", &transform->rotation.x, 1.0f);
+            ImGui::DragFloat3("Scale", &transform->scale.x, 0.1f);
+        }
     }
 }
 

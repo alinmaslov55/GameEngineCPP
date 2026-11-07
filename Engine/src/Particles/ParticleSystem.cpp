@@ -70,7 +70,7 @@ void ParticleSystem::Update(float deltaTime) {
         glm::vec3 basePos{ 0.0f };
         if (auto* owner = GetGameObject()) {
             if (auto* transform = owner->GetTransform()) {
-                basePos = transform->position;
+                basePos = transform->GetWorldPosition();
             }
         }
         while (m_EmitAccumulator >= 1.0f) {

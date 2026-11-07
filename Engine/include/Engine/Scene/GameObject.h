@@ -93,19 +93,43 @@ public:
     void SetActive(bool active) noexcept {
         if (m_Active == active) return;
         m_Active = active;
+        NotifyHierarchyActiveChanged();
+    }
+
+    void NotifyHierarchyActiveChanged() noexcept {
+        const bool activeInHier = IsActiveInHierarchy();
         for (auto& comp : m_Components) {
             if (comp->IsEnabled()) {
-                if (m_Active) {
+                if (activeInHier) {
                     comp->OnEnable();
                 } else {
                     comp->OnDisable();
                 }
             }
         }
+        if (m_Transform) {
+            for (auto* child : m_Transform->GetChildren()) {
+                if (child && child->GetGameObject()) {
+                    child->GetGameObject()->NotifyHierarchyActiveChanged();
+                }
+            }
+        }
     }
 
     [[nodiscard]] bool IsActive() const noexcept { return m_Active; }
-    [[nodiscard]] bool IsActiveInHierarchy() const noexcept { return m_Active && !m_PendingDestroy; }
+
+    [[nodiscard]] bool IsActiveInHierarchy() const noexcept {
+        if (!m_Active || m_PendingDestroy) {
+            return false;
+        }
+        if (m_Transform && m_Transform->GetParent()) {
+            if (const auto* parentGo = m_Transform->GetParent()->GetGameObject()) {
+                return parentGo->IsActiveInHierarchy();
+            }
+        }
+        return true;
+    }
+
     [[nodiscard]] bool IsPendingDestroy() const noexcept { return m_PendingDestroy; }
 
     void ProcessPendingStarts() {

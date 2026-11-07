@@ -64,6 +64,7 @@ public:
     [[nodiscard]] std::vector<GameObject*> FindGameObjectsInLayer(uint32_t layerMask) const;
     [[nodiscard]] size_t GetEntityUUIDMapCount() const noexcept { return m_EntityUUIDMap.size(); }
     [[nodiscard]] bool IsIteratingEntities() const noexcept { return m_IsIteratingEntities; }
+    void SetIsIteratingEntities(bool iterating) noexcept { m_IsIteratingEntities = iterating; }
 
     void Update(float deltaTime);
     void Render(const PerspectiveCamera* overrideCamera = nullptr);

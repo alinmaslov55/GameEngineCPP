@@ -741,13 +741,14 @@ void Renderer2D::DrawStandeesParallel(
                     rAxis = camRightXZ;
                     uAxis = glm::vec3(0.0f, 1.0f, 0.0f);
                 }
-                ComputeBillboardCorners(cmd.transform->position, cmd.size, rAxis, uAxis, cmd.rotationZ, corners);
+                ComputeBillboardCorners(cmd.transform->GetWorldPosition(), cmd.size, rAxis, uAxis, cmd.rotationZ, corners);
             } else {
                 const glm::vec3 scaled3D = { cmd.size.x, cmd.size.y, cmd.transform->scale.z };
-                const glm::vec3 centerPos = cmd.transform->position + glm::vec3(0.0f, 0.5f * cmd.size.y, 0.0f);
+                const glm::vec3 centerPos = cmd.transform->GetWorldPosition() + glm::vec3(0.0f, 0.5f * cmd.size.y, 0.0f);
+                const glm::vec3 worldRot = cmd.transform->GetWorldRotation();
                 const glm::mat4 modelMatrix = glm::translate(glm::mat4(1.0f), centerPos) *
-                                              glm::rotate(glm::mat4(1.0f), glm::radians(cmd.transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
-                                              glm::rotate(glm::mat4(1.0f), glm::radians(cmd.transform->rotation.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
+                                              glm::rotate(glm::mat4(1.0f), glm::radians(worldRot.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                              glm::rotate(glm::mat4(1.0f), glm::radians(worldRot.x), glm::vec3(1.0f, 0.0f, 0.0f)) *
                                               glm::rotate(glm::mat4(1.0f), glm::radians(cmd.rotationZ), glm::vec3(0.0f, 0.0f, 1.0f)) *
                                               glm::scale(glm::mat4(1.0f), scaled3D);
                 for (int c = 0; c < 4; ++c) {

@@ -32,7 +32,7 @@ public:
     void SyncFromTransform(const Transform* transform) {
         ApplySettings();
         if (transform) {
-            Camera.SetFocalPoint(transform->position);
+            Camera.SetFocalPoint(transform->GetWorldPosition());
         }
     }
 

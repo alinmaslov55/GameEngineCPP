@@ -545,6 +545,17 @@ json SerializeEntity(const GameObject* go) {
     entityJson["Name"] = go->GetName();
     entityJson["Tag"] = EntityTagToString(go->GetTag());
     entityJson["LayerMask"] = go->GetLayer();
+
+    uint64_t parentUUID = 0;
+    if (const auto* transform = go->GetTransform()) {
+        if (const auto* parent = transform->GetParent()) {
+            if (const auto* parentGo = parent->GetGameObject()) {
+                parentUUID = parentGo->GetUUID();
+            }
+        }
+    }
+    entityJson["ParentUUID"] = parentUUID;
+
     json& compsJson = entityJson["Components"];
 
     for (auto serializerFn : s_ComponentSerializers) {
@@ -1084,6 +1095,7 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
     }
 
     size_t loadedCount = 0;
+    std::vector<std::pair<GameObject*, uint64_t>> parentLinks;
     if (sceneJson.contains("GameObjects") && sceneJson["GameObjects"].is_array()) {
         for (const auto& entityJson : sceneJson["GameObjects"]) {
             std::string name = entityJson.value("Name", "GameObject");
@@ -1091,6 +1103,11 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 ? m_Scene->CreateGameObjectWithUUID(entityJson["UUID"].get<uint64_t>(), name)
                 : m_Scene->CreateGameObject(name);
             loadedCount++;
+
+            uint64_t parentUUID = entityJson.value("ParentUUID", 0ULL);
+            if (parentUUID != 0) {
+                parentLinks.emplace_back(go, parentUUID);
+            }
 
             if (entityJson.contains("Tag")) {
                 if (entityJson["Tag"].is_string()) {
@@ -1105,6 +1122,18 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
 
             if (entityJson.contains("Components")) {
                 DeserializeEntityComponents(go, entityJson["Components"], name);
+            }
+        }
+
+        // Pass 2: Connect parent-child hierarchy
+        for (const auto& [childGo, parentUUID] : parentLinks) {
+            if (auto* parentGo = m_Scene->FindGameObjectByUUID(parentUUID)) {
+                if (auto* childTransform = childGo->GetTransform()) {
+                    childTransform->SetParent(parentGo->GetTransform(), /*keepWorldTransform=*/false);
+                }
+            } else {
+                ENGINE_CORE_WARN("SceneSerializer: Entity '{}' ({}) references missing parent UUID {}",
+                                 childGo->GetName(), childGo->GetUUID(), parentUUID);
             }
         }
     }

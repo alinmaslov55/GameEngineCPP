@@ -43,7 +43,7 @@ inline void ComputeStandeeBoundingSphere(const Transform& transform,
     const float width  = std::abs(transform.scale.x);
     const float height = std::abs(transform.scale.y);
     const float depth  = std::abs(transform.scale.z);
-    outCenter = transform.position + glm::vec3(0.0f, 0.5f * height, 0.0f);
+    outCenter = transform.GetWorldPosition() + glm::vec3(0.0f, 0.5f * height, 0.0f);
     // Generous bounding radius accounting for diagonal corners, squash/stretch, and wind sway
     outRadius = 0.85f * std::max({ width, height, depth }) + 0.75f;
 }
@@ -149,6 +149,16 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
     ENGINE_CORE_DEBUG("Scene '{}': Destroying GameObject '{}' (UUID: {})", m_Name, gameObject->GetName(), gameObject->GetUUID());
     gameObject->m_PendingDestroy = true;
     m_PendingDestroyQueue.push_back(gameObject);
+
+    // Recursively cascade destruction to all child GameObjects in hierarchy
+    if (auto* transform = gameObject->GetTransform()) {
+        auto children = transform->GetChildren(); // Copy to avoid mutation while queueing
+        for (auto* child : children) {
+            if (child && child->GetGameObject()) {
+                DestroyGameObject(child->GetGameObject());
+            }
+        }
+    }
 
     if (!m_IsIteratingEntities) {
         FlushEntityLifecycleQueues();
@@ -980,7 +990,7 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
             if (auto* pl = gameObject->GetComponent<PointLightComponent>()) {
                 if (ctx.lighting.PointLightCount < SceneLightingData::MaxPointLights) {
                     auto* t = gameObject->GetTransform();
-                    const glm::vec3 basePos = t ? t->position : glm::vec3(0.0f);
+                    const glm::vec3 basePos = t ? t->GetWorldPosition() : glm::vec3(0.0f);
                     const glm::vec3 lightWorldPos = basePos + glm::vec3(0.0f, pl->HeightOffset, 0.0f);
                     const float effectiveRadius = std::max(0.05f, pl->Radius);
 
@@ -1016,7 +1026,7 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
                 if (auto* transform = gameObject->GetTransform()) {
                     if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::FlatGround) {
                         const float decalRadius = 0.75f * std::max(std::abs(transform->scale.x), std::abs(transform->scale.z)) + 0.5f;
-                        if (camFrustum.IntersectsSphere(transform->position, decalRadius)) {
+                        if (camFrustum.IntersectsSphere(transform->GetWorldPosition(), decalRadius)) {
                             m_FlatDecalScratch.emplace_back(sprite, transform);
                         }
                     } else {
@@ -1086,7 +1096,7 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
                             cmd.emissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
                             cmd.receiverOffset = std::max(0.48f, 0.55f * std::abs(standeeSize.x));
                             cmd.color = sprite->GetColor();
-                            cmd.viewDepth = glm::dot(transform->position - camEye, camForward);
+                            cmd.viewDepth = glm::dot(transform->GetWorldPosition() - camEye, camForward);
                             cmd.boundsCenter = boundsCenter;
                             cmd.boundsRadius = boundsRadius;
 

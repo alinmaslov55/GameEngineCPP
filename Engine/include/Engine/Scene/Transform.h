@@ -1,13 +1,15 @@
-#ifndef SCENE_TRANFORM_H
-#define SCENE_TRANFORM_H
+#ifndef SCENE_TRANSFORM_H
+#define SCENE_TRANSFORM_H
 
 #include "Engine/Scene/Component.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <vector>
 
 namespace Engine {
+
 class Transform : public Component {
 public:
     glm::vec3 position{ 0.0f, 0.0f, 0.0f };
@@ -17,7 +19,7 @@ public:
     glm::vec3 scale{ 1.0f, 1.0f, 1.0f };
 
     Transform() = default;
-    ~Transform() override = default;
+    ~Transform() override;
 
     void SnapshotPrevious() noexcept {
         prevPosition = position;
@@ -34,38 +36,52 @@ public:
 
     void Translate(const glm::vec3& translation) {
         position += translation;
+        SetDirty();
         ENGINE_CORE_TRACE("Transform::Translate by ({:.4f}, {:.4f}, {:.4f}) -> position: ({:.4f}, {:.4f}, {:.4f})",
                           translation.x, translation.y, translation.z, position.x, position.y, position.z);
     }
 
     void Rotate(const glm::vec3& eulerAngles) {
         rotation += eulerAngles;
+        SetDirty();
         ENGINE_CORE_TRACE("Transform::Rotate by ({:.4f}, {:.4f}, {:.4f}) -> rotation: ({:.4f}, {:.4f}, {:.4f})",
                           eulerAngles.x, eulerAngles.y, eulerAngles.z, rotation.x, rotation.y, rotation.z);
     }
 
-    [[nodiscard]] glm::mat4 GetTransformMatrix() const {
-        glm::mat4 rotMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(rotation.x), glm::vec3(1, 0, 0)) *
-                              glm::rotate(glm::mat4(1.0f), glm::radians(rotation.y), glm::vec3(0, 1, 0)) *
-                              glm::rotate(glm::mat4(1.0f), glm::radians(rotation.z), glm::vec3(0, 0, 1));
+    // Hierarchy management
+    bool SetParent(Transform* newParent, bool keepWorldTransform = true);
+    [[nodiscard]] Transform* GetParent() const noexcept { return m_Parent; }
+    [[nodiscard]] const std::vector<Transform*>& GetChildren() const noexcept { return m_Children; }
+    [[nodiscard]] bool IsDescendantOf(const Transform* ancestor) const noexcept;
 
-        return glm::translate(glm::mat4(1.0f), position) *
-               rotMatrix *
-               glm::scale(glm::mat4(1.0f), scale);
-    }
+    // Matrices and world coordinate queries
+    [[nodiscard]] glm::mat4 GetLocalMatrix() const noexcept;
+    [[nodiscard]] glm::mat4 GetTransformMatrix() const noexcept { return GetWorldMatrix(); }
+    [[nodiscard]] const glm::mat4& GetWorldMatrix() const noexcept;
 
-    [[nodiscard]] glm::mat4 GetInterpolatedTransformMatrix(float alpha) const {
-        glm::vec3 interpPos = GetInterpolatedPosition(alpha);
-        glm::vec3 interpRot = GetInterpolatedRotation(alpha);
-        glm::mat4 rotMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(interpRot.x), glm::vec3(1, 0, 0)) *
-                              glm::rotate(glm::mat4(1.0f), glm::radians(interpRot.y), glm::vec3(0, 1, 0)) *
-                              glm::rotate(glm::mat4(1.0f), glm::radians(interpRot.z), glm::vec3(0, 0, 1));
+    [[nodiscard]] glm::vec3 GetWorldPosition() const noexcept;
+    void SetWorldPosition(const glm::vec3& worldPos) noexcept;
+    [[nodiscard]] glm::vec3 GetWorldRotation() const noexcept;
+    [[nodiscard]] glm::vec3 GetWorldScale() const noexcept;
 
-        return glm::translate(glm::mat4(1.0f), interpPos) *
-               rotMatrix *
-               glm::scale(glm::mat4(1.0f), scale);
-    }
+    [[nodiscard]] glm::mat4 GetInterpolatedLocalMatrix(float alpha) const noexcept;
+    [[nodiscard]] glm::mat4 GetInterpolatedTransformMatrix(float alpha) const noexcept;
+
+    void SetDirty() const noexcept;
+
+private:
+    void UpdateDirtyFromAncestors() const noexcept;
+
+    Transform* m_Parent = nullptr;
+    std::vector<Transform*> m_Children;
+
+    mutable bool m_WorldDirty = true;
+    mutable glm::mat4 m_CachedWorldMatrix{ 1.0f };
+    mutable glm::vec3 m_LastPosition{ 0.0f };
+    mutable glm::vec3 m_LastRotation{ 0.0f };
+    mutable glm::vec3 m_LastScale{ 1.0f };
 };
+
 } // namespace Engine
 
-#endif // SCENE_TRANFORM_H
+#endif // SCENE_TRANSFORM_H
