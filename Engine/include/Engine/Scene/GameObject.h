@@ -29,6 +29,13 @@ class CapsuleCollider2D;
 class Tilemap;
 struct Collision2DInfo;
 
+enum class EntityLifecycle : uint8_t {
+    PendingSpawn = 0,
+    Alive,
+    PendingDestroy,
+    Destroyed
+};
+
 namespace Detail {
 inline uint32_t GetNextComponentTypeID() {
     static std::atomic<uint32_t> s_Counter{0};
@@ -146,7 +153,7 @@ public:
     [[nodiscard]] bool IsPooled() const noexcept { return !m_PoolKey.empty(); }
 
     [[nodiscard]] bool IsActiveInHierarchy() const noexcept {
-        if (!m_Active || m_PendingDestroy) {
+        if (!m_Active || IsPendingDestroy()) {
             return false;
         }
         if (m_Transform && m_Transform->GetParent()) {
@@ -157,7 +164,13 @@ public:
         return true;
     }
 
-    [[nodiscard]] bool IsPendingDestroy() const noexcept { return m_PendingDestroy; }
+    [[nodiscard]] EntityLifecycle GetLifecycleState() const noexcept { return m_LifecycleState; }
+    [[nodiscard]] bool IsPendingSpawn() const noexcept { return m_LifecycleState == EntityLifecycle::PendingSpawn; }
+    [[nodiscard]] bool IsAlive() const noexcept { return m_LifecycleState == EntityLifecycle::Alive; }
+    [[nodiscard]] bool IsPendingDestroy() const noexcept {
+        return m_LifecycleState == EntityLifecycle::PendingDestroy || m_LifecycleState == EntityLifecycle::Destroyed;
+    }
+    [[nodiscard]] bool IsDestroyed() const noexcept { return m_LifecycleState == EntityLifecycle::Destroyed; }
 
     void ProcessPendingStarts() {
         if (!IsActiveInHierarchy()) return;
@@ -286,7 +299,7 @@ private:
     uint32_t m_LayerMask{ EntityLayer::Default };
     std::string m_PoolKey;
     bool m_Active{ true };
-    bool m_PendingDestroy{ false };
+    EntityLifecycle m_LifecycleState{ EntityLifecycle::Alive };
 };
 
 inline void Component::SetEnabled(bool enabled) noexcept {

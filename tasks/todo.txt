@@ -14,7 +14,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Replace full-scene RegisterRuntimeBody() polling in UpdateRuntime() with a Physics Dirty-Flag / PendingSync set populated on AddComponent, RemoveComponent, or property setters.
     - Verification (EngineTests): Step a Rigidbody2D with MassMultiplier = 2.5f and LinearDamping = 3.0f for 120 frames; assert GetMass() stays constant and velocity decays identically.
 
-[ ] 2. Fix Same-Frame Spawn-Then-Destroy Use-After-Free in FlushEntityLifecycleQueues()
+[x] 2. Fix Same-Frame Spawn-Then-Destroy Use-After-Free in FlushEntityLifecycleQueues()
     - Files: Engine/src/Scene/Scene.cpp (lines 149-193, 1105-1161)
     - Root Cause:
       * If entity A (and optionally child B) is created while m_IsIteratingEntities == true (held in m_PendingSpawnQueue) and destroyed in the same frame via DestroyGameObject(), it gets pushed into m_PendingDestroyQueue as well.

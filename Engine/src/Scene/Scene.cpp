@@ -82,8 +82,10 @@ GameObject* Scene::CreateGameObject(const std::string& name) {
     m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
 
     if (m_IsIteratingEntities) {
+        rawPtr->m_LifecycleState = EntityLifecycle::PendingSpawn;
         m_PendingSpawnQueue.push_back(std::move(gameObject));
     } else {
+        rawPtr->m_LifecycleState = EntityLifecycle::Alive;
         m_GameObjects.push_back(std::move(gameObject));
         m_StaticCollidersDirty = true;
     }
@@ -98,8 +100,10 @@ GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& na
     m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
 
     if (m_IsIteratingEntities) {
+        rawPtr->m_LifecycleState = EntityLifecycle::PendingSpawn;
         m_PendingSpawnQueue.push_back(std::move(gameObject));
     } else {
+        rawPtr->m_LifecycleState = EntityLifecycle::Alive;
         m_GameObjects.push_back(std::move(gameObject));
         m_StaticCollidersDirty = true;
     }
@@ -155,8 +159,11 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
         return;
     }
     ENGINE_CORE_DEBUG("Scene '{}': Destroying GameObject '{}' (UUID: {})", m_Name, gameObject->GetName(), gameObject->GetUUID());
-    gameObject->m_PendingDestroy = true;
-    m_PendingDestroyQueue.push_back(gameObject);
+    const bool wasPendingSpawn = (gameObject->m_LifecycleState == EntityLifecycle::PendingSpawn);
+    gameObject->m_LifecycleState = EntityLifecycle::PendingDestroy;
+    if (!wasPendingSpawn) {
+        m_PendingDestroyQueue.push_back(gameObject);
+    }
     std::erase(m_PendingPhysicsSync, gameObject);
 
     if (m_IsRuntimeRunning) {
@@ -1197,61 +1204,100 @@ std::vector<GameObject*> Scene::FindGameObjectsInLayer(uint32_t layerMask) const
 }
 
 void Scene::FlushEntityLifecycleQueues() {
-    // 1. Move pending spawns into m_GameObjects
-    if (!m_PendingSpawnQueue.empty()) {
-        for (auto& pending : m_PendingSpawnQueue) {
-            if (pending->IsPendingDestroy()) {
-                for (auto& comp : pending->m_Components) {
+    if (m_PendingSpawnQueue.empty() && m_PendingDestroyQueue.empty()) {
+        return;
+    }
+
+    const bool prevIterating = m_IsIteratingEntities;
+    m_IsIteratingEntities = true;
+
+    constexpr uint32_t kMaxFlushPasses = 16;
+    uint32_t passes = 0;
+
+    while ((!m_PendingSpawnQueue.empty() || !m_PendingDestroyQueue.empty()) && passes < kMaxFlushPasses) {
+        ++passes;
+
+        // 1. Process pending spawns
+        if (!m_PendingSpawnQueue.empty()) {
+            auto pendingSpawns = std::move(m_PendingSpawnQueue);
+            m_PendingSpawnQueue.clear();
+
+            for (auto& pending : pendingSpawns) {
+                if (!pending) continue;
+
+                if (pending->IsPendingDestroy()) {
+                    pending->m_LifecycleState = EntityLifecycle::Destroyed;
+
+                    if (m_IsRuntimeRunning) {
+                        UnregisterRuntimeBody(pending.get());
+                    }
+
+                    if (pending->GetComponent<BoxCollider2D>() || pending->GetComponent<CircleCollider2D>() ||
+                        pending->GetComponent<CapsuleCollider2D>() || pending->GetComponent<Tilemap>() ||
+                        pending->GetComponent<TerrainComponent>()) {
+                        m_StaticCollidersDirty = true;
+                    }
+
+                    for (auto& comp : pending->m_Components) {
+                        comp->OnDestroy();
+                    }
+
+                    m_EntityUUIDMap.erase(pending->GetUUID());
+                } else {
+                    pending->m_LifecycleState = EntityLifecycle::Alive;
+                    pending->ProcessPendingStarts();
+                    if (m_IsRuntimeRunning) {
+                        RegisterRuntimeBody(pending.get());
+                    }
+                    m_GameObjects.push_back(std::move(pending));
+                    m_StaticCollidersDirty = true;
+                }
+            }
+        }
+
+        // 2. Process pending destroys
+        if (!m_PendingDestroyQueue.empty()) {
+            auto pendingDestroys = std::move(m_PendingDestroyQueue);
+            m_PendingDestroyQueue.clear();
+
+            bool colliderDestroyed = false;
+
+            for (auto* go : pendingDestroys) {
+                if (!go) continue;
+
+                go->m_LifecycleState = EntityLifecycle::Destroyed;
+
+                // Destroy runtime Box2D body if active
+                if (m_IsRuntimeRunning) {
+                    UnregisterRuntimeBody(go);
+                }
+
+                if (go->GetComponent<BoxCollider2D>() || go->GetComponent<CircleCollider2D>() ||
+                    go->GetComponent<CapsuleCollider2D>() || go->GetComponent<Tilemap>() ||
+                    go->GetComponent<TerrainComponent>()) {
+                    colliderDestroyed = true;
+                }
+
+                // Invoke OnDestroy() on all components
+                for (auto& comp : go->m_Components) {
                     comp->OnDestroy();
                 }
-                m_EntityUUIDMap.erase(pending->GetUUID());
-            } else {
-                pending->ProcessPendingStarts();
-                if (m_IsRuntimeRunning) {
-                    RegisterRuntimeBody(pending.get());
-                }
-                m_GameObjects.push_back(std::move(pending));
+
+                m_EntityUUIDMap.erase(go->GetUUID());
+            }
+
+            // Erase destroyed GameObjects from m_GameObjects in a single erase_if pass
+            std::erase_if(m_GameObjects, [](const std::unique_ptr<GameObject>& ptr) {
+                return ptr->IsDestroyed();
+            });
+
+            if (colliderDestroyed) {
                 m_StaticCollidersDirty = true;
             }
         }
-        m_PendingSpawnQueue.clear();
     }
 
-    // 2. Process pending destroys
-    if (!m_PendingDestroyQueue.empty()) {
-        bool colliderDestroyed = false;
-
-        for (auto* go : m_PendingDestroyQueue) {
-            if (!go) continue;
-
-            // Destroy runtime Box2D body if active
-            if (m_IsRuntimeRunning) {
-                UnregisterRuntimeBody(go);
-            }
-
-            if (go->GetComponent<BoxCollider2D>() || go->GetComponent<CircleCollider2D>() || go->GetComponent<CapsuleCollider2D>() || go->GetComponent<Tilemap>() || go->GetComponent<TerrainComponent>()) {
-                colliderDestroyed = true;
-            }
-
-            // Invoke OnDestroy() on all components
-            for (auto& comp : go->m_Components) {
-                comp->OnDestroy();
-            }
-
-            m_EntityUUIDMap.erase(go->GetUUID());
-        }
-
-        // Erase destroyed GameObjects from m_GameObjects in a single erase_if pass
-        std::erase_if(m_GameObjects, [](const std::unique_ptr<GameObject>& ptr) {
-            return ptr->IsPendingDestroy();
-        });
-
-        m_PendingDestroyQueue.clear();
-
-        if (colliderDestroyed) {
-            m_StaticCollidersDirty = true;
-        }
-    }
+    m_IsIteratingEntities = prevIterating;
 }
 
 void Scene::Update(float deltaTime) {
