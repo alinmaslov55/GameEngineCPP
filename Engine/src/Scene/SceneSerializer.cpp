@@ -380,7 +380,10 @@ void SerializeRigidbody2D(const GameObject* go, json& compsJson) {
         {"UseGravityY", rb2d->UseGravityY},
         {"GravityY", rb2d->GravityY},
         {"GroundLevelY", rb2d->GroundLevelY},
-        {"GroundRestitutionY", rb2d->GroundRestitutionY}
+        {"GroundRestitutionY", rb2d->GroundRestitutionY},
+        {"AirborneClearanceHeight", rb2d->AirborneClearanceHeight},
+        {"EnableAirbornePassThrough", rb2d->EnableAirbornePassThrough},
+        {"AirbornePassThroughMask", rb2d->AirbornePassThroughMask}
     };
 }
 
@@ -398,6 +401,9 @@ void SerializeBoxCollider2D(const GameObject* go, json& compsJson) {
         {"IsDynamic", collider->isDynamic},
         {"IsSensor", collider->IsSensor},
         {"EnableHitEvents", collider->EnableHitEvents},
+        {"CategoryBits", collider->CategoryBits},
+        {"MaskBits", collider->MaskBits},
+        {"GroupIndex", collider->GroupIndex},
         {"UseGravity", collider->useGravity},
         {"Gravity", collider->gravity},
         {"GroundLevel", collider->groundLevel}
@@ -415,7 +421,10 @@ void SerializeCircleCollider2D(const GameObject* go, json& compsJson) {
         {"Friction", collider->Friction},
         {"Restitution", collider->Restitution},
         {"IsSensor", collider->IsSensor},
-        {"EnableHitEvents", collider->EnableHitEvents}
+        {"EnableHitEvents", collider->EnableHitEvents},
+        {"CategoryBits", collider->CategoryBits},
+        {"MaskBits", collider->MaskBits},
+        {"GroupIndex", collider->GroupIndex}
     };
 }
 
@@ -431,7 +440,10 @@ void SerializeCapsuleCollider2D(const GameObject* go, json& compsJson) {
         {"Friction", collider->Friction},
         {"Restitution", collider->Restitution},
         {"IsSensor", collider->IsSensor},
-        {"EnableHitEvents", collider->EnableHitEvents}
+        {"EnableHitEvents", collider->EnableHitEvents},
+        {"CategoryBits", collider->CategoryBits},
+        {"MaskBits", collider->MaskBits},
+        {"GroupIndex", collider->GroupIndex}
     };
 }
 
@@ -862,6 +874,9 @@ void DeserializeRigidbody2D(GameObject* go, const json& rbJson, const std::strin
     rb2d->GravityY = rbJson.value("GravityY", -22.0f);
     rb2d->GroundLevelY = rbJson.value("GroundLevelY", 0.0f);
     rb2d->GroundRestitutionY = rbJson.value("GroundRestitutionY", 0.0f);
+    rb2d->AirborneClearanceHeight = rbJson.value("AirborneClearanceHeight", 0.75f);
+    rb2d->EnableAirbornePassThrough = rbJson.value("EnableAirbornePassThrough", true);
+    rb2d->AirbornePassThroughMask = rbJson.value("AirbornePassThroughMask", PhysicsLayer::DefaultAirborneExcluded);
 }
 
 void DeserializeBoxCollider2D(GameObject* go, const json& bcJson, const std::string&) {
@@ -875,6 +890,9 @@ void DeserializeBoxCollider2D(GameObject* go, const json& bcJson, const std::str
     collider->isDynamic = bcJson.value("IsDynamic", false);
     collider->IsSensor = bcJson.value("IsSensor", false);
     collider->EnableHitEvents = bcJson.value("EnableHitEvents", true);
+    collider->CategoryBits = bcJson.value("CategoryBits", PhysicsLayer::Default);
+    collider->MaskBits = bcJson.value("MaskBits", PhysicsLayer::All);
+    collider->GroupIndex = bcJson.value("GroupIndex", 0);
     collider->useGravity = bcJson.value("UseGravity", true);
     collider->gravity = bcJson.value("Gravity", -9.8f);
     collider->groundLevel = bcJson.value("GroundLevel", 0.0f);
@@ -889,6 +907,9 @@ void DeserializeCircleCollider2D(GameObject* go, const json& ccJson, const std::
     collider->Restitution = ccJson.value("Restitution", 0.15f);
     collider->IsSensor = ccJson.value("IsSensor", false);
     collider->EnableHitEvents = ccJson.value("EnableHitEvents", true);
+    collider->CategoryBits = ccJson.value("CategoryBits", PhysicsLayer::Default);
+    collider->MaskBits = ccJson.value("MaskBits", PhysicsLayer::All);
+    collider->GroupIndex = ccJson.value("GroupIndex", 0);
 }
 
 void DeserializeCapsuleCollider2D(GameObject* go, const json& capJson, const std::string&) {
@@ -901,6 +922,9 @@ void DeserializeCapsuleCollider2D(GameObject* go, const json& capJson, const std
     collider->Restitution = capJson.value("Restitution", 0.15f);
     collider->IsSensor = capJson.value("IsSensor", false);
     collider->EnableHitEvents = capJson.value("EnableHitEvents", true);
+    collider->CategoryBits = capJson.value("CategoryBits", PhysicsLayer::Default);
+    collider->MaskBits = capJson.value("MaskBits", PhysicsLayer::All);
+    collider->GroupIndex = capJson.value("GroupIndex", 0);
 }
 
 void DeserializeCameraComponent(GameObject* go, const json& camJson, const std::string&) {

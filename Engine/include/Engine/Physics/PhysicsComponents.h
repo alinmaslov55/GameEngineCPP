@@ -3,6 +3,7 @@
 
 #include "Engine/Scene/Component.h"
 #include "Engine/Physics/Collision2DInfo.h"
+#include "Engine/Physics/PhysicsLayer.h"
 #include <glm/glm.hpp>
 
 namespace Engine {
@@ -35,6 +36,14 @@ public:
     float GravityY = -22.0f;         // Snappy brawler arc gravity (default: -22.0 m/s^2)
     float GroundRestitutionY = 0.0f; // Bounciness on landing (e.g. 0.45f for wood pickups)
     float GroundLevelY = 0.0f;       // Ground elevation level
+
+    // Airborne Elevation Filtering
+    float AirborneClearanceHeight = 0.75f; // Vault clearance height
+    bool EnableAirbornePassThrough = true;  // If true, clears AirbornePassThroughMask when airborne
+    uint64_t AirbornePassThroughMask = PhysicsLayer::DefaultAirborneExcluded; // Layers bypassed mid-air
+
+    [[nodiscard]] bool IsAirbornePassThroughActive() const noexcept { return m_AirbornePassThroughActive; }
+    void SetAirbornePassThroughActive(bool active) noexcept { m_AirbornePassThroughActive = active; }
 
     Rigidbody2D() = default;
 
@@ -82,13 +91,18 @@ public:
     [[nodiscard]] glm::vec2 GetLinearVelocityXZ() const noexcept { return GetVelocityXZ(); }
     void ApplyLinearImpulseXZ(const glm::vec2& impulseXZ, bool wake = true) noexcept { ApplyImpulseXZ(impulseXZ, wake); }
     void ApplyLinearImpulseXZ(float ix, float iz, bool wake = true) noexcept { ApplyImpulseXZ(glm::vec2{ ix, iz }, wake); }
+
+private:
+    bool m_AirbornePassThroughActive = false;
 };
 
 class BoxCollider2D : public Component {
 public:
     BoxCollider2D() = default;
-    BoxCollider2D(const glm::vec2& boxSize, bool isSensor = false, const glm::vec2& boxOffset = { 0.0f, 0.0f })
-        : size(boxSize), offset(boxOffset), IsSensor(isSensor) {}
+    BoxCollider2D(const glm::vec2& boxSize, bool isSensor = false, const glm::vec2& boxOffset = { 0.0f, 0.0f },
+                  uint64_t categoryBits = PhysicsLayer::Default, uint64_t maskBits = PhysicsLayer::All, int32_t groupIndex = 0)
+        : size(boxSize), offset(boxOffset), IsSensor(isSensor),
+          CategoryBits(categoryBits), MaskBits(maskBits), GroupIndex(groupIndex) {}
 
     glm::vec2 size = { 1.0f, 1.0f };   // Base footprint on the XZ ground plane (size.x = Width X, size.y = Depth Z)
     glm::vec2 offset = { 0.0f, 0.0f }; // Shift from Transform center on the XZ ground plane
@@ -101,6 +115,16 @@ public:
     float restitutionThreshold = 0.5f; // Velocity required to bounce
     bool IsSensor = false;             // Trigger volume without physical contact response
     bool EnableHitEvents = true;       // Enables b2ContactHitEvent generation for impact damage
+
+    // 64-bit Collision Filtering
+    uint64_t CategoryBits = PhysicsLayer::Default;
+    uint64_t MaskBits = PhysicsLayer::All;
+    int32_t GroupIndex = 0;
+
+    void SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex = 0);
+    void SetCategoryBits(uint64_t categoryBits);
+    void SetMaskBits(uint64_t maskBits);
+    void SetGroupIndex(int32_t groupIndex);
 
     // Pointer or handle to internal Box2D shape/fixture
     void* RuntimeFixture = nullptr;
@@ -126,8 +150,10 @@ public:
 class CircleCollider2D : public Component {
 public:
     CircleCollider2D() = default;
-    CircleCollider2D(float radius, bool isSensor = false, const glm::vec2& offsetXZ = { 0.0f, 0.0f })
-        : Radius(radius), OffsetXZ(offsetXZ), IsSensor(isSensor) {}
+    CircleCollider2D(float radius, bool isSensor = false, const glm::vec2& offsetXZ = { 0.0f, 0.0f },
+                     uint64_t categoryBits = PhysicsLayer::Default, uint64_t maskBits = PhysicsLayer::All, int32_t groupIndex = 0)
+        : Radius(radius), OffsetXZ(offsetXZ), IsSensor(isSensor),
+          CategoryBits(categoryBits), MaskBits(maskBits), GroupIndex(groupIndex) {}
 
     float Radius = 0.45f;
     glm::vec2 OffsetXZ{ 0.0f, 0.0f };
@@ -136,6 +162,16 @@ public:
     float Restitution = 0.15f;
     bool IsSensor = false;
     bool EnableHitEvents = true;
+
+    // 64-bit Collision Filtering
+    uint64_t CategoryBits = PhysicsLayer::Default;
+    uint64_t MaskBits = PhysicsLayer::All;
+    int32_t GroupIndex = 0;
+
+    void SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex = 0);
+    void SetCategoryBits(uint64_t categoryBits);
+    void SetMaskBits(uint64_t maskBits);
+    void SetGroupIndex(int32_t groupIndex);
 
     // Pointer or handle to internal Box2D shape
     void* RuntimeShape = nullptr;
@@ -151,8 +187,10 @@ public:
 class CapsuleCollider2D : public Component {
 public:
     CapsuleCollider2D() = default;
-    CapsuleCollider2D(float radius, const glm::vec2& c1 = { 0.0f, -0.25f }, const glm::vec2& c2 = { 0.0f, 0.25f }, bool isSensor = false)
-        : Center1(c1), Center2(c2), Radius(radius), IsSensor(isSensor) {}
+    CapsuleCollider2D(float radius, const glm::vec2& c1 = { 0.0f, -0.25f }, const glm::vec2& c2 = { 0.0f, 0.25f }, bool isSensor = false,
+                      uint64_t categoryBits = PhysicsLayer::Default, uint64_t maskBits = PhysicsLayer::All, int32_t groupIndex = 0)
+        : Center1(c1), Center2(c2), Radius(radius), IsSensor(isSensor),
+          CategoryBits(categoryBits), MaskBits(maskBits), GroupIndex(groupIndex) {}
 
     glm::vec2 Center1{ 0.0f, -0.25f };
     glm::vec2 Center2{ 0.0f, 0.25f };
@@ -162,6 +200,16 @@ public:
     float Restitution = 0.15f;
     bool IsSensor = false;
     bool EnableHitEvents = true;
+
+    // 64-bit Collision Filtering
+    uint64_t CategoryBits = PhysicsLayer::Default;
+    uint64_t MaskBits = PhysicsLayer::All;
+    int32_t GroupIndex = 0;
+
+    void SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex = 0);
+    void SetCategoryBits(uint64_t categoryBits);
+    void SetMaskBits(uint64_t maskBits);
+    void SetGroupIndex(int32_t groupIndex);
 
     // Pointer or handle to internal Box2D shape
     void* RuntimeShape = nullptr;

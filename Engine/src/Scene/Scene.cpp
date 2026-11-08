@@ -301,6 +301,12 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
                 shapeDef.enableHitEvents = bc2d->EnableHitEvents;
                 shapeDef.enableContactEvents = true;
                 shapeDef.userData = bc2d;
+                if (bc2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
+                    bc2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
+                }
+                shapeDef.filter.categoryBits = bc2d->CategoryBits;
+                shapeDef.filter.maskBits = bc2d->MaskBits;
+                shapeDef.filter.groupIndex = bc2d->GroupIndex;
 
                 b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
                 bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
@@ -344,6 +350,12 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
                 shapeDef.enableHitEvents = cc2d->EnableHitEvents;
                 shapeDef.enableContactEvents = true;
                 shapeDef.userData = cc2d;
+                if (cc2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
+                    cc2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
+                }
+                shapeDef.filter.categoryBits = cc2d->CategoryBits;
+                shapeDef.filter.maskBits = cc2d->MaskBits;
+                shapeDef.filter.groupIndex = cc2d->GroupIndex;
 
                 b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
                 cc2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
@@ -389,6 +401,12 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
                 shapeDef.enableHitEvents = cap2d->EnableHitEvents;
                 shapeDef.enableContactEvents = true;
                 shapeDef.userData = cap2d;
+                if (cap2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
+                    cap2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
+                }
+                shapeDef.filter.categoryBits = cap2d->CategoryBits;
+                shapeDef.filter.maskBits = cap2d->MaskBits;
+                shapeDef.filter.groupIndex = cap2d->GroupIndex;
 
                 b2ShapeId shapeId = b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
                 cap2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
@@ -468,6 +486,12 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
                 shapeDef.enableHitEvents = bc2d->EnableHitEvents;
                 shapeDef.enableContactEvents = true;
                 shapeDef.userData = bc2d;
+                if (bc2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
+                    bc2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
+                }
+                shapeDef.filter.categoryBits = bc2d->CategoryBits;
+                shapeDef.filter.maskBits = bc2d->MaskBits;
+                shapeDef.filter.groupIndex = bc2d->GroupIndex;
 
                 b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
                 bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
@@ -511,6 +535,12 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
                 shapeDef.enableHitEvents = cc2d->EnableHitEvents;
                 shapeDef.enableContactEvents = true;
                 shapeDef.userData = cc2d;
+                if (cc2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
+                    cc2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
+                }
+                shapeDef.filter.categoryBits = cc2d->CategoryBits;
+                shapeDef.filter.maskBits = cc2d->MaskBits;
+                shapeDef.filter.groupIndex = cc2d->GroupIndex;
 
                 b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
                 cc2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
@@ -556,6 +586,12 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
                 shapeDef.enableHitEvents = cap2d->EnableHitEvents;
                 shapeDef.enableContactEvents = true;
                 shapeDef.userData = cap2d;
+                if (cap2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
+                    cap2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
+                }
+                shapeDef.filter.categoryBits = cap2d->CategoryBits;
+                shapeDef.filter.maskBits = cap2d->MaskBits;
+                shapeDef.filter.groupIndex = cap2d->GroupIndex;
 
                 b2ShapeId shapeId = b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
                 cap2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
@@ -672,6 +708,8 @@ void Scene::CreateRuntimeTilemapBody(GameObject* go) {
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.material.friction = 0.5f;
     shapeDef.material.restitution = 0.0f;
+    shapeDef.filter.categoryBits = PhysicsLayer::Environment;
+    shapeDef.filter.maskBits = PhysicsLayer::All;
 
     for (uint32_t gz = 0; gz < height; ++gz) {
         for (uint32_t gx = 0; gx < width; ++gx) {
@@ -1626,6 +1664,26 @@ void Scene::UpdateRuntime(float deltaTime) {
                 }
             }
 
+            // Synchronize airborne pass-through filter state before physics simulation step
+            for (auto& go : m_GameObjects) {
+                if (!go->IsActiveInHierarchy()) continue;
+                auto* rb2d = go->GetComponent<Rigidbody2D>();
+                if (!rb2d || rb2d->Type != Rigidbody2D::BodyType::Dynamic || !rb2d->EnableAirbornePassThrough) continue;
+                auto* t = go->GetTransform();
+                if (!t) continue;
+
+                const bool shouldBeAirborne = (t->position.y > rb2d->AirborneClearanceHeight);
+                const bool isTouchdown = (t->position.y <= rb2d->GroundLevelY);
+
+                if (shouldBeAirborne && !rb2d->IsAirbornePassThroughActive()) {
+                    rb2d->SetAirbornePassThroughActive(true);
+                    ApplyAirbornePassThroughFilter(go.get(), true);
+                } else if (isTouchdown && rb2d->IsAirbornePassThroughActive()) {
+                    rb2d->SetAirbornePassThroughActive(false);
+                    ApplyAirbornePassThroughFilter(go.get(), false);
+                }
+            }
+
             // Step Box2D simulation
             if (b2World_IsValid(worldId)) {
                 b2World_Step(worldId, fixedDt, 4);
@@ -1692,6 +1750,20 @@ void Scene::IntegrateVerticalElevation(float fixedDt) {
             if (bc2d) {
                 bc2d->verticalVelocity = rb2d->VerticalVelocity;
             }
+
+            // Airborne Elevation Filtering
+            if (rb2d->EnableAirbornePassThrough) {
+                const bool shouldBeAirborne = (transform->position.y > rb2d->AirborneClearanceHeight);
+                const bool isTouchdown = (transform->position.y <= rb2d->GroundLevelY);
+
+                if (shouldBeAirborne && !rb2d->IsAirbornePassThroughActive()) {
+                    rb2d->SetAirbornePassThroughActive(true);
+                    ApplyAirbornePassThroughFilter(go.get(), true);
+                } else if (isTouchdown && rb2d->IsAirbornePassThroughActive()) {
+                    rb2d->SetAirbornePassThroughActive(false);
+                    ApplyAirbornePassThroughFilter(go.get(), false);
+                }
+            }
         } else if (!rb2d && bc2d && bc2d->isDynamic && bc2d->useGravity) {
             bc2d->verticalVelocity += bc2d->gravity * fixedDt;
             transform->position.y += bc2d->verticalVelocity * fixedDt;
@@ -1706,6 +1778,32 @@ void Scene::IntegrateVerticalElevation(float fixedDt) {
                 }
             }
         }
+    }
+}
+
+void Scene::ApplyAirbornePassThroughFilter(GameObject* go, bool airborne) {
+    if (!go) return;
+    auto* rb2d = go->GetComponent<Rigidbody2D>();
+    const uint64_t excludedMask = rb2d ? rb2d->AirbornePassThroughMask : PhysicsLayer::DefaultAirborneExcluded;
+
+    auto updateShape = [airborne, excludedMask](void* runtimeShapeHandle, uint64_t originalMask) {
+        if (!runtimeShapeHandle) return;
+        b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(runtimeShapeHandle)));
+        if (b2Shape_IsValid(shapeId)) {
+            b2Filter filter = b2Shape_GetFilter(shapeId);
+            filter.maskBits = airborne ? (originalMask & ~excludedMask) : originalMask;
+            b2Shape_SetFilter(shapeId, filter);
+        }
+    };
+
+    if (auto* bc = go->GetComponent<BoxCollider2D>()) {
+        updateShape(bc->RuntimeFixture, bc->MaskBits);
+    }
+    if (auto* cc = go->GetComponent<CircleCollider2D>()) {
+        updateShape(cc->RuntimeShape, cc->MaskBits);
+    }
+    if (auto* cap = go->GetComponent<CapsuleCollider2D>()) {
+        updateShape(cap->RuntimeShape, cap->MaskBits);
     }
 }
 

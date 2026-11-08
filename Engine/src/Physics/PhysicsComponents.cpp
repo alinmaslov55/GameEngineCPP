@@ -287,4 +287,88 @@ void CapsuleCollider2D::OnDestroy() {
     }
 }
 
+void BoxCollider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex) {
+    CategoryBits = categoryBits;
+    MaskBits = maskBits;
+    GroupIndex = groupIndex;
+    if (RuntimeFixture) {
+        b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeFixture)));
+        if (b2Shape_IsValid(shapeId)) {
+            b2Filter f;
+            f.categoryBits = CategoryBits;
+            f.maskBits = MaskBits;
+            f.groupIndex = GroupIndex;
+            b2Shape_SetFilter(shapeId, f);
+        }
+    }
+}
+
+void BoxCollider2D::SetCategoryBits(uint64_t categoryBits) {
+    SetFilter(categoryBits, MaskBits, GroupIndex);
+}
+
+void BoxCollider2D::SetMaskBits(uint64_t maskBits) {
+    SetFilter(CategoryBits, maskBits, GroupIndex);
+}
+
+void BoxCollider2D::SetGroupIndex(int32_t groupIndex) {
+    SetFilter(CategoryBits, MaskBits, groupIndex);
+}
+
+void CircleCollider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex) {
+    CategoryBits = categoryBits;
+    MaskBits = maskBits;
+    GroupIndex = groupIndex;
+    if (RuntimeShape) {
+        b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
+        if (b2Shape_IsValid(shapeId)) {
+            b2Filter f;
+            f.categoryBits = CategoryBits;
+            f.maskBits = MaskBits;
+            f.groupIndex = GroupIndex;
+            b2Shape_SetFilter(shapeId, f);
+        }
+    }
+}
+
+void CircleCollider2D::SetCategoryBits(uint64_t categoryBits) {
+    SetFilter(categoryBits, MaskBits, GroupIndex);
+}
+
+void CircleCollider2D::SetMaskBits(uint64_t maskBits) {
+    SetFilter(CategoryBits, maskBits, GroupIndex);
+}
+
+void CircleCollider2D::SetGroupIndex(int32_t groupIndex) {
+    SetFilter(CategoryBits, MaskBits, groupIndex);
+}
+
+void CapsuleCollider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex) {
+    CategoryBits = categoryBits;
+    MaskBits = maskBits;
+    GroupIndex = groupIndex;
+    if (RuntimeShape) {
+        b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
+        if (b2Shape_IsValid(shapeId)) {
+            b2Filter f;
+            f.categoryBits = CategoryBits;
+            f.maskBits = MaskBits;
+            f.groupIndex = GroupIndex;
+            b2Shape_SetFilter(shapeId, f);
+        }
+    }
+}
+
+void CapsuleCollider2D::SetCategoryBits(uint64_t categoryBits) {
+    SetFilter(categoryBits, MaskBits, GroupIndex);
+}
+
+void CapsuleCollider2D::SetMaskBits(uint64_t maskBits) {
+    SetFilter(CategoryBits, maskBits, GroupIndex);
+}
+
+void CapsuleCollider2D::SetGroupIndex(int32_t groupIndex) {
+    SetFilter(CategoryBits, MaskBits, groupIndex);
+}
+
 } // namespace Engine

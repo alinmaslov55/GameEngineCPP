@@ -156,6 +156,7 @@ private:
     void CreateRuntimeTilemapBody(GameObject* go);
     void IntegrateVerticalElevation(float fixedDt);
     void ProcessPhysicsEvents();
+    void ApplyAirbornePassThroughFilter(GameObject* go, bool airborne);
 
 private:
     struct EntityPool {

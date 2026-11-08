@@ -66,6 +66,60 @@ void DrawAddComponentEntry(const char* label, Engine::GameObject* entity) {
     }
 }
 
+void DrawCollisionFilterUI(uint64_t& categoryBits, uint64_t& maskBits, int32_t& groupIndex,
+                          const std::function<void(uint64_t, uint64_t, int32_t)>& onChange) {
+    const char* layerNames[] = {
+        "Environment", "LowObstacle", "Player", "Enemy",
+        "Companion", "PlayerHitbox", "EnemyHitbox", "Projectile", "Pickup", "Default"
+    };
+    const uint64_t layerBits[] = {
+        Engine::PhysicsLayer::Environment,
+        Engine::PhysicsLayer::LowObstacle,
+        Engine::PhysicsLayer::Player,
+        Engine::PhysicsLayer::Enemy,
+        Engine::PhysicsLayer::Companion,
+        Engine::PhysicsLayer::PlayerHitbox,
+        Engine::PhysicsLayer::EnemyHitbox,
+        Engine::PhysicsLayer::Projectile,
+        Engine::PhysicsLayer::Pickup,
+        Engine::PhysicsLayer::Default
+    };
+
+    int currentIdx = 9; // Default
+    for (int i = 0; i < 10; ++i) {
+        if (categoryBits == layerBits[i]) {
+            currentIdx = i;
+            break;
+        }
+    }
+
+    if (ImGui::BeginCombo("Category Layer", layerNames[currentIdx])) {
+        for (int i = 0; i < 10; ++i) {
+            const bool isSelected = (currentIdx == i);
+            if (ImGui::Selectable(layerNames[i], isSelected)) {
+                categoryBits = layerBits[i];
+                if (onChange) onChange(categoryBits, maskBits, groupIndex);
+            }
+            if (isSelected) {
+                ImGui::SetItemDefaultFocus();
+            }
+        }
+        ImGui::EndCombo();
+    }
+
+    if (ImGui::TreeNode("Collision Mask Layers")) {
+        for (int i = 0; i < 10; ++i) {
+            bool enabled = (maskBits & layerBits[i]) != 0;
+            if (ImGui::Checkbox(layerNames[i], &enabled)) {
+                if (enabled) maskBits |= layerBits[i];
+                else maskBits &= ~layerBits[i];
+                if (onChange) onChange(categoryBits, maskBits, groupIndex);
+            }
+        }
+        ImGui::TreePop();
+    }
+}
+
 } // namespace
 
 void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOpen) {
@@ -555,6 +609,14 @@ void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObje
     ImGui::DragFloat("Ground Level Y", &rb2d.GroundLevelY, 0.05f);
     ImGui::SliderFloat("Restitution Y", &rb2d.GroundRestitutionY, 0.0f, 1.0f);
     ImGui::TextDisabled("Vertical Vel: %.2f m/s (%s)", rb2d.VerticalVelocity, rb2d.IsAirborne() ? "Airborne" : "Grounded");
+
+    ImGui::Spacing();
+    ImGui::Text("Airborne Pass-Through (PHY-04)");
+    ImGui::Checkbox("Enable Airborne Pass-Through", &rb2d.EnableAirbornePassThrough);
+    if (rb2d.EnableAirbornePassThrough) {
+        ImGui::DragFloat("Clearance Height", &rb2d.AirborneClearanceHeight, 0.05f, 0.0f, 10.0f, "%.2f m");
+        ImGui::TextDisabled("Vault Status: %s", rb2d.IsAirbornePassThroughActive() ? "ACTIVE (Mid-Air Vault)" : "INACTIVE (Ground)");
+    }
 }
 
 void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engine::GameObject* entity) {
@@ -566,6 +628,8 @@ void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engin
     ImGui::DragFloat("Restitution (XZ)", &boxCollider.restitution, 0.01f, 0.0f, 1.0f);
     ImGui::Checkbox("Is Sensor", &boxCollider.IsSensor);
     ImGui::Checkbox("Enable Hit Events", &boxCollider.EnableHitEvents);
+    DrawCollisionFilterUI(boxCollider.CategoryBits, boxCollider.MaskBits, boxCollider.GroupIndex,
+        [&boxCollider](uint64_t c, uint64_t m, int32_t g) { boxCollider.SetFilter(c, m, g); });
     ImGui::Separator();
     ImGui::Checkbox("Is Dynamic (Isometric)", &boxCollider.isDynamic);
     if (boxCollider.isDynamic) {
@@ -584,6 +648,8 @@ void InspectorPanel::DrawCircleCollider2D(Engine::CircleCollider2D& circleCollid
     ImGui::DragFloat("Restitution", &circleCollider.Restitution, 0.01f, 0.0f, 1.0f);
     ImGui::Checkbox("Is Sensor", &circleCollider.IsSensor);
     ImGui::Checkbox("Enable Hit Events", &circleCollider.EnableHitEvents);
+    DrawCollisionFilterUI(circleCollider.CategoryBits, circleCollider.MaskBits, circleCollider.GroupIndex,
+        [&circleCollider](uint64_t c, uint64_t m, int32_t g) { circleCollider.SetFilter(c, m, g); });
 }
 
 void InspectorPanel::DrawCapsuleCollider2D(Engine::CapsuleCollider2D& capsuleCollider, Engine::GameObject* entity) {
@@ -596,6 +662,8 @@ void InspectorPanel::DrawCapsuleCollider2D(Engine::CapsuleCollider2D& capsuleCol
     ImGui::DragFloat("Restitution", &capsuleCollider.Restitution, 0.01f, 0.0f, 1.0f);
     ImGui::Checkbox("Is Sensor", &capsuleCollider.IsSensor);
     ImGui::Checkbox("Enable Hit Events", &capsuleCollider.EnableHitEvents);
+    DrawCollisionFilterUI(capsuleCollider.CategoryBits, capsuleCollider.MaskBits, capsuleCollider.GroupIndex,
+        [&capsuleCollider](uint64_t c, uint64_t m, int32_t g) { capsuleCollider.SetFilter(c, m, g); });
 }
 
 void InspectorPanel::DrawCamera(Engine::CameraComponent& camComp, Engine::GameObject* entity) {
