@@ -14,6 +14,7 @@
 #include "Engine/Renderer/ShadowMap.h"
 #include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsQueries.h"
 #include "Engine/Scene/TerrainComponent.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Scene/Transform.h"
@@ -1628,6 +1629,18 @@ void Scene::OnRuntimeStop() {
     m_StaticCollidersDirty = true;
 }
 
+void Scene::OverlapCircleXZ(glm::vec2 centerXZ, float radius, uint64_t maskBits, std::vector<GameObject*>& outHits) const {
+    PhysicsQueries::OverlapCircleXZ(*this, centerXZ, radius, maskBits, outHits);
+}
+
+void Scene::OverlapArcXZ(glm::vec2 originXZ, glm::vec2 forwardXZ, float radius, float halfAngleDegrees, uint64_t maskBits, std::vector<GameObject*>& outHits) const {
+    PhysicsQueries::OverlapArcXZ(*this, originXZ, forwardXZ, radius, halfAngleDegrees, maskBits, outHits);
+}
+
+bool Scene::RaycastClosestXZ(glm::vec2 startXZ, glm::vec2 endXZ, uint64_t maskBits, RaycastHitXZ& outHit) const {
+    return PhysicsQueries::RaycastClosestXZ(*this, startXZ, endXZ, maskBits, outHit);
+}
+
 void Scene::UpdateRuntime(float deltaTime) {
     if (m_IsRuntimeRunning) {
         for (auto& go : m_GameObjects) {
@@ -1735,6 +1748,9 @@ void Scene::IntegrateVerticalElevation(float fixedDt) {
         auto* bc2d = go->GetComponent<BoxCollider2D>();
 
         if (rb2d && rb2d->Type == Rigidbody2D::BodyType::Dynamic && rb2d->UseGravityY) {
+            if (rb2d->IsStasisFrozen()) {
+                continue;
+            }
             rb2d->VerticalVelocity += (rb2d->GravityY * rb2d->GravityScaleY) * fixedDt;
             transform->position.y += rb2d->VerticalVelocity * fixedDt;
 

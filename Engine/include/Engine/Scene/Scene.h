@@ -34,6 +34,7 @@ class ParticleSystem;
 class UIPanel;
 class UILabel;
 class Prefab;
+struct RaycastHitXZ;
 
 struct SceneRenderContext {
     const PerspectiveCamera* activeCam = nullptr;
@@ -94,6 +95,12 @@ public:
     void OnRuntimeStop();
     void UpdateRuntime(float deltaTime);
     [[nodiscard]] bool IsRuntimeRunning() const noexcept { return m_IsRuntimeRunning; }
+    [[nodiscard]] uint32_t GetPhysicsWorldId() const noexcept { return m_PhysicsWorldId; }
+
+    // Spatial Physics Queries (PHY-05)
+    void OverlapCircleXZ(glm::vec2 centerXZ, float radius, uint64_t maskBits, std::vector<GameObject*>& outHits) const;
+    void OverlapArcXZ(glm::vec2 originXZ, glm::vec2 forwardXZ, float radius, float halfAngleDegrees, uint64_t maskBits, std::vector<GameObject*>& outHits) const;
+    bool RaycastClosestXZ(glm::vec2 startXZ, glm::vec2 endXZ, uint64_t maskBits, RaycastHitXZ& outHit) const;
 
     [[nodiscard]] const std::string& GetName() const noexcept { return m_Name; }
     void SetName(const std::string& name) { m_Name = name; }

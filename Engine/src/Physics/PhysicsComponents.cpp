@@ -18,6 +18,10 @@ bool Rigidbody2D::IsAirborne() const noexcept {
 }
 
 void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
+    if (m_IsStasisFrozen) {
+        m_QueuedStasisImpulseXZ += impulseXZ;
+        return;
+    }
     if (RuntimeBody) {
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
         if (b2Body_IsValid(bodyId)) {
@@ -29,6 +33,9 @@ void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
 }
 
 void Rigidbody2D::ApplyForceXZ(const glm::vec2& forceXZ, bool wake) {
+    if (m_IsStasisFrozen) {
+        return;
+    }
     if (RuntimeBody) {
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
         if (b2Body_IsValid(bodyId)) {
@@ -38,6 +45,10 @@ void Rigidbody2D::ApplyForceXZ(const glm::vec2& forceXZ, bool wake) {
 }
 
 void Rigidbody2D::SetVelocityXZ(const glm::vec2& velocityXZ) {
+    if (m_IsStasisFrozen) {
+        m_StasisCachedVelocityXZ = velocityXZ;
+        return;
+    }
     InitialLinearVelocityXZ = velocityXZ;
     if (RuntimeBody) {
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
@@ -48,6 +59,9 @@ void Rigidbody2D::SetVelocityXZ(const glm::vec2& velocityXZ) {
 }
 
 glm::vec2 Rigidbody2D::GetVelocityXZ() const noexcept {
+    if (m_IsStasisFrozen) {
+        return glm::vec2{ 0.0f, 0.0f };
+    }
     if (RuntimeBody) {
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
         if (b2Body_IsValid(bodyId)) {
@@ -56,6 +70,59 @@ glm::vec2 Rigidbody2D::GetVelocityXZ() const noexcept {
         }
     }
     return InitialLinearVelocityXZ;
+}
+
+void Rigidbody2D::SetStasisFrozen(bool frozen) {
+    if (m_IsStasisFrozen == frozen) return;
+    m_IsStasisFrozen = frozen;
+
+    if (RuntimeBody) {
+        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+        if (b2Body_IsValid(bodyId)) {
+            if (m_IsStasisFrozen) {
+                // Cache current dynamic velocity, angular velocity, and vertical elevation velocity
+                b2Vec2 vel = b2Body_GetLinearVelocity(bodyId);
+                m_StasisCachedVelocityXZ = { vel.x, vel.y };
+                m_StasisCachedAngularVelocity = b2Body_GetAngularVelocity(bodyId);
+                m_StasisCachedVerticalVelocity = VerticalVelocity;
+                m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
+
+                // Switch to kinematic and zero out velocities so body stays locked in place
+                b2Body_SetType(bodyId, b2_kinematicBody);
+                b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+                b2Body_SetAngularVelocity(bodyId, 0.0f);
+            } else {
+                // Restore original body type
+                b2BodyType originalType = b2_dynamicBody;
+                if (Type == BodyType::Static) originalType = b2_staticBody;
+                else if (Type == BodyType::Kinematic) originalType = b2_kinematicBody;
+
+                b2Body_SetType(bodyId, originalType);
+                b2Body_SetLinearVelocity(bodyId, b2Vec2{ m_StasisCachedVelocityXZ.x, m_StasisCachedVelocityXZ.y });
+                b2Body_SetAngularVelocity(bodyId, m_StasisCachedAngularVelocity);
+                VerticalVelocity = m_StasisCachedVerticalVelocity;
+
+                // Release and erupt all accumulated impulses
+                if (glm::length(m_QueuedStasisImpulseXZ) > 0.0f) {
+                    b2Body_ApplyLinearImpulseToCenter(bodyId, b2Vec2{ m_QueuedStasisImpulseXZ.x, m_QueuedStasisImpulseXZ.y }, true);
+                    m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
+                }
+            }
+        }
+    } else {
+        if (m_IsStasisFrozen) {
+            m_StasisCachedVelocityXZ = InitialLinearVelocityXZ;
+            m_StasisCachedVerticalVelocity = VerticalVelocity;
+            m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
+        } else {
+            InitialLinearVelocityXZ = m_StasisCachedVelocityXZ;
+            VerticalVelocity = m_StasisCachedVerticalVelocity;
+            if (glm::length(m_QueuedStasisImpulseXZ) > 0.0f) {
+                InitialLinearVelocityXZ += m_QueuedStasisImpulseXZ / GetMass();
+                m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
+            }
+        }
+    }
 }
 
 void Rigidbody2D::SetPositionXZ(const glm::vec2& worldXZ) {

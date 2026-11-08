@@ -383,7 +383,8 @@ void SerializeRigidbody2D(const GameObject* go, json& compsJson) {
         {"GroundRestitutionY", rb2d->GroundRestitutionY},
         {"AirborneClearanceHeight", rb2d->AirborneClearanceHeight},
         {"EnableAirbornePassThrough", rb2d->EnableAirbornePassThrough},
-        {"AirbornePassThroughMask", rb2d->AirbornePassThroughMask}
+        {"AirbornePassThroughMask", rb2d->AirbornePassThroughMask},
+        {"IsStasisFrozen", rb2d->IsStasisFrozen()}
     };
 }
 
@@ -877,6 +878,9 @@ void DeserializeRigidbody2D(GameObject* go, const json& rbJson, const std::strin
     rb2d->AirborneClearanceHeight = rbJson.value("AirborneClearanceHeight", 0.75f);
     rb2d->EnableAirbornePassThrough = rbJson.value("EnableAirbornePassThrough", true);
     rb2d->AirbornePassThroughMask = rbJson.value("AirbornePassThroughMask", PhysicsLayer::DefaultAirborneExcluded);
+    if (rbJson.value("IsStasisFrozen", false)) {
+        rb2d->SetStasisFrozen(true);
+    }
 }
 
 void DeserializeBoxCollider2D(GameObject* go, const json& bcJson, const std::string&) {

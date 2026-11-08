@@ -617,6 +617,18 @@ void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObje
         ImGui::DragFloat("Clearance Height", &rb2d.AirborneClearanceHeight, 0.05f, 0.0f, 10.0f, "%.2f m");
         ImGui::TextDisabled("Vault Status: %s", rb2d.IsAirbornePassThroughActive() ? "ACTIVE (Mid-Air Vault)" : "INACTIVE (Ground)");
     }
+
+    ImGui::Spacing();
+    ImGui::Text("Chronos Stasis (PHY-05)");
+    bool stasis = rb2d.IsStasisFrozen();
+    if (ImGui::Checkbox("Stasis Frozen", &stasis)) {
+        rb2d.SetStasisFrozen(stasis);
+    }
+    if (rb2d.IsStasisFrozen()) {
+        const glm::vec2& queued = rb2d.GetQueuedStasisImpulseXZ();
+        ImGui::TextColored(ImVec4(0.3f, 0.8f, 1.0f, 1.0f), "STASIS ACTIVE");
+        ImGui::TextDisabled("Queued Impulse: (%.2f, %.2f) N*s", queued.x, queued.y);
+    }
 }
 
 void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engine::GameObject* entity) {

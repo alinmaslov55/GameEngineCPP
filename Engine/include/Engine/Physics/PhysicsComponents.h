@@ -92,8 +92,20 @@ public:
     void ApplyLinearImpulseXZ(const glm::vec2& impulseXZ, bool wake = true) noexcept { ApplyImpulseXZ(impulseXZ, wake); }
     void ApplyLinearImpulseXZ(float ix, float iz, bool wake = true) noexcept { ApplyImpulseXZ(glm::vec2{ ix, iz }, wake); }
 
+    // Chronos Stasis
+    void SetStasisFrozen(bool frozen);
+    [[nodiscard]] bool IsStasisFrozen() const noexcept { return m_IsStasisFrozen; }
+    [[nodiscard]] const glm::vec2& GetQueuedStasisImpulseXZ() const noexcept { return m_QueuedStasisImpulseXZ; }
+
 private:
     bool m_AirbornePassThroughActive = false;
+
+    // Chronos Stasis state
+    bool m_IsStasisFrozen = false;
+    glm::vec2 m_StasisCachedVelocityXZ{ 0.0f, 0.0f };
+    float m_StasisCachedAngularVelocity = 0.0f;
+    float m_StasisCachedVerticalVelocity = 0.0f;
+    glm::vec2 m_QueuedStasisImpulseXZ{ 0.0f, 0.0f };
 };
 
 class BoxCollider2D : public Component {

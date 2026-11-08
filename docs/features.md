@@ -195,7 +195,7 @@ flowchart TD
 | **`PHY-02`** | Runtime Rigidbody Lifecycle & Force/Impulse API | `DONE` | **P0** | W2 | `PHY-01` | `ECS-04` (pool reset) | `PHY-03`, `TER-04` |
 | **`PHY-03`** | Contact Events, Sensor Triggers & Circle Shapes | `DONE` | **P0** | W3 | `PHY-02` | `AUD-02` (impact SFX) | `PHY-04`, `PHY-05`, `EDT-02` |
 | **`PHY-04`** | Collision Filter Masks & Elevation Pass-Through | `DONE` | **P1** | W4 | `PHY-03`, `ECS-05` | `AIX-02` (Jiangshi hop) | Airborne combat & clean pickup filtering |
-| **`PHY-05`** | Spatial Physics Queries & Selective Chronos Stasis | `TODO` | **P1** | W4 | `PHY-03` | `ECS-02` | `AIX-01`, Maul cleave, Chronos Rune |
+| **`PHY-05`** | Spatial Physics Queries & Selective Chronos Stasis | `DONE` | **P1** | W4 | `PHY-03` | `ECS-02` | `AIX-01`, Maul cleave, Chronos Rune |
 | **`INP-01`** | Edge-Triggered Input States & Action Binding Map | `TODO` | **P0** | W0 | *None (Root)* | `SAV-02` (save bindings) | `INP-02`, `UIX-04`, `SAV-02` |
 | **`INP-02`** | Ground-Plane Aim Resolver & Gamepad Haptics | `TODO` | **P1** | W1 | `INP-01`, `CAM-01` | `ECS-02` (pause mute) | Directional combat swings & drop placement |
 | **`LGT-01`** | Omnidirectional Point-Light Torch Shadow Casting | `TODO` | **P0** | W1 | `LGT-02` | `WindComponent` | `TER-03`, `RND-01` |
@@ -499,7 +499,7 @@ flowchart TD
 ---
 
 #### `PHY-05` — Spatial Physics Queries & Selective Chronos Stasis
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W4`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W4`
 - **Dependencies:** Hard: `PHY-03` | Unlocks: `AIX-01`, Cleave weapons, Thumper slams, Chronos Rune
 - **Proposed C++ Specification:**
   ```cpp
