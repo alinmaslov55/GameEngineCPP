@@ -1,90 +1,187 @@
 ================================================================================
-ENGINE PERFORMANCE OPTIMIZATION ROADMAP (ALGORITHMIC & MULTITHREADING)
+ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
 ================================================================================
 
-[P1] IMMEDIATE HIGH-ROI ALGORITHMIC & DATA-ORIENTED OPTIMIZATIONS
+[P0] CRITICAL CORRECTNESS BUGS & CONCURRENCY HAZARDS
 --------------------------------------------------------------------------------
-[x] 1. Camera & Shadow Frustum Culling
-    - Files: Engine/src/Scene/Scene.cpp, Engine/include/Engine/Renderer/PerspectiveCamera.h
-    - Details:
-      * Extract 6 frustum planes from ViewProjection matrix (Gribb-Hartmann method).
-      * Tilemap culling: Intersect camera frustum rays with Y=0 XZ plane to get tight [minX..maxX, minZ..maxZ] bounds and skip off-screen tiles (currently loops all WxH tiles every frame).
-      * Standee & Light culling: Fast SIMD sphere/AABB visibility test before adding to m_StandeeScratch and point light passes.
-    - Impact: 5x-20x reduction in CPU vertex submissions and GPU vertex processing on medium/large scenes.
+[x] 1. Fix Exponential MassMultiplier Runaway & Remove Per-Frame RegisterRuntimeBody Polling
+    - Files: Engine/src/Scene/Scene.cpp (lines 427-431, 1646-1650), Engine/include/Engine/Physics/PhysicsComponents.h
+    - Root Cause:
+      * Scene::UpdateRuntime() calls RegisterRuntimeBody(go.get()) on every active GameObject every frame.
+      * Inside RegisterRuntimeBody(), `massData.mass *= rb2d->MassMultiplier` compounds exponentially each frame (e.g., MassMultiplier = 2.0f becomes 2^60 after 60 frames -> Inf/NaN), and resets Box2D body damping/bullet flags redundantly every tick.
+    - Solution:
+      * Store unscaled base mass / inertia (or track m_AppliedMassMultiplier) so SetMassMultiplier() scales idempotently against base shape mass.
+      * Replace full-scene RegisterRuntimeBody() polling in UpdateRuntime() with a Physics Dirty-Flag / PendingSync set populated on AddComponent, RemoveComponent, or property setters.
+    - Verification (EngineTests): Step a Rigidbody2D with MassMultiplier = 2.5f and LinearDamping = 3.0f for 120 frames; assert GetMass() stays constant and velocity decays identically.
 
-[x] 2. Standee Render Command Caching & Motion Math Deduplication
-    - Files: Engine/src/Scene/Scene.cpp, Engine/include/Engine/Scene/Scene.h
-    - Details:
-      * Stop calling GetComponent<T>() up to 11 times per entity across GatherRenderContext, RenderPassShadowMap, and RenderPassCutoutStandees.
-      * Deduplicate ResolveStandeeMotion() which currently recalculates wind phase and proximity rustle twice per frame for every shadow-casting standee.
-      * Flatten into StandeeRenderCommand struct storing pointers, precomputed size/rot/wind/bend, and viewDepth.
-      * Schwartzian Transform for sorting: Precompute viewDepth once in O(N) rather than re-evaluating glm::dot in std::sort comparator (O(N log N) redundant math).
-    - Impact: 2x faster CPU Scene::Render preparation, removes RTTI dynamic_cast bottlenecks.
+[ ] 2. Fix Same-Frame Spawn-Then-Destroy Use-After-Free in FlushEntityLifecycleQueues()
+    - Files: Engine/src/Scene/Scene.cpp (lines 149-193, 1105-1161)
+    - Root Cause:
+      * If entity A (and optionally child B) is created while m_IsIteratingEntities == true (held in m_PendingSpawnQueue) and destroyed in the same frame via DestroyGameObject(), it gets pushed into m_PendingDestroyQueue as well.
+      * FlushEntityLifecycleQueues() Loop 1 calls OnDestroy() and clears m_PendingSpawnQueue (freeing heap memory), then Loop 2 iterates m_PendingDestroyQueue and dereferences the freed pointer (Use-After-Free + double OnDestroy()).
+    - Solution:
+      * Track explicit lifecycle state enum (PendingSpawn, Alive, PendingDestroy, Destroyed) on GameObject.
+      * Only append Alive entities to m_PendingDestroyQueue; entities in PendingSpawn only get marked m_PendingDestroy = true and torn down once during Pass 1.
+    - Verification (EngineTests): Spawn parent+child hierarchy inside Component::Update(), destroy parent in the same Update() call, run under AddressSanitizer / MSVC CRT heap check -> zero UAF and OnDestroy() count == 1.
 
-[x] 3. Ring-Buffered VBO Allocations in Renderer2D
-    - Files: Engine/src/Renderer/Renderer2D.cpp, Engine/include/Engine/Renderer/Buffer.h
-    - Details:
-      * Current issue: Renderer2D::Flush() is called 5+ times per frame (shadow, terrain, standees, particles, UI), writing to offset 0 with glBufferSubData while previous draw calls may still be in-flight on GPU.
-      * Allocate VBO with 3x capacity and monotonically increment vertex offset (m_CurrentVertexOffset), wrapping only between frames, or implement persistent mapped buffers (glBufferStorage + GL_MAP_PERSISTENT_BIT).
-    - Impact: Eliminates GPU driver CPU stalls and internal driver buffer ghosting.
+[ ] 3. Add Iteration Guard & Flush Around FixedUpdate + Convert Flag to Reentrant Counter
+    - Files: Engine/src/Scene/Scene.cpp (lines 1166-1175, 1673-1678, 1835-2039), Engine/include/Engine/Scene/Scene.h
+    - Root Cause:
+      * Scene::UpdateRuntime() invokes go->FixedUpdate(fixedDt) without setting m_IsIteratingEntities = true or flushing queues afterward, allowing mid-loop m_GameObjects vector mutation/UB if FixedUpdate() spawns or destroys entities.
+      * Nested loops manually toggling `bool m_IsIteratingEntities` can reset the outer scope's flag prematurely.
+    - Solution:
+      * Replace `bool m_IsIteratingEntities` with `uint32_t m_IterationDepth` + RAII `ScopedIterationGuard` wrapping Update(), FixedUpdate(), and ProcessPhysicsEvents(), auto-flushing queues when depth returns to 0.
+    - Verification (EngineTests): Spawn and destroy pooled/runtime entities inside Component::FixedUpdate() across 30 frames with zero skipped iterations or crashes.
 
-[x] 4. Direct Quad Emission for Ground Tiles
-    - Files: Engine/src/Scene/Scene.cpp, Engine/src/Renderer/Renderer2D.cpp
-    - Details:
-      * Bypass 4x4 matrix multiplication (glm::translate * groundFlatRotation * glm::scale) for every tilemap quad.
-      * Add dedicated Renderer2D::DrawGroundTile(center, sizeXZ, subTexture, ...) directly calculating XZ corner positions.
-    - Impact: Saves 4 matrix-vector multiplies per tile, streamlining ground rendering.
+[ ] 4. Fix GameObject::m_Components Loop Reallocation UB & Vector Shifting Skips
+    - Files: Engine/include/Engine/Scene/GameObject.h (lines 117-203), Engine/src/Scene/GameObject.cpp (lines 19-53)
+    - Root Cause:
+      * Update(), FixedUpdate(), LateUpdate(), ProcessPendingStarts(), and NotifyHierarchyActiveChanged() use range-based for loops over m_Components. Calling AddComponent<T>() or RemoveComponent<T>() on `this` inside Start()/Update()/OnCollisionEnter2D() invalidates iterators or skips shifted indices.
+      * DispatchCollision*/DispatchTrigger* checks IsActiveInHierarchy() only at entry, not if an earlier component disables or destroys the owner mid-dispatch.
+    - Solution:
+      * Iterate using index-based loops checking `i < m_Components.size()` and `IsActiveInHierarchy()` (or small-buffer deferred component removal queue).
+    - Verification (EngineTests): Component A adds Component B and removes itself during Update() and OnCollisionEnter2D(); verify B runs cleanly with zero iterator invalidation.
+
+[ ] 5. Fix Data Race on Transform::m_CachedWorldMatrix in DrawStandeesParallel & Thread-Safe UUIDs
+    - Files: Engine/src/Renderer/Renderer2D.cpp (lines 744-757), Engine/include/Engine/Scene/Transform.h, Engine/src/Scene/Transform.cpp, Engine/src/Scene/Object.cpp (lines 6-11), Engine/src/Scene/Scene.cpp (line 2287)
+    - Root Cause:
+      * DrawStandeesParallel runs on JobSystem worker threads and calls cmd.transform->GetWorldPosition() / GetWorldRotation(). Transform::GetWorldMatrix() mutates unsynchronized `mutable` fields (`m_WorldDirty`, `m_CachedWorldMatrix`, `m_LastPosition`). Parented standees trigger concurrent read/write races on worker threads.
+      * Object.cpp::GenerateUUID() uses shared static `std::mt19937_64` without locking.
+    - Solution:
+      * Precompute `worldPosition` (interpolated via `m_PhysicsAlpha` to complete ECS-02 visual smoothing!) and `worldRotation` once on the main thread inside Scene::GatherRenderContext() into StandeeRenderCommand.
+      * Mark DrawStandeesParallel read-only against POD command fields; change `GenerateUUID()` RNG to `thread_local std::mt19937_64`.
+    - Verification (EngineTests): Render parented hierarchical standees across multi-threaded JobSystem with ThreadSanitizer/concurrent stress test -> zero data races and smooth sub-frame alpha interpolation.
+
+[ ] 6. Fix Missed-Wakeup Race & False Sharing in JobSystem
+    - Files: Engine/include/Engine/Core/JobSystem.h, Engine/src/Core/JobSystem.cpp (lines 204-295), Engine/include/Engine/Scene/Scene.h (line 136)
+    - Root Cause:
+      * SubmitJob() calls `m_WakeCV.notify_one()` WITHOUT holding `m_WakeMutex`, while WorkerLoop evaluates `HasPendingWork()` scanning N worker queue mutexes sequentially inside cv.wait(). A notification occurring after HasPendingWork() checked queue[0] and before kernel park can be lost, stranding workers.
+      * Scene::Box2DTask (16 bytes) and JobSystem::WorkerQueue lack cache-line alignment, causing false sharing across atomic counters.
+    - Solution:
+      * Maintain `std::atomic<size_t> m_PendingJobs{0}` (plus `m_WaitingWorkers` atomic counter) and acquire `m_WakeMutex` around notification when waiters exist, eliminating lock-per-queue scanning and lost wakeups.
+      * Apply `alignas(64)` to `Box2DTask` and `WorkerQueue`.
+    - Verification (EngineTests): High-frequency single-job producer-consumer stress test (100k micro-dispatches with 1-8 workers) completes reliably with zero hangs.
+
+[ ] 7. Fix Chronos Stasis Initialization on OnRuntimeStart & Non-Runtime Fallback Bugs
+    - Files: Engine/src/Scene/Scene.cpp (lines 236-260), Engine/src/Physics/PhysicsComponents.cpp (line 121), Engine/src/Physics/PhysicsQueries.cpp (lines 62-99, 180-264)
+    - Root Cause:
+      * RegisterRuntimeBody() creates bodies as `b2_dynamicBody` even if `rb2d->IsStasisFrozen() == true` (e.g., loaded via SceneSerializer/Prefab prior to OnRuntimeStart()).
+      * PhysicsQueries non-runtime fallback ignores Transform world position/scale/rotation, fails if ray origin starts inside a circle (t1 < 0), and omits CapsuleCollider2D and Tilemap in RaycastClosestXZ().
+    - Solution:
+      * Check `rb2d->IsStasisFrozen()` in RegisterRuntimeBody() to spawn directly as `b2_kinematicBody` with zero velocity while preserving `m_StasisCached*`.
+      * Clamp denominator `std::max(GetMass(), 1e-4f)` on offline queued stasis impulse unfreeze.
+      * Update PhysicsQueries non-runtime fallbacks to use GetWorldPosition(), scaleXZ, CapsuleCollider2D slab/segment intersection, and t=0 containment handling.
+    - Verification (EngineTests): Deserialize a stasis-frozen enemy, call OnRuntimeStart(), step 60 frames -> remains suspended; run PhysicsQueries unit tests in both runtime and non-runtime modes.
 
 
-[P2] SPATIAL PARTITIONING & COLLISION SCALING
+[P1] CLASS SIMPLIFICATIONS & DESIGN PATTERN REFACTORINGS
 --------------------------------------------------------------------------------
-[x] 5. 2D Spatial Hash Grid for Ground Plane Collisions & Rustle
-    - Files: Engine/src/Scene/Scene.cpp, Engine/include/Engine/Scene/Scene.h
+[ ] 8. Extract Collider2D Base Class (Template Method Pattern) & Type-Safe Physics Handles
+    - Files: Engine/include/Engine/Physics/PhysicsComponents.h, Engine/src/Physics/PhysicsComponents.cpp, Engine/src/Scene/Scene.cpp, Engine/include/Engine/Scene/Tilemap.h
+    - Smell Eliminated:
+      * BoxCollider2D, CircleCollider2D, and CapsuleCollider2D duplicate ~220 lines of identical OnEnable/OnDisable/OnDestroy/SetFilter/SetCategoryBits/SetMaskBits/SetGroupIndex methods and inconsistent casing (`density`/`RuntimeFixture` vs `Density`/`RuntimeShape`).
+      * RegisterRuntimeBody() duplicates Box/Circle/Capsule creation twice under `if (rb2d)` and `else if (colliders)` (~335 lines).
+      * BoxCollider2D retains dead vertical Y fields (`verticalVelocity`, `gravity`, `groundLevel`, `useGravity`, `isDynamic`) superseded by Rigidbody2D in PHY-01.
+      * Raw `void*` handles require brittle `reinterpret_cast<void*>(static_cast<uintptr_t>(...))` casts that break 32-bit portability and allow BodyId/ShapeId mix-ups.
+    - Solution:
+      * Introduce `class Collider2D : public Component` holding shared material/filter/sensor properties, unified lifecycle hooks, and a pure virtual `BuildShapeDefAndCreate(b2BodyId, const Transform&, GameObject*)`.
+      * Introduce trivial 64-bit value structs `BodyHandle` and `ShapeHandle` in `PhysicsHandles.h` (zero Box2D header leak into Engine public headers).
+      * Unify RegisterRuntimeBody() to resolve/create `b2BodyId` once, then loop attached `Collider2D` components polymorphically; remove duplicate BoxCollider2D Y-gravity fields (migrate Inspector/Serializer cleanly).
+    - Pattern Applied: Template Method + Handle Wrapper.
+
+[ ] 9. Enforce Open/Closed Component Pool Reset Hook (`OnPoolReset`) & Deep Subtree Pooling
+    - Files: Engine/include/Engine/Scene/Component.h, Engine/src/Scene/Scene.cpp (lines 838-1006)
+    - Smell / Bug Eliminated:
+      * ReleaseToPool() and AcquirePooled() violate OCP with hardcoded `GetComponent<T>()` chains for Rigidbody2D, Colliders, and ParticleSystem—missing Animator, SquashStretchComponent, `m_IsStasisFrozen`, `m_QueuedStasisImpulseXZ`, and `m_AirbornePassThroughActive`!
+      * ReleaseToPool() only resets ParticleSystem on 1st-level children, missing grandchildren; AcquirePooled() overwrites `InitialLinearVelocityXZ` when dynamically growing the pool mid-runtime and skips child Transform::SnapshotPrevious().
+    - Solution:
+      * Add `virtual void OnPoolAcquire()` and `virtual void OnPoolRelease()` hooks on Component, letting Rigidbody2D (clear stasis, vault flag, velocities), Collider2D (reset filter mask & body sleep), ParticleSystem, SquashStretchComponent, and Animator reset cleanly.
+      * Recursively propagate Acquire/Release hooks + `SnapshotPrevious()` across the entire Transform subtree.
+      * Add `bool m_InFreeList` on GameObject to replace O(N) `std::find` in `freeList`.
+    - Pattern Applied: Polymorphic Resettable Hook (OCP).
+
+[ ] 10. Decompose Scene "God Class" (2,582 LOC -> Cohesive Subsystems)
+    - Files: Engine/include/Engine/Scene/Scene.h, Engine/src/Scene/Scene.cpp -> New: Engine/include/Engine/Physics/PhysicsWorld2D.h/.cpp, Engine/include/Engine/Scene/EntityPoolManager.h/.cpp, Engine/include/Engine/Renderer/SceneRenderer.h/.cpp
+    - Smell Eliminated:
+      * Scene currently couples 5 unrelated domains (ECS/UUID storage, Prefab/Object pools, Box2D simulation + task pool + contact events, edit-mode spatial hash grid, and 5-pass 2.5D Diorama OpenGL rendering), inflating rebuild times (`Scene.h` pulls `<box2d/types.h>` everywhere).
+    - Solution:
+      * Extract `PhysicsWorld2D`: owns Box2D world, `m_Box2DTasks` pool, dense physics body table, event pump, vertical elevation integrator, and query facade.
+      * Extract `EntityPoolManager`: manages `m_EntityPools` storage and acquire/release lifecycle.
+      * Extract `SceneRenderer`: owns render scratch buffers and renders ShadowMap / GroundPlane / CutoutStandees / Particles / ScreenUI.
+      * Keep `Scene` as a focused ~500 LOC ECS coordinator/facade.
+    - Pattern Applied: Subsystem / Facade Pattern (SRP & DIP).
+
+[ ] 11. Align EntityLayer & PhysicsLayer Bit Offsets + Fix Child-Collider Transform Sync
+    - Files: Engine/include/Engine/Scene/EntityTag.h (lines 24-36), Engine/include/Engine/Physics/PhysicsLayer.h (lines 9-53), Engine/src/Scene/Scene.cpp (lines 245-247, 1707-1724)
     - Details:
-      * Current issue: Scene::ResolveEntityCollisions() evaluates O(N_dyn * N_stat) collider pairs with nested loops.
-      * Implement a 2D uniform grid (e.g. 2m x 2m cells on XZ plane). Static colliders register once; dynamic entities query 4-9 neighboring cells.
-      * Use spatial grid for foliage interactors in EvaluateProximityBend() so grass tufts only check interactors within 1.2m radius.
-    - Impact: Reduces collision detection complexity from O(N^2) to O(N).
+      * Align identical bit indices `(1 << 0 .. 1 << 9)` between `EntityLayer` and `PhysicsLayer` so `FromEntityLayer` / `ToEntityLayer` become branchless bit casts rather than 10 `if` chains.
+      * Synchronize Box2D transforms via `SetWorldPosition()` (and `Transform::SetDirty()`) if an entity with a Rigidbody2D is parented, rather than writing Box2D world coordinates directly into local `transform->position`.
 
 
-[P3] MULTITHREADING & ASYNC PIPELINE ARCHITECTURE
+[P2] HOT-PATH DATA-ORIENTED OPTIMIZATIONS & ALLOCATION REMOVAL
 --------------------------------------------------------------------------------
-[x] 6. C++20 Work-Stealing JobSystem (std::jthread)
-    - Files: Engine/include/Engine/Core/JobSystem.h, Engine/src/Core/JobSystem.cpp
+[ ] 12. Eliminate RTTI dynamic_cast in GameObject::GetComponent<T>()
+    - Files: Engine/include/Engine/Scene/Component.h, Engine/include/Engine/Scene/GameObject.h (lines 40-48, 205-237)
+    - Root Cause:
+      * Whenever `ComponentMask128` bit matches, `GetComponent<T>()` and `GetComponents<T>()` perform a linear scan executing slow C++ RTTI `dynamic_cast<T*>()` per component. Hot paths invoke this tens of thousands of times per second.
+    - Solution:
+      * Cache `uint16_t m_TypeId` on each Component during `AddComponent<T>()`.
+      * In `GetComponent<T>()`, compare `comp->GetTypeID() == Detail::GetComponentTypeID<T>()` cleanly for exact types (falling back to `dynamic_cast` only for base-class polymorphic queries via `std::is_final_v` or an `exact_match` vs `base` fast path, or storing base mask).
+    - Expected Impact: Eliminates RTTI string/typeinfo tree traversal on all hot component lookups.
+
+[ ] 13. Maintain Dense Contiguous Physics Registry & Sync Only Moved Bodies via b2World_GetBodyEvents
+    - Files: Engine/src/Scene/Scene.cpp (lines 1663-1798)
+    - Root Cause:
+      * Each physics substep (up to 6x/frame) loops over ALL `m_GameObjects` (including hundreds of static grass tufts, trees, and inactive UI objects) 5 separate times: PreviousSnapshot, FixedUpdate, Pre-Step Airborne Check, Post-Step Box2D Sync, and IntegrateVerticalElevation (including duplicate Airborne Check!).
+    - Solution:
+      * Maintain a dense contiguous `std::vector<PhysicsBodyEntry>` (`{GameObject*, Transform*, Rigidbody2D*, b2BodyId}`) inside `PhysicsWorld2D` so physics never iterates non-physics entities or sleeping static props.
+      * Replace Pass 4 full-entity Box2D->Transform loop with Box2D v3's `b2World_GetBodyEvents(worldId)` (`moveEvents`), syncing transforms in O(actually moved dynamic bodies).
+      * Deduplicate the Airborne Pass-Through check (run once right after `IntegrateVerticalElevation` + handle mid-air `SetMaskBits` calls respecting `IsAirbornePassThroughActive()`).
+      * Optional: Parallelize pure math vertical integration across dense entries via `JobSystem::ParallelForBatched` (collecting only threshold-crossing entities for main-thread `b2Shape_SetFilter`).
+    - Expected Impact: 5x-15x faster physics sync & elevation step on cluttered diorama scenes with 300+ standees.
+
+[ ] 14. Eliminate Per-Step & Per-Query Dynamic Heap Allocations (Zero-Allocation Hot Paths)
+    - Files: Engine/src/Scene/Scene.cpp (lines 1831-1915), Engine/src/Physics/PhysicsQueries.cpp (lines 17-37, 41-141), Engine/include/Engine/Core/JobSystem.h (lines 114-185)
     - Details:
-      * Thread pool with (hardware_concurrency - 1) worker threads using std::jthread and cooperative cancellation.
-      * Support parallel_for, task chaining, and std::latch synchronization.
-
-[x] 7. Parallel Standee & Particle Vertex Generation
-    - Files: Engine/src/Scene/Scene.cpp, Engine/src/Renderer/Renderer2D.cpp
-    - Details:
-      * Pre-assign texture slots on main thread.
-      * Parallelize billboard corner transformations and QuadVertex buffer filling across worker threads into non-overlapping memory slices.
-      * Main thread performs single glBufferSubData + glDrawElements once workers finish.
-    - Impact: 3x-6x speedup in CPU-side frame rendering preparation.
-
-[x] 8. Enable Built-in Box2D v3 Worker Multithreading
-    - Files: Engine/src/Scene/Scene.cpp
-    - Details:
-      * Hook JobSystem into b2WorldDef (enqueueTask, finishTask, workerCount).
-      * Box2D v3 natively parallelizes physics island solving and contact generation across worker threads.
-    - Impact: Physics simulation scales across all CPU cores.
-
-[x] 9. Asynchronous Texture Loading & Cutout Processing
-    - Files: Engine/src/Core/ResourceManager.cpp, Engine/src/Utils/CutoutProcessor.cpp
-    - Details:
-      * Offload stbi_load and CutoutProcessor::ProcessFile from main thread into background tasks.
-      * Return placeholder 1x1 texture immediately; swap OpenGL texture handle on main thread via PendingUploads queue upon completion.
-    - Impact: Eliminates main thread frame hitching / stuttering during scene or asset load.
+      * `ProcessPhysicsEvents()`: Allocate persistent `m_ContactedPairsScratch` (sorted uint64 key vector or reusable hash set) instead of constructing a fresh `std::unordered_set` every substep; early-return before allocation when all Box2D event counts are 0.
+      * `PhysicsQueries::OverlapCircleXZ()`: Replace per-call `std::unordered_set<GameObject*>` inside `OverlapContext` with O(1) linear dedup for small N (`<= 32`, stack-allocated small buffer / `outHits` scan) or a reusable query stamp array/scratch set.
+      * `PhysicsQueries::OverlapArcXZ()`: Filter `outHits` in place with `std::erase_if` instead of allocating a temporary `std::vector<GameObject*> candidates`.
+      * `JobSystem::ParallelFor`: Avoid `std::make_shared<JobState>` + per-job `std::mutex` + `std::vector` heap allocations for synchronous latch-guarded chunks by using a lightweight stack-allocated/pooled `ParallelTaskPacket`.
+    - Expected Impact: Zero per-frame heap allocations during combat hitboxes, broadphase queries, contact dispatch, and parallel loops.
 
 
-[P4] GPU PIPELINE & SHADER MODERNIZATION
+[P3] CODE HYGIENE, THREAD AFFINITY & SERIALIZATION POLISH
 --------------------------------------------------------------------------------
-[x] 10. Bufferless Fullscreen Triangle for Post-Processing & Bloom
-    - Files: Engine/src/Renderer/PostProcessor.cpp, Sandbox/assets/shaders/PostProcess_*.glsl
+[ ] 15. Fix Scene::FlushEntityLifecycleQueues() Static-Dirty Heuristic & Pooling Vector Reuse
+    - Files: Engine/src/Scene/Scene.cpp (lines 1105-1161, 159-188)
     - Details:
-      * Replace 6-vertex quad VAO/VBO for post-processing with glDrawArrays(GL_TRIANGLES, 0, 3) using gl_VertexID in vertex shader.
-      * Eliminates VAO/VBO bindings and avoids GPU quad diagonal seam warp occupancy penalty.
-    - Impact: Improves post-processing rasterization efficiency and reduces driver state changes.
+      * In `FlushEntityLifecycleQueues()`, spawn checks blindly set `m_StaticCollidersDirty = true` for every non-physics entity; refine to set dirty only when a static `Collider2D`/`Tilemap` spawns or moves.
+      * Reuse `m_TempChildrenScratch` or index-iterate children cleanly in `DestroyGameObject()` / `ReleaseToPool()` rather than copying `std::vector<Transform*>` at every hierarchy node.
+
+[ ] 16. Main-Thread Affinity Assertions & Safe Release Guard on ComponentMask128 Limit
+    - Files: Engine/include/Engine/Scene/GameObject.h (lines 33-38), Engine/src/Scene/Scene.cpp, Engine/src/Physics/PhysicsComponents.cpp
+    - Details:
+      * Promote `GetNextComponentTypeID() < 128` from debug-only `assert` to a logged fatal error guard in Release so overflow cannot fail silently.
+      * Record `m_OwnerThreadId` on Scene / PhysicsWorld2D in debug builds and assert main-thread affinity before mutating Box2D world or entity lifecycle queues.
+
+[ ] 17. Serializer Completeness & Deterministic Prefab Test Isolation
+    - Files: Engine/src/Scene/SceneSerializer.cpp (lines 368-389, 865-884), Tests/src/Scene/PrefabAndPoolingTests.cpp (line 66)
+    - Details:
+      * Serialize/deserialize `Transform` with `SetDirty()` + `SnapshotPrevious()` on load, and optionally serialize `InitialLinearVelocityXZ` & `VerticalVelocity` for full mid-air save-state restoration (`SAV-02` prep).
+      * Update `PrefabAndPoolingTests` to write `test_brazier.prefab` to `std::filesystem::temp_directory_path()` instead of mutating tracked `assets/test_brazier.prefab` in the repo working tree on every test run.
+
+
 ================================================================================
-
+[COMPLETED BASELINE] PRIOR OPTIMIZATION ROADMAP (ALL 10 ITEMS SHIPPED)
+================================================================================
+[x] P1.1 Camera & Shadow Frustum Culling (Scene.cpp, PerspectiveCamera.h)
+[x] P1.2 Standee Render Command Caching & Motion Math Deduplication
+[x] P1.3 Ring-Buffered VBO Allocations & Buffer Orphaning in Renderer2D
+[x] P1.4 Direct Quad Emission for Ground Tiles (DrawGroundTile)
+[x] P2.5 2D Uniform Spatial Hash Grid for Ground Collisions & Foliage Rustle
+[x] P3.6 C++20 Work-Stealing JobSystem (std::jthread)
+[x] P3.7 Parallel Standee & Particle Vertex Generation
+[x] P3.8 Built-in Box2D v3 Worker Multithreading Bridge
+[x] P3.9 Asynchronous Texture Loading & Cutout Processing
+[x] P4.10 Bufferless Fullscreen Triangle for Post-Processing & Bloom
+================================================================================

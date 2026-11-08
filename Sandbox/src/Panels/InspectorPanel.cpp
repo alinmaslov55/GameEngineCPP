@@ -13,6 +13,7 @@
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Scene/EntityTag.h>
+#include <Engine/Scene/Scene.h>
 #include <Engine/Utils/Logger.h>
 
 #include <imgui.h>
@@ -566,7 +567,6 @@ void InspectorPanel::DrawSquashStretch(Engine::SquashStretchComponent& ss, Engin
 }
 
 void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObject* entity) {
-    (void)entity;
     const char* bodyTypeStrings[] = { "Static", "Dynamic", "Kinematic" };
     const char* currentBodyTypeString = bodyTypeStrings[static_cast<int>(rb2d.Type)];
 
@@ -575,6 +575,7 @@ void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObje
             const bool isSelected = (currentBodyTypeString == bodyTypeStrings[i]);
             if (ImGui::Selectable(bodyTypeStrings[i], isSelected)) {
                 rb2d.Type = static_cast<Engine::Rigidbody2D::BodyType>(i);
+                if (entity && entity->GetScene()) entity->GetScene()->MarkPhysicsDirty(entity);
             }
             if (isSelected) {
                 ImGui::SetItemDefaultFocus();
@@ -582,7 +583,9 @@ void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObje
         }
         ImGui::EndCombo();
     }
-    ImGui::Checkbox("Fixed Rotation (Lock Yaw)", &rb2d.FixedRotation);
+    if (ImGui::Checkbox("Fixed Rotation (Lock Yaw)", &rb2d.FixedRotation)) {
+        if (entity && entity->GetScene()) entity->GetScene()->MarkPhysicsDirty(entity);
+    }
     if (ImGui::DragFloat("Linear Damping", &rb2d.LinearDamping, 0.1f, 0.0f, 50.0f, "%.2f")) {
         rb2d.SetLinearDampingRuntime(rb2d.LinearDamping);
     }
@@ -632,14 +635,17 @@ void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObje
 }
 
 void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engine::GameObject* entity) {
-    (void)entity;
-    ImGui::DragFloat2("Size (Width X, Depth Z)", &boxCollider.size.x, 0.05f, 0.01f, 100.0f);
-    ImGui::DragFloat2("Offset (X, Z)", &boxCollider.offset.x, 0.05f);
-    ImGui::DragFloat("Density", &boxCollider.density, 0.01f, 0.0f, 100.0f);
-    ImGui::DragFloat("Friction", &boxCollider.friction, 0.01f, 0.0f, 1.0f);
-    ImGui::DragFloat("Restitution (XZ)", &boxCollider.restitution, 0.01f, 0.0f, 1.0f);
-    ImGui::Checkbox("Is Sensor", &boxCollider.IsSensor);
-    ImGui::Checkbox("Enable Hit Events", &boxCollider.EnableHitEvents);
+    bool dirty = false;
+    dirty |= ImGui::DragFloat2("Size (Width X, Depth Z)", &boxCollider.size.x, 0.05f, 0.01f, 100.0f);
+    dirty |= ImGui::DragFloat2("Offset (X, Z)", &boxCollider.offset.x, 0.05f);
+    dirty |= ImGui::DragFloat("Density", &boxCollider.density, 0.01f, 0.0f, 100.0f);
+    dirty |= ImGui::DragFloat("Friction", &boxCollider.friction, 0.01f, 0.0f, 1.0f);
+    dirty |= ImGui::DragFloat("Restitution (XZ)", &boxCollider.restitution, 0.01f, 0.0f, 1.0f);
+    dirty |= ImGui::Checkbox("Is Sensor", &boxCollider.IsSensor);
+    dirty |= ImGui::Checkbox("Enable Hit Events", &boxCollider.EnableHitEvents);
+    if (dirty && entity && entity->GetScene()) {
+        entity->GetScene()->MarkPhysicsDirty(entity);
+    }
     DrawCollisionFilterUI(boxCollider.CategoryBits, boxCollider.MaskBits, boxCollider.GroupIndex,
         [&boxCollider](uint64_t c, uint64_t m, int32_t g) { boxCollider.SetFilter(c, m, g); });
     ImGui::Separator();
@@ -652,28 +658,34 @@ void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engin
 }
 
 void InspectorPanel::DrawCircleCollider2D(Engine::CircleCollider2D& circleCollider, Engine::GameObject* entity) {
-    (void)entity;
-    ImGui::DragFloat("Radius", &circleCollider.Radius, 0.05f, 0.01f, 50.0f);
-    ImGui::DragFloat2("Offset (X, Z)", &circleCollider.OffsetXZ.x, 0.05f);
-    ImGui::DragFloat("Density", &circleCollider.Density, 0.01f, 0.0f, 100.0f);
-    ImGui::DragFloat("Friction", &circleCollider.Friction, 0.01f, 0.0f, 1.0f);
-    ImGui::DragFloat("Restitution", &circleCollider.Restitution, 0.01f, 0.0f, 1.0f);
-    ImGui::Checkbox("Is Sensor", &circleCollider.IsSensor);
-    ImGui::Checkbox("Enable Hit Events", &circleCollider.EnableHitEvents);
+    bool dirty = false;
+    dirty |= ImGui::DragFloat("Radius", &circleCollider.Radius, 0.05f, 0.01f, 50.0f);
+    dirty |= ImGui::DragFloat2("Offset (X, Z)", &circleCollider.OffsetXZ.x, 0.05f);
+    dirty |= ImGui::DragFloat("Density", &circleCollider.Density, 0.01f, 0.0f, 100.0f);
+    dirty |= ImGui::DragFloat("Friction", &circleCollider.Friction, 0.01f, 0.0f, 1.0f);
+    dirty |= ImGui::DragFloat("Restitution", &circleCollider.Restitution, 0.01f, 0.0f, 1.0f);
+    dirty |= ImGui::Checkbox("Is Sensor", &circleCollider.IsSensor);
+    dirty |= ImGui::Checkbox("Enable Hit Events", &circleCollider.EnableHitEvents);
+    if (dirty && entity && entity->GetScene()) {
+        entity->GetScene()->MarkPhysicsDirty(entity);
+    }
     DrawCollisionFilterUI(circleCollider.CategoryBits, circleCollider.MaskBits, circleCollider.GroupIndex,
         [&circleCollider](uint64_t c, uint64_t m, int32_t g) { circleCollider.SetFilter(c, m, g); });
 }
 
 void InspectorPanel::DrawCapsuleCollider2D(Engine::CapsuleCollider2D& capsuleCollider, Engine::GameObject* entity) {
-    (void)entity;
-    ImGui::DragFloat2("Center 1 (X, Z)", &capsuleCollider.Center1.x, 0.05f);
-    ImGui::DragFloat2("Center 2 (X, Z)", &capsuleCollider.Center2.x, 0.05f);
-    ImGui::DragFloat("Radius", &capsuleCollider.Radius, 0.05f, 0.01f, 50.0f);
-    ImGui::DragFloat("Density", &capsuleCollider.Density, 0.01f, 0.0f, 100.0f);
-    ImGui::DragFloat("Friction", &capsuleCollider.Friction, 0.01f, 0.0f, 1.0f);
-    ImGui::DragFloat("Restitution", &capsuleCollider.Restitution, 0.01f, 0.0f, 1.0f);
-    ImGui::Checkbox("Is Sensor", &capsuleCollider.IsSensor);
-    ImGui::Checkbox("Enable Hit Events", &capsuleCollider.EnableHitEvents);
+    bool dirty = false;
+    dirty |= ImGui::DragFloat2("Center 1 (X, Z)", &capsuleCollider.Center1.x, 0.05f);
+    dirty |= ImGui::DragFloat2("Center 2 (X, Z)", &capsuleCollider.Center2.x, 0.05f);
+    dirty |= ImGui::DragFloat("Radius", &capsuleCollider.Radius, 0.05f, 0.01f, 50.0f);
+    dirty |= ImGui::DragFloat("Density", &capsuleCollider.Density, 0.01f, 0.0f, 100.0f);
+    dirty |= ImGui::DragFloat("Friction", &capsuleCollider.Friction, 0.01f, 0.0f, 1.0f);
+    dirty |= ImGui::DragFloat("Restitution", &capsuleCollider.Restitution, 0.01f, 0.0f, 1.0f);
+    dirty |= ImGui::Checkbox("Is Sensor", &capsuleCollider.IsSensor);
+    dirty |= ImGui::Checkbox("Enable Hit Events", &capsuleCollider.EnableHitEvents);
+    if (dirty && entity && entity->GetScene()) {
+        entity->GetScene()->MarkPhysicsDirty(entity);
+    }
     DrawCollisionFilterUI(capsuleCollider.CategoryBits, capsuleCollider.MaskBits, capsuleCollider.GroupIndex,
         [&capsuleCollider](uint64_t c, uint64_t m, int32_t g) { capsuleCollider.SetFilter(c, m, g); });
 }

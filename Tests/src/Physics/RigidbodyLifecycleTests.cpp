@@ -253,3 +253,69 @@ TEST_F(RigidbodyLifecycleTest, MassMultiplierAndBulletCCD) {
 
     scene.OnRuntimeStop();
 }
+
+TEST_F(RigidbodyLifecycleTest, MassMultiplierRemainsConstantAcross120FramesAndVelocityDecaysIdentically) {
+    Engine::Scene scene("MassMultiplierStabilityScene");
+
+    // 1. Body scaled via MassMultiplier = 2.5f (base shape 1x1 @ density 1.0 -> base mass 1.0 kg, scaled 2.5 kg)
+    auto* goScaled = scene.CreateGameObject("ScaledBody");
+    goScaled->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* rbScaled = goScaled->AddComponent<Engine::Rigidbody2D>();
+    rbScaled->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rbScaled->FixedRotation = true;
+    rbScaled->MassMultiplier = 2.5f;
+    rbScaled->LinearDamping = 3.0f;
+    auto* bcScaled = goScaled->AddComponent<Engine::BoxCollider2D>();
+    bcScaled->size = { 1.0f, 1.0f };
+    bcScaled->density = 1.0f;
+
+    // 2. Reference body with MassMultiplier = 1.0f and unscaled shape density = 2.5f (exact 2.5 kg mass)
+    auto* goRef = scene.CreateGameObject("ReferenceBody");
+    goRef->GetTransform()->position = { 0.0f, 0.0f, 10.0f };
+    auto* rbRef = goRef->AddComponent<Engine::Rigidbody2D>();
+    rbRef->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rbRef->FixedRotation = true;
+    rbRef->MassMultiplier = 1.0f;
+    rbRef->LinearDamping = 3.0f;
+    auto* bcRef = goRef->AddComponent<Engine::BoxCollider2D>();
+    bcRef->size = { 1.0f, 1.0f };
+    bcRef->density = 2.5f;
+
+    scene.OnRuntimeStart();
+
+    EXPECT_EQ(scene.GetPendingPhysicsSyncCount(), 0u);
+    EXPECT_NEAR(rbScaled->GetMass(), 2.5f, 1e-4f);
+    EXPECT_NEAR(rbRef->GetMass(), 2.5f, 1e-4f);
+
+    // Apply identical impulse (25 N*s -> 10 m/s initial velocity for 2.5 kg mass)
+    rbScaled->ApplyImpulseXZ({ 25.0f, 0.0f });
+    rbRef->ApplyImpulseXZ({ 25.0f, 0.0f });
+
+    EXPECT_NEAR(rbScaled->GetVelocityXZ().x, 10.0f, 1e-3f);
+    EXPECT_NEAR(rbRef->GetVelocityXZ().x, 10.0f, 1e-3f);
+
+    // Also verify calling RegisterRuntimeBody redundantly is idempotent and does not compound mass
+    scene.RegisterRuntimeBody(goScaled);
+    EXPECT_NEAR(rbScaled->GetMass(), 2.5f, 1e-4f);
+
+    // Step 120 frames (2.0 seconds at 60 Hz)
+    for (int frame = 0; frame < 120; ++frame) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+
+        // Pending sync queue must remain empty during steady-state simulation
+        EXPECT_EQ(scene.GetPendingPhysicsSyncCount(), 0u);
+
+        // Mass must stay strictly constant at 2.5f (no exponential compounding)
+        EXPECT_NEAR(rbScaled->GetMass(), 2.5f, 1e-4f);
+        EXPECT_NEAR(rbRef->GetMass(), 2.5f, 1e-4f);
+
+        // Velocity decay must match reference body identically
+        const glm::vec2 velScaled = rbScaled->GetVelocityXZ();
+        const glm::vec2 velRef = rbRef->GetVelocityXZ();
+        EXPECT_NEAR(velScaled.x, velRef.x, 1e-4f);
+        EXPECT_NEAR(velScaled.y, velRef.y, 1e-4f);
+    }
+
+    EXPECT_NEAR( goScaled->GetTransform()->position.x, goRef->GetTransform()->position.x, 1e-4f );
+    scene.OnRuntimeStop();
+}

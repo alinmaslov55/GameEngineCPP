@@ -80,6 +80,8 @@ public:
     // Runtime Box2D Body Registration & Lifecycle Synchronization
     void RegisterRuntimeBody(GameObject* go);
     void UnregisterRuntimeBody(GameObject* go);
+    void MarkPhysicsDirty(GameObject* go);
+    [[nodiscard]] size_t GetPendingPhysicsSyncCount() const noexcept { return m_PendingPhysicsSync.size(); }
 
     [[nodiscard]] size_t GetPoolFreeCount(const std::string& poolKey) const noexcept;
     [[nodiscard]] size_t GetPoolTotalCount(const std::string& poolKey) const noexcept;
@@ -193,6 +195,7 @@ private:
     uint32_t m_PhysicsWorldId = 0;
     float m_PhysicsAccumulator = 0.0f;
     float m_PhysicsAlpha = 0.0f;
+    std::vector<GameObject*> m_PendingPhysicsSync;
 
     // Box2D v3 multithreaded task management pool (zero heap allocation)
     static constexpr size_t kMaxBox2DTasks = 16;

@@ -1,5 +1,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
+#include "Engine/Scene/Tilemap.h"
+#include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Physics/Collision2DInfo.h"
 
 namespace Engine {
@@ -7,12 +9,19 @@ namespace Engine {
 void GameObject::NotifyPhysicsComponentAdded() {
     if (m_Scene && m_Scene->IsRuntimeRunning()) {
         m_Scene->RegisterRuntimeBody(this);
+        m_Scene->MarkPhysicsDirty(this);
     }
 }
 
 void GameObject::NotifyPhysicsComponentRemoved() {
     if (m_Scene && m_Scene->IsRuntimeRunning()) {
-        m_Scene->UnregisterRuntimeBody(this);
+        if (HasComponent<Rigidbody2D>() || HasComponent<BoxCollider2D>() ||
+            HasComponent<CircleCollider2D>() || HasComponent<CapsuleCollider2D>() ||
+            HasComponent<Tilemap>()) {
+            m_Scene->MarkPhysicsDirty(this);
+        } else {
+            m_Scene->UnregisterRuntimeBody(this);
+        }
     }
 }
 

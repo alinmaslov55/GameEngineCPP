@@ -77,6 +77,15 @@ public:
     void SetMassMultiplier(float multiplier);
     [[nodiscard]] float GetMassMultiplier() const noexcept { return MassMultiplier; }
     [[nodiscard]] float GetMass() const noexcept;
+    void SetBaseMass(float baseMass) noexcept { m_BaseMass = baseMass; }
+    [[nodiscard]] float GetBaseMass() const noexcept { return m_BaseMass; }
+    void ApplyMassMultiplierToBody();
+    void RefreshMassFromShapes();
+    void ResetRuntimeState() noexcept {
+        RuntimeBody = nullptr;
+        m_BaseMass = 0.0f;
+        m_AppliedMassMultiplier = 1.0f;
+    }
     void SetBullet(bool bullet);
     [[nodiscard]] bool GetBullet() const noexcept;
 
@@ -99,6 +108,8 @@ public:
 
 private:
     bool m_AirbornePassThroughActive = false;
+    float m_BaseMass = 0.0f;
+    float m_AppliedMassMultiplier = 1.0f;
 
     // Chronos Stasis state
     bool m_IsStasisFrozen = false;

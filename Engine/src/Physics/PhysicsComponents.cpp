@@ -23,6 +23,9 @@ void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
         return;
     }
     if (RuntimeBody) {
+        if (std::abs(MassMultiplier - m_AppliedMassMultiplier) > 1e-5f) {
+            ApplyMassMultiplierToBody();
+        }
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
         if (b2Body_IsValid(bodyId)) {
             b2Body_ApplyLinearImpulseToCenter(bodyId, b2Vec2{ impulseXZ.x, impulseXZ.y }, wake);
@@ -37,6 +40,9 @@ void Rigidbody2D::ApplyForceXZ(const glm::vec2& forceXZ, bool wake) {
         return;
     }
     if (RuntimeBody) {
+        if (std::abs(MassMultiplier - m_AppliedMassMultiplier) > 1e-5f) {
+            ApplyMassMultiplierToBody();
+        }
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
         if (b2Body_IsValid(bodyId)) {
             b2Body_ApplyForceToCenter(bodyId, b2Vec2{ forceXZ.x, forceXZ.y }, wake);
@@ -98,6 +104,7 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
                 else if (Type == BodyType::Kinematic) originalType = b2_kinematicBody;
 
                 b2Body_SetType(bodyId, originalType);
+                RefreshMassFromShapes();
                 b2Body_SetLinearVelocity(bodyId, b2Vec2{ m_StasisCachedVelocityXZ.x, m_StasisCachedVelocityXZ.y });
                 b2Body_SetAngularVelocity(bodyId, m_StasisCachedAngularVelocity);
                 VerticalVelocity = m_StasisCachedVerticalVelocity;
@@ -182,27 +189,63 @@ float Rigidbody2D::GetAngularDamping() const noexcept {
 }
 
 void Rigidbody2D::SetMassMultiplier(float multiplier) {
-    const float prev = (MassMultiplier > 0.0001f) ? MassMultiplier : 1.0f;
     MassMultiplier = multiplier;
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
-        if (b2Body_IsValid(bodyId)) {
-            b2MassData massData = b2Body_GetMassData(bodyId);
-            const float ratio = (prev > 0.0001f) ? (multiplier / prev) : multiplier;
-            massData.mass *= ratio;
-            b2Body_SetMassData(bodyId, massData);
-        }
+    ApplyMassMultiplierToBody();
+}
+
+void Rigidbody2D::ApplyMassMultiplierToBody() {
+    if (!RuntimeBody || Type != BodyType::Dynamic || m_IsStasisFrozen) {
+        return;
     }
+    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (!b2Body_IsValid(bodyId)) {
+        return;
+    }
+    if (m_BaseMass <= 0.0001f) {
+        const float currentMass = b2Body_GetMass(bodyId);
+        m_BaseMass = (currentMass > 0.0001f) ? currentMass : 1.0f;
+    }
+    const float effectiveMultiplier = (MassMultiplier > 0.0001f) ? MassMultiplier : 1.0f;
+    const float targetMass = m_BaseMass * effectiveMultiplier;
+    b2MassData massData = b2Body_GetMassData(bodyId);
+    if (std::abs(massData.mass - targetMass) > 1e-5f) {
+        if (massData.mass > 0.0001f) {
+            massData.rotationalInertia *= (targetMass / massData.mass);
+        }
+        massData.mass = targetMass;
+        b2Body_SetMassData(bodyId, massData);
+    }
+    m_AppliedMassMultiplier = effectiveMultiplier;
+}
+
+void Rigidbody2D::RefreshMassFromShapes() {
+    if (!RuntimeBody || Type != BodyType::Dynamic) {
+        return;
+    }
+    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (!b2Body_IsValid(bodyId)) {
+        return;
+    }
+    if (b2Body_GetShapeCount(bodyId) > 0) {
+        b2Body_ApplyMassFromShapes(bodyId);
+    }
+    const float unscaledMass = b2Body_GetMass(bodyId);
+    m_BaseMass = (unscaledMass > 0.0001f) ? unscaledMass : 1.0f;
+    m_AppliedMassMultiplier = 1.0f;
+    ApplyMassMultiplierToBody();
 }
 
 float Rigidbody2D::GetMass() const noexcept {
     if (RuntimeBody) {
+        if (std::abs(MassMultiplier - m_AppliedMassMultiplier) > 1e-5f) {
+            const_cast<Rigidbody2D*>(this)->ApplyMassMultiplierToBody();
+        }
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
         if (b2Body_IsValid(bodyId)) {
             return b2Body_GetMass(bodyId);
         }
     }
-    return MassMultiplier;
+    return (m_BaseMass > 0.0001f) ? (m_BaseMass * MassMultiplier) : MassMultiplier;
 }
 
 void Rigidbody2D::SetBullet(bool bullet) {
@@ -231,6 +274,10 @@ void Rigidbody2D::OnEnable() {
         if (b2Body_IsValid(bodyId)) {
             b2Body_Enable(bodyId);
         }
+    } else if (auto* go = GetGameObject()) {
+        if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
+            scene->MarkPhysicsDirty(go);
+        }
     }
 }
 
@@ -249,7 +296,7 @@ void Rigidbody2D::OnDestroy() {
             scene->UnregisterRuntimeBody(go);
         }
     }
-    RuntimeBody = nullptr;
+    ResetRuntimeState();
 }
 
 void BoxCollider2D::OnEnable() {
@@ -257,6 +304,12 @@ void BoxCollider2D::OnEnable() {
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
         if (b2Body_IsValid(bodyId)) {
             b2Body_Enable(bodyId);
+        }
+    } else if (!RuntimeFixture) {
+        if (auto* go = GetGameObject()) {
+            if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
+                scene->MarkPhysicsDirty(go);
+            }
         }
     }
 }
@@ -273,14 +326,17 @@ void BoxCollider2D::OnDisable() {
 void BoxCollider2D::OnDestroy() {
     if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene()) {
-            if (!go->GetComponent<Rigidbody2D>()) {
-                scene->UnregisterRuntimeBody(go);
-            } else if (RuntimeFixture) {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeFixture)));
-                if (b2Shape_IsValid(shapeId)) {
-                    b2DestroyShape(shapeId, true);
+            if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
+                if (RuntimeFixture) {
+                    b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeFixture)));
+                    if (b2Shape_IsValid(shapeId)) {
+                        b2DestroyShape(shapeId, true);
+                    }
+                    RuntimeFixture = nullptr;
                 }
-                RuntimeFixture = nullptr;
+                rb2d->RefreshMassFromShapes();
+            } else {
+                scene->UnregisterRuntimeBody(go);
             }
         }
     }
@@ -291,6 +347,12 @@ void CircleCollider2D::OnEnable() {
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
         if (b2Body_IsValid(bodyId)) {
             b2Body_Enable(bodyId);
+        }
+    } else if (!RuntimeShape) {
+        if (auto* go = GetGameObject()) {
+            if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
+                scene->MarkPhysicsDirty(go);
+            }
         }
     }
 }
@@ -307,14 +369,17 @@ void CircleCollider2D::OnDisable() {
 void CircleCollider2D::OnDestroy() {
     if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene()) {
-            if (!go->GetComponent<Rigidbody2D>()) {
-                scene->UnregisterRuntimeBody(go);
-            } else if (RuntimeShape) {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
-                if (b2Shape_IsValid(shapeId)) {
-                    b2DestroyShape(shapeId, true);
+            if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
+                if (RuntimeShape) {
+                    b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
+                    if (b2Shape_IsValid(shapeId)) {
+                        b2DestroyShape(shapeId, true);
+                    }
+                    RuntimeShape = nullptr;
                 }
-                RuntimeShape = nullptr;
+                rb2d->RefreshMassFromShapes();
+            } else {
+                scene->UnregisterRuntimeBody(go);
             }
         }
     }
@@ -325,6 +390,12 @@ void CapsuleCollider2D::OnEnable() {
         b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
         if (b2Body_IsValid(bodyId)) {
             b2Body_Enable(bodyId);
+        }
+    } else if (!RuntimeShape) {
+        if (auto* go = GetGameObject()) {
+            if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
+                scene->MarkPhysicsDirty(go);
+            }
         }
     }
 }
@@ -341,14 +412,17 @@ void CapsuleCollider2D::OnDisable() {
 void CapsuleCollider2D::OnDestroy() {
     if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene()) {
-            if (!go->GetComponent<Rigidbody2D>()) {
-                scene->UnregisterRuntimeBody(go);
-            } else if (RuntimeShape) {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
-                if (b2Shape_IsValid(shapeId)) {
-                    b2DestroyShape(shapeId, true);
+            if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
+                if (RuntimeShape) {
+                    b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
+                    if (b2Shape_IsValid(shapeId)) {
+                        b2DestroyShape(shapeId, true);
+                    }
+                    RuntimeShape = nullptr;
                 }
-                RuntimeShape = nullptr;
+                rb2d->RefreshMassFromShapes();
+            } else {
+                scene->UnregisterRuntimeBody(go);
             }
         }
     }
