@@ -1252,8 +1252,10 @@ void Scene::FlushEntityLifecycleQueues() {
                         m_StaticCollidersDirty = true;
                     }
 
-                    for (auto& comp : pending->m_Components) {
-                        comp->OnDestroy();
+                    for (size_t i = 0; i < pending->m_Components.size(); ++i) {
+                        if (pending->m_Components[i]) {
+                            pending->m_Components[i]->OnDestroy();
+                        }
                     }
 
                     m_EntityUUIDMap.erase(pending->GetUUID());
@@ -1293,8 +1295,10 @@ void Scene::FlushEntityLifecycleQueues() {
                 }
 
                 // Invoke OnDestroy() on all components
-                for (auto& comp : go->m_Components) {
-                    comp->OnDestroy();
+                for (size_t i = 0; i < go->m_Components.size(); ++i) {
+                    if (go->m_Components[i]) {
+                        go->m_Components[i]->OnDestroy();
+                    }
                 }
 
                 m_EntityUUIDMap.erase(go->GetUUID());

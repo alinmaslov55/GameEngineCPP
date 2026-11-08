@@ -25,38 +25,76 @@ void GameObject::NotifyPhysicsComponentRemoved() {
     }
 }
 
+void GameObject::FlushPendingComponentRemovals() {
+    if (m_ComponentIterationDepth > 0) return;
+
+    bool hasPending = false;
+    for (const auto& comp : m_Components) {
+        if (comp && comp->IsPendingRemoval()) {
+            hasPending = true;
+            break;
+        }
+    }
+    if (!hasPending) return;
+
+    ++m_ComponentIterationDepth;
+    for (size_t i = 0; i < m_Components.size(); ++i) {
+        auto* comp = m_Components[i].get();
+        if (comp && comp->IsPendingRemoval()) {
+            comp->OnDestroy();
+        }
+    }
+    --m_ComponentIterationDepth;
+
+    std::erase_if(m_Components, [](const std::unique_ptr<Component>& comp) {
+        return !comp || comp->IsPendingRemoval();
+    });
+}
+
 void GameObject::DispatchCollisionEnter2D(const Collision2DInfo& info) {
     if (!IsActiveInHierarchy()) return;
+    ScopedComponentIterationGuard guard(*this);
     for (size_t i = 0; i < m_Components.size(); ++i) {
-        if (i < m_Components.size() && m_Components[i]->IsEnabled()) {
-            m_Components[i]->OnCollisionEnter2D(info);
+        if (!IsActiveInHierarchy()) break;
+        auto* comp = m_Components[i].get();
+        if (comp && comp->IsEnabled() && !comp->IsPendingRemoval()) {
+            comp->OnCollisionEnter2D(info);
         }
     }
 }
 
 void GameObject::DispatchCollisionExit2D(GameObject* other) {
     if (!IsActiveInHierarchy()) return;
+    ScopedComponentIterationGuard guard(*this);
     for (size_t i = 0; i < m_Components.size(); ++i) {
-        if (i < m_Components.size() && m_Components[i]->IsEnabled()) {
-            m_Components[i]->OnCollisionExit2D(other);
+        if (!IsActiveInHierarchy()) break;
+        auto* comp = m_Components[i].get();
+        if (comp && comp->IsEnabled() && !comp->IsPendingRemoval()) {
+            comp->OnCollisionExit2D(other);
         }
     }
 }
 
 void GameObject::DispatchTriggerEnter2D(GameObject* other) {
     if (!IsActiveInHierarchy()) return;
+    ScopedComponentIterationGuard guard(*this);
     for (size_t i = 0; i < m_Components.size(); ++i) {
-        if (i < m_Components.size() && m_Components[i]->IsEnabled()) {
-            m_Components[i]->OnTriggerEnter2D(other);
+        if (!IsActiveInHierarchy()) break;
+        auto* comp = m_Components[i].get();
+        if (comp && comp->IsEnabled() && !comp->IsPendingRemoval()) {
+            comp->OnTriggerEnter2D(other);
         }
     }
 }
 
 void GameObject::DispatchTriggerExit2D(GameObject* other) {
     if (!IsActiveInHierarchy()) return;
+    ScopedComponentIterationGuard guard(*this);
     for (size_t i = 0; i < m_Components.size(); ++i) {
-        if (i < m_Components.size() && m_Components[i]->IsEnabled()) {
-            m_Components[i]->OnTriggerExit2D(other);
+        if (!IsActiveInHierarchy()) break;
+        auto* comp = m_Components[i].get();
+        if (comp && comp->IsEnabled() && !comp->IsPendingRemoval()) {
+            comp->OnTriggerExit2D(other);
         }
     }
 }

@@ -121,14 +121,44 @@ public:
         NotifyHierarchyActiveChanged();
     }
 
+    [[nodiscard]] bool IsIteratingComponents() const noexcept { return m_ComponentIterationDepth > 0; }
+    void FlushPendingComponentRemovals();
+
+    class ScopedComponentIterationGuard {
+    public:
+        explicit ScopedComponentIterationGuard(GameObject& go) noexcept : m_Go(go) {
+            ++m_Go.m_ComponentIterationDepth;
+        }
+        ~ScopedComponentIterationGuard() {
+            if (m_Go.m_ComponentIterationDepth > 0) {
+                --m_Go.m_ComponentIterationDepth;
+                if (m_Go.m_ComponentIterationDepth == 0) {
+                    m_Go.FlushPendingComponentRemovals();
+                }
+            }
+        }
+        ScopedComponentIterationGuard(const ScopedComponentIterationGuard&) = delete;
+        ScopedComponentIterationGuard& operator=(const ScopedComponentIterationGuard&) = delete;
+        ScopedComponentIterationGuard(ScopedComponentIterationGuard&&) = delete;
+        ScopedComponentIterationGuard& operator=(ScopedComponentIterationGuard&&) = delete;
+
+    private:
+        GameObject& m_Go;
+    };
+
     void NotifyHierarchyActiveChanged() noexcept {
         const bool activeInHier = IsActiveInHierarchy();
-        for (auto& comp : m_Components) {
-            if (comp->IsEnabled()) {
-                if (activeInHier) {
-                    comp->OnEnable();
-                } else {
-                    comp->OnDisable();
+        {
+            ScopedComponentIterationGuard guard(*this);
+            for (size_t i = 0; i < m_Components.size(); ++i) {
+                auto* comp = m_Components[i].get();
+                if (!comp || comp->IsPendingRemoval()) continue;
+                if (comp->IsEnabled()) {
+                    if (activeInHier) {
+                        comp->OnEnable();
+                    } else {
+                        comp->OnDisable();
+                    }
                 }
             }
         }
@@ -174,8 +204,12 @@ public:
 
     void ProcessPendingStarts() {
         if (!IsActiveInHierarchy()) return;
-        for (auto& component : m_Components) {
-            if (component->IsEnabled() && !component->m_HasStarted) {
+        ScopedComponentIterationGuard guard(*this);
+        for (size_t i = 0; i < m_Components.size(); ++i) {
+            if (!IsActiveInHierarchy()) break;
+            auto* component = m_Components[i].get();
+            if (!component || !component->IsEnabled() || component->IsPendingRemoval()) continue;
+            if (!component->m_HasStarted) {
                 component->m_HasStarted = true;
                 component->Start();
             }
@@ -185,32 +219,47 @@ public:
     void Update(float deltaTime) {
         if (!IsActiveInHierarchy()) return;
         ENGINE_CORE_TRACE("GameObject '{}': Updating components", GetName());
-        for (auto& component : m_Components) {
-            if (!component->IsEnabled()) continue;
+        ScopedComponentIterationGuard guard(*this);
+        for (size_t i = 0; i < m_Components.size(); ++i) {
+            if (!IsActiveInHierarchy()) break;
+            auto* component = m_Components[i].get();
+            if (!component || !component->IsEnabled() || component->IsPendingRemoval()) continue;
             if (!component->m_HasStarted) {
                 component->m_HasStarted = true;
                 component->Start();
             }
-            component->Update(deltaTime);
+            if (!IsActiveInHierarchy()) break;
+            if (component->IsEnabled() && !component->IsPendingRemoval()) {
+                component->Update(deltaTime);
+            }
         }
     }
 
     void FixedUpdate(float fixedDeltaTime) {
         if (!IsActiveInHierarchy()) return;
-        for (auto& component : m_Components) {
-            if (!component->IsEnabled()) continue;
+        ScopedComponentIterationGuard guard(*this);
+        for (size_t i = 0; i < m_Components.size(); ++i) {
+            if (!IsActiveInHierarchy()) break;
+            auto* component = m_Components[i].get();
+            if (!component || !component->IsEnabled() || component->IsPendingRemoval()) continue;
             if (!component->m_HasStarted) {
                 component->m_HasStarted = true;
                 component->Start();
             }
-            component->FixedUpdate(fixedDeltaTime);
+            if (!IsActiveInHierarchy()) break;
+            if (component->IsEnabled() && !component->IsPendingRemoval()) {
+                component->FixedUpdate(fixedDeltaTime);
+            }
         }
     }
 
     void LateUpdate(float deltaTime) {
         if (!IsActiveInHierarchy()) return;
-        for (auto& component : m_Components) {
-            if (!component->IsEnabled()) continue;
+        ScopedComponentIterationGuard guard(*this);
+        for (size_t i = 0; i < m_Components.size(); ++i) {
+            if (!IsActiveInHierarchy()) break;
+            auto* component = m_Components[i].get();
+            if (!component || !component->IsEnabled() || component->IsPendingRemoval()) continue;
             component->LateUpdate(deltaTime);
         }
     }
@@ -224,6 +273,7 @@ public:
             return nullptr;
         }
         for (const auto& component : m_Components) {
+            if (component->IsPendingRemoval()) continue;
             if (T* casted = dynamic_cast<T*>(component.get())) {
                 return casted;
             }
@@ -242,6 +292,7 @@ public:
             return result;
         }
         for (const auto& component : m_Components) {
+            if (component->IsPendingRemoval()) continue;
             if (T* casted = dynamic_cast<T*>(component.get())) {
                 result.push_back(casted);
             }
@@ -257,14 +308,16 @@ public:
         }
 
         for (auto it = m_Components.begin(); it != m_Components.end(); ++it) {
-            if (dynamic_cast<T*>(it->get()) != nullptr) {
-                (*it)->OnDestroy();
-                m_Components.erase(it);
-                ENGINE_CORE_DEBUG("GameObject '{}': Removed component", GetName());
+            auto* comp = it->get();
+            if (comp && !comp->IsPendingRemoval() && dynamic_cast<T*>(comp) != nullptr) {
+                if (comp->IsEnabled() && IsActiveInHierarchy()) {
+                    comp->OnDisable();
+                }
+                comp->m_Enabled = false;
 
                 bool hasMore = false;
-                for (const auto& comp : m_Components) {
-                    if (dynamic_cast<T*>(comp.get())) {
+                for (const auto& other : m_Components) {
+                    if (other.get() != comp && !other->IsPendingRemoval() && dynamic_cast<T*>(other.get())) {
                         hasMore = true;
                         break;
                     }
@@ -272,6 +325,7 @@ public:
                 if (!hasMore) {
                     m_ComponentMask &= ~Detail::GetComponentTypeMask<std::remove_cv_t<T>>();
                 }
+
                 if constexpr (std::is_same_v<std::remove_cv_t<T>, Rigidbody2D> ||
                               std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
                               std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
@@ -279,6 +333,14 @@ public:
                               std::is_same_v<std::remove_cv_t<T>, Tilemap>) {
                     NotifyPhysicsComponentRemoved();
                 }
+
+                if (m_ComponentIterationDepth > 0) {
+                    comp->m_PendingRemoval = true;
+                } else {
+                    comp->OnDestroy();
+                    m_Components.erase(it);
+                }
+                ENGINE_CORE_DEBUG("GameObject '{}': Removed component", GetName());
                 return true;
             }
         }
@@ -300,6 +362,7 @@ private:
     std::string m_PoolKey;
     bool m_Active{ true };
     EntityLifecycle m_LifecycleState{ EntityLifecycle::Alive };
+    uint32_t m_ComponentIterationDepth{ 0 };
 };
 
 inline void Component::SetEnabled(bool enabled) noexcept {

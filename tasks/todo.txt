@@ -33,7 +33,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Replace `bool m_IsIteratingEntities` with `uint32_t m_IterationDepth` + RAII `ScopedIterationGuard` wrapping Update(), FixedUpdate(), and ProcessPhysicsEvents(), auto-flushing queues when depth returns to 0.
     - Verification (EngineTests): Spawn and destroy pooled/runtime entities inside Component::FixedUpdate() across 30 frames with zero skipped iterations or crashes.
 
-[ ] 4. Fix GameObject::m_Components Loop Reallocation UB & Vector Shifting Skips
+[x] 4. Fix GameObject::m_Components Loop Reallocation UB & Vector Shifting Skips
     - Files: Engine/include/Engine/Scene/GameObject.h (lines 117-203), Engine/src/Scene/GameObject.cpp (lines 19-53)
     - Root Cause:
       * Update(), FixedUpdate(), LateUpdate(), ProcessPendingStarts(), and NotifyHierarchyActiveChanged() use range-based for loops over m_Components. Calling AddComponent<T>() or RemoveComponent<T>() on `this` inside Start()/Update()/OnCollisionEnter2D() invalidates iterators or skips shifted indices.

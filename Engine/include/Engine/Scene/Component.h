@@ -28,6 +28,7 @@ public:
     void SetEnabled(bool enabled) noexcept;
     [[nodiscard]] bool IsEnabled() const noexcept { return m_Enabled; }
     [[nodiscard]] bool HasStarted() const noexcept { return m_HasStarted; }
+    [[nodiscard]] bool IsPendingRemoval() const noexcept { return m_PendingRemoval; }
 
     [[nodiscard]] GameObject* GetGameObject() const noexcept { return m_GameObject; }
 
@@ -41,6 +42,7 @@ private:
     GameObject* m_GameObject{ nullptr };
     bool m_Enabled{ true };
     bool m_HasStarted{ false };
+    bool m_PendingRemoval{ false };
 };
 } // namespace Engine
 
