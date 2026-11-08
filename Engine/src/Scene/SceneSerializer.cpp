@@ -396,9 +396,42 @@ void SerializeBoxCollider2D(const GameObject* go, json& compsJson) {
         {"Restitution", collider->restitution},
         {"RestitutionThreshold", collider->restitutionThreshold},
         {"IsDynamic", collider->isDynamic},
+        {"IsSensor", collider->IsSensor},
+        {"EnableHitEvents", collider->EnableHitEvents},
         {"UseGravity", collider->useGravity},
         {"Gravity", collider->gravity},
         {"GroundLevel", collider->groundLevel}
+    };
+}
+
+void SerializeCircleCollider2D(const GameObject* go, json& compsJson) {
+    auto* collider = go->GetComponent<CircleCollider2D>();
+    if (!collider) return;
+
+    compsJson["CircleCollider2D"] = {
+        {"Radius", collider->Radius},
+        {"OffsetXZ", ToJson(collider->OffsetXZ)},
+        {"Density", collider->Density},
+        {"Friction", collider->Friction},
+        {"Restitution", collider->Restitution},
+        {"IsSensor", collider->IsSensor},
+        {"EnableHitEvents", collider->EnableHitEvents}
+    };
+}
+
+void SerializeCapsuleCollider2D(const GameObject* go, json& compsJson) {
+    auto* collider = go->GetComponent<CapsuleCollider2D>();
+    if (!collider) return;
+
+    compsJson["CapsuleCollider2D"] = {
+        {"Center1", ToJson(collider->Center1)},
+        {"Center2", ToJson(collider->Center2)},
+        {"Radius", collider->Radius},
+        {"Density", collider->Density},
+        {"Friction", collider->Friction},
+        {"Restitution", collider->Restitution},
+        {"IsSensor", collider->IsSensor},
+        {"EnableHitEvents", collider->EnableHitEvents}
     };
 }
 
@@ -541,6 +574,8 @@ static const ComponentSerializerFn s_ComponentSerializers[] = {
     SerializeSquashStretch,
     SerializeRigidbody2D,
     SerializeBoxCollider2D,
+    SerializeCircleCollider2D,
+    SerializeCapsuleCollider2D,
     SerializeCameraComponent,
     SerializeUIPanels,
     SerializeUILabels,
@@ -838,9 +873,34 @@ void DeserializeBoxCollider2D(GameObject* go, const json& bcJson, const std::str
     collider->restitution = bcJson.value("Restitution", 0.0f);
     collider->restitutionThreshold = bcJson.value("RestitutionThreshold", 0.5f);
     collider->isDynamic = bcJson.value("IsDynamic", false);
+    collider->IsSensor = bcJson.value("IsSensor", false);
+    collider->EnableHitEvents = bcJson.value("EnableHitEvents", true);
     collider->useGravity = bcJson.value("UseGravity", true);
     collider->gravity = bcJson.value("Gravity", -9.8f);
     collider->groundLevel = bcJson.value("GroundLevel", 0.0f);
+}
+
+void DeserializeCircleCollider2D(GameObject* go, const json& ccJson, const std::string&) {
+    auto* collider = go->AddComponent<CircleCollider2D>();
+    collider->Radius = ccJson.value("Radius", 0.45f);
+    if (ccJson.contains("OffsetXZ")) collider->OffsetXZ = AsVec2(ccJson["OffsetXZ"], collider->OffsetXZ);
+    collider->Density = ccJson.value("Density", 1.0f);
+    collider->Friction = ccJson.value("Friction", 0.5f);
+    collider->Restitution = ccJson.value("Restitution", 0.15f);
+    collider->IsSensor = ccJson.value("IsSensor", false);
+    collider->EnableHitEvents = ccJson.value("EnableHitEvents", true);
+}
+
+void DeserializeCapsuleCollider2D(GameObject* go, const json& capJson, const std::string&) {
+    auto* collider = go->AddComponent<CapsuleCollider2D>();
+    if (capJson.contains("Center1")) collider->Center1 = AsVec2(capJson["Center1"], collider->Center1);
+    if (capJson.contains("Center2")) collider->Center2 = AsVec2(capJson["Center2"], collider->Center2);
+    collider->Radius = capJson.value("Radius", 0.35f);
+    collider->Density = capJson.value("Density", 1.0f);
+    collider->Friction = capJson.value("Friction", 0.5f);
+    collider->Restitution = capJson.value("Restitution", 0.15f);
+    collider->IsSensor = capJson.value("IsSensor", false);
+    collider->EnableHitEvents = capJson.value("EnableHitEvents", true);
 }
 
 void DeserializeCameraComponent(GameObject* go, const json& camJson, const std::string&) {
@@ -987,7 +1047,9 @@ static const ComponentDeserializerEntry s_ComponentDeserializers[] = {
     { "Wind",             DeserializeWind },
     { "SquashStretch",    DeserializeSquashStretch },
     { "Rigidbody2D",      DeserializeRigidbody2D },
-    { "BoxCollider2D",    DeserializeBoxCollider2D },
+    { "BoxCollider2D",     DeserializeBoxCollider2D },
+    { "CircleCollider2D",  DeserializeCircleCollider2D },
+    { "CapsuleCollider2D", DeserializeCapsuleCollider2D },
     { "CameraComponent",  DeserializeCameraComponent },
     { "UIPanels",         DeserializeUIPanels },
     { "UIPanel",          DeserializeUIPanels },

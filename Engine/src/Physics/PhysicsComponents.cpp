@@ -219,4 +219,72 @@ void BoxCollider2D::OnDestroy() {
     }
 }
 
+void CircleCollider2D::OnEnable() {
+    if (RuntimeBody) {
+        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+        if (b2Body_IsValid(bodyId)) {
+            b2Body_Enable(bodyId);
+        }
+    }
+}
+
+void CircleCollider2D::OnDisable() {
+    if (RuntimeBody) {
+        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+        if (b2Body_IsValid(bodyId)) {
+            b2Body_Disable(bodyId);
+        }
+    }
+}
+
+void CircleCollider2D::OnDestroy() {
+    if (auto* go = GetGameObject()) {
+        if (auto* scene = go->GetScene()) {
+            if (!go->GetComponent<Rigidbody2D>()) {
+                scene->UnregisterRuntimeBody(go);
+            } else if (RuntimeShape) {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
+                if (b2Shape_IsValid(shapeId)) {
+                    b2DestroyShape(shapeId, true);
+                }
+                RuntimeShape = nullptr;
+            }
+        }
+    }
+}
+
+void CapsuleCollider2D::OnEnable() {
+    if (RuntimeBody) {
+        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+        if (b2Body_IsValid(bodyId)) {
+            b2Body_Enable(bodyId);
+        }
+    }
+}
+
+void CapsuleCollider2D::OnDisable() {
+    if (RuntimeBody) {
+        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+        if (b2Body_IsValid(bodyId)) {
+            b2Body_Disable(bodyId);
+        }
+    }
+}
+
+void CapsuleCollider2D::OnDestroy() {
+    if (auto* go = GetGameObject()) {
+        if (auto* scene = go->GetScene()) {
+            if (!go->GetComponent<Rigidbody2D>()) {
+                scene->UnregisterRuntimeBody(go);
+            } else if (RuntimeShape) {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
+                if (b2Shape_IsValid(shapeId)) {
+                    b2DestroyShape(shapeId, true);
+                }
+                RuntimeShape = nullptr;
+            }
+        }
+    }
+}
+
 } // namespace Engine

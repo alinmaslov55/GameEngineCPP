@@ -4,6 +4,7 @@
 namespace Engine {
 class GameObject;
 class Scene;
+struct Collision2DInfo;
 
 class Component {
 public:
@@ -17,6 +18,12 @@ public:
     virtual void FixedUpdate(float fixedDeltaTime) {}
     virtual void LateUpdate(float deltaTime) {}
     virtual void OnDestroy() {}
+
+    // 2D Ground-plane physics & sensor callbacks
+    virtual void OnCollisionEnter2D(const Collision2DInfo& /*info*/) {}
+    virtual void OnCollisionExit2D(GameObject* /*other*/) {}
+    virtual void OnTriggerEnter2D(GameObject* /*other*/) {}
+    virtual void OnTriggerExit2D(GameObject* /*other*/) {}
 
     void SetEnabled(bool enabled) noexcept;
     [[nodiscard]] bool IsEnabled() const noexcept { return m_Enabled; }

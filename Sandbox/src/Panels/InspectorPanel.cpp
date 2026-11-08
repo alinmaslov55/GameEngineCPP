@@ -109,6 +109,12 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         DrawComponent<Engine::BoxCollider2D>("Box Collider 2D", selectedEntity, [&](Engine::BoxCollider2D& c) {
             DrawBoxCollider2D(c, selectedEntity);
         });
+        DrawComponent<Engine::CircleCollider2D>("Circle Collider 2D", selectedEntity, [&](Engine::CircleCollider2D& c) {
+            DrawCircleCollider2D(c, selectedEntity);
+        });
+        DrawComponent<Engine::CapsuleCollider2D>("Capsule Collider 2D", selectedEntity, [&](Engine::CapsuleCollider2D& c) {
+            DrawCapsuleCollider2D(c, selectedEntity);
+        });
         DrawComponent<Engine::CameraComponent>("Camera", selectedEntity, [&](Engine::CameraComponent& c) {
             DrawCamera(c, selectedEntity);
         });
@@ -558,6 +564,8 @@ void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engin
     ImGui::DragFloat("Density", &boxCollider.density, 0.01f, 0.0f, 100.0f);
     ImGui::DragFloat("Friction", &boxCollider.friction, 0.01f, 0.0f, 1.0f);
     ImGui::DragFloat("Restitution (XZ)", &boxCollider.restitution, 0.01f, 0.0f, 1.0f);
+    ImGui::Checkbox("Is Sensor", &boxCollider.IsSensor);
+    ImGui::Checkbox("Enable Hit Events", &boxCollider.EnableHitEvents);
     ImGui::Separator();
     ImGui::Checkbox("Is Dynamic (Isometric)", &boxCollider.isDynamic);
     if (boxCollider.isDynamic) {
@@ -565,6 +573,29 @@ void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engin
         ImGui::DragFloat("Gravity", &boxCollider.gravity, 0.1f, -50.0f, 0.0f);
         ImGui::DragFloat("Ground Y", &boxCollider.groundLevel, 0.05f);
     }
+}
+
+void InspectorPanel::DrawCircleCollider2D(Engine::CircleCollider2D& circleCollider, Engine::GameObject* entity) {
+    (void)entity;
+    ImGui::DragFloat("Radius", &circleCollider.Radius, 0.05f, 0.01f, 50.0f);
+    ImGui::DragFloat2("Offset (X, Z)", &circleCollider.OffsetXZ.x, 0.05f);
+    ImGui::DragFloat("Density", &circleCollider.Density, 0.01f, 0.0f, 100.0f);
+    ImGui::DragFloat("Friction", &circleCollider.Friction, 0.01f, 0.0f, 1.0f);
+    ImGui::DragFloat("Restitution", &circleCollider.Restitution, 0.01f, 0.0f, 1.0f);
+    ImGui::Checkbox("Is Sensor", &circleCollider.IsSensor);
+    ImGui::Checkbox("Enable Hit Events", &circleCollider.EnableHitEvents);
+}
+
+void InspectorPanel::DrawCapsuleCollider2D(Engine::CapsuleCollider2D& capsuleCollider, Engine::GameObject* entity) {
+    (void)entity;
+    ImGui::DragFloat2("Center 1 (X, Z)", &capsuleCollider.Center1.x, 0.05f);
+    ImGui::DragFloat2("Center 2 (X, Z)", &capsuleCollider.Center2.x, 0.05f);
+    ImGui::DragFloat("Radius", &capsuleCollider.Radius, 0.05f, 0.01f, 50.0f);
+    ImGui::DragFloat("Density", &capsuleCollider.Density, 0.01f, 0.0f, 100.0f);
+    ImGui::DragFloat("Friction", &capsuleCollider.Friction, 0.01f, 0.0f, 1.0f);
+    ImGui::DragFloat("Restitution", &capsuleCollider.Restitution, 0.01f, 0.0f, 1.0f);
+    ImGui::Checkbox("Is Sensor", &capsuleCollider.IsSensor);
+    ImGui::Checkbox("Enable Hit Events", &capsuleCollider.EnableHitEvents);
 }
 
 void InspectorPanel::DrawCamera(Engine::CameraComponent& camComp, Engine::GameObject* entity) {
@@ -675,6 +706,8 @@ void InspectorPanel::DrawAddComponentMenu(Engine::GameObject* entity) {
         DrawAddComponentEntry<Engine::ParticleSystem>("Particle System", entity);
         DrawAddComponentEntry<Engine::Rigidbody2D>("Rigidbody 2D", entity);
         DrawAddComponentEntry<Engine::BoxCollider2D>("Box Collider 2D", entity);
+        DrawAddComponentEntry<Engine::CircleCollider2D>("Circle Collider 2D", entity);
+        DrawAddComponentEntry<Engine::CapsuleCollider2D>("Capsule Collider 2D", entity);
         ImGui::EndPopup();
     }
 }

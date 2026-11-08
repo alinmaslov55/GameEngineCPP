@@ -2,6 +2,7 @@
 #define PHYSICS_PHYSICSCOMPONENTS_H
 
 #include "Engine/Scene/Component.h"
+#include "Engine/Physics/Collision2DInfo.h"
 #include <glm/glm.hpp>
 
 namespace Engine {
@@ -85,6 +86,10 @@ public:
 
 class BoxCollider2D : public Component {
 public:
+    BoxCollider2D() = default;
+    BoxCollider2D(const glm::vec2& boxSize, bool isSensor = false, const glm::vec2& boxOffset = { 0.0f, 0.0f })
+        : size(boxSize), offset(boxOffset), IsSensor(isSensor) {}
+
     glm::vec2 size = { 1.0f, 1.0f };   // Base footprint on the XZ ground plane (size.x = Width X, size.y = Depth Z)
     glm::vec2 offset = { 0.0f, 0.0f }; // Shift from Transform center on the XZ ground plane
     bool isDynamic = false;            // True for moving entities in custom isometric solver
@@ -94,6 +99,8 @@ public:
     float friction = 0.5f;
     float restitution = 0.0f;          // Bounciness on the XZ plane
     float restitutionThreshold = 0.5f; // Velocity required to bounce
+    bool IsSensor = false;             // Trigger volume without physical contact response
+    bool EnableHitEvents = true;       // Enables b2ContactHitEvent generation for impact damage
 
     // Pointer or handle to internal Box2D shape/fixture
     void* RuntimeFixture = nullptr;
@@ -110,6 +117,57 @@ public:
     bool IsGrounded(float currentY) const {
         return currentY <= (groundLevel + 1e-4f) && verticalVelocity <= 0.0f;
     }
+
+    void OnEnable() override;
+    void OnDisable() override;
+    void OnDestroy() override;
+};
+
+class CircleCollider2D : public Component {
+public:
+    CircleCollider2D() = default;
+    CircleCollider2D(float radius, bool isSensor = false, const glm::vec2& offsetXZ = { 0.0f, 0.0f })
+        : Radius(radius), OffsetXZ(offsetXZ), IsSensor(isSensor) {}
+
+    float Radius = 0.45f;
+    glm::vec2 OffsetXZ{ 0.0f, 0.0f };
+    float Density = 1.0f;
+    float Friction = 0.5f;
+    float Restitution = 0.15f;
+    bool IsSensor = false;
+    bool EnableHitEvents = true;
+
+    // Pointer or handle to internal Box2D shape
+    void* RuntimeShape = nullptr;
+
+    // Pointer or handle to static Box2D body if this entity has no Rigidbody2D
+    void* RuntimeBody = nullptr;
+
+    void OnEnable() override;
+    void OnDisable() override;
+    void OnDestroy() override;
+};
+
+class CapsuleCollider2D : public Component {
+public:
+    CapsuleCollider2D() = default;
+    CapsuleCollider2D(float radius, const glm::vec2& c1 = { 0.0f, -0.25f }, const glm::vec2& c2 = { 0.0f, 0.25f }, bool isSensor = false)
+        : Center1(c1), Center2(c2), Radius(radius), IsSensor(isSensor) {}
+
+    glm::vec2 Center1{ 0.0f, -0.25f };
+    glm::vec2 Center2{ 0.0f, 0.25f };
+    float Radius = 0.35f;
+    float Density = 1.0f;
+    float Friction = 0.5f;
+    float Restitution = 0.15f;
+    bool IsSensor = false;
+    bool EnableHitEvents = true;
+
+    // Pointer or handle to internal Box2D shape
+    void* RuntimeShape = nullptr;
+
+    // Pointer or handle to static Box2D body if this entity has no Rigidbody2D
+    void* RuntimeBody = nullptr;
 
     void OnEnable() override;
     void OnDisable() override;

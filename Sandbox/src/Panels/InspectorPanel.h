@@ -13,6 +13,8 @@ class WindComponent;
 class SquashStretchComponent;
 class Rigidbody2D;
 class BoxCollider2D;
+class CircleCollider2D;
+class CapsuleCollider2D;
 class CameraComponent;
 class TerrainComponent;
 class Tilemap;
@@ -36,6 +38,8 @@ private:
     static void DrawSquashStretch(Engine::SquashStretchComponent& ss, Engine::GameObject* entity);
     static void DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObject* entity);
     static void DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engine::GameObject* entity);
+    static void DrawCircleCollider2D(Engine::CircleCollider2D& circleCollider, Engine::GameObject* entity);
+    static void DrawCapsuleCollider2D(Engine::CapsuleCollider2D& capsuleCollider, Engine::GameObject* entity);
     static void DrawCamera(Engine::CameraComponent& camComp, Engine::GameObject* entity);
     static void DrawTerrain(Engine::TerrainComponent& terrain, Engine::GameObject* entity);
     static void DrawTilemap(Engine::Tilemap& tilemapComp, Engine::GameObject* entity);

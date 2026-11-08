@@ -35,6 +35,8 @@
 #include <glm/gtx/compatibility.hpp>
 #include <algorithm>
 #include <cmath>
+#include <unordered_set>
+#include <utility>
 #include <vector>
 
 namespace Engine {
@@ -199,17 +201,33 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
 
     auto* rb2d = go->GetComponent<Rigidbody2D>();
     auto* bc2d = go->GetComponent<BoxCollider2D>();
+    auto* cc2d = go->GetComponent<CircleCollider2D>();
+    auto* cap2d = go->GetComponent<CapsuleCollider2D>();
     auto* tilemap = go->GetComponent<Tilemap>();
 
     if (rb2d) {
-        // If there was a static body from a previous standalone BoxCollider2D, destroy it
+        // If there was a static body from previous standalone colliders, destroy it
+        void* oldStaticBodyPtr = nullptr;
         if (bc2d && bc2d->RuntimeBody != nullptr && bc2d->RuntimeBody != rb2d->RuntimeBody) {
-            b2BodyId oldStaticBody = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody)));
+            oldStaticBodyPtr = bc2d->RuntimeBody;
+            bc2d->RuntimeBody = nullptr;
+            bc2d->RuntimeFixture = nullptr;
+        }
+        if (cc2d && cc2d->RuntimeBody != nullptr && cc2d->RuntimeBody != rb2d->RuntimeBody) {
+            if (!oldStaticBodyPtr) oldStaticBodyPtr = cc2d->RuntimeBody;
+            cc2d->RuntimeBody = nullptr;
+            cc2d->RuntimeShape = nullptr;
+        }
+        if (cap2d && cap2d->RuntimeBody != nullptr && cap2d->RuntimeBody != rb2d->RuntimeBody) {
+            if (!oldStaticBodyPtr) oldStaticBodyPtr = cap2d->RuntimeBody;
+            cap2d->RuntimeBody = nullptr;
+            cap2d->RuntimeShape = nullptr;
+        }
+        if (oldStaticBodyPtr) {
+            b2BodyId oldStaticBody = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(oldStaticBodyPtr)));
             if (b2Body_IsValid(oldStaticBody)) {
                 b2DestroyBody(oldStaticBody);
             }
-            bc2d->RuntimeBody = nullptr;
-            bc2d->RuntimeFixture = nullptr;
         }
 
         b2BodyId bodyId;
@@ -254,12 +272,18 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
             }
         }
 
-        if (bc2d && bc2d->RuntimeFixture == nullptr && b2Body_IsValid(bodyId)) {
-            b2ShapeDef shapeDef = b2DefaultShapeDef();
-            shapeDef.density = bc2d->density;
-            shapeDef.material.friction = bc2d->friction;
-            shapeDef.material.restitution = bc2d->restitution;
-            shapeDef.userData = bc2d;
+        if (bc2d && b2Body_IsValid(bodyId)) {
+            if (bc2d->RuntimeFixture != nullptr) {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeFixture)));
+                if (b2Shape_IsValid(shapeId)) {
+                    if (b2Shape_IsSensor(shapeId) != bc2d->IsSensor) {
+                        b2DestroyShape(shapeId, true);
+                        bc2d->RuntimeFixture = nullptr;
+                    }
+                } else {
+                    bc2d->RuntimeFixture = nullptr;
+                }
+            }
 
             b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
             b2Rot rot = b2MakeRot(0.0f);
@@ -267,17 +291,135 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
             float halfD = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.z) * 0.5f);
             b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
 
-            b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-            bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+            if (bc2d->RuntimeFixture == nullptr) {
+                b2ShapeDef shapeDef = b2DefaultShapeDef();
+                shapeDef.density = bc2d->density;
+                shapeDef.material.friction = bc2d->friction;
+                shapeDef.material.restitution = bc2d->restitution;
+                shapeDef.isSensor = bc2d->IsSensor;
+                shapeDef.enableSensorEvents = true;
+                shapeDef.enableHitEvents = bc2d->EnableHitEvents;
+                shapeDef.enableContactEvents = true;
+                shapeDef.userData = bc2d;
 
-            if (rb2d->MassMultiplier != 1.0f) {
-                b2MassData massData = b2Body_GetMassData(bodyId);
-                massData.mass *= rb2d->MassMultiplier;
-                b2Body_SetMassData(bodyId, massData);
+                b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
+                bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+            } else {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeFixture)));
+                b2Polygon cur = b2Shape_GetPolygon(shapeId);
+                if (cur.count != box.count ||
+                    std::abs(cur.vertices[0].x - box.vertices[0].x) > 1e-4f ||
+                    std::abs(cur.vertices[0].y - box.vertices[0].y) > 1e-4f) {
+                    b2Shape_SetPolygon(shapeId, &box);
+                }
             }
         }
-    } else if (bc2d) {
-        if (bc2d->RuntimeBody == nullptr && bc2d->RuntimeFixture == nullptr) {
+
+        if (cc2d && b2Body_IsValid(bodyId)) {
+            if (cc2d->RuntimeShape != nullptr) {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cc2d->RuntimeShape)));
+                if (b2Shape_IsValid(shapeId)) {
+                    if (b2Shape_IsSensor(shapeId) != cc2d->IsSensor) {
+                        b2DestroyShape(shapeId, true);
+                        cc2d->RuntimeShape = nullptr;
+                    }
+                } else {
+                    cc2d->RuntimeShape = nullptr;
+                }
+            }
+
+            float scaleFactor = std::max(std::abs(transform->scale.x), std::abs(transform->scale.z));
+            float effectiveRadius = std::max(0.001f, cc2d->Radius * scaleFactor);
+            b2Circle circle;
+            circle.center = b2Vec2{ cc2d->OffsetXZ.x, cc2d->OffsetXZ.y };
+            circle.radius = effectiveRadius;
+
+            if (cc2d->RuntimeShape == nullptr) {
+                b2ShapeDef shapeDef = b2DefaultShapeDef();
+                shapeDef.density = cc2d->Density;
+                shapeDef.material.friction = cc2d->Friction;
+                shapeDef.material.restitution = cc2d->Restitution;
+                shapeDef.isSensor = cc2d->IsSensor;
+                shapeDef.enableSensorEvents = true;
+                shapeDef.enableHitEvents = cc2d->EnableHitEvents;
+                shapeDef.enableContactEvents = true;
+                shapeDef.userData = cc2d;
+
+                b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
+                cc2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+            } else {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cc2d->RuntimeShape)));
+                b2Circle cur = b2Shape_GetCircle(shapeId);
+                if (std::abs(cur.radius - effectiveRadius) > 1e-4f ||
+                    std::abs(cur.center.x - circle.center.x) > 1e-4f ||
+                    std::abs(cur.center.y - circle.center.y) > 1e-4f) {
+                    b2Shape_SetCircle(shapeId, &circle);
+                }
+            }
+        }
+
+        if (cap2d && b2Body_IsValid(bodyId)) {
+            if (cap2d->RuntimeShape != nullptr) {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cap2d->RuntimeShape)));
+                if (b2Shape_IsValid(shapeId)) {
+                    if (b2Shape_IsSensor(shapeId) != cap2d->IsSensor) {
+                        b2DestroyShape(shapeId, true);
+                        cap2d->RuntimeShape = nullptr;
+                    }
+                } else {
+                    cap2d->RuntimeShape = nullptr;
+                }
+            }
+
+            float scaleX = std::abs(transform->scale.x);
+            float scaleZ = std::abs(transform->scale.z);
+            float scaleFactor = std::max(scaleX, scaleZ);
+            b2Capsule capsule;
+            capsule.center1 = b2Vec2{ cap2d->Center1.x * scaleX, cap2d->Center1.y * scaleZ };
+            capsule.center2 = b2Vec2{ cap2d->Center2.x * scaleX, cap2d->Center2.y * scaleZ };
+            capsule.radius = std::max(0.001f, cap2d->Radius * scaleFactor);
+
+            if (cap2d->RuntimeShape == nullptr) {
+                b2ShapeDef shapeDef = b2DefaultShapeDef();
+                shapeDef.density = cap2d->Density;
+                shapeDef.material.friction = cap2d->Friction;
+                shapeDef.material.restitution = cap2d->Restitution;
+                shapeDef.isSensor = cap2d->IsSensor;
+                shapeDef.enableSensorEvents = true;
+                shapeDef.enableHitEvents = cap2d->EnableHitEvents;
+                shapeDef.enableContactEvents = true;
+                shapeDef.userData = cap2d;
+
+                b2ShapeId shapeId = b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
+                cap2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+            } else {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cap2d->RuntimeShape)));
+                b2Capsule cur = b2Shape_GetCapsule(shapeId);
+                if (std::abs(cur.radius - capsule.radius) > 1e-4f ||
+                    std::abs(cur.center1.x - capsule.center1.x) > 1e-4f ||
+                    std::abs(cur.center1.y - capsule.center1.y) > 1e-4f ||
+                    std::abs(cur.center2.x - capsule.center2.x) > 1e-4f ||
+                    std::abs(cur.center2.y - capsule.center2.y) > 1e-4f) {
+                    b2Shape_SetCapsule(shapeId, &capsule);
+                }
+            }
+        }
+
+        if (rb2d->MassMultiplier != 1.0f && b2Body_IsValid(bodyId)) {
+            b2MassData massData = b2Body_GetMassData(bodyId);
+            massData.mass *= rb2d->MassMultiplier;
+            b2Body_SetMassData(bodyId, massData);
+        }
+    } else if (bc2d || cc2d || cap2d) {
+        b2BodyId bodyId;
+        void* existingBodyPtr = nullptr;
+        if (bc2d && bc2d->RuntimeBody) existingBodyPtr = bc2d->RuntimeBody;
+        else if (cc2d && cc2d->RuntimeBody) existingBodyPtr = cc2d->RuntimeBody;
+        else if (cap2d && cap2d->RuntimeBody) existingBodyPtr = cap2d->RuntimeBody;
+
+        if (existingBodyPtr) {
+            bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(existingBodyPtr)));
+        } else {
             b2BodyDef bodyDef = b2DefaultBodyDef();
             bodyDef.type = b2_staticBody;
             const glm::vec3 worldPos = transform->GetWorldPosition();
@@ -286,18 +428,29 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
             bodyDef.name = go->GetName().c_str();
             bodyDef.userData = go;
 
-            b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
-            bc2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
-
+            bodyId = b2CreateBody(worldId, &bodyDef);
             if (!go->IsActiveInHierarchy()) {
                 b2Body_Disable(bodyId);
             }
+        }
 
-            b2ShapeDef shapeDef = b2DefaultShapeDef();
-            shapeDef.density = bc2d->density;
-            shapeDef.material.friction = bc2d->friction;
-            shapeDef.material.restitution = bc2d->restitution;
-            shapeDef.userData = bc2d;
+        void* storedBodyPtr = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
+        if (bc2d) bc2d->RuntimeBody = storedBodyPtr;
+        if (cc2d) cc2d->RuntimeBody = storedBodyPtr;
+        if (cap2d) cap2d->RuntimeBody = storedBodyPtr;
+
+        if (bc2d && b2Body_IsValid(bodyId)) {
+            if (bc2d->RuntimeFixture != nullptr) {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeFixture)));
+                if (b2Shape_IsValid(shapeId)) {
+                    if (b2Shape_IsSensor(shapeId) != bc2d->IsSensor) {
+                        b2DestroyShape(shapeId, true);
+                        bc2d->RuntimeFixture = nullptr;
+                    }
+                } else {
+                    bc2d->RuntimeFixture = nullptr;
+                }
+            }
 
             b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
             b2Rot rot = b2MakeRot(0.0f);
@@ -305,8 +458,118 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
             float halfD = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.z) * 0.5f);
             b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
 
-            b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-            bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+            if (bc2d->RuntimeFixture == nullptr) {
+                b2ShapeDef shapeDef = b2DefaultShapeDef();
+                shapeDef.density = bc2d->density;
+                shapeDef.material.friction = bc2d->friction;
+                shapeDef.material.restitution = bc2d->restitution;
+                shapeDef.isSensor = bc2d->IsSensor;
+                shapeDef.enableSensorEvents = true;
+                shapeDef.enableHitEvents = bc2d->EnableHitEvents;
+                shapeDef.enableContactEvents = true;
+                shapeDef.userData = bc2d;
+
+                b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
+                bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+            } else {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeFixture)));
+                b2Polygon cur = b2Shape_GetPolygon(shapeId);
+                if (cur.count != box.count ||
+                    std::abs(cur.vertices[0].x - box.vertices[0].x) > 1e-4f ||
+                    std::abs(cur.vertices[0].y - box.vertices[0].y) > 1e-4f) {
+                    b2Shape_SetPolygon(shapeId, &box);
+                }
+            }
+        }
+
+        if (cc2d && b2Body_IsValid(bodyId)) {
+            if (cc2d->RuntimeShape != nullptr) {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cc2d->RuntimeShape)));
+                if (b2Shape_IsValid(shapeId)) {
+                    if (b2Shape_IsSensor(shapeId) != cc2d->IsSensor) {
+                        b2DestroyShape(shapeId, true);
+                        cc2d->RuntimeShape = nullptr;
+                    }
+                } else {
+                    cc2d->RuntimeShape = nullptr;
+                }
+            }
+
+            float scaleFactor = std::max(std::abs(transform->scale.x), std::abs(transform->scale.z));
+            float effectiveRadius = std::max(0.001f, cc2d->Radius * scaleFactor);
+            b2Circle circle;
+            circle.center = b2Vec2{ cc2d->OffsetXZ.x, cc2d->OffsetXZ.y };
+            circle.radius = effectiveRadius;
+
+            if (cc2d->RuntimeShape == nullptr) {
+                b2ShapeDef shapeDef = b2DefaultShapeDef();
+                shapeDef.density = cc2d->Density;
+                shapeDef.material.friction = cc2d->Friction;
+                shapeDef.material.restitution = cc2d->Restitution;
+                shapeDef.isSensor = cc2d->IsSensor;
+                shapeDef.enableSensorEvents = true;
+                shapeDef.enableHitEvents = cc2d->EnableHitEvents;
+                shapeDef.enableContactEvents = true;
+                shapeDef.userData = cc2d;
+
+                b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
+                cc2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+            } else {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cc2d->RuntimeShape)));
+                b2Circle cur = b2Shape_GetCircle(shapeId);
+                if (std::abs(cur.radius - effectiveRadius) > 1e-4f ||
+                    std::abs(cur.center.x - circle.center.x) > 1e-4f ||
+                    std::abs(cur.center.y - circle.center.y) > 1e-4f) {
+                    b2Shape_SetCircle(shapeId, &circle);
+                }
+            }
+        }
+
+        if (cap2d && b2Body_IsValid(bodyId)) {
+            if (cap2d->RuntimeShape != nullptr) {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cap2d->RuntimeShape)));
+                if (b2Shape_IsValid(shapeId)) {
+                    if (b2Shape_IsSensor(shapeId) != cap2d->IsSensor) {
+                        b2DestroyShape(shapeId, true);
+                        cap2d->RuntimeShape = nullptr;
+                    }
+                } else {
+                    cap2d->RuntimeShape = nullptr;
+                }
+            }
+
+            float scaleX = std::abs(transform->scale.x);
+            float scaleZ = std::abs(transform->scale.z);
+            float scaleFactor = std::max(scaleX, scaleZ);
+            b2Capsule capsule;
+            capsule.center1 = b2Vec2{ cap2d->Center1.x * scaleX, cap2d->Center1.y * scaleZ };
+            capsule.center2 = b2Vec2{ cap2d->Center2.x * scaleX, cap2d->Center2.y * scaleZ };
+            capsule.radius = std::max(0.001f, cap2d->Radius * scaleFactor);
+
+            if (cap2d->RuntimeShape == nullptr) {
+                b2ShapeDef shapeDef = b2DefaultShapeDef();
+                shapeDef.density = cap2d->Density;
+                shapeDef.material.friction = cap2d->Friction;
+                shapeDef.material.restitution = cap2d->Restitution;
+                shapeDef.isSensor = cap2d->IsSensor;
+                shapeDef.enableSensorEvents = true;
+                shapeDef.enableHitEvents = cap2d->EnableHitEvents;
+                shapeDef.enableContactEvents = true;
+                shapeDef.userData = cap2d;
+
+                b2ShapeId shapeId = b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
+                cap2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+            } else {
+                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cap2d->RuntimeShape)));
+                b2Capsule cur = b2Shape_GetCapsule(shapeId);
+                if (std::abs(cur.radius - capsule.radius) > 1e-4f ||
+                    std::abs(cur.center1.x - capsule.center1.x) > 1e-4f ||
+                    std::abs(cur.center1.y - capsule.center1.y) > 1e-4f ||
+                    std::abs(cur.center2.x - capsule.center2.x) > 1e-4f ||
+                    std::abs(cur.center2.y - capsule.center2.y) > 1e-4f) {
+                    b2Shape_SetCapsule(shapeId, &capsule);
+                }
+            }
         }
     }
 
@@ -318,8 +581,10 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
 void Scene::UnregisterRuntimeBody(GameObject* go) {
     if (!m_IsRuntimeRunning || !go) return;
 
+    void* destroyedBodyPtr = nullptr;
     if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
         if (rb2d->RuntimeBody) {
+            destroyedBodyPtr = rb2d->RuntimeBody;
             b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
             if (b2Body_IsValid(bodyId)) {
                 b2DestroyBody(bodyId);
@@ -328,15 +593,34 @@ void Scene::UnregisterRuntimeBody(GameObject* go) {
         }
     }
 
+    void* staticBodyPtr = nullptr;
     if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
-        if (bc2d->RuntimeBody) {
-            b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody)));
-            if (b2Body_IsValid(bodyId)) {
-                b2DestroyBody(bodyId);
-            }
-            bc2d->RuntimeBody = nullptr;
+        if (bc2d->RuntimeBody && bc2d->RuntimeBody != destroyedBodyPtr) {
+            staticBodyPtr = bc2d->RuntimeBody;
         }
+        bc2d->RuntimeBody = nullptr;
         bc2d->RuntimeFixture = nullptr;
+    }
+    if (auto* cc2d = go->GetComponent<CircleCollider2D>()) {
+        if (cc2d->RuntimeBody && cc2d->RuntimeBody != destroyedBodyPtr) {
+            if (!staticBodyPtr) staticBodyPtr = cc2d->RuntimeBody;
+        }
+        cc2d->RuntimeBody = nullptr;
+        cc2d->RuntimeShape = nullptr;
+    }
+    if (auto* cap2d = go->GetComponent<CapsuleCollider2D>()) {
+        if (cap2d->RuntimeBody && cap2d->RuntimeBody != destroyedBodyPtr) {
+            if (!staticBodyPtr) staticBodyPtr = cap2d->RuntimeBody;
+        }
+        cap2d->RuntimeBody = nullptr;
+        cap2d->RuntimeShape = nullptr;
+    }
+
+    if (staticBodyPtr) {
+        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(staticBodyPtr)));
+        if (b2Body_IsValid(bodyId)) {
+            b2DestroyBody(bodyId);
+        }
     }
 
     if (auto* tilemap = go->GetComponent<Tilemap>()) {
@@ -570,6 +854,28 @@ GameObject* Scene::AcquirePooled(const std::string& poolKey, const Prefab& prefa
                 }
                 bc2d->verticalVelocity = 0.0f;
             }
+            if (auto* cc2d = instance->GetComponent<CircleCollider2D>()) {
+                if (cc2d->RuntimeBody) {
+                    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(cc2d->RuntimeBody));
+                    if (b2Body_IsValid(bodyId)) {
+                        b2Body_Enable(bodyId);
+                        b2Vec2 p{ worldPos.x, worldPos.z };
+                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.y));
+                        b2Body_SetTransform(bodyId, p, r);
+                    }
+                }
+            }
+            if (auto* cap2d = instance->GetComponent<CapsuleCollider2D>()) {
+                if (cap2d->RuntimeBody) {
+                    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(cap2d->RuntimeBody));
+                    if (b2Body_IsValid(bodyId)) {
+                        b2Body_Enable(bodyId);
+                        b2Vec2 p{ worldPos.x, worldPos.z };
+                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.y));
+                        b2Body_SetTransform(bodyId, p, r);
+                    }
+                }
+            }
         }
         if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
             rb2d->VerticalVelocity = 0.0f;
@@ -609,6 +915,24 @@ void Scene::ReleaseToPool(const std::string& poolKey, GameObject* instance) {
             }
         }
         bc2d->verticalVelocity = 0.0f;
+    }
+    if (auto* cc2d = instance->GetComponent<CircleCollider2D>()) {
+        if (m_IsRuntimeRunning && cc2d->RuntimeBody) {
+            b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(cc2d->RuntimeBody));
+            if (b2Body_IsValid(bodyId)) {
+                b2Body_SetAwake(bodyId, false);
+                b2Body_Disable(bodyId);
+            }
+        }
+    }
+    if (auto* cap2d = instance->GetComponent<CapsuleCollider2D>()) {
+        if (m_IsRuntimeRunning && cap2d->RuntimeBody) {
+            b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(cap2d->RuntimeBody));
+            if (b2Body_IsValid(bodyId)) {
+                b2Body_SetAwake(bodyId, false);
+                b2Body_Disable(bodyId);
+            }
+        }
     }
 
     // Reset particles on root and children
@@ -772,7 +1096,7 @@ void Scene::FlushEntityLifecycleQueues() {
                 UnregisterRuntimeBody(go);
             }
 
-            if (go->GetComponent<BoxCollider2D>() || go->GetComponent<Tilemap>() || go->GetComponent<TerrainComponent>()) {
+            if (go->GetComponent<BoxCollider2D>() || go->GetComponent<CircleCollider2D>() || go->GetComponent<CapsuleCollider2D>() || go->GetComponent<Tilemap>() || go->GetComponent<TerrainComponent>()) {
                 colliderDestroyed = true;
             }
 
@@ -1231,6 +1555,14 @@ void Scene::OnRuntimeStop() {
             bc2d->RuntimeFixture = nullptr;
             bc2d->RuntimeBody = nullptr;
         }
+        if (auto* cc2d = go->GetComponent<CircleCollider2D>()) {
+            cc2d->RuntimeShape = nullptr;
+            cc2d->RuntimeBody = nullptr;
+        }
+        if (auto* cap2d = go->GetComponent<CapsuleCollider2D>()) {
+            cap2d->RuntimeShape = nullptr;
+            cap2d->RuntimeBody = nullptr;
+        }
         if (auto* tilemap = go->GetComponent<Tilemap>()) {
             tilemap->RuntimeBody = nullptr;
         }
@@ -1243,6 +1575,14 @@ void Scene::OnRuntimeStop() {
             bc2d->RuntimeFixture = nullptr;
             bc2d->RuntimeBody = nullptr;
         }
+        if (auto* cc2d = go->GetComponent<CircleCollider2D>()) {
+            cc2d->RuntimeShape = nullptr;
+            cc2d->RuntimeBody = nullptr;
+        }
+        if (auto* cap2d = go->GetComponent<CapsuleCollider2D>()) {
+            cap2d->RuntimeShape = nullptr;
+            cap2d->RuntimeBody = nullptr;
+        }
         if (auto* tilemap = go->GetComponent<Tilemap>()) {
             tilemap->RuntimeBody = nullptr;
         }
@@ -1252,6 +1592,12 @@ void Scene::OnRuntimeStop() {
 
 void Scene::UpdateRuntime(float deltaTime) {
     if (m_IsRuntimeRunning) {
+        for (auto& go : m_GameObjects) {
+            if (go->IsActiveInHierarchy()) {
+                RegisterRuntimeBody(go.get());
+            }
+        }
+
         const float fixedDt = std::max(0.001f, Time::GetFixedDeltaTime());
         constexpr uint32_t kMaxFixedSteps = 6;
         const float maxAccumulation = static_cast<float>(kMaxFixedSteps) * fixedDt;
@@ -1283,6 +1629,7 @@ void Scene::UpdateRuntime(float deltaTime) {
             // Step Box2D simulation
             if (b2World_IsValid(worldId)) {
                 b2World_Step(worldId, fixedDt, 4);
+                ProcessPhysicsEvents();
             }
 
             // Sync Box2D physics simulation results back to Engine Transform
@@ -1360,6 +1707,222 @@ void Scene::IntegrateVerticalElevation(float fixedDt) {
             }
         }
     }
+}
+
+void Scene::ProcessPhysicsEvents() {
+    if (!m_IsRuntimeRunning) return;
+    b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
+    if (!b2World_IsValid(worldId)) return;
+
+    b2ContactEvents contacts = b2World_GetContactEvents(worldId);
+    b2SensorEvents sensors = b2World_GetSensorEvents(worldId);
+
+    // Guard entity lifecycle so DestroyGameObject calls during event dispatch defer to lifecycle queues
+    m_IsIteratingEntities = true;
+
+    struct PairHash {
+        size_t operator()(const std::pair<uint64_t, uint64_t>& p) const noexcept {
+            return std::hash<uint64_t>{}(p.first) ^ (std::hash<uint64_t>{}(p.second) + 0x9e3779b97f4a7c15ULL + (std::hash<uint64_t>{}(p.first) << 6) + (std::hash<uint64_t>{}(p.first) >> 2));
+        }
+    };
+    std::unordered_set<std::pair<uint64_t, uint64_t>, PairHash> contactedPairs;
+
+    auto makePair = [](b2ShapeId a, b2ShapeId b) {
+        uint64_t idA = b2StoreShapeId(a);
+        uint64_t idB = b2StoreShapeId(b);
+        if (idA > idB) std::swap(idA, idB);
+        return std::make_pair(idA, idB);
+    };
+
+    // 1. Process Contact Hit Events
+    for (int i = 0; i < contacts.hitCount; ++i) {
+        const b2ContactHitEvent& hit = contacts.hitEvents[i];
+        if (!b2Shape_IsValid(hit.shapeIdA) || !b2Shape_IsValid(hit.shapeIdB)) continue;
+
+        b2BodyId bodyA = b2Shape_GetBody(hit.shapeIdA);
+        b2BodyId bodyB = b2Shape_GetBody(hit.shapeIdB);
+        if (!b2Body_IsValid(bodyA) || !b2Body_IsValid(bodyB)) continue;
+
+        auto* goA = static_cast<GameObject*>(b2Body_GetUserData(bodyA));
+        auto* goB = static_cast<GameObject*>(b2Body_GetUserData(bodyB));
+        if (!goA || !goB || goA == goB) continue;
+        if (goA->IsPendingDestroy() || goB->IsPendingDestroy()) continue;
+
+        contactedPairs.insert(makePair(hit.shapeIdA, hit.shapeIdB));
+
+        const b2BodyType typeA = b2Body_GetType(bodyA);
+        const b2BodyType typeB = b2Body_GetType(bodyB);
+        const float mA = b2Body_GetMass(bodyA);
+        const float mB = b2Body_GetMass(bodyB);
+
+        float reducedMass = 0.0f;
+        if (typeA == b2_dynamicBody && typeB == b2_dynamicBody) {
+            if (mA + mB > 0.0001f) {
+                reducedMass = (mA * mB) / (mA + mB);
+            }
+        } else if (typeA == b2_dynamicBody) {
+            reducedMass = mA;
+        } else if (typeB == b2_dynamicBody) {
+            reducedMass = mB;
+        }
+
+        const float effectiveImpulse = reducedMass * hit.approachSpeed;
+
+        Collision2DInfo infoA;
+        infoA.Other = goB;
+        infoA.ContactPointXZ = glm::vec2{ hit.point.x, hit.point.y };
+        infoA.NormalXZ = glm::vec2{ hit.normal.x, hit.normal.y }; // points from A -> B
+        infoA.ApproachSpeed = hit.approachSpeed;
+        infoA.EffectiveImpulse = effectiveImpulse;
+
+        Collision2DInfo infoB;
+        infoB.Other = goA;
+        infoB.ContactPointXZ = glm::vec2{ hit.point.x, hit.point.y };
+        infoB.NormalXZ = glm::vec2{ -hit.normal.x, -hit.normal.y }; // points from B -> A
+        infoB.ApproachSpeed = hit.approachSpeed;
+        infoB.EffectiveImpulse = effectiveImpulse;
+
+        goA->DispatchCollisionEnter2D(infoA);
+        if (!goB->IsPendingDestroy()) {
+            goB->DispatchCollisionEnter2D(infoB);
+        }
+    }
+
+    // 2. Process Contact Begin Events (for pairs not already dispatched by hitEvents)
+    for (int i = 0; i < contacts.beginCount; ++i) {
+        const b2ContactBeginTouchEvent& begin = contacts.beginEvents[i];
+        if (!b2Shape_IsValid(begin.shapeIdA) || !b2Shape_IsValid(begin.shapeIdB)) continue;
+
+        auto pair = makePair(begin.shapeIdA, begin.shapeIdB);
+        if (contactedPairs.count(pair) > 0) continue;
+        contactedPairs.insert(pair);
+
+        b2BodyId bodyA = b2Shape_GetBody(begin.shapeIdA);
+        b2BodyId bodyB = b2Shape_GetBody(begin.shapeIdB);
+        if (!b2Body_IsValid(bodyA) || !b2Body_IsValid(bodyB)) continue;
+
+        auto* goA = static_cast<GameObject*>(b2Body_GetUserData(bodyA));
+        auto* goB = static_cast<GameObject*>(b2Body_GetUserData(bodyB));
+        if (!goA || !goB || goA == goB) continue;
+        if (goA->IsPendingDestroy() || goB->IsPendingDestroy()) continue;
+
+        const b2BodyType typeA = b2Body_GetType(bodyA);
+        const b2BodyType typeB = b2Body_GetType(bodyB);
+        const float mA = b2Body_GetMass(bodyA);
+        const float mB = b2Body_GetMass(bodyB);
+
+        float reducedMass = 0.0f;
+        if (typeA == b2_dynamicBody && typeB == b2_dynamicBody) {
+            if (mA + mB > 0.0001f) {
+                reducedMass = (mA * mB) / (mA + mB);
+            }
+        } else if (typeA == b2_dynamicBody) {
+            reducedMass = mA;
+        } else if (typeB == b2_dynamicBody) {
+            reducedMass = mB;
+        }
+
+        b2Vec2 vA = b2Body_GetLinearVelocity(bodyA);
+        b2Vec2 vB = b2Body_GetLinearVelocity(bodyB);
+        b2Vec2 relVel{ vA.x - vB.x, vA.y - vB.y };
+        b2Vec2 normal = begin.manifold.normal;
+        float approachSpeed = std::max(0.0f, -(relVel.x * normal.x + relVel.y * normal.y));
+        float effectiveImpulse = reducedMass * approachSpeed;
+
+        glm::vec2 contactPoint{ 0.0f };
+        if (begin.manifold.pointCount > 0) {
+            contactPoint = { begin.manifold.points[0].point.x, begin.manifold.points[0].point.y };
+        } else {
+            b2Vec2 posA = b2Body_GetPosition(bodyA);
+            b2Vec2 posB = b2Body_GetPosition(bodyB);
+            contactPoint = { (posA.x + posB.x) * 0.5f, (posA.y + posB.y) * 0.5f };
+        }
+
+        Collision2DInfo infoA;
+        infoA.Other = goB;
+        infoA.ContactPointXZ = contactPoint;
+        infoA.NormalXZ = glm::vec2{ normal.x, normal.y };
+        infoA.ApproachSpeed = approachSpeed;
+        infoA.EffectiveImpulse = effectiveImpulse;
+
+        Collision2DInfo infoB;
+        infoB.Other = goA;
+        infoB.ContactPointXZ = contactPoint;
+        infoB.NormalXZ = glm::vec2{ -normal.x, -normal.y };
+        infoB.ApproachSpeed = approachSpeed;
+        infoB.EffectiveImpulse = effectiveImpulse;
+
+        goA->DispatchCollisionEnter2D(infoA);
+        if (!goB->IsPendingDestroy()) {
+            goB->DispatchCollisionEnter2D(infoB);
+        }
+    }
+
+    // 3. Process Contact End Events
+    for (int i = 0; i < contacts.endCount; ++i) {
+        const b2ContactEndTouchEvent& end = contacts.endEvents[i];
+        if (!b2Shape_IsValid(end.shapeIdA) || !b2Shape_IsValid(end.shapeIdB)) continue;
+
+        b2BodyId bodyA = b2Shape_GetBody(end.shapeIdA);
+        b2BodyId bodyB = b2Shape_GetBody(end.shapeIdB);
+        if (!b2Body_IsValid(bodyA) || !b2Body_IsValid(bodyB)) continue;
+
+        auto* goA = static_cast<GameObject*>(b2Body_GetUserData(bodyA));
+        auto* goB = static_cast<GameObject*>(b2Body_GetUserData(bodyB));
+        if (!goA || !goB || goA == goB) continue;
+
+        if (!goA->IsPendingDestroy()) {
+            goA->DispatchCollisionExit2D(goB);
+        }
+        if (!goB->IsPendingDestroy()) {
+            goB->DispatchCollisionExit2D(goA);
+        }
+    }
+
+    // 4. Process Sensor Begin Events
+    for (int i = 0; i < sensors.beginCount; ++i) {
+        const b2SensorBeginTouchEvent& begin = sensors.beginEvents[i];
+        if (!b2Shape_IsValid(begin.sensorShapeId) || !b2Shape_IsValid(begin.visitorShapeId)) continue;
+
+        b2BodyId sensorBody = b2Shape_GetBody(begin.sensorShapeId);
+        b2BodyId visitorBody = b2Shape_GetBody(begin.visitorShapeId);
+        if (!b2Body_IsValid(sensorBody) || !b2Body_IsValid(visitorBody)) continue;
+
+        auto* sensorGo = static_cast<GameObject*>(b2Body_GetUserData(sensorBody));
+        auto* visitorGo = static_cast<GameObject*>(b2Body_GetUserData(visitorBody));
+        if (!sensorGo || !visitorGo || sensorGo == visitorGo) continue;
+
+        if (!sensorGo->IsPendingDestroy()) {
+            sensorGo->DispatchTriggerEnter2D(visitorGo);
+        }
+        if (!visitorGo->IsPendingDestroy()) {
+            visitorGo->DispatchTriggerEnter2D(sensorGo);
+        }
+    }
+
+    // 5. Process Sensor End Events
+    for (int i = 0; i < sensors.endCount; ++i) {
+        const b2SensorEndTouchEvent& end = sensors.endEvents[i];
+        if (!b2Shape_IsValid(end.sensorShapeId) || !b2Shape_IsValid(end.visitorShapeId)) continue;
+
+        b2BodyId sensorBody = b2Shape_GetBody(end.sensorShapeId);
+        b2BodyId visitorBody = b2Shape_GetBody(end.visitorShapeId);
+        if (!b2Body_IsValid(sensorBody) || !b2Body_IsValid(visitorBody)) continue;
+
+        auto* sensorGo = static_cast<GameObject*>(b2Body_GetUserData(sensorBody));
+        auto* visitorGo = static_cast<GameObject*>(b2Body_GetUserData(visitorBody));
+        if (!sensorGo || !visitorGo || sensorGo == visitorGo) continue;
+
+        if (!sensorGo->IsPendingDestroy()) {
+            sensorGo->DispatchTriggerExit2D(visitorGo);
+        }
+        if (!visitorGo->IsPendingDestroy()) {
+            visitorGo->DispatchTriggerExit2D(sensorGo);
+        }
+    }
+
+    m_IsIteratingEntities = false;
+    FlushEntityLifecycleQueues();
 }
 
 SceneWindData SceneRenderContext::BuildWindUniforms(const glm::vec3& swayRightAxis) const {

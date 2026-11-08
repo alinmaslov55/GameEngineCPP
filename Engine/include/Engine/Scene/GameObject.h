@@ -24,7 +24,10 @@ namespace Engine {
 class Scene;
 class Rigidbody2D;
 class BoxCollider2D;
+class CircleCollider2D;
+class CapsuleCollider2D;
 class Tilemap;
+struct Collision2DInfo;
 
 namespace Detail {
 inline uint32_t GetNextComponentTypeID() {
@@ -96,6 +99,8 @@ public:
 
         if constexpr (std::is_same_v<std::remove_cv_t<T>, Rigidbody2D> ||
                       std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
+                      std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
+                      std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D> ||
                       std::is_same_v<std::remove_cv_t<T>, Tilemap>) {
             NotifyPhysicsComponentAdded();
         }
@@ -130,6 +135,11 @@ public:
     }
 
     [[nodiscard]] bool IsActive() const noexcept { return m_Active; }
+
+    void DispatchCollisionEnter2D(const Collision2DInfo& info);
+    void DispatchCollisionExit2D(GameObject* other);
+    void DispatchTriggerEnter2D(GameObject* other);
+    void DispatchTriggerExit2D(GameObject* other);
 
     void SetPoolKey(std::string_view key) { m_PoolKey = key; }
     [[nodiscard]] const std::string& GetPoolKey() const noexcept { return m_PoolKey; }
@@ -251,6 +261,8 @@ public:
                 }
                 if constexpr (std::is_same_v<std::remove_cv_t<T>, Rigidbody2D> ||
                               std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
+                              std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
+                              std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D> ||
                               std::is_same_v<std::remove_cv_t<T>, Tilemap>) {
                     NotifyPhysicsComponentRemoved();
                 }

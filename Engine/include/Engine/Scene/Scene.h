@@ -155,6 +155,7 @@ private:
     void CreateRuntimePhysicsBody(GameObject* go);
     void CreateRuntimeTilemapBody(GameObject* go);
     void IntegrateVerticalElevation(float fixedDt);
+    void ProcessPhysicsEvents();
 
 private:
     struct EntityPool {
