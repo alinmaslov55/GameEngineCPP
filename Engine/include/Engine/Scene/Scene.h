@@ -65,8 +65,29 @@ public:
     void FindGameObjectsInLayer(uint32_t layerMask, std::vector<GameObject*>& out) const;
     [[nodiscard]] std::vector<GameObject*> FindGameObjectsInLayer(uint32_t layerMask) const;
     [[nodiscard]] size_t GetEntityUUIDMapCount() const noexcept { return m_EntityUUIDMap.size(); }
-    [[nodiscard]] bool IsIteratingEntities() const noexcept { return m_IsIteratingEntities; }
-    void SetIsIteratingEntities(bool iterating) noexcept { m_IsIteratingEntities = iterating; }
+    [[nodiscard]] bool IsIteratingEntities() const noexcept { return m_IterationDepth > 0; }
+    void SetIsIteratingEntities(bool iterating) noexcept { m_IterationDepth = iterating ? 1 : 0; }
+    [[nodiscard]] uint32_t GetIterationDepth() const noexcept { return m_IterationDepth; }
+
+    void BeginIteration() noexcept { ++m_IterationDepth; }
+    void EndIteration();
+
+    class ScopedIterationGuard {
+    public:
+        explicit ScopedIterationGuard(Scene& scene) noexcept : m_Scene(scene) {
+            m_Scene.BeginIteration();
+        }
+        ~ScopedIterationGuard() {
+            m_Scene.EndIteration();
+        }
+        ScopedIterationGuard(const ScopedIterationGuard&) = delete;
+        ScopedIterationGuard& operator=(const ScopedIterationGuard&) = delete;
+        ScopedIterationGuard(ScopedIterationGuard&&) = delete;
+        ScopedIterationGuard& operator=(ScopedIterationGuard&&) = delete;
+
+    private:
+        Scene& m_Scene;
+    };
 
     // Prefab instantiation with recursive UUID remapping and world positioning
     GameObject* InstantiatePrefab(const Prefab& prefab, const glm::vec3& worldPos = glm::vec3(0.0f));
@@ -185,7 +206,7 @@ private:
     std::vector<std::unique_ptr<GameObject>> m_PendingSpawnQueue;
     std::vector<GameObject*> m_PendingDestroyQueue;
     std::unordered_map<uint64_t, GameObject*> m_EntityUUIDMap;
-    bool m_IsIteratingEntities = false;
+    uint32_t m_IterationDepth = 0;
     PerspectiveCamera m_Camera;
     uint32_t m_ViewportWidth = 1280;
     uint32_t m_ViewportHeight = 720;

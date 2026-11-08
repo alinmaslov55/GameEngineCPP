@@ -81,7 +81,7 @@ GameObject* Scene::CreateGameObject(const std::string& name) {
     rawPtr->m_Scene = this;
     m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
 
-    if (m_IsIteratingEntities) {
+    if (IsIteratingEntities()) {
         rawPtr->m_LifecycleState = EntityLifecycle::PendingSpawn;
         m_PendingSpawnQueue.push_back(std::move(gameObject));
     } else {
@@ -99,7 +99,7 @@ GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& na
     rawPtr->m_Scene = this;
     m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
 
-    if (m_IsIteratingEntities) {
+    if (IsIteratingEntities()) {
         rawPtr->m_LifecycleState = EntityLifecycle::PendingSpawn;
         m_PendingSpawnQueue.push_back(std::move(gameObject));
     } else {
@@ -158,6 +158,9 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
     if (gameObject->IsPendingDestroy()) {
         return;
     }
+
+    ScopedIterationGuard guard(*this);
+
     ENGINE_CORE_DEBUG("Scene '{}': Destroying GameObject '{}' (UUID: {})", m_Name, gameObject->GetName(), gameObject->GetUUID());
     const bool wasPendingSpawn = (gameObject->m_LifecycleState == EntityLifecycle::PendingSpawn);
     gameObject->m_LifecycleState = EntityLifecycle::PendingDestroy;
@@ -193,10 +196,6 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
                 DestroyGameObject(child->GetGameObject());
             }
         }
-    }
-
-    if (!m_IsIteratingEntities) {
-        FlushEntityLifecycleQueues();
     }
 }
 
@@ -1203,13 +1202,28 @@ std::vector<GameObject*> Scene::FindGameObjectsInLayer(uint32_t layerMask) const
     return result;
 }
 
+void Scene::EndIteration() {
+    if (m_IterationDepth > 0) {
+        --m_IterationDepth;
+        if (m_IterationDepth == 0) {
+            FlushEntityLifecycleQueues();
+        }
+    }
+}
+
 void Scene::FlushEntityLifecycleQueues() {
+    if (m_IterationDepth > 0) {
+        return;
+    }
     if (m_PendingSpawnQueue.empty() && m_PendingDestroyQueue.empty()) {
         return;
     }
 
-    const bool prevIterating = m_IsIteratingEntities;
-    m_IsIteratingEntities = true;
+    struct FlushDepthGuard {
+        uint32_t& depth;
+        explicit FlushDepthGuard(uint32_t& d) noexcept : depth(d) { depth = 1; }
+        ~FlushDepthGuard() noexcept { depth = 0; }
+    } flushGuard(m_IterationDepth);
 
     constexpr uint32_t kMaxFlushPasses = 16;
     uint32_t passes = 0;
@@ -1297,22 +1311,23 @@ void Scene::FlushEntityLifecycleQueues() {
         }
     }
 
-    m_IsIteratingEntities = prevIterating;
+    if (passes >= kMaxFlushPasses) {
+        ENGINE_CORE_ERROR("Scene '{}': Reached max flush passes ({}), possible infinite lifecycle recursion", m_Name, kMaxFlushPasses);
+    }
 }
 
 void Scene::Update(float deltaTime) {
     ENGINE_CORE_TRACE("Scene '{}': Update (deltaTime: {:.4f}s, {} GameObjects)", m_Name, deltaTime, m_GameObjects.size());
 
-    m_IsIteratingEntities = true;
-    for (size_t i = 0; i < m_GameObjects.size(); ++i) {
-        auto& gameObject = m_GameObjects[i];
-        if (gameObject->IsActiveInHierarchy()) {
-            gameObject->Update(deltaTime);
+    {
+        ScopedIterationGuard guard(*this);
+        for (size_t i = 0; i < m_GameObjects.size(); ++i) {
+            auto& gameObject = m_GameObjects[i];
+            if (gameObject->IsActiveInHierarchy()) {
+                gameObject->Update(deltaTime);
+            }
         }
     }
-    m_IsIteratingEntities = false;
-
-    FlushEntityLifecycleQueues();
 
     if (!m_IsRuntimeRunning) {
         UpdateCollidersAndGravity(deltaTime);
@@ -1816,10 +1831,13 @@ void Scene::UpdateRuntime(float deltaTime) {
             }
 
             // Fixed update dispatch on active components
-            for (size_t i = 0; i < m_GameObjects.size(); ++i) {
-                auto& go = m_GameObjects[i];
-                if (go->IsActiveInHierarchy()) {
-                    go->FixedUpdate(fixedDt);
+            {
+                ScopedIterationGuard guard(*this);
+                for (size_t i = 0; i < m_GameObjects.size(); ++i) {
+                    auto& go = m_GameObjects[i];
+                    if (go->IsActiveInHierarchy()) {
+                        go->FixedUpdate(fixedDt);
+                    }
                 }
             }
 
@@ -1978,7 +1996,7 @@ void Scene::ProcessPhysicsEvents() {
     b2SensorEvents sensors = b2World_GetSensorEvents(worldId);
 
     // Guard entity lifecycle so DestroyGameObject calls during event dispatch defer to lifecycle queues
-    m_IsIteratingEntities = true;
+    ScopedIterationGuard guard(*this);
 
     struct PairHash {
         size_t operator()(const std::pair<uint64_t, uint64_t>& p) const noexcept {
@@ -2180,9 +2198,6 @@ void Scene::ProcessPhysicsEvents() {
             visitorGo->DispatchTriggerExit2D(sensorGo);
         }
     }
-
-    m_IsIteratingEntities = false;
-    FlushEntityLifecycleQueues();
 }
 
 SceneWindData SceneRenderContext::BuildWindUniforms(const glm::vec3& swayRightAxis) const {

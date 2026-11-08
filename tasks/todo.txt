@@ -24,7 +24,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Only append Alive entities to m_PendingDestroyQueue; entities in PendingSpawn only get marked m_PendingDestroy = true and torn down once during Pass 1.
     - Verification (EngineTests): Spawn parent+child hierarchy inside Component::Update(), destroy parent in the same Update() call, run under AddressSanitizer / MSVC CRT heap check -> zero UAF and OnDestroy() count == 1.
 
-[ ] 3. Add Iteration Guard & Flush Around FixedUpdate + Convert Flag to Reentrant Counter
+[x] 3. Add Iteration Guard & Flush Around FixedUpdate + Convert Flag to Reentrant Counter
     - Files: Engine/src/Scene/Scene.cpp (lines 1166-1175, 1673-1678, 1835-2039), Engine/include/Engine/Scene/Scene.h
     - Root Cause:
       * Scene::UpdateRuntime() invokes go->FixedUpdate(fixedDt) without setting m_IsIteratingEntities = true or flushing queues afterward, allowing mid-loop m_GameObjects vector mutation/UB if FixedUpdate() spawns or destroys entities.

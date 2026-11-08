@@ -2,7 +2,9 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Component.h"
+#include "Engine/Scene/Prefab.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Core/Time.h"
 
 #include <vector>
 #include <memory>
@@ -589,6 +591,144 @@ TEST(DeferredLifecycleTest, Box2DRuntimeBodyDestroyedOnEntityDelete) {
 
     // Step runtime physics to verify world remains valid with 0 crashes or ghost contacts
     scene.UpdateRuntime(0.016f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(DeferredLifecycleTest, ReentrantIterationDepthTracking) {
+    Engine::Scene scene("DepthTrackingScene");
+    EXPECT_EQ(scene.GetIterationDepth(), 0u);
+    EXPECT_FALSE(scene.IsIteratingEntities());
+
+    {
+        Engine::Scene::ScopedIterationGuard g1(scene);
+        EXPECT_EQ(scene.GetIterationDepth(), 1u);
+        EXPECT_TRUE(scene.IsIteratingEntities());
+
+        auto* entity1 = scene.CreateGameObject("Entity1");
+        EXPECT_TRUE(entity1->IsPendingSpawn());
+        EXPECT_EQ(scene.GetGameObjects().size(), 0u);
+
+        {
+            Engine::Scene::ScopedIterationGuard g2(scene);
+            EXPECT_EQ(scene.GetIterationDepth(), 2u);
+
+            auto* entity2 = scene.CreateGameObject("Entity2");
+            EXPECT_TRUE(entity2->IsPendingSpawn());
+            EXPECT_EQ(scene.GetGameObjects().size(), 0u);
+
+            {
+                Engine::Scene::ScopedIterationGuard g3(scene);
+                EXPECT_EQ(scene.GetIterationDepth(), 3u);
+            }
+            EXPECT_EQ(scene.GetIterationDepth(), 2u);
+            EXPECT_EQ(scene.GetGameObjects().size(), 0u);
+        }
+        EXPECT_EQ(scene.GetIterationDepth(), 1u);
+        EXPECT_EQ(scene.GetGameObjects().size(), 0u);
+    }
+
+    // Depth returns to 0 -> Auto-flushed!
+    EXPECT_EQ(scene.GetIterationDepth(), 0u);
+    EXPECT_FALSE(scene.IsIteratingEntities());
+    EXPECT_EQ(scene.GetGameObjects().size(), 2u);
+    EXPECT_TRUE(scene.GetGameObjects()[0]->IsAlive());
+    EXPECT_TRUE(scene.GetGameObjects()[1]->IsAlive());
+}
+
+TEST(DeferredLifecycleTest, FixedUpdateSpawnAndDestroyAcross30Frames) {
+    Engine::Scene scene("FixedUpdateStressScene");
+    scene.OnRuntimeStart();
+    EXPECT_TRUE(scene.IsRuntimeRunning());
+
+    // Create a base prefab for pooling
+    auto* templateEntity = scene.CreateGameObject("PooledTemplate");
+    auto* tRb = templateEntity->AddComponent<Engine::Rigidbody2D>();
+    tRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    auto* tCol = templateEntity->AddComponent<Engine::BoxCollider2D>();
+    tCol->size = { 0.5f, 0.5f };
+
+    auto prefab = Engine::Prefab::CreateFromGameObject(templateEntity);
+    ASSERT_NE(prefab, nullptr);
+    scene.DestroyGameObject(templateEntity);
+    EXPECT_EQ(scene.GetGameObjects().size(), 0u);
+
+    const std::string poolKey = "BulletPool";
+    scene.PrewarmPool(poolKey, *prefab, 5);
+
+    class FixedUpdateStressComponent : public Engine::Component {
+    public:
+        Engine::Scene* scene = nullptr;
+        std::shared_ptr<Engine::Prefab> bulletPrefab;
+        std::string poolKey;
+        std::vector<Engine::GameObject*> spawnedEntities;
+        std::vector<Engine::GameObject*> pooledEntities;
+        int frameCount = 0;
+        int totalCreated = 0;
+        int totalDestroyed = 0;
+
+        void FixedUpdate(float fixedDt) override {
+            (void)fixedDt;
+            ++frameCount;
+
+            // 1. Spawn a dynamic runtime entity mid-FixedUpdate
+            auto* newGo = scene->CreateGameObject("DynamicEnemy_" + std::to_string(frameCount));
+            auto* rb = newGo->AddComponent<Engine::Rigidbody2D>();
+            rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+            auto* col = newGo->AddComponent<Engine::BoxCollider2D>();
+            col->size = { 1.0f, 1.0f };
+            spawnedEntities.push_back(newGo);
+            ++totalCreated;
+
+            // 2. Acquire and release pooled entities mid-FixedUpdate
+            if (bulletPrefab) {
+                auto* bullet = scene->AcquirePooled(poolKey, *bulletPrefab, glm::vec3(float(frameCount), 0.0f, 0.0f));
+                if (bullet) {
+                    pooledEntities.push_back(bullet);
+                }
+                if (pooledEntities.size() > 2) {
+                    auto* toRelease = pooledEntities.front();
+                    pooledEntities.erase(pooledEntities.begin());
+                    scene->ReleaseToPool(poolKey, toRelease);
+                }
+            }
+
+            // 3. Destroy older entities mid-FixedUpdate (retain at most 3 alive)
+            while (spawnedEntities.size() > 3) {
+                auto* victim = spawnedEntities.front();
+                spawnedEntities.erase(spawnedEntities.begin());
+                scene->DestroyGameObject(victim);
+                ++totalDestroyed;
+            }
+        }
+    };
+
+    auto* controller = scene.CreateGameObject("StressController");
+    auto* stressComp = controller->AddComponent<FixedUpdateStressComponent>();
+    stressComp->scene = &scene;
+    stressComp->bulletPrefab = prefab;
+    stressComp->poolKey = poolKey;
+
+    // Run simulation across 30 frames at fixed timestep (1 fixed step per frame)
+    const float fixedDt = Engine::Time::GetFixedDeltaTime();
+    for (int frame = 0; frame < 30; ++frame) {
+        scene.UpdateRuntime(fixedDt);
+    }
+
+    EXPECT_EQ(stressComp->frameCount, 30);
+    EXPECT_EQ(stressComp->totalCreated, 30);
+    EXPECT_EQ(stressComp->totalDestroyed, 27);
+    EXPECT_EQ(stressComp->spawnedEntities.size(), 3u);
+
+    // Verify all remaining entities are valid, alive, and searchable in Scene
+    for (auto* go : stressComp->spawnedEntities) {
+        ASSERT_NE(go, nullptr);
+        EXPECT_TRUE(go->IsAlive());
+        EXPECT_EQ(scene.FindGameObjectByUUID(go->GetUUID()), go);
+        auto* rb = go->GetComponent<Engine::Rigidbody2D>();
+        ASSERT_NE(rb, nullptr);
+        EXPECT_NE(rb->RuntimeBody, nullptr);
+    }
 
     scene.OnRuntimeStop();
 }
