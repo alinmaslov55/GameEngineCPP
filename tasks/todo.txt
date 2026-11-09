@@ -42,7 +42,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Iterate using index-based loops checking `i < m_Components.size()` and `IsActiveInHierarchy()` (or small-buffer deferred component removal queue).
     - Verification (EngineTests): Component A adds Component B and removes itself during Update() and OnCollisionEnter2D(); verify B runs cleanly with zero iterator invalidation.
 
-[ ] 5. Fix Data Race on Transform::m_CachedWorldMatrix in DrawStandeesParallel & Thread-Safe UUIDs
+[x] 5. Fix Data Race on Transform::m_CachedWorldMatrix in DrawStandeesParallel & Thread-Safe UUIDs
     - Files: Engine/src/Renderer/Renderer2D.cpp (lines 744-757), Engine/include/Engine/Scene/Transform.h, Engine/src/Scene/Transform.cpp, Engine/src/Scene/Object.cpp (lines 6-11), Engine/src/Scene/Scene.cpp (line 2287)
     - Root Cause:
       * DrawStandeesParallel runs on JobSystem worker threads and calls cmd.transform->GetWorldPosition() / GetWorldRotation(). Transform::GetWorldMatrix() mutates unsynchronized `mutable` fields (`m_WorldDirty`, `m_CachedWorldMatrix`, `m_LastPosition`). Parented standees trigger concurrent read/write races on worker threads.

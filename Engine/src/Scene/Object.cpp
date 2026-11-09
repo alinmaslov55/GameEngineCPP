@@ -4,9 +4,11 @@
 namespace Engine {
 
 static uint64_t GenerateUUID() {
-    static std::random_device s_RandomDevice;
-    static std::mt19937_64 s_Engine(s_RandomDevice());
-    static std::uniform_int_distribution<uint64_t> s_UniformDistribution(1, UINT64_MAX);
+    thread_local std::mt19937_64 s_Engine([]() {
+        std::random_device rd;
+        return rd();
+    }());
+    thread_local std::uniform_int_distribution<uint64_t> s_UniformDistribution(1, UINT64_MAX);
     return s_UniformDistribution(s_Engine);
 }
 

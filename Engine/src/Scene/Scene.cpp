@@ -43,12 +43,13 @@
 namespace Engine {
 namespace {
 inline void ComputeStandeeBoundingSphere(const Transform& transform,
+                                         const glm::vec3& worldPos,
                                          glm::vec3& outCenter,
                                          float& outRadius) noexcept {
     const float width  = std::abs(transform.scale.x);
     const float height = std::abs(transform.scale.y);
     const float depth  = std::abs(transform.scale.z);
-    outCenter = transform.GetWorldPosition() + glm::vec3(0.0f, 0.5f * height, 0.0f);
+    outCenter = worldPos + glm::vec3(0.0f, 0.5f * height, 0.0f);
     // Generous bounding radius accounting for diagonal corners, squash/stretch, and wind sway
     outRadius = 0.85f * std::max({ width, height, depth }) + 0.75f;
 }
@@ -2295,7 +2296,7 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
         if (m_FoliageScratch.size() < 8 && (mask & kBoxColliderMask)) {
             if (auto* bc = gameObject->GetComponent<BoxCollider2D>(); bc && bc->isDynamic) {
                 if (auto* t = gameObject->GetTransform()) {
-                    m_FoliageScratch.emplace_back(gameObject.get(), t->position);
+                    m_FoliageScratch.emplace_back(gameObject.get(), t->GetWorldPosition());
                 }
             }
         }
@@ -2390,15 +2391,23 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
         if (mask & kSpriteMask) {
             if (auto* sprite = gameObject->GetComponent<SpriteRenderer>()) {
                 if (auto* transform = gameObject->GetTransform()) {
+                    const bool useInterp = m_IsRuntimeRunning && (m_PhysicsAlpha > 0.0f);
+                    const glm::vec3 worldPos = useInterp
+                        ? transform->GetInterpolatedWorldPosition(m_PhysicsAlpha)
+                        : transform->GetWorldPosition();
+                    const glm::vec3 worldRot = useInterp
+                        ? transform->GetInterpolatedWorldRotation(m_PhysicsAlpha)
+                        : transform->GetWorldRotation();
+
                     if (sprite->GetBillboardMode() == SpriteRenderer::BillboardMode::FlatGround) {
                         const float decalRadius = 0.75f * std::max(std::abs(transform->scale.x), std::abs(transform->scale.z)) + 0.5f;
-                        if (camFrustum.IntersectsSphere(transform->GetWorldPosition(), decalRadius)) {
+                        if (camFrustum.IntersectsSphere(worldPos, decalRadius)) {
                             m_FlatDecalScratch.emplace_back(sprite, transform);
                         }
                     } else {
                         glm::vec3 boundsCenter{ 0.0f };
                         float boundsRadius = 0.0f;
-                        ComputeStandeeBoundingSphere(*transform, boundsCenter, boundsRadius);
+                        ComputeStandeeBoundingSphere(*transform, worldPos, boundsCenter, boundsRadius);
 
                         const bool inCamera = camFrustum.IntersectsSphere(boundsCenter, boundsRadius);
                         const bool inShadow = shadowsActive && sprite->GetCastShadows() && shadowFrustum.IntersectsSphere(boundsCenter, boundsRadius);
@@ -2420,14 +2429,14 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
                             const float heightFactor = std::clamp(0.55f + 0.25f * std::abs(standeeSize.y), 0.50f, 1.45f);
                             const float windWeight = rawWindWeight * heightFactor;
                             const float spatialPhase = ctx.windComp
-                                ? ctx.windComp->ComputeSpatialPhase(transform->position, sprite->GetWindPhaseOffset())
+                                ? ctx.windComp->ComputeSpatialPhase(worldPos, sprite->GetWindPhaseOffset())
                                 : sprite->GetWindPhaseOffset();
 
                             float camProximityBend = 0.0f;
                             float shadowProximityBend = 0.0f;
                             if (ctx.windComp && ctx.windComp->InteractiveRustle && rawWindWeight > 0.0001f && !m_FoliageInteractorGrid.empty()) {
-                                const int32_t scx = static_cast<int32_t>(std::floor(transform->position.x / kSpatialCellSize));
-                                const int32_t scz = static_cast<int32_t>(std::floor(transform->position.z / kSpatialCellSize));
+                                const int32_t scx = static_cast<int32_t>(std::floor(worldPos.x / kSpatialCellSize));
+                                const int32_t scz = static_cast<int32_t>(std::floor(worldPos.z / kSpatialCellSize));
                                 const auto it = m_FoliageInteractorGrid.find(GetCellKey(scx, scz));
                                 if (it != m_FoliageInteractorGrid.end() && !it->second.empty()) {
                                     float camBendSum = 0.0f;
@@ -2437,11 +2446,11 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
                                         if (interactorObj == gameObject.get()) continue;
                                         if (inCamera) {
                                             camBendSum += ctx.windComp->EvaluateProximityBend(
-                                                transform->position, interactorPos, camRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
+                                                worldPos, interactorPos, camRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
                                         }
                                         if (inShadow) {
                                             shadowBendSum += ctx.windComp->EvaluateProximityBend(
-                                                transform->position, interactorPos, sunRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
+                                                worldPos, interactorPos, sunRightXZ, rawWindWeight, ctx.totalTime, 1.2f);
                                         }
                                     }
                                     if (inCamera) camProximityBend = std::clamp(camBendSum, -0.65f, 0.65f);
@@ -2452,6 +2461,9 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
                             StandeeRenderCommand cmd;
                             cmd.transform = transform;
                             cmd.sprite = sprite;
+                            cmd.worldPosition = worldPos;
+                            cmd.worldRotation = worldRot;
+                            cmd.scaleZ = transform->scale.z;
                             cmd.size = standeeSize;
                             cmd.rotationZ = effectiveRotZ;
                             cmd.windWeight = windWeight;
@@ -2462,7 +2474,7 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
                             cmd.emissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
                             cmd.receiverOffset = std::max(0.48f, 0.55f * std::abs(standeeSize.x));
                             cmd.color = sprite->GetColor();
-                            cmd.viewDepth = glm::dot(transform->GetWorldPosition() - camEye, camForward);
+                            cmd.viewDepth = glm::dot(worldPos - camEye, camForward);
                             cmd.boundsCenter = boundsCenter;
                             cmd.boundsRadius = boundsRadius;
 

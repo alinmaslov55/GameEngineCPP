@@ -210,4 +210,22 @@ glm::mat4 Transform::GetInterpolatedTransformMatrix(float alpha) const noexcept 
     return m_Parent->GetInterpolatedTransformMatrix(alpha) * GetInterpolatedLocalMatrix(alpha);
 }
 
+glm::vec3 Transform::GetInterpolatedWorldPosition(float alpha) const noexcept {
+    if (!m_Parent) {
+        return GetInterpolatedPosition(alpha);
+    }
+    const glm::mat4 worldMat = GetInterpolatedTransformMatrix(alpha);
+    return glm::vec3(worldMat[3]);
+}
+
+glm::vec3 Transform::GetInterpolatedWorldRotation(float alpha) const noexcept {
+    if (!m_Parent) {
+        return GetInterpolatedRotation(alpha);
+    }
+    const glm::mat4 worldMat = GetInterpolatedTransformMatrix(alpha);
+    glm::vec3 wPos, wRot, wScale;
+    DecomposeMatrix(worldMat, wPos, wRot, wScale);
+    return wRot;
+}
+
 } // namespace Engine

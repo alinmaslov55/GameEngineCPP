@@ -66,6 +66,8 @@ public:
 
     [[nodiscard]] glm::mat4 GetInterpolatedLocalMatrix(float alpha) const noexcept;
     [[nodiscard]] glm::mat4 GetInterpolatedTransformMatrix(float alpha) const noexcept;
+    [[nodiscard]] glm::vec3 GetInterpolatedWorldPosition(float alpha) const noexcept;
+    [[nodiscard]] glm::vec3 GetInterpolatedWorldRotation(float alpha) const noexcept;
 
     void SetDirty() const noexcept;
 

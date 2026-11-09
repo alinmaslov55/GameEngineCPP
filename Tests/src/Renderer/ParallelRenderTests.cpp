@@ -7,6 +7,8 @@
 #include "Engine/Core/JobSystem.h"
 
 #include <vector>
+#include <unordered_set>
+#include "Engine/Scene/GameObject.h"
 
 namespace {
 
@@ -121,6 +123,92 @@ TEST(ParallelRenderTest, ParallelVertexGenerationAlgorithm) {
         EXPECT_NEAR(v[2].Position.y, 2.0f, 1e-4f);
         EXPECT_FLOAT_EQ(v[0].AlphaCutoff, 0.15f);
         EXPECT_FLOAT_EQ(v[0].TexIndex, 1.0f);
+    }
+
+    Engine::JobSystem::Shutdown();
+}
+
+TEST(ParallelRenderTest, ThreadSafeUUIDGenerationAcrossThreads) {
+    if (!Engine::JobSystem::IsInitialized()) {
+        Engine::JobSystem::Init(4);
+    }
+
+    constexpr size_t kTotalUUIDs = 10000;
+    std::vector<uint64_t> generatedUUIDs(kTotalUUIDs, 0);
+
+    Engine::JobSystem::ParallelFor(kTotalUUIDs, [&](size_t i) {
+        Engine::GameObject go("ConcurrentEntity");
+        generatedUUIDs[i] = go.GetUUID();
+    });
+
+    std::unordered_set<uint64_t> uniqueUUIDs;
+    uniqueUUIDs.reserve(kTotalUUIDs);
+    for (size_t i = 0; i < kTotalUUIDs; ++i) {
+        EXPECT_NE(generatedUUIDs[i], 0ULL);
+        uniqueUUIDs.insert(generatedUUIDs[i]);
+    }
+
+    EXPECT_EQ(uniqueUUIDs.size(), kTotalUUIDs);
+
+    Engine::JobSystem::Shutdown();
+}
+
+TEST(ParallelRenderTest, ParallelStandeeVertexGenerationWithParentedHierarchyAndSubFrameInterpolation) {
+    // 1. Verify parented hierarchy sub-frame interpolation
+    Engine::Transform root;
+    root.prevPosition = { 0.0f, 0.0f, 0.0f };
+    root.position = { 10.0f, 0.0f, 0.0f };
+
+    Engine::Transform child;
+    child.prevPosition = { 5.0f, 0.0f, 0.0f };
+    child.position = { 5.0f, 2.0f, 0.0f };
+    child.SetParent(&root, /*keepWorldTransform=*/false);
+
+    // At alpha = 0.5f:
+    // Root interpolated world pos: (5.0, 0.0, 0.0)
+    // Child interpolated local pos: (5.0, 1.0, 0.0)
+    // Child interpolated world pos: (10.0, 1.0, 0.0)
+    glm::vec3 interpWorldPos = child.GetInterpolatedWorldPosition(0.5f);
+    EXPECT_NEAR(interpWorldPos.x, 10.0f, 1e-4f);
+    EXPECT_NEAR(interpWorldPos.y, 1.0f, 1e-4f);
+    EXPECT_NEAR(interpWorldPos.z, 0.0f, 1e-4f);
+
+    // 2. Parallel vertex generation without accessing Transform mutable state
+    if (!Engine::JobSystem::IsInitialized()) {
+        Engine::JobSystem::Init(4);
+    }
+
+    constexpr size_t kCommandCount = 1000;
+    std::vector<Engine::StandeeRenderCommand> commands(kCommandCount);
+    for (size_t i = 0; i < kCommandCount; ++i) {
+        commands[i].transform = &child;
+        commands[i].worldPosition = interpWorldPos + glm::vec3(static_cast<float>(i), 0.0f, 0.0f);
+        commands[i].worldRotation = child.GetInterpolatedWorldRotation(0.5f);
+        commands[i].scaleZ = child.scale.z;
+        commands[i].size = { 2.0f, 3.0f };
+        commands[i].rotationZ = 0.0f;
+    }
+
+    std::vector<Engine::QuadVertex> vertexBuffer(kCommandCount * 4);
+    const glm::vec3 rightAxis = { 1.0f, 0.0f, 0.0f };
+    const glm::vec3 upAxis = { 0.0f, 1.0f, 0.0f };
+
+    // Parallel execution purely on POD command fields
+    Engine::JobSystem::ParallelFor(kCommandCount, [&](size_t i) {
+        const auto& cmd = commands[i];
+        glm::vec3 corners[4];
+        Engine::ComputeBillboardCorners(cmd.worldPosition, cmd.size, rightAxis, upAxis, cmd.rotationZ, corners);
+
+        for (int c = 0; c < 4; ++c) {
+            vertexBuffer[i * 4 + c].Position = corners[c];
+        }
+    });
+
+    for (size_t i = 0; i < kCommandCount; ++i) {
+        const float expectedCenterX = 10.0f + static_cast<float>(i);
+        EXPECT_NEAR(vertexBuffer[i * 4 + 0].Position.x, expectedCenterX - 1.0f, 1e-4f);
+        EXPECT_NEAR(vertexBuffer[i * 4 + 1].Position.x, expectedCenterX + 1.0f, 1e-4f);
+        EXPECT_NEAR(vertexBuffer[i * 4 + 2].Position.y, 1.0f + 3.0f, 1e-4f);
     }
 
     Engine::JobSystem::Shutdown();

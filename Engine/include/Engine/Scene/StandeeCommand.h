@@ -14,6 +14,10 @@ struct StandeeRenderCommand {
     const Transform* transform = nullptr;
     const SpriteRenderer* sprite = nullptr;
 
+    glm::vec3 worldPosition{ 0.0f };
+    glm::vec3 worldRotation{ 0.0f };
+    float scaleZ = 1.0f;
+
     glm::vec2 size{ 1.0f };
     float rotationZ = 0.0f;
     float windWeight = 0.0f;
