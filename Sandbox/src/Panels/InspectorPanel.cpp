@@ -70,10 +70,11 @@ void DrawAddComponentEntry(const char* label, Engine::GameObject* entity) {
 void DrawCollisionFilterUI(uint64_t& categoryBits, uint64_t& maskBits, int32_t& groupIndex,
                           const std::function<void(uint64_t, uint64_t, int32_t)>& onChange) {
     const char* layerNames[] = {
-        "Environment", "LowObstacle", "Player", "Enemy",
-        "Companion", "PlayerHitbox", "EnemyHitbox", "Projectile", "Pickup", "Default"
+        "Default", "Environment", "LowObstacle", "Player", "Enemy",
+        "Companion", "PlayerHitbox", "EnemyHitbox", "Projectile", "Pickup"
     };
     const uint64_t layerBits[] = {
+        Engine::PhysicsLayer::Default,
         Engine::PhysicsLayer::Environment,
         Engine::PhysicsLayer::LowObstacle,
         Engine::PhysicsLayer::Player,
@@ -82,11 +83,10 @@ void DrawCollisionFilterUI(uint64_t& categoryBits, uint64_t& maskBits, int32_t& 
         Engine::PhysicsLayer::PlayerHitbox,
         Engine::PhysicsLayer::EnemyHitbox,
         Engine::PhysicsLayer::Projectile,
-        Engine::PhysicsLayer::Pickup,
-        Engine::PhysicsLayer::Default
+        Engine::PhysicsLayer::Pickup
     };
 
-    int currentIdx = 9; // Default
+    int currentIdx = 0; // Default
     for (int i = 0; i < 10; ++i) {
         if (categoryBits == layerBits[i]) {
             currentIdx = i;

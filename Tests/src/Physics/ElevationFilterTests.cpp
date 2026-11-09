@@ -226,17 +226,56 @@ TEST(ElevationFilterTest, AirborneTouchdown_RestoresGroundMask) {
 
 // Test 5: Custom layer conversion and mask matching
 TEST(ElevationFilterTest, CustomLayerCollisionFiltering) {
-    // EntityLayer <-> PhysicsLayer bidirectional mapping
+    // Compile-time verification of branchless bit alignment across all 10 layers
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Default) == Engine::PhysicsLayer::Default);
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Environment) == Engine::PhysicsLayer::Environment);
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::LowObstacle) == Engine::PhysicsLayer::LowObstacle);
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Player) == Engine::PhysicsLayer::Player);
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Enemy) == Engine::PhysicsLayer::Enemy);
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Companion) == Engine::PhysicsLayer::Companion);
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::PlayerHitbox) == Engine::PhysicsLayer::PlayerHitbox);
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::EnemyHitbox) == Engine::PhysicsLayer::EnemyHitbox);
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Projectile) == Engine::PhysicsLayer::Projectile);
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Pickup) == Engine::PhysicsLayer::Pickup);
+
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Default) == Engine::EntityLayer::Default);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Environment) == Engine::EntityLayer::Environment);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::LowObstacle) == Engine::EntityLayer::LowObstacle);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Player) == Engine::EntityLayer::Player);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Enemy) == Engine::EntityLayer::Enemy);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Companion) == Engine::EntityLayer::Companion);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::PlayerHitbox) == Engine::EntityLayer::PlayerHitbox);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::EnemyHitbox) == Engine::EntityLayer::EnemyHitbox);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Projectile) == Engine::EntityLayer::Projectile);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Pickup) == Engine::EntityLayer::Pickup);
+
+    // Multi-layer mask bit combination cast
+    constexpr uint32_t multiEntity = Engine::EntityLayer::Player | Engine::EntityLayer::PlayerHitbox | Engine::EntityLayer::Environment;
+    constexpr uint64_t multiPhysics = Engine::PhysicsLayer::Player | Engine::PhysicsLayer::PlayerHitbox | Engine::PhysicsLayer::Environment;
+    static_assert(Engine::PhysicsLayer::FromEntityLayer(multiEntity) == multiPhysics);
+    static_assert(Engine::PhysicsLayer::ToEntityLayer(multiPhysics) == multiEntity);
+
+    // EntityLayer <-> PhysicsLayer bidirectional runtime mapping
+    EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Default), Engine::PhysicsLayer::Default);
     EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Environment), Engine::PhysicsLayer::Environment);
     EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::LowObstacle), Engine::PhysicsLayer::LowObstacle);
     EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Player), Engine::PhysicsLayer::Player);
     EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Enemy), Engine::PhysicsLayer::Enemy);
+    EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Companion), Engine::PhysicsLayer::Companion);
+    EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::PlayerHitbox), Engine::PhysicsLayer::PlayerHitbox);
+    EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::EnemyHitbox), Engine::PhysicsLayer::EnemyHitbox);
+    EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Projectile), Engine::PhysicsLayer::Projectile);
     EXPECT_EQ(Engine::PhysicsLayer::FromEntityLayer(Engine::EntityLayer::Pickup), Engine::PhysicsLayer::Pickup);
 
+    EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Default), Engine::EntityLayer::Default);
     EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Environment), Engine::EntityLayer::Environment);
     EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::LowObstacle), Engine::EntityLayer::LowObstacle);
     EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Player), Engine::EntityLayer::Player);
     EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Enemy), Engine::EntityLayer::Enemy);
+    EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Companion), Engine::EntityLayer::Companion);
+    EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::PlayerHitbox), Engine::EntityLayer::PlayerHitbox);
+    EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::EnemyHitbox), Engine::EntityLayer::EnemyHitbox);
+    EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Projectile), Engine::EntityLayer::Projectile);
     EXPECT_EQ(Engine::PhysicsLayer::ToEntityLayer(Engine::PhysicsLayer::Pickup), Engine::EntityLayer::Pickup);
 
     // Box2D Shape Filtering logic

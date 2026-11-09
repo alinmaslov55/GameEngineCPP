@@ -80,8 +80,9 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             }
 
             const glm::vec3 worldPos = transform->GetWorldPosition();
+            const glm::vec3 worldRot = transform->GetWorldRotation();
             bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
-            bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.y));
+            bodyDef.rotation = b2MakeRot(glm::radians(worldRot.y));
             bodyDef.fixedRotation = rb2d->FixedRotation;
             bodyDef.linearDamping = rb2d->LinearDamping;
             bodyDef.angularDamping = rb2d->AngularDamping;
@@ -131,6 +132,18 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                 if (b2Body_IsBullet(bodyId) != rb2d->IsBullet) {
                     b2Body_SetBullet(bodyId, rb2d->IsBullet);
                 }
+
+                const glm::vec3 worldPos = transform->GetWorldPosition();
+                const glm::vec3 worldRot = transform->GetWorldRotation();
+                b2Vec2 currentB2Pos = b2Body_GetPosition(bodyId);
+                b2Rot currentB2Rot = b2Body_GetRotation(bodyId);
+                float currentAngle = b2Rot_GetAngle(currentB2Rot);
+                float targetAngle = glm::radians(worldRot.y);
+                if (std::abs(currentB2Pos.x - worldPos.x) > 1e-4f ||
+                    std::abs(currentB2Pos.y - worldPos.z) > 1e-4f ||
+                    (!rb2d->FixedRotation && std::abs(currentAngle - targetAngle) > 1e-4f)) {
+                    b2Body_SetTransform(bodyId, b2Vec2{ worldPos.x, worldPos.z }, b2MakeRot(targetAngle));
+                }
             }
         }
 
@@ -167,8 +180,9 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             b2BodyDef bodyDef = b2DefaultBodyDef();
             bodyDef.type = b2_staticBody;
             const glm::vec3 worldPos = transform->GetWorldPosition();
+            const glm::vec3 worldRot = transform->GetWorldRotation();
             bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
-            bodyDef.rotation = b2MakeRot(glm::radians(transform->rotation.y));
+            bodyDef.rotation = b2MakeRot(glm::radians(worldRot.y));
             bodyDef.name = go->GetName().c_str();
             bodyDef.userData = go;
 
@@ -566,14 +580,16 @@ void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
                             b2Vec2 pos = b2Body_GetPosition(bodyId);
                             b2Rot rot = b2Body_GetRotation(bodyId);
                             if (transform->GetParent()) {
-                                transform->SetWorldPosition({ pos.x, transform->position.y, pos.y });
+                                transform->SetWorldPosition({ pos.x, transform->GetWorldPosition().y, pos.y });
+                                if (!rb2d->FixedRotation) {
+                                    transform->SetWorldRotation({ transform->rotation.x, glm::degrees(b2Rot_GetAngle(rot)), transform->rotation.z });
+                                }
                             } else {
                                 transform->position.x = pos.x;
                                 transform->position.z = pos.y;
-                                transform->SetDirty();
-                            }
-                            if (!rb2d->FixedRotation) {
-                                transform->rotation.y = glm::degrees(b2Rot_GetAngle(rot));
+                                if (!rb2d->FixedRotation) {
+                                    transform->rotation.y = glm::degrees(b2Rot_GetAngle(rot));
+                                }
                                 transform->SetDirty();
                             }
                         }

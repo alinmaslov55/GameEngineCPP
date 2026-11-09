@@ -62,6 +62,7 @@ public:
     [[nodiscard]] glm::vec3 GetWorldPosition() const noexcept;
     void SetWorldPosition(const glm::vec3& worldPos) noexcept;
     [[nodiscard]] glm::vec3 GetWorldRotation() const noexcept;
+    void SetWorldRotation(const glm::vec3& worldRot) noexcept;
     [[nodiscard]] glm::vec3 GetWorldScale() const noexcept;
 
     [[nodiscard]] glm::mat4 GetInterpolatedLocalMatrix(float alpha) const noexcept;

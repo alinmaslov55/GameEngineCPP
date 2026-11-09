@@ -182,6 +182,17 @@ glm::vec3 Transform::GetWorldRotation() const noexcept {
     return wRot;
 }
 
+void Transform::SetWorldRotation(const glm::vec3& worldRot) noexcept {
+    if (!m_Parent) {
+        rotation = worldRot;
+    } else {
+        const glm::vec3 parentWorldRot = m_Parent->GetWorldRotation();
+        rotation = worldRot - parentWorldRot;
+    }
+    m_LastRotation = rotation;
+    SetDirty();
+}
+
 glm::vec3 Transform::GetWorldScale() const noexcept {
     if (!m_Parent) {
         return scale;

@@ -321,4 +321,160 @@ TEST(GroundPlanePhysicsTest, ContinuousRuntimeControllerMovementUpdatesTransform
     scene.OnRuntimeStop();
 }
 
+TEST(GroundPlanePhysicsTest, ParentedRigidbody2D_SpawnsAtWorldPositionAndRotation) {
+    Engine::Scene scene("ParentedSpawnScene");
+
+    auto* parent = scene.CreateGameObject("ParentRig");
+    parent->GetTransform()->position = { 10.0f, 2.0f, 5.0f };
+    parent->GetTransform()->rotation = { 0.0f, 45.0f, 0.0f };
+
+    auto* child = scene.CreateGameObject("ChildBody");
+    child->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    child->GetTransform()->rotation = { 0.0f, 0.0f, 0.0f };
+    child->GetTransform()->SetParent(parent->GetTransform(), /*keepWorldTransform=*/false);
+
+    auto* rb2d = child->AddComponent<Engine::Rigidbody2D>();
+    rb2d->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb2d->FixedRotation = false;
+
+    auto* col = child->AddComponent<Engine::BoxCollider2D>();
+    col->size = { 1.0f, 1.0f };
+
+    scene.OnRuntimeStart();
+    ASSERT_TRUE(rb2d->RuntimeBody.IsValid());
+
+    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
+    ASSERT_TRUE(b2Body_IsValid(bodyId));
+
+    b2Vec2 pos = b2Body_GetPosition(bodyId);
+    b2Rot rot = b2Body_GetRotation(bodyId);
+
+    // Box2D body must spawn at the parented entity's composite WORLD position and rotation
+    EXPECT_NEAR(pos.x, 10.0f, 1e-3f);
+    EXPECT_NEAR(pos.y, 5.0f, 1e-3f);
+    EXPECT_NEAR(glm::degrees(b2Rot_GetAngle(rot)), 45.0f, 1e-2f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(GroundPlanePhysicsTest, ParentedRigidbody2D_SimulationStepsSyncWorldPositionWithoutCorruptingParent) {
+    Engine::Scene scene("ParentedSimScene");
+
+    auto* parent = scene.CreateGameObject("ParentAnchor");
+    parent->GetTransform()->position = { 5.0f, 1.0f, 5.0f };
+
+    auto* child = scene.CreateGameObject("ChildRunner");
+    child->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    child->GetTransform()->SetParent(parent->GetTransform(), /*keepWorldTransform=*/false);
+
+    auto* rb2d = child->AddComponent<Engine::Rigidbody2D>();
+    rb2d->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb2d->FixedRotation = true;
+    rb2d->LinearDamping = 0.0f; // Frictionless for clean ballistic distance measurement
+    rb2d->InitialLinearVelocityXZ = { 0.0f, 4.0f }; // 4 m/s in +Z
+
+    auto* col = child->AddComponent<Engine::BoxCollider2D>();
+    col->size = { 0.5f, 0.5f };
+
+    scene.OnRuntimeStart();
+
+    // Step 30 frames (0.5s) -> should move ~2.0m along +Z in world space
+    constexpr float dt = 1.0f / 60.0f;
+    for (int i = 0; i < 30; ++i) {
+        scene.UpdateRuntime(dt);
+    }
+
+    // Parent position must remain untouched
+    EXPECT_FLOAT_EQ(parent->GetTransform()->position.x, 5.0f);
+    EXPECT_FLOAT_EQ(parent->GetTransform()->position.y, 1.0f);
+    EXPECT_FLOAT_EQ(parent->GetTransform()->position.z, 5.0f);
+
+    // Child world position should be ~ (5.0, 1.0, 7.0)
+    glm::vec3 childWorldPos = child->GetTransform()->GetWorldPosition();
+    EXPECT_NEAR(childWorldPos.x, 5.0f, 0.1f);
+    EXPECT_FLOAT_EQ(childWorldPos.y, 1.0f);
+    EXPECT_NEAR(childWorldPos.z, 7.0f, 0.2f);
+
+    // Child local position should be relative to parent ~ (0.0, 0.0, 2.0)
+    EXPECT_NEAR(child->GetTransform()->position.x, 0.0f, 0.1f);
+    EXPECT_FLOAT_EQ(child->GetTransform()->position.y, 0.0f);
+    EXPECT_NEAR(child->GetTransform()->position.z, 2.0f, 0.2f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(GroundPlanePhysicsTest, ParentedRigidbody2D_SetPositionXZRespectsHierarchy) {
+    Engine::Scene scene("ParentedSetPosScene");
+
+    auto* parent = scene.CreateGameObject("ParentRig");
+    parent->GetTransform()->position = { 10.0f, 3.0f, 20.0f };
+
+    auto* child = scene.CreateGameObject("ChildEntity");
+    child->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    child->GetTransform()->SetParent(parent->GetTransform(), /*keepWorldTransform=*/false);
+
+    auto* rb2d = child->AddComponent<Engine::Rigidbody2D>();
+    rb2d->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    auto* col = child->AddComponent<Engine::BoxCollider2D>();
+    col->size = { 1.0f, 1.0f };
+
+    scene.OnRuntimeStart();
+
+    // Reposition child in world XZ
+    rb2d->SetPositionXZ(glm::vec2{ 15.0f, 26.0f });
+
+    // Child world position must reflect requested world position
+    glm::vec3 worldPos = child->GetTransform()->GetWorldPosition();
+    EXPECT_NEAR(worldPos.x, 15.0f, 1e-4f);
+    EXPECT_FLOAT_EQ(worldPos.y, 3.0f); // inherits parent Y
+    EXPECT_NEAR(worldPos.z, 26.0f, 1e-4f);
+
+    // Child local position must be correctly inverted relative to parent
+    EXPECT_NEAR(child->GetTransform()->position.x, 5.0f, 1e-4f);
+    EXPECT_FLOAT_EQ(child->GetTransform()->position.y, 0.0f);
+    EXPECT_NEAR(child->GetTransform()->position.z, 6.0f, 1e-4f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(GroundPlanePhysicsTest, ChildCollider_InheritsParentScale) {
+    Engine::Scene scene("ParentedScaleScene");
+
+    auto* parent = scene.CreateGameObject("ParentScaleRig");
+    parent->GetTransform()->scale = { 2.0f, 1.0f, 3.0f };
+
+    auto* child = scene.CreateGameObject("ChildBox");
+    child->GetTransform()->SetParent(parent->GetTransform(), /*keepWorldTransform=*/false);
+
+    auto* rb2d = child->AddComponent<Engine::Rigidbody2D>();
+    rb2d->Type = Engine::Rigidbody2D::BodyType::Static;
+
+    auto* col = child->AddComponent<Engine::BoxCollider2D>();
+    col->size = { 1.0f, 1.0f }; // base size 1x1
+
+    scene.OnRuntimeStart();
+    ASSERT_TRUE(col->RuntimeShape.IsValid());
+
+    b2ShapeId shapeId = b2LoadShapeId(col->RuntimeShape.Value);
+    ASSERT_TRUE(b2Shape_IsValid(shapeId));
+
+    b2Polygon poly = b2Shape_GetPolygon(shapeId);
+    EXPECT_EQ(poly.count, 4);
+
+    // Verify half-dimensions reflect composite parent world scale (2.0 along X, 3.0 along Z)
+    float maxX = 0.0f;
+    float maxZ = 0.0f;
+    for (int i = 0; i < poly.count; ++i) {
+        maxX = std::max(maxX, std::abs(poly.vertices[i].x));
+        maxZ = std::max(maxZ, std::abs(poly.vertices[i].y));
+    }
+
+    // size.x * scale.x * 0.5 = 1.0 * 2.0 * 0.5 = 1.0
+    // size.y * scale.z * 0.5 = 1.0 * 3.0 * 0.5 = 1.5
+    EXPECT_NEAR(maxX, 1.0f, 1e-3f);
+    EXPECT_NEAR(maxZ, 1.5f, 1e-3f);
+
+    scene.OnRuntimeStop();
+}
+
 } // namespace

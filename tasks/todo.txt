@@ -111,7 +111,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Keep `Scene` as a focused ~500 LOC ECS coordinator/facade.
     - Pattern Applied: Subsystem / Facade Pattern (SRP & DIP).
 
-[ ] 11. Align EntityLayer & PhysicsLayer Bit Offsets + Fix Child-Collider Transform Sync
+[x] 11. Align EntityLayer & PhysicsLayer Bit Offsets + Fix Child-Collider Transform Sync
     - Files: Engine/include/Engine/Scene/EntityTag.h (lines 24-36), Engine/include/Engine/Physics/PhysicsLayer.h (lines 9-53), Engine/src/Scene/Scene.cpp (lines 245-247, 1707-1724)
     - Details:
       * Align identical bit indices `(1 << 0 .. 1 << 9)` between `EntityLayer` and `PhysicsLayer` so `FromEntityLayer` / `ToEntityLayer` become branchless bit casts rather than 10 `if` chains.

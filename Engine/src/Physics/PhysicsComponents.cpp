@@ -141,8 +141,13 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
 void Rigidbody2D::SetPositionXZ(const glm::vec2& worldXZ) {
     if (auto* go = GetGameObject()) {
         if (auto* t = go->GetTransform()) {
-            t->position.x = worldXZ.x;
-            t->position.z = worldXZ.y;
+            if (t->GetParent()) {
+                t->SetWorldPosition({ worldXZ.x, t->GetWorldPosition().y, worldXZ.y });
+            } else {
+                t->position.x = worldXZ.x;
+                t->position.z = worldXZ.y;
+                t->SetDirty();
+            }
         }
     }
     if (RuntimeBody.IsValid()) {
@@ -313,7 +318,7 @@ void Rigidbody2D::OnPoolAcquire() {
             if (auto* go = GetGameObject()) {
                 if (auto* transform = go->GetTransform()) {
                     glm::vec3 worldPos = transform->GetWorldPosition();
-                    float angleRad = glm::radians(transform->rotation.y);
+                    float angleRad = glm::radians(transform->GetWorldRotation().y);
                     b2Body_SetTransform(bodyId, b2Vec2{ worldPos.x, worldPos.z }, b2MakeRot(angleRad));
                 }
             }
@@ -439,7 +444,7 @@ void Collider2D::OnPoolAcquire() {
                 b2Body_Enable(bodyId);
                 if (auto* transform = go->GetTransform()) {
                     glm::vec3 worldPos = transform->GetWorldPosition();
-                    float angleRad = glm::radians(transform->rotation.y);
+                    float angleRad = glm::radians(transform->GetWorldRotation().y);
                     b2Body_SetTransform(bodyId, b2Vec2{ worldPos.x, worldPos.z }, b2MakeRot(angleRad));
                 }
             }
@@ -544,8 +549,9 @@ void BoxCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& tra
     b2BodyId bodyId = ToB2(body);
     b2Vec2 center = { offset.x, offset.y };
     b2Rot rot = b2MakeRot(0.0f);
-    float halfW = std::max(0.001f, size.x * std::abs(transform.scale.x) * 0.5f);
-    float halfD = std::max(0.001f, size.y * std::abs(transform.scale.z) * 0.5f);
+    const glm::vec3 worldScale = transform.GetWorldScale();
+    float halfW = std::max(0.001f, size.x * std::abs(worldScale.x) * 0.5f);
+    float halfD = std::max(0.001f, size.y * std::abs(worldScale.z) * 0.5f);
     b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
 
     if (!RuntimeShape.IsValid()) {
@@ -569,7 +575,8 @@ void BoxCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& tra
 
 void CircleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) {
     b2BodyId bodyId = ToB2(body);
-    float scaleFactor = std::max(std::abs(transform.scale.x), std::abs(transform.scale.z));
+    const glm::vec3 worldScale = transform.GetWorldScale();
+    float scaleFactor = std::max(std::abs(worldScale.x), std::abs(worldScale.z));
     float effectiveRadius = std::max(0.001f, Radius * scaleFactor);
     b2Circle circle;
     circle.center = b2Vec2{ OffsetXZ.x, OffsetXZ.y };
@@ -596,8 +603,9 @@ void CircleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& 
 
 void CapsuleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) {
     b2BodyId bodyId = ToB2(body);
-    float scaleX = std::abs(transform.scale.x);
-    float scaleZ = std::abs(transform.scale.z);
+    const glm::vec3 worldScale = transform.GetWorldScale();
+    float scaleX = std::abs(worldScale.x);
+    float scaleZ = std::abs(worldScale.z);
     float scaleFactor = std::max(scaleX, scaleZ);
     b2Capsule capsule;
     capsule.center1 = b2Vec2{ Center1.x * scaleX, Center1.y * scaleZ };
