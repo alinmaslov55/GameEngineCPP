@@ -305,6 +305,55 @@ void Rigidbody2D::OnDestroy() {
     ResetRuntimeState();
 }
 
+void Rigidbody2D::OnPoolAcquire() {
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
+        if (b2Body_IsValid(bodyId)) {
+            b2Body_Enable(bodyId);
+            if (auto* go = GetGameObject()) {
+                if (auto* transform = go->GetTransform()) {
+                    glm::vec3 worldPos = transform->GetWorldPosition();
+                    float angleRad = glm::radians(transform->rotation.y);
+                    b2Body_SetTransform(bodyId, b2Vec2{ worldPos.x, worldPos.z }, b2MakeRot(angleRad));
+                }
+            }
+            if (InitialLinearVelocityXZ != glm::vec2{ 0.0f, 0.0f }) {
+                b2Body_SetLinearVelocity(bodyId, b2Vec2{ InitialLinearVelocityXZ.x, InitialLinearVelocityXZ.y });
+            } else {
+                b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+            }
+            b2Body_SetAngularVelocity(bodyId, 0.0f);
+            b2Body_SetAwake(bodyId, true);
+        }
+    }
+    VerticalVelocity = 0.0f;
+    m_IsStasisFrozen = false;
+    m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
+    m_StasisCachedVelocityXZ = { 0.0f, 0.0f };
+    m_StasisCachedAngularVelocity = 0.0f;
+    m_StasisCachedVerticalVelocity = 0.0f;
+    m_AirbornePassThroughActive = false;
+}
+
+void Rigidbody2D::OnPoolRelease() {
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
+        if (b2Body_IsValid(bodyId)) {
+            b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+            b2Body_SetAngularVelocity(bodyId, 0.0f);
+            b2Body_SetAwake(bodyId, false);
+            b2Body_Disable(bodyId);
+        }
+    }
+    VerticalVelocity = 0.0f;
+    m_IsStasisFrozen = false;
+    m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
+    m_StasisCachedVelocityXZ = { 0.0f, 0.0f };
+    m_StasisCachedAngularVelocity = 0.0f;
+    m_StasisCachedVerticalVelocity = 0.0f;
+    m_AirbornePassThroughActive = false;
+}
+
 // ============================================================================
 // Collider2D Base Class Implementation (Template Method Pattern)
 // ============================================================================
@@ -366,6 +415,56 @@ void Collider2D::OnDestroy() {
                 rb2d->RefreshMassFromShapes();
             } else {
                 scene->UnregisterRuntimeBody(go);
+            }
+        }
+    }
+}
+
+void Collider2D::OnPoolAcquire() {
+    if (RuntimeShape.IsValid()) {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
+        if (b2Shape_IsValid(shapeId)) {
+            b2Filter f;
+            f.categoryBits = CategoryBits;
+            f.maskBits = MaskBits;
+            f.groupIndex = GroupIndex;
+            b2Shape_SetFilter(shapeId, f);
+        }
+    }
+    if (RuntimeBody.IsValid()) {
+        auto* go = GetGameObject();
+        if (go && !go->GetComponent<Rigidbody2D>()) {
+            b2BodyId bodyId = ToB2(RuntimeBody);
+            if (b2Body_IsValid(bodyId)) {
+                b2Body_Enable(bodyId);
+                if (auto* transform = go->GetTransform()) {
+                    glm::vec3 worldPos = transform->GetWorldPosition();
+                    float angleRad = glm::radians(transform->rotation.y);
+                    b2Body_SetTransform(bodyId, b2Vec2{ worldPos.x, worldPos.z }, b2MakeRot(angleRad));
+                }
+            }
+        }
+    }
+}
+
+void Collider2D::OnPoolRelease() {
+    if (RuntimeShape.IsValid()) {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
+        if (b2Shape_IsValid(shapeId)) {
+            b2Filter f;
+            f.categoryBits = CategoryBits;
+            f.maskBits = MaskBits;
+            f.groupIndex = GroupIndex;
+            b2Shape_SetFilter(shapeId, f);
+        }
+    }
+    if (RuntimeBody.IsValid()) {
+        auto* go = GetGameObject();
+        if (go && !go->GetComponent<Rigidbody2D>()) {
+            b2BodyId bodyId = ToB2(RuntimeBody);
+            if (b2Body_IsValid(bodyId)) {
+                b2Body_SetAwake(bodyId, false);
+                b2Body_Disable(bodyId);
             }
         }
     }

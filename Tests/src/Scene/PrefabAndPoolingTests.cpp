@@ -7,6 +7,8 @@
 #include "Engine/Scene/LightComponents.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Animation/Animator.h"
+#include "Engine/Scene/FoliageWindComponents.h"
 
 #include <box2d/box2d.h>
 #include <memory>
@@ -348,6 +350,217 @@ TEST(PrefabAndPoolingTest, CascadingDestructionSafety) {
     // Acquiring next item safely returns item2
     auto* nextItem = scene->AcquirePooled("ItemPool", *prefab, { 5.0f, 0.0f, 0.0f });
     EXPECT_EQ(nextItem, item2);
+}
+
+TEST(PrefabAndPoolingTest, DeepSubtreePoolReset_GrandchildrenAndDescendantsResetCleanly) {
+    auto scene = std::make_shared<Engine::Scene>("DeepSubtreeScene");
+
+    // Build 3-level hierarchy: Root -> Child -> Grandchild
+    auto* root = scene->CreateGameObject("PooledRoot");
+    auto* rb2d = root->AddComponent<Engine::Rigidbody2D>();
+    rb2d->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb2d->InitialLinearVelocityXZ = { 2.0f, 3.0f };
+    auto* boxCol = root->AddComponent<Engine::BoxCollider2D>();
+    boxCol->size = { 1.0f, 1.0f };
+    auto* squash = root->AddComponent<Engine::SquashStretchComponent>();
+
+    auto* child = scene->CreateGameObject("PooledChild");
+    child->GetTransform()->SetParent(root->GetTransform(), false);
+    child->GetTransform()->position = { 0.0f, 1.0f, 0.0f };
+    auto* childAnim = child->AddComponent<Engine::Animator>();
+    auto clip = std::make_shared<Engine::AnimationClip>("TestClip", 0.1f, true);
+    childAnim->AddClip(clip);
+    childAnim->Play("TestClip");
+    EXPECT_EQ(childAnim->GetCurrentClipName(), "TestClip");
+
+    auto* grandchild = scene->CreateGameObject("PooledGrandchild");
+    grandchild->GetTransform()->SetParent(child->GetTransform(), false);
+    grandchild->GetTransform()->position = { 0.0f, 2.0f, 0.0f };
+    auto* gcPs = grandchild->AddComponent<Engine::ParticleSystem>(20u);
+
+    // Snapshot hierarchy to prefab
+    auto prefab = Engine::Prefab::CreateFromGameObject(root, true);
+    ASSERT_NE(prefab, nullptr);
+    EXPECT_TRUE(prefab->IsValid());
+
+    scene->DestroyGameObject(root);
+    scene->FlushEntityLifecycleQueues();
+
+    // Start physics runtime
+    scene->OnRuntimeStart();
+
+    // Prewarm pool with 1 instance
+    scene->PrewarmPool("DeepPool", *prefab, 1u);
+    EXPECT_EQ(scene->GetPoolFreeCount("DeepPool"), 1u);
+
+    // Acquire instance
+    auto* inst = scene->AcquirePooled("DeepPool", *prefab, { 5.0f, 0.0f, 10.0f });
+    ASSERT_NE(inst, nullptr);
+    EXPECT_TRUE(inst->IsActive());
+    EXPECT_FALSE(inst->IsInFreeList());
+
+    // Verify initial velocity was restored on acquire
+    auto* instRb = inst->GetComponent<Engine::Rigidbody2D>();
+    ASSERT_NE(instRb, nullptr);
+    b2BodyId bodyId = b2LoadBodyId(instRb->RuntimeBody.Value);
+    EXPECT_TRUE(b2Body_IsEnabled(bodyId));
+    EXPECT_TRUE(b2Body_IsAwake(bodyId));
+    b2Vec2 v = b2Body_GetLinearVelocity(bodyId);
+    EXPECT_NEAR(v.x, 2.0f, 1e-4f);
+    EXPECT_NEAR(v.y, 3.0f, 1e-4f);
+
+    // Find child and grandchild
+    auto children = inst->GetTransform()->GetChildren();
+    ASSERT_EQ(children.size(), 1u);
+    auto* instChild = children[0]->GetGameObject();
+    ASSERT_NE(instChild, nullptr);
+    EXPECT_TRUE(instChild->IsActiveInHierarchy());
+
+    auto gchildren = children[0]->GetChildren();
+    ASSERT_EQ(gchildren.size(), 1u);
+    auto* instGrandchild = gchildren[0]->GetGameObject();
+    ASSERT_NE(instGrandchild, nullptr);
+    EXPECT_TRUE(instGrandchild->IsActiveInHierarchy());
+
+    // Dirty state on all 3 levels
+    // Level 1 (Root): dirty stasis, dirty squash stretch, modify velocities
+    instRb->SetStasisFrozen(true);
+    instRb->ApplyImpulseXZ({ 10.0f, 20.0f });
+    auto* instSquash = inst->GetComponent<Engine::SquashStretchComponent>();
+    ASSERT_NE(instSquash, nullptr);
+    instSquash->TriggerImpulse(5.0f, 15.0f);
+
+    // Level 2 (Child): animator play
+    auto* instChildAnim = instChild->GetComponent<Engine::Animator>();
+    ASSERT_NE(instChildAnim, nullptr);
+    instChildAnim->Play("TestClip");
+    EXPECT_EQ(instChildAnim->GetCurrentClipName(), "TestClip");
+
+    // Level 3 (Grandchild): emit particles
+    auto* instGcPs = instGrandchild->GetComponent<Engine::ParticleSystem>();
+    ASSERT_NE(instGcPs, nullptr);
+    Engine::ParticleProps props;
+    props.lifeTime = 2.0f;
+    instGcPs->Emit(props);
+    EXPECT_GT(instGcPs->GetActiveParticleCount(), 0u);
+
+    // Release back to pool
+    scene->ReleaseToPool(inst);
+
+    // Verify root is inactive & in free list
+    EXPECT_FALSE(inst->IsActive());
+    EXPECT_TRUE(inst->IsInFreeList());
+    EXPECT_FALSE(b2Body_IsEnabled(bodyId));
+    EXPECT_FALSE(b2Body_IsAwake(bodyId));
+    EXPECT_FALSE(instRb->IsStasisFrozen());
+
+    // Verify Level 2 (Child) animator stopped
+    EXPECT_TRUE(instChildAnim->GetCurrentClipName().empty());
+
+    // Verify Level 3 (Grandchild) particle system reset
+    EXPECT_EQ(instGcPs->GetActiveParticleCount(), 0u);
+
+    // Reacquire at new world position
+    auto* reacquired = scene->AcquirePooled("DeepPool", *prefab, { 50.0f, 0.0f, -50.0f });
+    EXPECT_EQ(reacquired, inst);
+    EXPECT_FALSE(reacquired->IsInFreeList());
+    EXPECT_TRUE(reacquired->IsActive());
+    EXPECT_TRUE(b2Body_IsEnabled(bodyId));
+
+    // Grandchild transform snapshot verification: prevPosition must equal position
+    EXPECT_EQ(instGrandchild->GetTransform()->prevPosition, instGrandchild->GetTransform()->position);
+
+    scene->OnRuntimeStop();
+}
+
+TEST(PrefabAndPoolingTest, FreeListO1MembershipAndIdempotentRelease) {
+    auto scene = std::make_shared<Engine::Scene>("FreeListScene");
+    auto* tpl = scene->CreateGameObject("PoolItem");
+    auto prefab = Engine::Prefab::CreateFromGameObject(tpl, true);
+    scene->DestroyGameObject(tpl);
+    scene->FlushEntityLifecycleQueues();
+
+    scene->PrewarmPool("FreeListPool", *prefab, 3u);
+    EXPECT_EQ(scene->GetPoolFreeCount("FreeListPool"), 3u);
+    EXPECT_EQ(scene->GetPoolTotalCount("FreeListPool"), 3u);
+
+    auto* item1 = scene->AcquirePooled("FreeListPool", *prefab, { 0.0f, 0.0f, 0.0f });
+    ASSERT_NE(item1, nullptr);
+    EXPECT_FALSE(item1->IsInFreeList());
+    EXPECT_EQ(scene->GetPoolFreeCount("FreeListPool"), 2u);
+
+    // Idempotent release: calling ReleaseToPool multiple times must not inflate freeList
+    scene->ReleaseToPool(item1);
+    EXPECT_TRUE(item1->IsInFreeList());
+    EXPECT_EQ(scene->GetPoolFreeCount("FreeListPool"), 3u);
+
+    scene->ReleaseToPool(item1);
+    EXPECT_TRUE(item1->IsInFreeList());
+    EXPECT_EQ(scene->GetPoolFreeCount("FreeListPool"), 3u);
+
+    // Acquire all 3
+    auto* a1 = scene->AcquirePooled("FreeListPool", *prefab, { 1.0f, 0.0f, 0.0f });
+    auto* a2 = scene->AcquirePooled("FreeListPool", *prefab, { 2.0f, 0.0f, 0.0f });
+    auto* a3 = scene->AcquirePooled("FreeListPool", *prefab, { 3.0f, 0.0f, 0.0f });
+    EXPECT_EQ(scene->GetPoolFreeCount("FreeListPool"), 0u);
+    EXPECT_FALSE(a1->IsInFreeList());
+    EXPECT_FALSE(a2->IsInFreeList());
+    EXPECT_FALSE(a3->IsInFreeList());
+
+    // Destroy a2
+    scene->DestroyGameObject(a2);
+    scene->FlushEntityLifecycleQueues();
+    EXPECT_FALSE(a2->IsInFreeList());
+    EXPECT_EQ(scene->GetPoolTotalCount("FreeListPool"), 2u);
+
+    // Release remaining
+    scene->ReleaseToPool(a1);
+    scene->ReleaseToPool(a3);
+    EXPECT_EQ(scene->GetPoolFreeCount("FreeListPool"), 2u);
+}
+
+class CustomPooledComponent : public Engine::Component {
+public:
+    int acquireCount = 0;
+    int releaseCount = 0;
+    int customState = 42;
+
+    void OnPoolAcquire() override {
+        ++acquireCount;
+        customState = 100;
+    }
+
+    void OnPoolRelease() override {
+        ++releaseCount;
+        customState = 0;
+    }
+};
+
+TEST(PrefabAndPoolingTest, PolymorphicResettableHookOnCustomComponent) {
+    auto scene = std::make_shared<Engine::Scene>("CustomComponentScene");
+    auto* go = scene->CreateGameObject("CustomEntity");
+    auto* comp = go->AddComponent<CustomPooledComponent>();
+    EXPECT_EQ(comp->acquireCount, 0);
+    EXPECT_EQ(comp->releaseCount, 0);
+    EXPECT_EQ(comp->customState, 42);
+
+    go->SetPoolKey("CustomPool");
+
+    // Manually test propagation through Scene
+    scene->PropagatePoolRelease(go);
+    EXPECT_EQ(comp->releaseCount, 1);
+    EXPECT_EQ(comp->customState, 0);
+
+    scene->PropagatePoolAcquire(go);
+    EXPECT_EQ(comp->acquireCount, 1);
+    EXPECT_EQ(comp->customState, 100);
+
+    // Test with ReleaseToPool
+    scene->ReleaseToPool("CustomPool", go);
+    EXPECT_EQ(comp->releaseCount, 2);
+    EXPECT_EQ(comp->customState, 0);
+    EXPECT_TRUE(go->IsInFreeList());
+    EXPECT_FALSE(go->IsActive());
 }
 
 } // namespace

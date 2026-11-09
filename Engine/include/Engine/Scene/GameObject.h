@@ -189,6 +189,12 @@ public:
     [[nodiscard]] const std::string& GetPoolKey() const noexcept { return m_PoolKey; }
     [[nodiscard]] bool IsPooled() const noexcept { return !m_PoolKey.empty(); }
 
+    [[nodiscard]] bool IsInFreeList() const noexcept { return m_InFreeList; }
+    void SetInFreeList(bool inFreeList) noexcept { m_InFreeList = inFreeList; }
+
+    void OnPoolAcquire();
+    void OnPoolRelease();
+
     [[nodiscard]] bool IsActiveInHierarchy() const noexcept {
         if (!m_Active || IsPendingDestroy()) {
             return false;
@@ -384,6 +390,7 @@ private:
     EntityTag m_Tag{ EntityTag::Untagged };
     uint32_t m_LayerMask{ EntityLayer::Default };
     std::string m_PoolKey;
+    bool m_InFreeList{ false };
     bool m_Active{ true };
     EntityLifecycle m_LifecycleState{ EntityLifecycle::Alive };
     uint32_t m_ComponentIterationDepth{ 0 };

@@ -203,6 +203,22 @@ public:
         m_TiltVelocity += tiltImpulseDegrees;
     }
 
+    void Reset() noexcept {
+        m_VerticalDeform = 0.0f;
+        m_VerticalDeformVelocity = 0.0f;
+        m_TiltAngle = 0.0f;
+        m_TiltVelocity = 0.0f;
+        m_WalkPhase = 0.0f;
+        m_WalkBlend = 0.0f;
+        m_InitializedTracking = false;
+        m_LastPosition = glm::vec3{ 0.0f };
+        m_WasGrounded = true;
+        m_LastAirVerticalSpeed = 0.0f;
+    }
+
+    void OnPoolAcquire() override { Reset(); }
+    void OnPoolRelease() override { Reset(); }
+
     void Update(float deltaTime) override {
         if (!Enabled || deltaTime <= 0.0f) {
             return;

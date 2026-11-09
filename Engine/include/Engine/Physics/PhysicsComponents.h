@@ -96,6 +96,8 @@ public:
     void OnEnable() override;
     void OnDisable() override;
     void OnDestroy() override;
+    void OnPoolAcquire() override;
+    void OnPoolRelease() override;
 
     // Backward-compatible aliases for PHY-01
     void SetLinearVelocityXZ(const glm::vec2& velocityXZ) noexcept { SetVelocityXZ(velocityXZ); }
@@ -162,6 +164,8 @@ public:
     void OnEnable() override;
     void OnDisable() override;
     void OnDestroy() override;
+    void OnPoolAcquire() override;
+    void OnPoolRelease() override;
 
     // Template Method: Skeleton algorithm for shape creation and geometry/material synchronization
     void CreateOrUpdateShape(BodyHandle body, const Transform& transform, GameObject* go);

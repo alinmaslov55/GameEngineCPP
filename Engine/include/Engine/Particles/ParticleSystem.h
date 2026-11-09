@@ -31,6 +31,9 @@ namespace Engine {
         void Update(float deltaTime) override;
         void Reset() noexcept;
 
+        void OnPoolAcquire() override { Reset(); }
+        void OnPoolRelease() override { Reset(); }
+
         // Optional continuous ambient emission (fire embers, shrine wisps, chimneys)
         bool AutoEmit = false;
         float EmitRate = 8.0f; // Particles per second

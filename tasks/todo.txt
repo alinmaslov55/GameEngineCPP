@@ -89,7 +89,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Unify RegisterRuntimeBody() to resolve/create `b2BodyId` once, then loop attached `Collider2D` components polymorphically; remove duplicate BoxCollider2D Y-gravity fields (migrate Inspector/Serializer cleanly).
     - Pattern Applied: Template Method + Handle Wrapper.
 
-[ ] 9. Enforce Open/Closed Component Pool Reset Hook (`OnPoolReset`) & Deep Subtree Pooling
+[x] 9. Enforce Open/Closed Component Pool Reset Hook (`OnPoolReset`) & Deep Subtree Pooling
     - Files: Engine/include/Engine/Scene/Component.h, Engine/src/Scene/Scene.cpp (lines 838-1006)
     - Smell / Bug Eliminated:
       * ReleaseToPool() and AcquirePooled() violate OCP with hardcoded `GetComponent<T>()` chains for Rigidbody2D, Colliders, and ParticleSystem—missing Animator, SquashStretchComponent, `m_IsStasisFrozen`, `m_QueuedStasisImpulseXZ`, and `m_AirbornePassThroughActive`!

@@ -99,4 +99,24 @@ void GameObject::DispatchTriggerExit2D(GameObject* other) {
     }
 }
 
+void GameObject::OnPoolAcquire() {
+    ScopedComponentIterationGuard guard(*this);
+    for (size_t i = 0; i < m_Components.size(); ++i) {
+        auto* comp = m_Components[i].get();
+        if (comp && !comp->IsPendingRemoval()) {
+            comp->OnPoolAcquire();
+        }
+    }
+}
+
+void GameObject::OnPoolRelease() {
+    ScopedComponentIterationGuard guard(*this);
+    for (size_t i = 0; i < m_Components.size(); ++i) {
+        auto* comp = m_Components[i].get();
+        if (comp && !comp->IsPendingRemoval()) {
+            comp->OnPoolRelease();
+        }
+    }
+}
+
 } // namespace Engine

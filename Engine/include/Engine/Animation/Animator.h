@@ -41,6 +41,16 @@ public:
         UpdateSpriteRenderer();
     }
 
+    void Stop() noexcept {
+        m_CurrentClip = nullptr;
+        m_CurrentClipName.clear();
+        m_CurrentTime = 0.0f;
+        m_CurrentFrameIndex = 0;
+    }
+
+    void OnPoolAcquire() override { Stop(); }
+    void OnPoolRelease() override { Stop(); }
+
     void Update(float deltaTime) override {
         if (!m_CurrentClip || m_CurrentClip->frames.empty()) return;
 

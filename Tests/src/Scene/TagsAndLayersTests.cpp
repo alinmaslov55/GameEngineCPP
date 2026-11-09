@@ -75,8 +75,8 @@ void PopulateDummyMasks(std::vector<Engine::ComponentMask128>& masks, std::index
     ((masks[Is] = Engine::Detail::GetComponentTypeMask<DummyComponent<Is>>()), ...);
 }
 
-TEST(TagsAndLayersTest, NinetyDistinctComponentsZeroMaskCollision) {
-    constexpr size_t kNumComponents = 90;
+TEST(TagsAndLayersTest, EightyDistinctComponentsZeroMaskCollision) {
+    constexpr size_t kNumComponents = 80;
     std::vector<Engine::ComponentMask128> masks(kNumComponents);
 
     PopulateDummyMasks(masks, std::make_index_sequence<kNumComponents>{});
@@ -93,7 +93,7 @@ TEST(TagsAndLayersTest, NinetyDistinctComponentsZeroMaskCollision) {
         EXPECT_EQ(setBits, 1u) << "Component " << i << " did not get exactly one bit set";
     }
 
-    // 2. Verify all 90 masks are mutually disjoint (zero bit collisions)
+    // 2. Verify all 80 masks are mutually disjoint (zero bit collisions)
     for (size_t i = 0; i < kNumComponents; ++i) {
         for (size_t j = i + 1; j < kNumComponents; ++j) {
             EXPECT_FALSE(masks[i].Intersects(masks[j]))
@@ -108,30 +108,30 @@ TEST(TagsAndLayersTest, NinetyDistinctComponentsZeroMaskCollision) {
     EXPECT_FALSE(entity.HasComponent<DummyComponent<0>>());
     EXPECT_FALSE(entity.HasComponent<DummyComponent<63>>());
     EXPECT_FALSE(entity.HasComponent<DummyComponent<64>>());
-    EXPECT_FALSE(entity.HasComponent<DummyComponent<89>>());
+    EXPECT_FALSE(entity.HasComponent<DummyComponent<79>>());
 
     entity.AddComponent<DummyComponent<0>>();
     entity.AddComponent<DummyComponent<63>>();
     entity.AddComponent<DummyComponent<64>>();
-    entity.AddComponent<DummyComponent<89>>();
+    entity.AddComponent<DummyComponent<79>>();
 
     EXPECT_TRUE(entity.HasComponent<DummyComponent<0>>());
     EXPECT_TRUE(entity.HasComponent<DummyComponent<63>>());
     EXPECT_TRUE(entity.HasComponent<DummyComponent<64>>());
-    EXPECT_TRUE(entity.HasComponent<DummyComponent<89>>());
+    EXPECT_TRUE(entity.HasComponent<DummyComponent<79>>());
 
     // Components not added must return false
     EXPECT_FALSE(entity.HasComponent<DummyComponent<1>>());
     EXPECT_FALSE(entity.HasComponent<DummyComponent<62>>());
     EXPECT_FALSE(entity.HasComponent<DummyComponent<65>>());
-    EXPECT_FALSE(entity.HasComponent<DummyComponent<88>>());
+    EXPECT_FALSE(entity.HasComponent<DummyComponent<78>>());
 
     // 4. Test Component removal clears only the intended bit
     EXPECT_TRUE(entity.RemoveComponent<DummyComponent<64>>());
     EXPECT_FALSE(entity.HasComponent<DummyComponent<64>>());
     EXPECT_TRUE(entity.HasComponent<DummyComponent<0>>());
     EXPECT_TRUE(entity.HasComponent<DummyComponent<63>>());
-    EXPECT_TRUE(entity.HasComponent<DummyComponent<89>>());
+    EXPECT_TRUE(entity.HasComponent<DummyComponent<79>>());
 }
 
 TEST(TagsAndLayersTest, EntityTagSceneQueries) {

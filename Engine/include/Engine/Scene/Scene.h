@@ -97,6 +97,8 @@ public:
     GameObject* AcquirePooled(const std::string& poolKey, const Prefab& prefab, const glm::vec3& worldPos = glm::vec3(0.0f));
     void ReleaseToPool(const std::string& poolKey, GameObject* instance);
     void ReleaseToPool(GameObject* instance); // Uses instance->GetPoolKey()
+    void PropagatePoolAcquire(GameObject* root);
+    void PropagatePoolRelease(GameObject* root);
 
     // Runtime Box2D Body Registration & Lifecycle Synchronization
     void RegisterRuntimeBody(GameObject* go);

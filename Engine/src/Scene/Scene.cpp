@@ -187,6 +187,7 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
             std::erase(poolIt->second.freeList, gameObject);
             std::erase(poolIt->second.allInstances, gameObject);
         }
+        gameObject->SetInFreeList(false);
     }
 
     // Recursively cascade destruction to all child GameObjects in hierarchy
@@ -552,6 +553,31 @@ GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worl
     return rootGameObject;
 }
 
+void Scene::PropagatePoolAcquire(GameObject* root) {
+    if (!root) return;
+    root->OnPoolAcquire();
+    if (auto* transform = root->GetTransform()) {
+        transform->SnapshotPrevious();
+        for (auto* child : transform->GetChildren()) {
+            if (child && child->GetGameObject()) {
+                PropagatePoolAcquire(child->GetGameObject());
+            }
+        }
+    }
+}
+
+void Scene::PropagatePoolRelease(GameObject* root) {
+    if (!root) return;
+    root->OnPoolRelease();
+    if (auto* transform = root->GetTransform()) {
+        for (auto* child : transform->GetChildren()) {
+            if (child && child->GetGameObject()) {
+                PropagatePoolRelease(child->GetGameObject());
+            }
+        }
+    }
+}
+
 void Scene::PrewarmPool(const std::string& poolKey, const Prefab& prefab, uint32_t count) {
     auto& pool = m_EntityPools[poolKey];
     pool.freeList.reserve(pool.freeList.size() + count);
@@ -561,6 +587,8 @@ void Scene::PrewarmPool(const std::string& poolKey, const Prefab& prefab, uint32
         GameObject* instance = InstantiatePrefab(prefab, glm::vec3(0.0f));
         if (instance) {
             instance->SetPoolKey(poolKey);
+            instance->SetInFreeList(true);
+            PropagatePoolRelease(instance);
             instance->SetActive(false);
             pool.freeList.push_back(instance);
             pool.allInstances.push_back(instance);
@@ -575,9 +603,12 @@ GameObject* Scene::AcquirePooled(const std::string& poolKey, const Prefab& prefa
     while (!pool.freeList.empty()) {
         GameObject* candidate = pool.freeList.back();
         pool.freeList.pop_back();
-        if (candidate && !candidate->IsPendingDestroy()) {
-            instance = candidate;
-            break;
+        if (candidate) {
+            candidate->SetInFreeList(false);
+            if (!candidate->IsPendingDestroy()) {
+                instance = candidate;
+                break;
+            }
         }
     }
 
@@ -586,51 +617,18 @@ GameObject* Scene::AcquirePooled(const std::string& poolKey, const Prefab& prefa
         instance = InstantiatePrefab(prefab, worldPos);
         if (instance) {
             instance->SetPoolKey(poolKey);
+            instance->SetInFreeList(false);
             pool.allInstances.push_back(instance);
         }
     } else {
         // Reposition existing pooled instance
         if (auto* transform = instance->GetTransform()) {
             transform->SetWorldPosition(worldPos);
-            transform->SnapshotPrevious();
         }
     }
 
     if (instance) {
-        // Reset Box2D physics if in runtime
-        if (m_IsRuntimeRunning) {
-            auto* rb2d = instance->GetComponent<Rigidbody2D>();
-            if (rb2d) {
-                if (rb2d->RuntimeBody.IsValid()) {
-                    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
-                    if (b2Body_IsValid(bodyId)) {
-                        b2Body_Enable(bodyId);
-                        b2Vec2 p{ worldPos.x, worldPos.z };
-                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.y));
-                        b2Body_SetTransform(bodyId, p, r);
-                        b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
-                        b2Body_SetAngularVelocity(bodyId, 0.0f);
-                        b2Body_SetAwake(bodyId, true);
-                    }
-                }
-                rb2d->VerticalVelocity = 0.0f;
-            }
-            for (auto* col : instance->GetComponents<Collider2D>()) {
-                if (col->RuntimeBody.IsValid() && (!rb2d || col->RuntimeBody != rb2d->RuntimeBody)) {
-                    b2BodyId bodyId = b2LoadBodyId(col->RuntimeBody.Value);
-                    if (b2Body_IsValid(bodyId)) {
-                        b2Body_Enable(bodyId);
-                        b2Vec2 p{ worldPos.x, worldPos.z };
-                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.y));
-                        b2Body_SetTransform(bodyId, p, r);
-                    }
-                }
-            }
-        }
-        if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
-            rb2d->VerticalVelocity = 0.0f;
-        }
-
+        PropagatePoolAcquire(instance);
         instance->SetActive(true);
     }
 
@@ -640,51 +638,15 @@ GameObject* Scene::AcquirePooled(const std::string& poolKey, const Prefab& prefa
 void Scene::ReleaseToPool(const std::string& poolKey, GameObject* instance) {
     if (!instance) return;
 
-    // Reset physics state
-    auto* rb2d = instance->GetComponent<Rigidbody2D>();
-    if (rb2d) {
-        if (m_IsRuntimeRunning && rb2d->RuntimeBody.IsValid()) {
-            b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
-            if (b2Body_IsValid(bodyId)) {
-                b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
-                b2Body_SetAngularVelocity(bodyId, 0.0f);
-                b2Body_SetAwake(bodyId, false);
-                b2Body_Disable(bodyId);
-            }
-        }
-        rb2d->VerticalVelocity = 0.0f;
-    }
-    for (auto* col : instance->GetComponents<Collider2D>()) {
-        if (m_IsRuntimeRunning && col->RuntimeBody.IsValid() && (!rb2d || col->RuntimeBody != rb2d->RuntimeBody)) {
-            b2BodyId bodyId = b2LoadBodyId(col->RuntimeBody.Value);
-            if (b2Body_IsValid(bodyId)) {
-                b2Body_SetAwake(bodyId, false);
-                b2Body_Disable(bodyId);
-            }
-        }
-    }
-
-    // Reset particles on root and children
-    if (auto* ps = instance->GetComponent<ParticleSystem>()) {
-        ps->Reset();
-    }
-    if (auto* tr = instance->GetTransform()) {
-        for (auto* childTr : tr->GetChildren()) {
-            if (childTr && childTr->GetGameObject()) {
-                if (auto* childPs = childTr->GetGameObject()->GetComponent<ParticleSystem>()) {
-                    childPs->Reset();
-                }
-            }
-        }
-    }
+    PropagatePoolRelease(instance);
 
     // Deactivate hierarchy (propagates IsActiveInHierarchy() == false to all children)
     instance->SetActive(false);
 
-    // Push back to free-list if not already present
-    auto& pool = m_EntityPools[poolKey];
-    auto it = std::find(pool.freeList.begin(), pool.freeList.end(), instance);
-    if (it == pool.freeList.end()) {
+    // Push back to free-list if not already present (O(1))
+    if (!instance->IsInFreeList()) {
+        instance->SetInFreeList(true);
+        auto& pool = m_EntityPools[poolKey];
         pool.freeList.push_back(instance);
     }
 }
@@ -711,16 +673,18 @@ void Scene::ClearPool(const std::string& poolKey) {
     auto it = m_EntityPools.find(poolKey);
     if (it == m_EntityPools.end()) return;
 
-    for (auto* instance : it->second.allInstances) {
+    auto instances = it->second.allInstances;
+    for (auto* instance : instances) {
         if (instance && !instance->IsPendingDestroy()) {
             DestroyGameObject(instance);
         }
     }
-    m_EntityPools.erase(it);
+    m_EntityPools.erase(poolKey);
 }
 
 void Scene::ClearAllPools() {
-    for (auto& [key, pool] : m_EntityPools) {
+    auto pools = m_EntityPools;
+    for (auto& [key, pool] : pools) {
         for (auto* instance : pool.allInstances) {
             if (instance && !instance->IsPendingDestroy()) {
                 DestroyGameObject(instance);

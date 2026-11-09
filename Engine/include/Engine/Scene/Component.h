@@ -19,6 +19,10 @@ public:
     virtual void LateUpdate(float deltaTime) {}
     virtual void OnDestroy() {}
 
+    // Object Pooling Lifecycle Hooks
+    virtual void OnPoolAcquire() {}
+    virtual void OnPoolRelease() {}
+
     // 2D Ground-plane physics & sensor callbacks
     virtual void OnCollisionEnter2D(const Collision2DInfo& /*info*/) {}
     virtual void OnCollisionExit2D(GameObject* /*other*/) {}
