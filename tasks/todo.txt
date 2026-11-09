@@ -100,7 +100,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Add `bool m_InFreeList` on GameObject to replace O(N) `std::find` in `freeList`.
     - Pattern Applied: Polymorphic Resettable Hook (OCP).
 
-[ ] 10. Decompose Scene "God Class" (2,582 LOC -> Cohesive Subsystems)
+[x] 10. Decompose Scene "God Class" (2,582 LOC -> Cohesive Subsystems)
     - Files: Engine/include/Engine/Scene/Scene.h, Engine/src/Scene/Scene.cpp -> New: Engine/include/Engine/Physics/PhysicsWorld2D.h/.cpp, Engine/include/Engine/Scene/EntityPoolManager.h/.cpp, Engine/include/Engine/Renderer/SceneRenderer.h/.cpp
     - Smell Eliminated:
       * Scene currently couples 5 unrelated domains (ECS/UUID storage, Prefab/Object pools, Box2D simulation + task pool + contact events, edit-mode spatial hash grid, and 5-pass 2.5D Diorama OpenGL rendering), inflating rebuild times (`Scene.h` pulls `<box2d/types.h>` everywhere).
