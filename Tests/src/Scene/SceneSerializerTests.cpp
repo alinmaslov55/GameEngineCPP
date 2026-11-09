@@ -50,17 +50,17 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     auto* rb = hero->AddComponent<Engine::Rigidbody2D>();
     rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     rb->FixedRotation = true;
+    rb->UseGravityY = true;
+    rb->GravityY = -14.5f;
+    rb->GroundLevelY = 0.25f;
 
     auto* box = hero->AddComponent<Engine::BoxCollider2D>();
     box->size = {0.8f, 0.9f};
     box->offset = {0.1f, -0.2f};
-    box->density = 2.5f;
-    box->friction = 0.4f;
-    box->restitution = 0.75f;
-    box->isDynamic = true;
-    box->useGravity = true;
-    box->gravity = -14.5f;
-    box->groundLevel = 0.25f;
+    box->Density = 2.5f;
+    box->Friction = 0.4f;
+    box->Restitution = 0.75f;
+    box->RestitutionThreshold = 0.45f;
 
     auto* heroSprite = hero->AddComponent<Engine::SpriteRenderer>();
     heroSprite->SetBillboardMode(Engine::SpriteRenderer::BillboardMode::CylindricalY);
@@ -177,16 +177,16 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     ASSERT_NE(clonedRb, nullptr);
     EXPECT_EQ(clonedRb->Type, Engine::Rigidbody2D::BodyType::Dynamic);
     EXPECT_TRUE(clonedRb->FixedRotation);
+    EXPECT_TRUE(clonedRb->UseGravityY);
+    EXPECT_NEAR(clonedRb->GravityY, -14.5f, 1e-5f);
+    EXPECT_NEAR(clonedRb->GroundLevelY, 0.25f, 1e-5f);
 
     auto* clonedBox = clonedHero->GetComponent<Engine::BoxCollider2D>();
     ASSERT_NE(clonedBox, nullptr);
-    EXPECT_NEAR(clonedBox->density, 2.5f, 1e-5f);
-    EXPECT_NEAR(clonedBox->friction, 0.4f, 1e-5f);
-    EXPECT_NEAR(clonedBox->restitution, 0.75f, 1e-5f);
-    EXPECT_TRUE(clonedBox->isDynamic);
-    EXPECT_TRUE(clonedBox->useGravity);
-    EXPECT_NEAR(clonedBox->gravity, -14.5f, 1e-5f);
-    EXPECT_NEAR(clonedBox->groundLevel, 0.25f, 1e-5f);
+    EXPECT_NEAR(clonedBox->Density, 2.5f, 1e-5f);
+    EXPECT_NEAR(clonedBox->Friction, 0.4f, 1e-5f);
+    EXPECT_NEAR(clonedBox->Restitution, 0.75f, 1e-5f);
+    EXPECT_NEAR(clonedBox->RestitutionThreshold, 0.45f, 1e-5f);
     EXPECT_NEAR(clonedBox->size.x, 0.8f, 1e-5f);
     EXPECT_NEAR(clonedBox->offset.y, -0.2f, 1e-5f);
 

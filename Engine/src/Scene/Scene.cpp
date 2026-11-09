@@ -173,7 +173,7 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
     if (m_IsRuntimeRunning) {
         if (auto* rb2d = gameObject->GetComponent<Rigidbody2D>()) {
             if (rb2d->RuntimeBody) {
-                b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+                b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
                 if (b2Body_IsValid(bodyId)) {
                     b2Body_Disable(bodyId);
                 }
@@ -216,39 +216,29 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
     if (!transform) return;
 
     auto* rb2d = go->GetComponent<Rigidbody2D>();
-    auto* bc2d = go->GetComponent<BoxCollider2D>();
-    auto* cc2d = go->GetComponent<CircleCollider2D>();
-    auto* cap2d = go->GetComponent<CapsuleCollider2D>();
+    auto colliders = go->GetComponents<Collider2D>();
     auto* tilemap = go->GetComponent<Tilemap>();
 
     if (rb2d) {
-        // If there was a static body from previous standalone colliders, destroy it
-        void* oldStaticBodyPtr = nullptr;
-        if (bc2d && bc2d->RuntimeBody != nullptr && bc2d->RuntimeBody != rb2d->RuntimeBody) {
-            oldStaticBodyPtr = bc2d->RuntimeBody;
-            bc2d->RuntimeBody = nullptr;
-            bc2d->RuntimeFixture = nullptr;
+        // If there was an old static body from previously standalone colliders, destroy it
+        BodyHandle oldStaticBody;
+        for (auto* col : colliders) {
+            if (col->RuntimeBody.IsValid() && col->RuntimeBody != rb2d->RuntimeBody) {
+                if (!oldStaticBody.IsValid()) oldStaticBody = col->RuntimeBody;
+                col->RuntimeBody.Reset();
+                col->RuntimeShape.Reset();
+            }
         }
-        if (cc2d && cc2d->RuntimeBody != nullptr && cc2d->RuntimeBody != rb2d->RuntimeBody) {
-            if (!oldStaticBodyPtr) oldStaticBodyPtr = cc2d->RuntimeBody;
-            cc2d->RuntimeBody = nullptr;
-            cc2d->RuntimeShape = nullptr;
-        }
-        if (cap2d && cap2d->RuntimeBody != nullptr && cap2d->RuntimeBody != rb2d->RuntimeBody) {
-            if (!oldStaticBodyPtr) oldStaticBodyPtr = cap2d->RuntimeBody;
-            cap2d->RuntimeBody = nullptr;
-            cap2d->RuntimeShape = nullptr;
-        }
-        if (oldStaticBodyPtr) {
-            b2BodyId oldStaticBody = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(oldStaticBodyPtr)));
-            if (b2Body_IsValid(oldStaticBody)) {
-                b2DestroyBody(oldStaticBody);
+        if (oldStaticBody.IsValid()) {
+            b2BodyId oldStatic = b2LoadBodyId(oldStaticBody.Value);
+            if (b2Body_IsValid(oldStatic)) {
+                b2DestroyBody(oldStatic);
             }
         }
 
         b2BodyId bodyId;
         bool baseMassRecomputed = false;
-        if (rb2d->RuntimeBody == nullptr) {
+        if (!rb2d->RuntimeBody.IsValid()) {
             b2BodyDef bodyDef = b2DefaultBodyDef();
             if (rb2d->IsStasisFrozen()) {
                 bodyDef.type = b2_kinematicBody;
@@ -271,7 +261,7 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
             bodyDef.userData = go;
 
             bodyId = b2CreateBody(worldId, &bodyDef);
-            rb2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
+            rb2d->RuntimeBody = BodyHandle{ b2StoreBodyId(bodyId) };
             baseMassRecomputed = true;
 
             if (rb2d->IsStasisFrozen()) {
@@ -285,7 +275,7 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
                 b2Body_Disable(bodyId);
             }
         } else {
-            bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+            bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
             if (b2Body_IsValid(bodyId)) {
                 if (b2Body_GetUserData(bodyId) != go) {
                     b2Body_SetUserData(bodyId, go);
@@ -315,187 +305,12 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
             }
         }
 
-        if (bc2d && b2Body_IsValid(bodyId)) {
-            if (bc2d->RuntimeFixture != nullptr) {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeFixture)));
-                if (b2Shape_IsValid(shapeId)) {
-                    if (b2Shape_IsSensor(shapeId) != bc2d->IsSensor) {
-                        b2DestroyShape(shapeId, true);
-                        bc2d->RuntimeFixture = nullptr;
-                        baseMassRecomputed = true;
-                    }
-                } else {
-                    bc2d->RuntimeFixture = nullptr;
-                }
-            }
-
-            b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
-            b2Rot rot = b2MakeRot(0.0f);
-            float halfW = std::max(0.001f, bc2d->size.x * std::abs(transform->scale.x) * 0.5f);
-            float halfD = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.z) * 0.5f);
-            b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
-
-            if (bc2d->RuntimeFixture == nullptr) {
-                b2ShapeDef shapeDef = b2DefaultShapeDef();
-                shapeDef.density = bc2d->density;
-                shapeDef.material.friction = bc2d->friction;
-                shapeDef.material.restitution = bc2d->restitution;
-                shapeDef.isSensor = bc2d->IsSensor;
-                shapeDef.enableSensorEvents = true;
-                shapeDef.enableHitEvents = bc2d->EnableHitEvents;
-                shapeDef.enableContactEvents = true;
-                shapeDef.userData = bc2d;
-                if (bc2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
-                    bc2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
-                }
-                shapeDef.filter.categoryBits = bc2d->CategoryBits;
-                shapeDef.filter.maskBits = bc2d->MaskBits;
-                shapeDef.filter.groupIndex = bc2d->GroupIndex;
-
-                b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-                bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
+        for (auto* col : colliders) {
+            col->RuntimeBody = rb2d->RuntimeBody;
+            const bool hadShape = col->RuntimeShape.IsValid();
+            col->CreateOrUpdateShape(rb2d->RuntimeBody, *transform, go);
+            if (!hadShape && col->RuntimeShape.IsValid()) {
                 baseMassRecomputed = true;
-            } else {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeFixture)));
-                b2Polygon cur = b2Shape_GetPolygon(shapeId);
-                if (cur.count != box.count ||
-                    std::abs(cur.vertices[0].x - box.vertices[0].x) > 1e-4f ||
-                    std::abs(cur.vertices[0].y - box.vertices[0].y) > 1e-4f) {
-                    b2Shape_SetPolygon(shapeId, &box);
-                }
-                if (std::abs(b2Shape_GetFriction(shapeId) - bc2d->friction) > 1e-4f) {
-                    b2Shape_SetFriction(shapeId, bc2d->friction);
-                }
-                if (std::abs(b2Shape_GetRestitution(shapeId) - bc2d->restitution) > 1e-4f) {
-                    b2Shape_SetRestitution(shapeId, bc2d->restitution);
-                }
-                if (b2Shape_AreHitEventsEnabled(shapeId) != bc2d->EnableHitEvents) {
-                    b2Shape_EnableHitEvents(shapeId, bc2d->EnableHitEvents);
-                }
-            }
-        }
-
-        if (cc2d && b2Body_IsValid(bodyId)) {
-            if (cc2d->RuntimeShape != nullptr) {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cc2d->RuntimeShape)));
-                if (b2Shape_IsValid(shapeId)) {
-                    if (b2Shape_IsSensor(shapeId) != cc2d->IsSensor) {
-                        b2DestroyShape(shapeId, true);
-                        cc2d->RuntimeShape = nullptr;
-                        baseMassRecomputed = true;
-                    }
-                } else {
-                    cc2d->RuntimeShape = nullptr;
-                }
-            }
-
-            float scaleFactor = std::max(std::abs(transform->scale.x), std::abs(transform->scale.z));
-            float effectiveRadius = std::max(0.001f, cc2d->Radius * scaleFactor);
-            b2Circle circle;
-            circle.center = b2Vec2{ cc2d->OffsetXZ.x, cc2d->OffsetXZ.y };
-            circle.radius = effectiveRadius;
-
-            if (cc2d->RuntimeShape == nullptr) {
-                b2ShapeDef shapeDef = b2DefaultShapeDef();
-                shapeDef.density = cc2d->Density;
-                shapeDef.material.friction = cc2d->Friction;
-                shapeDef.material.restitution = cc2d->Restitution;
-                shapeDef.isSensor = cc2d->IsSensor;
-                shapeDef.enableSensorEvents = true;
-                shapeDef.enableHitEvents = cc2d->EnableHitEvents;
-                shapeDef.enableContactEvents = true;
-                shapeDef.userData = cc2d;
-                if (cc2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
-                    cc2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
-                }
-                shapeDef.filter.categoryBits = cc2d->CategoryBits;
-                shapeDef.filter.maskBits = cc2d->MaskBits;
-                shapeDef.filter.groupIndex = cc2d->GroupIndex;
-
-                b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
-                cc2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
-                baseMassRecomputed = true;
-            } else {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cc2d->RuntimeShape)));
-                b2Circle cur = b2Shape_GetCircle(shapeId);
-                if (std::abs(cur.radius - effectiveRadius) > 1e-4f ||
-                    std::abs(cur.center.x - circle.center.x) > 1e-4f ||
-                    std::abs(cur.center.y - circle.center.y) > 1e-4f) {
-                    b2Shape_SetCircle(shapeId, &circle);
-                }
-                if (std::abs(b2Shape_GetFriction(shapeId) - cc2d->Friction) > 1e-4f) {
-                    b2Shape_SetFriction(shapeId, cc2d->Friction);
-                }
-                if (std::abs(b2Shape_GetRestitution(shapeId) - cc2d->Restitution) > 1e-4f) {
-                    b2Shape_SetRestitution(shapeId, cc2d->Restitution);
-                }
-                if (b2Shape_AreHitEventsEnabled(shapeId) != cc2d->EnableHitEvents) {
-                    b2Shape_EnableHitEvents(shapeId, cc2d->EnableHitEvents);
-                }
-            }
-        }
-
-        if (cap2d && b2Body_IsValid(bodyId)) {
-            if (cap2d->RuntimeShape != nullptr) {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cap2d->RuntimeShape)));
-                if (b2Shape_IsValid(shapeId)) {
-                    if (b2Shape_IsSensor(shapeId) != cap2d->IsSensor) {
-                        b2DestroyShape(shapeId, true);
-                        cap2d->RuntimeShape = nullptr;
-                        baseMassRecomputed = true;
-                    }
-                } else {
-                    cap2d->RuntimeShape = nullptr;
-                }
-            }
-
-            float scaleX = std::abs(transform->scale.x);
-            float scaleZ = std::abs(transform->scale.z);
-            float scaleFactor = std::max(scaleX, scaleZ);
-            b2Capsule capsule;
-            capsule.center1 = b2Vec2{ cap2d->Center1.x * scaleX, cap2d->Center1.y * scaleZ };
-            capsule.center2 = b2Vec2{ cap2d->Center2.x * scaleX, cap2d->Center2.y * scaleZ };
-            capsule.radius = std::max(0.001f, cap2d->Radius * scaleFactor);
-
-            if (cap2d->RuntimeShape == nullptr) {
-                b2ShapeDef shapeDef = b2DefaultShapeDef();
-                shapeDef.density = cap2d->Density;
-                shapeDef.material.friction = cap2d->Friction;
-                shapeDef.material.restitution = cap2d->Restitution;
-                shapeDef.isSensor = cap2d->IsSensor;
-                shapeDef.enableSensorEvents = true;
-                shapeDef.enableHitEvents = cap2d->EnableHitEvents;
-                shapeDef.enableContactEvents = true;
-                shapeDef.userData = cap2d;
-                if (cap2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
-                    cap2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
-                }
-                shapeDef.filter.categoryBits = cap2d->CategoryBits;
-                shapeDef.filter.maskBits = cap2d->MaskBits;
-                shapeDef.filter.groupIndex = cap2d->GroupIndex;
-
-                b2ShapeId shapeId = b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
-                cap2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
-                baseMassRecomputed = true;
-            } else {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cap2d->RuntimeShape)));
-                b2Capsule cur = b2Shape_GetCapsule(shapeId);
-                if (std::abs(cur.radius - capsule.radius) > 1e-4f ||
-                    std::abs(cur.center1.x - capsule.center1.x) > 1e-4f ||
-                    std::abs(cur.center1.y - capsule.center1.y) > 1e-4f ||
-                    std::abs(cur.center2.x - capsule.center2.x) > 1e-4f ||
-                    std::abs(cur.center2.y - capsule.center2.y) > 1e-4f) {
-                    b2Shape_SetCapsule(shapeId, &capsule);
-                }
-                if (std::abs(b2Shape_GetFriction(shapeId) - cap2d->Friction) > 1e-4f) {
-                    b2Shape_SetFriction(shapeId, cap2d->Friction);
-                }
-                if (std::abs(b2Shape_GetRestitution(shapeId) - cap2d->Restitution) > 1e-4f) {
-                    b2Shape_SetRestitution(shapeId, cap2d->Restitution);
-                }
-                if (b2Shape_AreHitEventsEnabled(shapeId) != cap2d->EnableHitEvents) {
-                    b2Shape_EnableHitEvents(shapeId, cap2d->EnableHitEvents);
-                }
             }
         }
 
@@ -507,15 +322,18 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
             rb2d->SetBaseMass((unscaledMass > 0.0001f) ? unscaledMass : 1.0f);
         }
         rb2d->ApplyMassMultiplierToBody();
-    } else if (bc2d || cc2d || cap2d) {
-        b2BodyId bodyId;
-        void* existingBodyPtr = nullptr;
-        if (bc2d && bc2d->RuntimeBody) existingBodyPtr = bc2d->RuntimeBody;
-        else if (cc2d && cc2d->RuntimeBody) existingBodyPtr = cc2d->RuntimeBody;
-        else if (cap2d && cap2d->RuntimeBody) existingBodyPtr = cap2d->RuntimeBody;
+    } else if (!colliders.empty()) {
+        BodyHandle bodyHandle;
+        for (auto* col : colliders) {
+            if (col->RuntimeBody.IsValid()) {
+                bodyHandle = col->RuntimeBody;
+                break;
+            }
+        }
 
-        if (existingBodyPtr) {
-            bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(existingBodyPtr)));
+        b2BodyId bodyId;
+        if (bodyHandle.IsValid()) {
+            bodyId = b2LoadBodyId(bodyHandle.Value);
         } else {
             b2BodyDef bodyDef = b2DefaultBodyDef();
             bodyDef.type = b2_staticBody;
@@ -529,193 +347,16 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
             if (!go->IsActiveInHierarchy()) {
                 b2Body_Disable(bodyId);
             }
+            bodyHandle = BodyHandle{ b2StoreBodyId(bodyId) };
         }
 
-        void* storedBodyPtr = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
-        if (bc2d) bc2d->RuntimeBody = storedBodyPtr;
-        if (cc2d) cc2d->RuntimeBody = storedBodyPtr;
-        if (cap2d) cap2d->RuntimeBody = storedBodyPtr;
-
-        if (bc2d && b2Body_IsValid(bodyId)) {
-            if (bc2d->RuntimeFixture != nullptr) {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeFixture)));
-                if (b2Shape_IsValid(shapeId)) {
-                    if (b2Shape_IsSensor(shapeId) != bc2d->IsSensor) {
-                        b2DestroyShape(shapeId, true);
-                        bc2d->RuntimeFixture = nullptr;
-                    }
-                } else {
-                    bc2d->RuntimeFixture = nullptr;
-                }
-            }
-
-            b2Vec2 center = { bc2d->offset.x, bc2d->offset.y };
-            b2Rot rot = b2MakeRot(0.0f);
-            float halfW = std::max(0.001f, bc2d->size.x * std::abs(transform->scale.x) * 0.5f);
-            float halfD = std::max(0.001f, bc2d->size.y * std::abs(transform->scale.z) * 0.5f);
-            b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
-
-            if (bc2d->RuntimeFixture == nullptr) {
-                b2ShapeDef shapeDef = b2DefaultShapeDef();
-                shapeDef.density = bc2d->density;
-                shapeDef.material.friction = bc2d->friction;
-                shapeDef.material.restitution = bc2d->restitution;
-                shapeDef.isSensor = bc2d->IsSensor;
-                shapeDef.enableSensorEvents = true;
-                shapeDef.enableHitEvents = bc2d->EnableHitEvents;
-                shapeDef.enableContactEvents = true;
-                shapeDef.userData = bc2d;
-                if (bc2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
-                    bc2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
-                }
-                shapeDef.filter.categoryBits = bc2d->CategoryBits;
-                shapeDef.filter.maskBits = bc2d->MaskBits;
-                shapeDef.filter.groupIndex = bc2d->GroupIndex;
-
-                b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
-                bc2d->RuntimeFixture = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
-            } else {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(bc2d->RuntimeFixture)));
-                b2Polygon cur = b2Shape_GetPolygon(shapeId);
-                if (cur.count != box.count ||
-                    std::abs(cur.vertices[0].x - box.vertices[0].x) > 1e-4f ||
-                    std::abs(cur.vertices[0].y - box.vertices[0].y) > 1e-4f) {
-                    b2Shape_SetPolygon(shapeId, &box);
-                }
-                if (std::abs(b2Shape_GetFriction(shapeId) - bc2d->friction) > 1e-4f) {
-                    b2Shape_SetFriction(shapeId, bc2d->friction);
-                }
-                if (std::abs(b2Shape_GetRestitution(shapeId) - bc2d->restitution) > 1e-4f) {
-                    b2Shape_SetRestitution(shapeId, bc2d->restitution);
-                }
-                if (b2Shape_AreHitEventsEnabled(shapeId) != bc2d->EnableHitEvents) {
-                    b2Shape_EnableHitEvents(shapeId, bc2d->EnableHitEvents);
-                }
-            }
-        }
-
-        if (cc2d && b2Body_IsValid(bodyId)) {
-            if (cc2d->RuntimeShape != nullptr) {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cc2d->RuntimeShape)));
-                if (b2Shape_IsValid(shapeId)) {
-                    if (b2Shape_IsSensor(shapeId) != cc2d->IsSensor) {
-                        b2DestroyShape(shapeId, true);
-                        cc2d->RuntimeShape = nullptr;
-                    }
-                } else {
-                    cc2d->RuntimeShape = nullptr;
-                }
-            }
-
-            float scaleFactor = std::max(std::abs(transform->scale.x), std::abs(transform->scale.z));
-            float effectiveRadius = std::max(0.001f, cc2d->Radius * scaleFactor);
-            b2Circle circle;
-            circle.center = b2Vec2{ cc2d->OffsetXZ.x, cc2d->OffsetXZ.y };
-            circle.radius = effectiveRadius;
-
-            if (cc2d->RuntimeShape == nullptr) {
-                b2ShapeDef shapeDef = b2DefaultShapeDef();
-                shapeDef.density = cc2d->Density;
-                shapeDef.material.friction = cc2d->Friction;
-                shapeDef.material.restitution = cc2d->Restitution;
-                shapeDef.isSensor = cc2d->IsSensor;
-                shapeDef.enableSensorEvents = true;
-                shapeDef.enableHitEvents = cc2d->EnableHitEvents;
-                shapeDef.enableContactEvents = true;
-                shapeDef.userData = cc2d;
-                if (cc2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
-                    cc2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
-                }
-                shapeDef.filter.categoryBits = cc2d->CategoryBits;
-                shapeDef.filter.maskBits = cc2d->MaskBits;
-                shapeDef.filter.groupIndex = cc2d->GroupIndex;
-
-                b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
-                cc2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
-            } else {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cc2d->RuntimeShape)));
-                b2Circle cur = b2Shape_GetCircle(shapeId);
-                if (std::abs(cur.radius - effectiveRadius) > 1e-4f ||
-                    std::abs(cur.center.x - circle.center.x) > 1e-4f ||
-                    std::abs(cur.center.y - circle.center.y) > 1e-4f) {
-                    b2Shape_SetCircle(shapeId, &circle);
-                }
-                if (std::abs(b2Shape_GetFriction(shapeId) - cc2d->Friction) > 1e-4f) {
-                    b2Shape_SetFriction(shapeId, cc2d->Friction);
-                }
-                if (std::abs(b2Shape_GetRestitution(shapeId) - cc2d->Restitution) > 1e-4f) {
-                    b2Shape_SetRestitution(shapeId, cc2d->Restitution);
-                }
-                if (b2Shape_AreHitEventsEnabled(shapeId) != cc2d->EnableHitEvents) {
-                    b2Shape_EnableHitEvents(shapeId, cc2d->EnableHitEvents);
-                }
-            }
-        }
-
-        if (cap2d && b2Body_IsValid(bodyId)) {
-            if (cap2d->RuntimeShape != nullptr) {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cap2d->RuntimeShape)));
-                if (b2Shape_IsValid(shapeId)) {
-                    if (b2Shape_IsSensor(shapeId) != cap2d->IsSensor) {
-                        b2DestroyShape(shapeId, true);
-                        cap2d->RuntimeShape = nullptr;
-                    }
-                } else {
-                    cap2d->RuntimeShape = nullptr;
-                }
-            }
-
-            float scaleX = std::abs(transform->scale.x);
-            float scaleZ = std::abs(transform->scale.z);
-            float scaleFactor = std::max(scaleX, scaleZ);
-            b2Capsule capsule;
-            capsule.center1 = b2Vec2{ cap2d->Center1.x * scaleX, cap2d->Center1.y * scaleZ };
-            capsule.center2 = b2Vec2{ cap2d->Center2.x * scaleX, cap2d->Center2.y * scaleZ };
-            capsule.radius = std::max(0.001f, cap2d->Radius * scaleFactor);
-
-            if (cap2d->RuntimeShape == nullptr) {
-                b2ShapeDef shapeDef = b2DefaultShapeDef();
-                shapeDef.density = cap2d->Density;
-                shapeDef.material.friction = cap2d->Friction;
-                shapeDef.material.restitution = cap2d->Restitution;
-                shapeDef.isSensor = cap2d->IsSensor;
-                shapeDef.enableSensorEvents = true;
-                shapeDef.enableHitEvents = cap2d->EnableHitEvents;
-                shapeDef.enableContactEvents = true;
-                shapeDef.userData = cap2d;
-                if (cap2d->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
-                    cap2d->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
-                }
-                shapeDef.filter.categoryBits = cap2d->CategoryBits;
-                shapeDef.filter.maskBits = cap2d->MaskBits;
-                shapeDef.filter.groupIndex = cap2d->GroupIndex;
-
-                b2ShapeId shapeId = b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
-                cap2d->RuntimeShape = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreShapeId(shapeId)));
-            } else {
-                b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(cap2d->RuntimeShape)));
-                b2Capsule cur = b2Shape_GetCapsule(shapeId);
-                if (std::abs(cur.radius - capsule.radius) > 1e-4f ||
-                    std::abs(cur.center1.x - capsule.center1.x) > 1e-4f ||
-                    std::abs(cur.center1.y - capsule.center1.y) > 1e-4f ||
-                    std::abs(cur.center2.x - capsule.center2.x) > 1e-4f ||
-                    std::abs(cur.center2.y - capsule.center2.y) > 1e-4f) {
-                    b2Shape_SetCapsule(shapeId, &capsule);
-                }
-                if (std::abs(b2Shape_GetFriction(shapeId) - cap2d->Friction) > 1e-4f) {
-                    b2Shape_SetFriction(shapeId, cap2d->Friction);
-                }
-                if (std::abs(b2Shape_GetRestitution(shapeId) - cap2d->Restitution) > 1e-4f) {
-                    b2Shape_SetRestitution(shapeId, cap2d->Restitution);
-                }
-                if (b2Shape_AreHitEventsEnabled(shapeId) != cap2d->EnableHitEvents) {
-                    b2Shape_EnableHitEvents(shapeId, cap2d->EnableHitEvents);
-                }
-            }
+        for (auto* col : colliders) {
+            col->RuntimeBody = bodyHandle;
+            col->CreateOrUpdateShape(bodyHandle, *transform, go);
         }
     }
 
-    if (tilemap && tilemap->RuntimeBody == nullptr) {
+    if (tilemap && !tilemap->RuntimeBody.IsValid()) {
         CreateRuntimeTilemapBody(go);
     }
 }
@@ -724,11 +365,11 @@ void Scene::UnregisterRuntimeBody(GameObject* go) {
     if (!m_IsRuntimeRunning || !go) return;
     std::erase(m_PendingPhysicsSync, go);
 
-    void* destroyedBodyPtr = nullptr;
+    BodyHandle destroyedBody;
     if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
-        if (rb2d->RuntimeBody) {
-            destroyedBodyPtr = rb2d->RuntimeBody;
-            b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+        if (rb2d->RuntimeBody.IsValid()) {
+            destroyedBody = rb2d->RuntimeBody;
+            b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
             if (b2Body_IsValid(bodyId)) {
                 b2DestroyBody(bodyId);
             }
@@ -736,43 +377,29 @@ void Scene::UnregisterRuntimeBody(GameObject* go) {
         rb2d->ResetRuntimeState();
     }
 
-    void* staticBodyPtr = nullptr;
-    if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
-        if (bc2d->RuntimeBody && bc2d->RuntimeBody != destroyedBodyPtr) {
-            staticBodyPtr = bc2d->RuntimeBody;
+    BodyHandle staticBody;
+    for (auto* col : go->GetComponents<Collider2D>()) {
+        if (col->RuntimeBody.IsValid() && col->RuntimeBody != destroyedBody) {
+            if (!staticBody.IsValid()) staticBody = col->RuntimeBody;
         }
-        bc2d->RuntimeBody = nullptr;
-        bc2d->RuntimeFixture = nullptr;
-    }
-    if (auto* cc2d = go->GetComponent<CircleCollider2D>()) {
-        if (cc2d->RuntimeBody && cc2d->RuntimeBody != destroyedBodyPtr) {
-            if (!staticBodyPtr) staticBodyPtr = cc2d->RuntimeBody;
-        }
-        cc2d->RuntimeBody = nullptr;
-        cc2d->RuntimeShape = nullptr;
-    }
-    if (auto* cap2d = go->GetComponent<CapsuleCollider2D>()) {
-        if (cap2d->RuntimeBody && cap2d->RuntimeBody != destroyedBodyPtr) {
-            if (!staticBodyPtr) staticBodyPtr = cap2d->RuntimeBody;
-        }
-        cap2d->RuntimeBody = nullptr;
-        cap2d->RuntimeShape = nullptr;
+        col->RuntimeBody.Reset();
+        col->RuntimeShape.Reset();
     }
 
-    if (staticBodyPtr) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(staticBodyPtr)));
+    if (staticBody.IsValid()) {
+        b2BodyId bodyId = b2LoadBodyId(staticBody.Value);
         if (b2Body_IsValid(bodyId)) {
             b2DestroyBody(bodyId);
         }
     }
 
     if (auto* tilemap = go->GetComponent<Tilemap>()) {
-        if (tilemap->RuntimeBody) {
-            b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(tilemap->RuntimeBody)));
+        if (tilemap->RuntimeBody.IsValid()) {
+            b2BodyId bodyId = b2LoadBodyId(tilemap->RuntimeBody.Value);
             if (b2Body_IsValid(bodyId)) {
                 b2DestroyBody(bodyId);
             }
-            tilemap->RuntimeBody = nullptr;
+            tilemap->RuntimeBody.Reset();
         }
     }
 }
@@ -790,7 +417,7 @@ void Scene::CreateRuntimeTilemapBody(GameObject* go) {
     auto* transform = go->GetTransform();
     if (!tilemap || !transform) return;
 
-    if (tilemap->RuntimeBody != nullptr) return;
+    if (tilemap->RuntimeBody.IsValid()) return;
 
     const uint32_t width = tilemap->GetWidth();
     const uint32_t height = tilemap->GetHeight();
@@ -803,7 +430,7 @@ void Scene::CreateRuntimeTilemapBody(GameObject* go) {
     bodyDef.userData = go;
 
     b2BodyId bodyId = b2CreateBody(worldId, &bodyDef);
-    tilemap->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
+    tilemap->RuntimeBody = BodyHandle{ b2StoreBodyId(bodyId) };
 
     if (!go->IsActiveInHierarchy()) {
         b2Body_Disable(bodyId);
@@ -972,9 +599,10 @@ GameObject* Scene::AcquirePooled(const std::string& poolKey, const Prefab& prefa
     if (instance) {
         // Reset Box2D physics if in runtime
         if (m_IsRuntimeRunning) {
-            if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
-                if (rb2d->RuntimeBody) {
-                    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody));
+            auto* rb2d = instance->GetComponent<Rigidbody2D>();
+            if (rb2d) {
+                if (rb2d->RuntimeBody.IsValid()) {
+                    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
                     if (b2Body_IsValid(bodyId)) {
                         b2Body_Enable(bodyId);
                         b2Vec2 p{ worldPos.x, worldPos.z };
@@ -987,32 +615,9 @@ GameObject* Scene::AcquirePooled(const std::string& poolKey, const Prefab& prefa
                 }
                 rb2d->VerticalVelocity = 0.0f;
             }
-            if (auto* bc2d = instance->GetComponent<BoxCollider2D>()) {
-                if (bc2d->RuntimeBody) {
-                    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody));
-                    if (b2Body_IsValid(bodyId)) {
-                        b2Body_Enable(bodyId);
-                        b2Vec2 p{ worldPos.x, worldPos.z };
-                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.y));
-                        b2Body_SetTransform(bodyId, p, r);
-                    }
-                }
-                bc2d->verticalVelocity = 0.0f;
-            }
-            if (auto* cc2d = instance->GetComponent<CircleCollider2D>()) {
-                if (cc2d->RuntimeBody) {
-                    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(cc2d->RuntimeBody));
-                    if (b2Body_IsValid(bodyId)) {
-                        b2Body_Enable(bodyId);
-                        b2Vec2 p{ worldPos.x, worldPos.z };
-                        b2Rot r = b2MakeRot(glm::radians(instance->GetTransform()->rotation.y));
-                        b2Body_SetTransform(bodyId, p, r);
-                    }
-                }
-            }
-            if (auto* cap2d = instance->GetComponent<CapsuleCollider2D>()) {
-                if (cap2d->RuntimeBody) {
-                    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(cap2d->RuntimeBody));
+            for (auto* col : instance->GetComponents<Collider2D>()) {
+                if (col->RuntimeBody.IsValid() && (!rb2d || col->RuntimeBody != rb2d->RuntimeBody)) {
+                    b2BodyId bodyId = b2LoadBodyId(col->RuntimeBody.Value);
                     if (b2Body_IsValid(bodyId)) {
                         b2Body_Enable(bodyId);
                         b2Vec2 p{ worldPos.x, worldPos.z };
@@ -1025,9 +630,6 @@ GameObject* Scene::AcquirePooled(const std::string& poolKey, const Prefab& prefa
         if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
             rb2d->VerticalVelocity = 0.0f;
         }
-        if (auto* bc2d = instance->GetComponent<BoxCollider2D>()) {
-            bc2d->verticalVelocity = 0.0f;
-        }
 
         instance->SetActive(true);
     }
@@ -1039,9 +641,10 @@ void Scene::ReleaseToPool(const std::string& poolKey, GameObject* instance) {
     if (!instance) return;
 
     // Reset physics state
-    if (auto* rb2d = instance->GetComponent<Rigidbody2D>()) {
-        if (m_IsRuntimeRunning && rb2d->RuntimeBody) {
-            b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody));
+    auto* rb2d = instance->GetComponent<Rigidbody2D>();
+    if (rb2d) {
+        if (m_IsRuntimeRunning && rb2d->RuntimeBody.IsValid()) {
+            b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
             if (b2Body_IsValid(bodyId)) {
                 b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
                 b2Body_SetAngularVelocity(bodyId, 0.0f);
@@ -1051,28 +654,9 @@ void Scene::ReleaseToPool(const std::string& poolKey, GameObject* instance) {
         }
         rb2d->VerticalVelocity = 0.0f;
     }
-    if (auto* bc2d = instance->GetComponent<BoxCollider2D>()) {
-        if (m_IsRuntimeRunning && bc2d->RuntimeBody) {
-            b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(bc2d->RuntimeBody));
-            if (b2Body_IsValid(bodyId)) {
-                b2Body_SetAwake(bodyId, false);
-                b2Body_Disable(bodyId);
-            }
-        }
-        bc2d->verticalVelocity = 0.0f;
-    }
-    if (auto* cc2d = instance->GetComponent<CircleCollider2D>()) {
-        if (m_IsRuntimeRunning && cc2d->RuntimeBody) {
-            b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(cc2d->RuntimeBody));
-            if (b2Body_IsValid(bodyId)) {
-                b2Body_SetAwake(bodyId, false);
-                b2Body_Disable(bodyId);
-            }
-        }
-    }
-    if (auto* cap2d = instance->GetComponent<CapsuleCollider2D>()) {
-        if (m_IsRuntimeRunning && cap2d->RuntimeBody) {
-            b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(cap2d->RuntimeBody));
+    for (auto* col : instance->GetComponents<Collider2D>()) {
+        if (m_IsRuntimeRunning && col->RuntimeBody.IsValid() && (!rb2d || col->RuntimeBody != rb2d->RuntimeBody)) {
+            b2BodyId bodyId = b2LoadBodyId(col->RuntimeBody.Value);
             if (b2Body_IsValid(bodyId)) {
                 b2Body_SetAwake(bodyId, false);
                 b2Body_Disable(bodyId);
@@ -1357,15 +941,17 @@ void Scene::UpdateCollidersAndGravity(float deltaTime) {
         }
         if (auto* collider = gameObject->GetComponent<BoxCollider2D>()) {
             auto* transform = gameObject->GetTransform();
-            if (collider->isDynamic) {
+            auto* rb = gameObject->GetComponent<Rigidbody2D>();
+            const bool isDynamic = rb && (rb->Type == Rigidbody2D::BodyType::Dynamic);
+            if (isDynamic) {
                 m_DynamicColliders.push_back({ gameObject.get(), transform, collider });
                 // Apply vertical isometric gravity & ground clamping for dynamic bodies
-                if (collider->useGravity && transform) {
-                    collider->verticalVelocity += collider->gravity * deltaTime;
-                    transform->position.y += collider->verticalVelocity * deltaTime;
-                    if (transform->position.y <= collider->groundLevel) {
-                        transform->position.y = collider->groundLevel;
-                        collider->verticalVelocity = 0.0f;
+                if (rb->UseGravityY && transform) {
+                    rb->VerticalVelocity += rb->GravityY * rb->GravityScaleY * deltaTime;
+                    transform->position.y += rb->VerticalVelocity * deltaTime;
+                    if (transform->position.y <= rb->GroundLevelY) {
+                        transform->position.y = rb->GroundLevelY;
+                        rb->VerticalVelocity = 0.0f;
                     }
                 }
             } else {
@@ -1387,7 +973,9 @@ void Scene::UpdateCollidersAndGravity(float deltaTime) {
 
         for (auto& gameObject : m_GameObjects) {
             if (auto* collider = gameObject->GetComponent<BoxCollider2D>()) {
-                if (!collider->isDynamic) {
+                auto* rb = gameObject->GetComponent<Rigidbody2D>();
+                const bool isDynamic = rb && (rb->Type == Rigidbody2D::BodyType::Dynamic);
+                if (!isDynamic) {
                     m_StaticColliders.push_back({ gameObject.get(), gameObject->GetTransform(), collider });
                 }
             }
@@ -1465,10 +1053,15 @@ void Scene::ResolveEntityCollisions() {
                 push.y = (tA->position.z < tB->position.z) ? -overlapZ : overlapZ;
             }
 
-            if (cA->isDynamic && !cB->isDynamic) {
+            auto* rbA = entryA.gameObject ? entryA.gameObject->GetComponent<Rigidbody2D>() : nullptr;
+            auto* rbB = entryB.gameObject ? entryB.gameObject->GetComponent<Rigidbody2D>() : nullptr;
+            const bool isDynA = rbA && (rbA->Type == Rigidbody2D::BodyType::Dynamic);
+            const bool isDynB = rbB && (rbB->Type == Rigidbody2D::BodyType::Dynamic);
+
+            if (isDynA && !isDynB) {
                 tA->position.x += push.x;
                 tA->position.z += push.y;
-            } else if (!cA->isDynamic && cB->isDynamic) {
+            } else if (!isDynA && isDynB) {
                 tB->position.x -= push.x;
                 tB->position.z -= push.y;
             } else {
@@ -1534,7 +1127,8 @@ void Scene::ResolveTilemapCollisions() {
     // 2. Dynamic Entity-vs-Tilemap Non-Walkable Tile Collision on XZ Ground Plane
     for (const auto& entryA : m_DynamicColliders) {
         auto* cA = entryA.collider;
-        if (!cA->isDynamic) continue;
+        auto* rbA = entryA.gameObject ? entryA.gameObject->GetComponent<Rigidbody2D>() : nullptr;
+        if (!rbA || rbA->Type != Rigidbody2D::BodyType::Dynamic) continue;
 
         auto* tA = entryA.transform;
         if (!tA) continue;
@@ -1757,40 +1351,24 @@ void Scene::OnRuntimeStop() {
         if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
             rb2d->ResetRuntimeState();
         }
-        if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
-            bc2d->RuntimeFixture = nullptr;
-            bc2d->RuntimeBody = nullptr;
-        }
-        if (auto* cc2d = go->GetComponent<CircleCollider2D>()) {
-            cc2d->RuntimeShape = nullptr;
-            cc2d->RuntimeBody = nullptr;
-        }
-        if (auto* cap2d = go->GetComponent<CapsuleCollider2D>()) {
-            cap2d->RuntimeShape = nullptr;
-            cap2d->RuntimeBody = nullptr;
+        for (auto* col : go->GetComponents<Collider2D>()) {
+            col->RuntimeShape.Reset();
+            col->RuntimeBody.Reset();
         }
         if (auto* tilemap = go->GetComponent<Tilemap>()) {
-            tilemap->RuntimeBody = nullptr;
+            tilemap->RuntimeBody.Reset();
         }
     }
     for (auto& go : m_PendingSpawnQueue) {
         if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
             rb2d->ResetRuntimeState();
         }
-        if (auto* bc2d = go->GetComponent<BoxCollider2D>()) {
-            bc2d->RuntimeFixture = nullptr;
-            bc2d->RuntimeBody = nullptr;
-        }
-        if (auto* cc2d = go->GetComponent<CircleCollider2D>()) {
-            cc2d->RuntimeShape = nullptr;
-            cc2d->RuntimeBody = nullptr;
-        }
-        if (auto* cap2d = go->GetComponent<CapsuleCollider2D>()) {
-            cap2d->RuntimeShape = nullptr;
-            cap2d->RuntimeBody = nullptr;
+        for (auto* col : go->GetComponents<Collider2D>()) {
+            col->RuntimeShape.Reset();
+            col->RuntimeBody.Reset();
         }
         if (auto* tilemap = go->GetComponent<Tilemap>()) {
-            tilemap->RuntimeBody = nullptr;
+            tilemap->RuntimeBody.Reset();
         }
     }
     m_StaticCollidersDirty = true;
@@ -1884,14 +1462,20 @@ void Scene::UpdateRuntime(float deltaTime) {
                 auto* rb2d = go->GetComponent<Rigidbody2D>();
 
                 if (rb2d && transform && rb2d->RuntimeBody) {
-                    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+                    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
                     if (b2Body_IsValid(bodyId)) {
                         b2Vec2 pos = b2Body_GetPosition(bodyId);
                         b2Rot rot = b2Body_GetRotation(bodyId);
-                        transform->position.x = pos.x;
-                        transform->position.z = pos.y;
+                        if (transform->GetParent()) {
+                            transform->SetWorldPosition({ pos.x, transform->position.y, pos.y });
+                        } else {
+                            transform->position.x = pos.x;
+                            transform->position.z = pos.y;
+                            transform->SetDirty();
+                        }
                         if (!rb2d->FixedRotation) {
                             transform->rotation.y = glm::degrees(b2Rot_GetAngle(rot));
+                            transform->SetDirty();
                         }
                     }
                 }
@@ -1919,7 +1503,6 @@ void Scene::IntegrateVerticalElevation(float fixedDt) {
         if (!transform) continue;
 
         auto* rb2d = go->GetComponent<Rigidbody2D>();
-        auto* bc2d = go->GetComponent<BoxCollider2D>();
 
         if (rb2d && rb2d->Type == Rigidbody2D::BodyType::Dynamic && rb2d->UseGravityY) {
             if (rb2d->IsStasisFrozen()) {
@@ -1937,9 +1520,6 @@ void Scene::IntegrateVerticalElevation(float fixedDt) {
                     rb2d->VerticalVelocity = 0.0f;
                 }
             }
-            if (bc2d) {
-                bc2d->verticalVelocity = rb2d->VerticalVelocity;
-            }
 
             // Airborne Elevation Filtering
             if (rb2d->EnableAirbornePassThrough) {
@@ -1954,19 +1534,6 @@ void Scene::IntegrateVerticalElevation(float fixedDt) {
                     ApplyAirbornePassThroughFilter(go.get(), false);
                 }
             }
-        } else if (!rb2d && bc2d && bc2d->isDynamic && bc2d->useGravity) {
-            bc2d->verticalVelocity += bc2d->gravity * fixedDt;
-            transform->position.y += bc2d->verticalVelocity * fixedDt;
-
-            if (transform->position.y <= bc2d->groundLevel && bc2d->verticalVelocity < 0.0f) {
-                if (bc2d->restitution > 0.05f && std::abs(bc2d->verticalVelocity) > 0.8f) {
-                    transform->position.y = bc2d->groundLevel;
-                    bc2d->verticalVelocity = -bc2d->verticalVelocity * bc2d->restitution;
-                } else {
-                    transform->position.y = bc2d->groundLevel;
-                    bc2d->verticalVelocity = 0.0f;
-                }
-            }
         }
     }
 }
@@ -1976,24 +1543,14 @@ void Scene::ApplyAirbornePassThroughFilter(GameObject* go, bool airborne) {
     auto* rb2d = go->GetComponent<Rigidbody2D>();
     const uint64_t excludedMask = rb2d ? rb2d->AirbornePassThroughMask : PhysicsLayer::DefaultAirborneExcluded;
 
-    auto updateShape = [airborne, excludedMask](void* runtimeShapeHandle, uint64_t originalMask) {
-        if (!runtimeShapeHandle) return;
-        b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(runtimeShapeHandle)));
+    for (auto* col : go->GetComponents<Collider2D>()) {
+        if (!col->RuntimeShape.IsValid()) continue;
+        b2ShapeId shapeId = b2LoadShapeId(col->RuntimeShape.Value);
         if (b2Shape_IsValid(shapeId)) {
             b2Filter filter = b2Shape_GetFilter(shapeId);
-            filter.maskBits = airborne ? (originalMask & ~excludedMask) : originalMask;
+            filter.maskBits = airborne ? (col->MaskBits & ~excludedMask) : col->MaskBits;
             b2Shape_SetFilter(shapeId, filter);
         }
-    };
-
-    if (auto* bc = go->GetComponent<BoxCollider2D>()) {
-        updateShape(bc->RuntimeFixture, bc->MaskBits);
-    }
-    if (auto* cc = go->GetComponent<CircleCollider2D>()) {
-        updateShape(cc->RuntimeShape, cc->MaskBits);
-    }
-    if (auto* cap = go->GetComponent<CapsuleCollider2D>()) {
-        updateShape(cap->RuntimeShape, cap->MaskBits);
     }
 }
 
@@ -2233,7 +1790,7 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
     static const auto kDirLightMask = Detail::GetComponentTypeMask<DirectionalLightComponent>();
     static const auto kPostProcessMask = Detail::GetComponentTypeMask<PostProcessComponent>();
     static const auto kWindMask = Detail::GetComponentTypeMask<WindComponent>();
-    static const auto kBoxColliderMask = Detail::GetComponentTypeMask<BoxCollider2D>();
+    static const auto kRigidbodyMask = Detail::GetComponentTypeMask<Rigidbody2D>();
     static const auto kPointLightMask = Detail::GetComponentTypeMask<PointLightComponent>();
     static const auto kTerrainMask = Detail::GetComponentTypeMask<TerrainComponent>();
     static const auto kTilemapMask = Detail::GetComponentTypeMask<Tilemap>();
@@ -2298,8 +1855,8 @@ SceneRenderContext Scene::GatherRenderContext(const PerspectiveCamera* overrideC
                 }
             }
         }
-        if (m_FoliageScratch.size() < 8 && (mask & kBoxColliderMask)) {
-            if (auto* bc = gameObject->GetComponent<BoxCollider2D>(); bc && bc->isDynamic) {
+        if (m_FoliageScratch.size() < 8 && (mask & kRigidbodyMask)) {
+            if (auto* rb = gameObject->GetComponent<Rigidbody2D>(); rb && rb->Type == Rigidbody2D::BodyType::Dynamic) {
                 if (auto* t = gameObject->GetTransform()) {
                     m_FoliageScratch.emplace_back(gameObject.get(), t->GetWorldPosition());
                 }

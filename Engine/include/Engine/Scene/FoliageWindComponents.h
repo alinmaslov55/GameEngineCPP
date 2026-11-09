@@ -212,10 +212,10 @@ public:
 
         GameObject* owner = GetGameObject();
         Transform* transform = owner ? owner->GetTransform() : nullptr;
-        BoxCollider2D* collider = owner ? owner->GetComponent<BoxCollider2D>() : nullptr;
+        Rigidbody2D* rb = owner ? owner->GetComponent<Rigidbody2D>() : nullptr;
 
         if (transform) {
-            const float groundY = (collider && collider->isDynamic) ? collider->groundLevel : 0.0f;
+            const float groundY = rb ? rb->GroundLevelY : 0.0f;
             const bool grounded = (transform->position.y <= groundY + 1e-3f);
 
             if (!m_InitializedTracking) {

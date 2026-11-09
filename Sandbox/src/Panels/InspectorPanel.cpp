@@ -638,9 +638,9 @@ void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engin
     bool dirty = false;
     dirty |= ImGui::DragFloat2("Size (Width X, Depth Z)", &boxCollider.size.x, 0.05f, 0.01f, 100.0f);
     dirty |= ImGui::DragFloat2("Offset (X, Z)", &boxCollider.offset.x, 0.05f);
-    dirty |= ImGui::DragFloat("Density", &boxCollider.density, 0.01f, 0.0f, 100.0f);
-    dirty |= ImGui::DragFloat("Friction", &boxCollider.friction, 0.01f, 0.0f, 1.0f);
-    dirty |= ImGui::DragFloat("Restitution (XZ)", &boxCollider.restitution, 0.01f, 0.0f, 1.0f);
+    dirty |= ImGui::DragFloat("Density", &boxCollider.Density, 0.01f, 0.0f, 100.0f);
+    dirty |= ImGui::DragFloat("Friction", &boxCollider.Friction, 0.01f, 0.0f, 1.0f);
+    dirty |= ImGui::DragFloat("Restitution (XZ)", &boxCollider.Restitution, 0.01f, 0.0f, 1.0f);
     dirty |= ImGui::Checkbox("Is Sensor", &boxCollider.IsSensor);
     dirty |= ImGui::Checkbox("Enable Hit Events", &boxCollider.EnableHitEvents);
     if (dirty && entity && entity->GetScene()) {
@@ -648,13 +648,6 @@ void InspectorPanel::DrawBoxCollider2D(Engine::BoxCollider2D& boxCollider, Engin
     }
     DrawCollisionFilterUI(boxCollider.CategoryBits, boxCollider.MaskBits, boxCollider.GroupIndex,
         [&boxCollider](uint64_t c, uint64_t m, int32_t g) { boxCollider.SetFilter(c, m, g); });
-    ImGui::Separator();
-    ImGui::Checkbox("Is Dynamic (Isometric)", &boxCollider.isDynamic);
-    if (boxCollider.isDynamic) {
-        ImGui::Checkbox("Use Gravity", &boxCollider.useGravity);
-        ImGui::DragFloat("Gravity", &boxCollider.gravity, 0.1f, -50.0f, 0.0f);
-        ImGui::DragFloat("Ground Y", &boxCollider.groundLevel, 0.05f);
-    }
 }
 
 void InspectorPanel::DrawCircleCollider2D(Engine::CircleCollider2D& circleCollider, Engine::GameObject* entity) {

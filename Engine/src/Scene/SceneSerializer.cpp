@@ -403,19 +403,15 @@ void SerializeBoxCollider2D(const GameObject* go, json& compsJson) {
     compsJson["BoxCollider2D"] = {
         {"Size", ToJson(collider->size)},
         {"Offset", ToJson(collider->offset)},
-        {"Density", collider->density},
-        {"Friction", collider->friction},
-        {"Restitution", collider->restitution},
-        {"RestitutionThreshold", collider->restitutionThreshold},
-        {"IsDynamic", collider->isDynamic},
+        {"Density", collider->Density},
+        {"Friction", collider->Friction},
+        {"Restitution", collider->Restitution},
+        {"RestitutionThreshold", collider->RestitutionThreshold},
         {"IsSensor", collider->IsSensor},
         {"EnableHitEvents", collider->EnableHitEvents},
         {"CategoryBits", collider->CategoryBits},
         {"MaskBits", collider->MaskBits},
-        {"GroupIndex", collider->GroupIndex},
-        {"UseGravity", collider->useGravity},
-        {"Gravity", collider->gravity},
-        {"GroundLevel", collider->groundLevel}
+        {"GroupIndex", collider->GroupIndex}
     };
 }
 
@@ -898,19 +894,15 @@ void DeserializeBoxCollider2D(GameObject* go, const json& bcJson, const std::str
     auto* collider = go->AddComponent<BoxCollider2D>();
     if (bcJson.contains("Size"))   collider->size = AsVec2(bcJson["Size"], collider->size);
     if (bcJson.contains("Offset")) collider->offset = AsVec2(bcJson["Offset"], collider->offset);
-    collider->density = bcJson.value("Density", 1.0f);
-    collider->friction = bcJson.value("Friction", 0.5f);
-    collider->restitution = bcJson.value("Restitution", 0.0f);
-    collider->restitutionThreshold = bcJson.value("RestitutionThreshold", 0.5f);
-    collider->isDynamic = bcJson.value("IsDynamic", false);
+    collider->Density = bcJson.value("Density", 1.0f);
+    collider->Friction = bcJson.value("Friction", 0.5f);
+    collider->Restitution = bcJson.value("Restitution", 0.0f);
+    collider->RestitutionThreshold = bcJson.value("RestitutionThreshold", 0.5f);
     collider->IsSensor = bcJson.value("IsSensor", false);
     collider->EnableHitEvents = bcJson.value("EnableHitEvents", true);
     collider->CategoryBits = bcJson.value("CategoryBits", PhysicsLayer::Default);
     collider->MaskBits = bcJson.value("MaskBits", PhysicsLayer::All);
     collider->GroupIndex = bcJson.value("GroupIndex", 0);
-    collider->useGravity = bcJson.value("UseGravity", true);
-    collider->gravity = bcJson.value("Gravity", -9.8f);
-    collider->groundLevel = bcJson.value("GroundLevel", 0.0f);
 }
 
 void DeserializeCircleCollider2D(GameObject* go, const json& ccJson, const std::string&) {

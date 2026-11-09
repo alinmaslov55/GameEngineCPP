@@ -38,7 +38,7 @@ TEST_F(RigidbodyLifecycleTest, MidRuntimeSpawnDynamicRigidbody) {
     EXPECT_NE(rb2d->RuntimeBody, nullptr);
     EXPECT_NE(bc2d->RuntimeFixture, nullptr);
 
-    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
     EXPECT_TRUE(b2Body_IsValid(bodyId));
 
     // Verify O(1) reverse lookup via b2Body_GetUserData
@@ -99,7 +99,7 @@ TEST_F(RigidbodyLifecycleTest, ApplyImpulseAndLinearDampingDeceleration) {
     EXPECT_GT(go->GetTransform()->position.x, 2.0f);
 
     // Verify destruction cleanup: b2Body_IsValid == false upon DestroyGameObject
-    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
     EXPECT_TRUE(b2Body_IsValid(bodyId));
 
     scene.DestroyGameObject(go);
@@ -162,7 +162,7 @@ TEST_F(RigidbodyLifecycleTest, SetVelocityXZAndPositionXZDirectManipulation) {
     EXPECT_FLOAT_EQ(go->GetTransform()->position.x, 35.0f);
     EXPECT_FLOAT_EQ(go->GetTransform()->position.z, 42.0f);
 
-    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
     b2Vec2 pos = b2Body_GetPosition(bodyId);
     EXPECT_FLOAT_EQ(pos.x, 35.0f);
     EXPECT_FLOAT_EQ(pos.y, 42.0f);
@@ -179,7 +179,7 @@ TEST_F(RigidbodyLifecycleTest, SetActiveEnablesAndDisablesBox2DBody) {
     auto* bc2d = go->AddComponent<Engine::BoxCollider2D>();
     bc2d->size = { 1.0f, 1.0f };
 
-    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
     EXPECT_TRUE(b2Body_IsValid(bodyId));
     EXPECT_TRUE(b2Body_IsEnabled(bodyId));
 
@@ -207,8 +207,8 @@ TEST_F(RigidbodyLifecycleTest, DestroyGameObjectMidRuntimeCleansUpBody) {
     auto* col2 = go2->AddComponent<Engine::BoxCollider2D>();
     (void)col2;
 
-    b2BodyId body1 = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb1->RuntimeBody)));
-    b2BodyId body2 = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(col2->RuntimeBody)));
+    b2BodyId body1 = b2LoadBodyId(rb1->RuntimeBody.Value);
+    b2BodyId body2 = b2LoadBodyId(col2->RuntimeBody.Value);
 
     EXPECT_TRUE(b2Body_IsValid(body1));
     EXPECT_TRUE(b2Body_IsValid(body2));
@@ -248,7 +248,7 @@ TEST_F(RigidbodyLifecycleTest, MassMultiplierAndBulletCCD) {
     rb2d->SetBullet(true);
     EXPECT_TRUE(rb2d->GetBullet());
 
-    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody)));
+    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
     EXPECT_TRUE(b2Body_IsBullet(bodyId));
 
     scene.OnRuntimeStop();

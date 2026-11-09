@@ -4,9 +4,12 @@
 #include "Engine/Scene/Component.h"
 #include "Engine/Physics/Collision2DInfo.h"
 #include "Engine/Physics/PhysicsLayer.h"
+#include "Engine/Physics/PhysicsHandles.h"
 #include <glm/glm.hpp>
 
 namespace Engine {
+
+class Transform;
 
 class Rigidbody2D : public Component {
 public:
@@ -24,8 +27,8 @@ public:
     float MassMultiplier = 1.0f;  // Scaled by physical roots ("Anvil", "Iron Bone")
     bool IsBullet = false;        // Continuous Collision Detection (CCD) for high-speed bowling
 
-    // Pointer or handle to internal Box2D body (only valid during runtime / play mode)
-    void* RuntimeBody = nullptr;
+    // Type-safe handle to internal Box2D body (only valid during runtime / play mode)
+    BodyHandle RuntimeBody;
 
     // Initial velocity on the XZ ground plane applied when entering runtime play mode
     glm::vec2 InitialLinearVelocityXZ{ 0.0f, 0.0f };
@@ -82,7 +85,7 @@ public:
     void ApplyMassMultiplierToBody();
     void RefreshMassFromShapes();
     void ResetRuntimeState() noexcept {
-        RuntimeBody = nullptr;
+        RuntimeBody.Reset();
         m_BaseMass = 0.0f;
         m_AppliedMassMultiplier = 1.0f;
     }
@@ -123,23 +126,20 @@ private:
     glm::vec2 m_QueuedStasisImpulseXZ{ 0.0f, 0.0f };
 };
 
-class BoxCollider2D : public Component {
+/// @brief Abstract base class for all 2D physics colliders.
+/// Implements Template Method Pattern for shape creation and unified filter/lifecycle management.
+class Collider2D : public Component {
 public:
-    BoxCollider2D() = default;
-    BoxCollider2D(const glm::vec2& boxSize, bool isSensor = false, const glm::vec2& boxOffset = { 0.0f, 0.0f },
-                  uint64_t categoryBits = PhysicsLayer::Default, uint64_t maskBits = PhysicsLayer::All, int32_t groupIndex = 0)
-        : size(boxSize), offset(boxOffset), IsSensor(isSensor),
-          CategoryBits(categoryBits), MaskBits(maskBits), GroupIndex(groupIndex) {}
-
-    glm::vec2 size = { 1.0f, 1.0f };   // Base footprint on the XZ ground plane (size.x = Width X, size.y = Depth Z)
-    glm::vec2 offset = { 0.0f, 0.0f }; // Shift from Transform center on the XZ ground plane
-    bool isDynamic = false;            // True for moving entities in custom isometric solver
+    Collider2D() = default;
+    Collider2D(bool isSensor, uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex)
+        : IsSensor(isSensor), CategoryBits(categoryBits), MaskBits(maskBits), GroupIndex(groupIndex) {}
+    ~Collider2D() override = default;
 
     // Physical material properties for Box2D
-    float density = 1.0f;
-    float friction = 0.5f;
-    float restitution = 0.0f;          // Bounciness on the XZ plane
-    float restitutionThreshold = 0.5f; // Velocity required to bounce
+    float Density = 1.0f;
+    float Friction = 0.5f;
+    float Restitution = 0.0f;          // Bounciness on the XZ plane
+    float RestitutionThreshold = 0.5f; // Velocity required to bounce
     bool IsSensor = false;             // Trigger volume without physical contact response
     bool EnableHitEvents = true;       // Enables b2ContactHitEvent generation for impact damage
 
@@ -153,100 +153,101 @@ public:
     void SetMaskBits(uint64_t maskBits);
     void SetGroupIndex(int32_t groupIndex);
 
-    // Pointer or handle to internal Box2D shape/fixture
-    void* RuntimeFixture = nullptr;
+    // Type-safe Box2D runtime shape handle
+    ShapeHandle RuntimeShape;
 
-    // Pointer or handle to static Box2D body if this entity has no Rigidbody2D
-    void* RuntimeBody = nullptr;
-
-    // Vertical Y-axis isometric physics (jumping & gravity)
-    bool useGravity = true;
-    float gravity = -9.8f;
-    float verticalVelocity = 0.0f;
-    float groundLevel = 0.0f;
-
-    bool IsGrounded(float currentY) const {
-        return currentY <= (groundLevel + 1e-4f) && verticalVelocity <= 0.0f;
-    }
+    // Type-safe Box2D runtime body handle (attached dynamic Rigidbody2D or standalone static body)
+    BodyHandle RuntimeBody;
 
     void OnEnable() override;
     void OnDisable() override;
     void OnDestroy() override;
+
+    // Template Method: Skeleton algorithm for shape creation and geometry/material synchronization
+    void CreateOrUpdateShape(BodyHandle body, const Transform& transform, GameObject* go);
+
+    // Template Method Hook: Pure virtual geometry construction implemented by derived colliders
+    virtual void BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) = 0;
 };
 
-class CircleCollider2D : public Component {
+class BoxCollider2D : public Collider2D {
 public:
-    CircleCollider2D() = default;
+    BoxCollider2D() = default;
+    BoxCollider2D(const glm::vec2& boxSize, bool isSensor = false, const glm::vec2& boxOffset = { 0.0f, 0.0f },
+                  uint64_t categoryBits = PhysicsLayer::Default, uint64_t maskBits = PhysicsLayer::All, int32_t groupIndex = 0)
+        : Collider2D(isSensor, categoryBits, maskBits, groupIndex),
+          size(boxSize), offset(boxOffset) {}
+
+    glm::vec2 size = { 1.0f, 1.0f };   // Base footprint on the XZ ground plane (size.x = Width X, size.y = Depth Z)
+    glm::vec2 offset = { 0.0f, 0.0f }; // Shift from Transform center on the XZ ground plane
+
+    // Backward-compatibility aliases for existing code and tests:
+    ShapeHandle& RuntimeFixture = RuntimeShape;
+    float& density = Density;
+    float& friction = Friction;
+    float& restitution = Restitution;
+
+    BoxCollider2D(const BoxCollider2D& other)
+        : Collider2D(other), size(other.size), offset(other.offset),
+          RuntimeFixture(RuntimeShape), density(Density), friction(Friction), restitution(Restitution) {}
+    BoxCollider2D(BoxCollider2D&& other) noexcept
+        : Collider2D(std::move(other)), size(other.size), offset(other.offset),
+          RuntimeFixture(RuntimeShape), density(Density), friction(Friction), restitution(Restitution) {}
+    BoxCollider2D& operator=(const BoxCollider2D& other) {
+        if (this != &other) {
+            Collider2D::operator=(other);
+            size = other.size;
+            offset = other.offset;
+        }
+        return *this;
+    }
+    BoxCollider2D& operator=(BoxCollider2D&& other) noexcept {
+        if (this != &other) {
+            Collider2D::operator=(std::move(other));
+            size = other.size;
+            offset = other.offset;
+        }
+        return *this;
+    }
+
+    void BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) override;
+};
+
+class CircleCollider2D : public Collider2D {
+public:
+    CircleCollider2D() {
+        Restitution = 0.15f;
+    }
     CircleCollider2D(float radius, bool isSensor = false, const glm::vec2& offsetXZ = { 0.0f, 0.0f },
                      uint64_t categoryBits = PhysicsLayer::Default, uint64_t maskBits = PhysicsLayer::All, int32_t groupIndex = 0)
-        : Radius(radius), OffsetXZ(offsetXZ), IsSensor(isSensor),
-          CategoryBits(categoryBits), MaskBits(maskBits), GroupIndex(groupIndex) {}
+        : Collider2D(isSensor, categoryBits, maskBits, groupIndex),
+          Radius(radius), OffsetXZ(offsetXZ) {
+        Restitution = 0.15f;
+    }
 
     float Radius = 0.45f;
     glm::vec2 OffsetXZ{ 0.0f, 0.0f };
-    float Density = 1.0f;
-    float Friction = 0.5f;
-    float Restitution = 0.15f;
-    bool IsSensor = false;
-    bool EnableHitEvents = true;
 
-    // 64-bit Collision Filtering
-    uint64_t CategoryBits = PhysicsLayer::Default;
-    uint64_t MaskBits = PhysicsLayer::All;
-    int32_t GroupIndex = 0;
-
-    void SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex = 0);
-    void SetCategoryBits(uint64_t categoryBits);
-    void SetMaskBits(uint64_t maskBits);
-    void SetGroupIndex(int32_t groupIndex);
-
-    // Pointer or handle to internal Box2D shape
-    void* RuntimeShape = nullptr;
-
-    // Pointer or handle to static Box2D body if this entity has no Rigidbody2D
-    void* RuntimeBody = nullptr;
-
-    void OnEnable() override;
-    void OnDisable() override;
-    void OnDestroy() override;
+    void BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) override;
 };
 
-class CapsuleCollider2D : public Component {
+class CapsuleCollider2D : public Collider2D {
 public:
-    CapsuleCollider2D() = default;
+    CapsuleCollider2D() {
+        Restitution = 0.15f;
+    }
     CapsuleCollider2D(float radius, const glm::vec2& c1 = { 0.0f, -0.25f }, const glm::vec2& c2 = { 0.0f, 0.25f }, bool isSensor = false,
                       uint64_t categoryBits = PhysicsLayer::Default, uint64_t maskBits = PhysicsLayer::All, int32_t groupIndex = 0)
-        : Center1(c1), Center2(c2), Radius(radius), IsSensor(isSensor),
-          CategoryBits(categoryBits), MaskBits(maskBits), GroupIndex(groupIndex) {}
+        : Collider2D(isSensor, categoryBits, maskBits, groupIndex),
+          Center1(c1), Center2(c2), Radius(radius) {
+        Restitution = 0.15f;
+    }
 
     glm::vec2 Center1{ 0.0f, -0.25f };
     glm::vec2 Center2{ 0.0f, 0.25f };
     float Radius = 0.35f;
-    float Density = 1.0f;
-    float Friction = 0.5f;
-    float Restitution = 0.15f;
-    bool IsSensor = false;
-    bool EnableHitEvents = true;
 
-    // 64-bit Collision Filtering
-    uint64_t CategoryBits = PhysicsLayer::Default;
-    uint64_t MaskBits = PhysicsLayer::All;
-    int32_t GroupIndex = 0;
-
-    void SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex = 0);
-    void SetCategoryBits(uint64_t categoryBits);
-    void SetMaskBits(uint64_t maskBits);
-    void SetGroupIndex(int32_t groupIndex);
-
-    // Pointer or handle to internal Box2D shape
-    void* RuntimeShape = nullptr;
-
-    // Pointer or handle to static Box2D body if this entity has no Rigidbody2D
-    void* RuntimeBody = nullptr;
-
-    void OnEnable() override;
-    void OnDisable() override;
-    void OnDestroy() override;
+    void BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) override;
 };
 
 } // namespace Engine

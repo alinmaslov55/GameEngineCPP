@@ -76,7 +76,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
 
 [P1] CLASS SIMPLIFICATIONS & DESIGN PATTERN REFACTORINGS
 --------------------------------------------------------------------------------
-[ ] 8. Extract Collider2D Base Class (Template Method Pattern) & Type-Safe Physics Handles
+[x] 8. Extract Collider2D Base Class (Template Method Pattern) & Type-Safe Physics Handles
     - Files: Engine/include/Engine/Physics/PhysicsComponents.h, Engine/src/Physics/PhysicsComponents.cpp, Engine/src/Scene/Scene.cpp, Engine/include/Engine/Scene/Tilemap.h
     - Smell Eliminated:
       * BoxCollider2D, CircleCollider2D, and CapsuleCollider2D duplicate ~220 lines of identical OnEnable/OnDisable/OnDestroy/SetFilter/SetCategoryBits/SetMaskBits/SetGroupIndex methods and inconsistent casing (`density`/`RuntimeFixture` vs `Density`/`RuntimeShape`).

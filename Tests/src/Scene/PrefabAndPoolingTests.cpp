@@ -285,7 +285,7 @@ TEST(PrefabAndPoolingTest, PhysicsAndParticleStateResetOnRelease) {
     ASSERT_NE(crateRb, nullptr);
     ASSERT_NE(crateRb->RuntimeBody, nullptr);
 
-    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(crateRb->RuntimeBody));
+    b2BodyId bodyId = b2LoadBodyId(crateRb->RuntimeBody.Value);
     EXPECT_TRUE(b2Body_IsValid(bodyId));
     EXPECT_TRUE(b2Body_IsEnabled(bodyId));
 

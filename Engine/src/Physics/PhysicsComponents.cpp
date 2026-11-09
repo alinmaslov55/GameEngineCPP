@@ -7,6 +7,11 @@
 
 namespace Engine {
 
+static inline b2BodyId ToB2(BodyHandle h) { return b2LoadBodyId(h.Value); }
+static inline BodyHandle ToHandle(b2BodyId id) { return BodyHandle{ b2StoreBodyId(id) }; }
+static inline b2ShapeId ToB2(ShapeHandle h) { return b2LoadShapeId(h.Value); }
+static inline ShapeHandle ToHandle(b2ShapeId id) { return ShapeHandle{ b2StoreShapeId(id) }; }
+
 bool Rigidbody2D::IsAirborne() const noexcept {
     float currentY = GroundLevelY;
     if (auto* go = GetGameObject()) {
@@ -22,11 +27,11 @@ void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
         m_QueuedStasisImpulseXZ += impulseXZ;
         return;
     }
-    if (RuntimeBody) {
+    if (RuntimeBody.IsValid()) {
         if (std::abs(MassMultiplier - m_AppliedMassMultiplier) > 1e-5f) {
             ApplyMassMultiplierToBody();
         }
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_ApplyLinearImpulseToCenter(bodyId, b2Vec2{ impulseXZ.x, impulseXZ.y }, wake);
         }
@@ -39,11 +44,11 @@ void Rigidbody2D::ApplyForceXZ(const glm::vec2& forceXZ, bool wake) {
     if (m_IsStasisFrozen) {
         return;
     }
-    if (RuntimeBody) {
+    if (RuntimeBody.IsValid()) {
         if (std::abs(MassMultiplier - m_AppliedMassMultiplier) > 1e-5f) {
             ApplyMassMultiplierToBody();
         }
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_ApplyForceToCenter(bodyId, b2Vec2{ forceXZ.x, forceXZ.y }, wake);
         }
@@ -56,8 +61,8 @@ void Rigidbody2D::SetVelocityXZ(const glm::vec2& velocityXZ) {
         return;
     }
     InitialLinearVelocityXZ = velocityXZ;
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_SetLinearVelocity(bodyId, b2Vec2{ velocityXZ.x, velocityXZ.y });
         }
@@ -68,8 +73,8 @@ glm::vec2 Rigidbody2D::GetVelocityXZ() const noexcept {
     if (m_IsStasisFrozen) {
         return glm::vec2{ 0.0f, 0.0f };
     }
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Vec2 vel = b2Body_GetLinearVelocity(bodyId);
             return glm::vec2{ vel.x, vel.y };
@@ -82,8 +87,8 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
     if (m_IsStasisFrozen == frozen) return;
     m_IsStasisFrozen = frozen;
 
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             if (m_IsStasisFrozen) {
                 // Cache current dynamic velocity, angular velocity, and vertical elevation velocity
@@ -140,8 +145,8 @@ void Rigidbody2D::SetPositionXZ(const glm::vec2& worldXZ) {
             t->position.z = worldXZ.y;
         }
     }
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Rot rot = b2Body_GetRotation(bodyId);
             b2Body_SetTransform(bodyId, b2Vec2{ worldXZ.x, worldXZ.y }, rot);
@@ -151,8 +156,8 @@ void Rigidbody2D::SetPositionXZ(const glm::vec2& worldXZ) {
 
 void Rigidbody2D::SetLinearDampingRuntime(float damping) {
     LinearDamping = damping;
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_SetLinearDamping(bodyId, damping);
         }
@@ -160,8 +165,8 @@ void Rigidbody2D::SetLinearDampingRuntime(float damping) {
 }
 
 float Rigidbody2D::GetLinearDamping() const noexcept {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             return b2Body_GetLinearDamping(bodyId);
         }
@@ -171,8 +176,8 @@ float Rigidbody2D::GetLinearDamping() const noexcept {
 
 void Rigidbody2D::SetAngularDampingRuntime(float damping) {
     AngularDamping = damping;
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_SetAngularDamping(bodyId, damping);
         }
@@ -180,8 +185,8 @@ void Rigidbody2D::SetAngularDampingRuntime(float damping) {
 }
 
 float Rigidbody2D::GetAngularDamping() const noexcept {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             return b2Body_GetAngularDamping(bodyId);
         }
@@ -195,10 +200,10 @@ void Rigidbody2D::SetMassMultiplier(float multiplier) {
 }
 
 void Rigidbody2D::ApplyMassMultiplierToBody() {
-    if (!RuntimeBody || Type != BodyType::Dynamic || m_IsStasisFrozen) {
+    if (!RuntimeBody.IsValid() || Type != BodyType::Dynamic || m_IsStasisFrozen) {
         return;
     }
-    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    b2BodyId bodyId = ToB2(RuntimeBody);
     if (!b2Body_IsValid(bodyId)) {
         return;
     }
@@ -220,10 +225,10 @@ void Rigidbody2D::ApplyMassMultiplierToBody() {
 }
 
 void Rigidbody2D::RefreshMassFromShapes() {
-    if (!RuntimeBody || Type != BodyType::Dynamic) {
+    if (!RuntimeBody.IsValid() || Type != BodyType::Dynamic) {
         return;
     }
-    b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    b2BodyId bodyId = ToB2(RuntimeBody);
     if (!b2Body_IsValid(bodyId)) {
         return;
     }
@@ -237,11 +242,11 @@ void Rigidbody2D::RefreshMassFromShapes() {
 }
 
 float Rigidbody2D::GetMass() const noexcept {
-    if (RuntimeBody) {
+    if (RuntimeBody.IsValid()) {
         if (std::abs(MassMultiplier - m_AppliedMassMultiplier) > 1e-5f) {
             const_cast<Rigidbody2D*>(this)->ApplyMassMultiplierToBody();
         }
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             return b2Body_GetMass(bodyId);
         }
@@ -251,8 +256,8 @@ float Rigidbody2D::GetMass() const noexcept {
 
 void Rigidbody2D::SetBullet(bool bullet) {
     IsBullet = bullet;
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_SetBullet(bodyId, bullet);
         }
@@ -260,8 +265,8 @@ void Rigidbody2D::SetBullet(bool bullet) {
 }
 
 bool Rigidbody2D::GetBullet() const noexcept {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             return b2Body_IsBullet(bodyId);
         }
@@ -270,8 +275,8 @@ bool Rigidbody2D::GetBullet() const noexcept {
 }
 
 void Rigidbody2D::OnEnable() {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_Enable(bodyId);
         }
@@ -283,8 +288,8 @@ void Rigidbody2D::OnEnable() {
 }
 
 void Rigidbody2D::OnDisable() {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_Disable(bodyId);
         }
@@ -300,13 +305,36 @@ void Rigidbody2D::OnDestroy() {
     ResetRuntimeState();
 }
 
-void BoxCollider2D::OnEnable() {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+// ============================================================================
+// Collider2D Base Class Implementation (Template Method Pattern)
+// ============================================================================
+
+static b2ShapeDef BuildDefaultColliderShapeDef(Collider2D* col, GameObject* go) {
+    b2ShapeDef shapeDef = b2DefaultShapeDef();
+    shapeDef.density = col->Density;
+    shapeDef.material.friction = col->Friction;
+    shapeDef.material.restitution = col->Restitution;
+    shapeDef.isSensor = col->IsSensor;
+    shapeDef.enableSensorEvents = true;
+    shapeDef.enableHitEvents = col->EnableHitEvents;
+    shapeDef.enableContactEvents = true;
+    shapeDef.userData = col;
+    if (col->CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
+        col->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
+    }
+    shapeDef.filter.categoryBits = col->CategoryBits;
+    shapeDef.filter.maskBits = col->MaskBits;
+    shapeDef.filter.groupIndex = col->GroupIndex;
+    return shapeDef;
+}
+
+void Collider2D::OnEnable() {
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_Enable(bodyId);
         }
-    } else if (!RuntimeFixture) {
+    } else if (!RuntimeShape.IsValid()) {
         if (auto* go = GetGameObject()) {
             if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
                 scene->MarkPhysicsDirty(go);
@@ -315,25 +343,25 @@ void BoxCollider2D::OnEnable() {
     }
 }
 
-void BoxCollider2D::OnDisable() {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
+void Collider2D::OnDisable() {
+    if (RuntimeBody.IsValid()) {
+        b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_Disable(bodyId);
         }
     }
 }
 
-void BoxCollider2D::OnDestroy() {
+void Collider2D::OnDestroy() {
     if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene()) {
             if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
-                if (RuntimeFixture) {
-                    b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeFixture)));
+                if (RuntimeShape.IsValid()) {
+                    b2ShapeId shapeId = ToB2(RuntimeShape);
                     if (b2Shape_IsValid(shapeId)) {
                         b2DestroyShape(shapeId, true);
                     }
-                    RuntimeFixture = nullptr;
+                    RuntimeShape.Reset();
                 }
                 rb2d->RefreshMassFromShapes();
             } else {
@@ -343,98 +371,12 @@ void BoxCollider2D::OnDestroy() {
     }
 }
 
-void CircleCollider2D::OnEnable() {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
-        if (b2Body_IsValid(bodyId)) {
-            b2Body_Enable(bodyId);
-        }
-    } else if (!RuntimeShape) {
-        if (auto* go = GetGameObject()) {
-            if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
-                scene->MarkPhysicsDirty(go);
-            }
-        }
-    }
-}
-
-void CircleCollider2D::OnDisable() {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
-        if (b2Body_IsValid(bodyId)) {
-            b2Body_Disable(bodyId);
-        }
-    }
-}
-
-void CircleCollider2D::OnDestroy() {
-    if (auto* go = GetGameObject()) {
-        if (auto* scene = go->GetScene()) {
-            if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
-                if (RuntimeShape) {
-                    b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
-                    if (b2Shape_IsValid(shapeId)) {
-                        b2DestroyShape(shapeId, true);
-                    }
-                    RuntimeShape = nullptr;
-                }
-                rb2d->RefreshMassFromShapes();
-            } else {
-                scene->UnregisterRuntimeBody(go);
-            }
-        }
-    }
-}
-
-void CapsuleCollider2D::OnEnable() {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
-        if (b2Body_IsValid(bodyId)) {
-            b2Body_Enable(bodyId);
-        }
-    } else if (!RuntimeShape) {
-        if (auto* go = GetGameObject()) {
-            if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
-                scene->MarkPhysicsDirty(go);
-            }
-        }
-    }
-}
-
-void CapsuleCollider2D::OnDisable() {
-    if (RuntimeBody) {
-        b2BodyId bodyId = b2LoadBodyId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeBody)));
-        if (b2Body_IsValid(bodyId)) {
-            b2Body_Disable(bodyId);
-        }
-    }
-}
-
-void CapsuleCollider2D::OnDestroy() {
-    if (auto* go = GetGameObject()) {
-        if (auto* scene = go->GetScene()) {
-            if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
-                if (RuntimeShape) {
-                    b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
-                    if (b2Shape_IsValid(shapeId)) {
-                        b2DestroyShape(shapeId, true);
-                    }
-                    RuntimeShape = nullptr;
-                }
-                rb2d->RefreshMassFromShapes();
-            } else {
-                scene->UnregisterRuntimeBody(go);
-            }
-        }
-    }
-}
-
-void BoxCollider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex) {
+void Collider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex) {
     CategoryBits = categoryBits;
     MaskBits = maskBits;
     GroupIndex = groupIndex;
-    if (RuntimeFixture) {
-        b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeFixture)));
+    if (RuntimeShape.IsValid()) {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
         if (b2Shape_IsValid(shapeId)) {
             b2Filter f;
             f.categoryBits = CategoryBits;
@@ -445,72 +387,139 @@ void BoxCollider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t 
     }
 }
 
-void BoxCollider2D::SetCategoryBits(uint64_t categoryBits) {
+void Collider2D::SetCategoryBits(uint64_t categoryBits) {
     SetFilter(categoryBits, MaskBits, GroupIndex);
 }
 
-void BoxCollider2D::SetMaskBits(uint64_t maskBits) {
+void Collider2D::SetMaskBits(uint64_t maskBits) {
     SetFilter(CategoryBits, maskBits, GroupIndex);
 }
 
-void BoxCollider2D::SetGroupIndex(int32_t groupIndex) {
+void Collider2D::SetGroupIndex(int32_t groupIndex) {
     SetFilter(CategoryBits, MaskBits, groupIndex);
 }
 
-void CircleCollider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex) {
-    CategoryBits = categoryBits;
-    MaskBits = maskBits;
-    GroupIndex = groupIndex;
-    if (RuntimeShape) {
-        b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
+void Collider2D::CreateOrUpdateShape(BodyHandle body, const Transform& transform, GameObject* go) {
+    if (!body.IsValid()) return;
+    b2BodyId bodyId = ToB2(body);
+    if (!b2Body_IsValid(bodyId)) return;
+
+    // Check if sensor state changed on existing shape
+    if (RuntimeShape.IsValid()) {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
         if (b2Shape_IsValid(shapeId)) {
-            b2Filter f;
-            f.categoryBits = CategoryBits;
-            f.maskBits = MaskBits;
-            f.groupIndex = GroupIndex;
-            b2Shape_SetFilter(shapeId, f);
+            if (b2Shape_IsSensor(shapeId) != IsSensor) {
+                b2DestroyShape(shapeId, true);
+                RuntimeShape.Reset();
+            }
+        } else {
+            RuntimeShape.Reset();
+        }
+    }
+
+    // Call subclass hook to build or update shape geometry
+    BuildShapeDefAndCreate(body, transform, go);
+
+    // Synchronize material properties and hit events on shape
+    if (RuntimeShape.IsValid()) {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
+        if (b2Shape_IsValid(shapeId)) {
+            if (std::abs(b2Shape_GetFriction(shapeId) - Friction) > 1e-4f) {
+                b2Shape_SetFriction(shapeId, Friction);
+            }
+            if (std::abs(b2Shape_GetRestitution(shapeId) - Restitution) > 1e-4f) {
+                b2Shape_SetRestitution(shapeId, Restitution);
+            }
+            if (b2Shape_AreHitEventsEnabled(shapeId) != EnableHitEvents) {
+                b2Shape_EnableHitEvents(shapeId, EnableHitEvents);
+            }
         }
     }
 }
 
-void CircleCollider2D::SetCategoryBits(uint64_t categoryBits) {
-    SetFilter(categoryBits, MaskBits, GroupIndex);
-}
+// ============================================================================
+// BoxCollider2D Implementation
+// ============================================================================
 
-void CircleCollider2D::SetMaskBits(uint64_t maskBits) {
-    SetFilter(CategoryBits, maskBits, GroupIndex);
-}
+void BoxCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) {
+    b2BodyId bodyId = ToB2(body);
+    b2Vec2 center = { offset.x, offset.y };
+    b2Rot rot = b2MakeRot(0.0f);
+    float halfW = std::max(0.001f, size.x * std::abs(transform.scale.x) * 0.5f);
+    float halfD = std::max(0.001f, size.y * std::abs(transform.scale.z) * 0.5f);
+    b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);
 
-void CircleCollider2D::SetGroupIndex(int32_t groupIndex) {
-    SetFilter(CategoryBits, MaskBits, groupIndex);
-}
-
-void CapsuleCollider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex) {
-    CategoryBits = categoryBits;
-    MaskBits = maskBits;
-    GroupIndex = groupIndex;
-    if (RuntimeShape) {
-        b2ShapeId shapeId = b2LoadShapeId(static_cast<uint64_t>(reinterpret_cast<uintptr_t>(RuntimeShape)));
-        if (b2Shape_IsValid(shapeId)) {
-            b2Filter f;
-            f.categoryBits = CategoryBits;
-            f.maskBits = MaskBits;
-            f.groupIndex = GroupIndex;
-            b2Shape_SetFilter(shapeId, f);
+    if (!RuntimeShape.IsValid()) {
+        b2ShapeDef shapeDef = BuildDefaultColliderShapeDef(this, go);
+        b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
+        RuntimeShape = ToHandle(shapeId);
+    } else {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
+        b2Polygon cur = b2Shape_GetPolygon(shapeId);
+        if (cur.count != box.count ||
+            std::abs(cur.vertices[0].x - box.vertices[0].x) > 1e-4f ||
+            std::abs(cur.vertices[0].y - box.vertices[0].y) > 1e-4f) {
+            b2Shape_SetPolygon(shapeId, &box);
         }
     }
 }
 
-void CapsuleCollider2D::SetCategoryBits(uint64_t categoryBits) {
-    SetFilter(categoryBits, MaskBits, GroupIndex);
+// ============================================================================
+// CircleCollider2D Implementation
+// ============================================================================
+
+void CircleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) {
+    b2BodyId bodyId = ToB2(body);
+    float scaleFactor = std::max(std::abs(transform.scale.x), std::abs(transform.scale.z));
+    float effectiveRadius = std::max(0.001f, Radius * scaleFactor);
+    b2Circle circle;
+    circle.center = b2Vec2{ OffsetXZ.x, OffsetXZ.y };
+    circle.radius = effectiveRadius;
+
+    if (!RuntimeShape.IsValid()) {
+        b2ShapeDef shapeDef = BuildDefaultColliderShapeDef(this, go);
+        b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
+        RuntimeShape = ToHandle(shapeId);
+    } else {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
+        b2Circle cur = b2Shape_GetCircle(shapeId);
+        if (std::abs(cur.radius - effectiveRadius) > 1e-4f ||
+            std::abs(cur.center.x - circle.center.x) > 1e-4f ||
+            std::abs(cur.center.y - circle.center.y) > 1e-4f) {
+            b2Shape_SetCircle(shapeId, &circle);
+        }
+    }
 }
 
-void CapsuleCollider2D::SetMaskBits(uint64_t maskBits) {
-    SetFilter(CategoryBits, maskBits, GroupIndex);
-}
+// ============================================================================
+// CapsuleCollider2D Implementation
+// ============================================================================
 
-void CapsuleCollider2D::SetGroupIndex(int32_t groupIndex) {
-    SetFilter(CategoryBits, MaskBits, groupIndex);
+void CapsuleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) {
+    b2BodyId bodyId = ToB2(body);
+    float scaleX = std::abs(transform.scale.x);
+    float scaleZ = std::abs(transform.scale.z);
+    float scaleFactor = std::max(scaleX, scaleZ);
+    b2Capsule capsule;
+    capsule.center1 = b2Vec2{ Center1.x * scaleX, Center1.y * scaleZ };
+    capsule.center2 = b2Vec2{ Center2.x * scaleX, Center2.y * scaleZ };
+    capsule.radius = std::max(0.001f, Radius * scaleFactor);
+
+    if (!RuntimeShape.IsValid()) {
+        b2ShapeDef shapeDef = BuildDefaultColliderShapeDef(this, go);
+        b2ShapeId shapeId = b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
+        RuntimeShape = ToHandle(shapeId);
+    } else {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
+        b2Capsule cur = b2Shape_GetCapsule(shapeId);
+        if (std::abs(cur.radius - capsule.radius) > 1e-4f ||
+            std::abs(cur.center1.x - capsule.center1.x) > 1e-4f ||
+            std::abs(cur.center1.y - capsule.center1.y) > 1e-4f ||
+            std::abs(cur.center2.x - capsule.center2.x) > 1e-4f ||
+            std::abs(cur.center2.y - capsule.center2.y) > 1e-4f) {
+            b2Shape_SetCapsule(shapeId, &capsule);
+        }
+    }
 }
 
 } // namespace Engine

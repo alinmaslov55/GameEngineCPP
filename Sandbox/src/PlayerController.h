@@ -31,14 +31,7 @@ public:
         m_DustProps.velocityVariation = { 0.45f, 0.2f, 0.45f };
     }
 
-    void Update(float deltaTime) override {
-        auto* transform = GetGameObject()->GetTransform();
-        auto* animator = GetGameObject()->GetComponent<Engine::Animator>();
-        auto* audioSource = GetGameObject()->GetComponent<Engine::AudioSource>();
-        auto* collider = GetGameObject()->GetComponent<Engine::BoxCollider2D>();
-        if (!transform) return;
-
-        // Resolve ground-plane camera basis so WASD always aligns with screen Up/Down/Left/Right
+    [[nodiscard]] glm::vec3 GetMovementInput() const {
         glm::vec3 forwardXZ = { 0.0f, 0.0f, -1.0f };
         glm::vec3 rightXZ   = { 1.0f, 0.0f,  0.0f };
         if (auto activeScene = Engine::SceneManager::GetActiveScene()) {
@@ -65,12 +58,41 @@ public:
         }
 
         glm::vec3 movement = forwardXZ * inputForward + rightXZ * inputRight;
+        if ((movement.x * movement.x + movement.z * movement.z) > 1e-5f) {
+            movement = glm::normalize(movement);
+        } else {
+            movement = glm::vec3(0.0f);
+        }
+        return movement;
+    }
+
+    void FixedUpdate(float fixedDt) override {
+        auto* rb = GetGameObject()->GetComponent<Engine::Rigidbody2D>();
+        if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid()) {
+            glm::vec3 movement = GetMovementInput();
+            const bool isMoving = (movement.x * movement.x + movement.z * movement.z) > 1e-5f;
+            if (isMoving) {
+                rb->SetVelocityXZ(movement.x * moveSpeed, movement.z * moveSpeed);
+            } else {
+                rb->SetVelocityXZ(0.0f, 0.0f);
+            }
+        }
+    }
+
+    void Update(float deltaTime) override {
+        auto* transform = GetGameObject()->GetTransform();
+        auto* animator = GetGameObject()->GetComponent<Engine::Animator>();
+        auto* audioSource = GetGameObject()->GetComponent<Engine::AudioSource>();
+        auto* rb = GetGameObject()->GetComponent<Engine::Rigidbody2D>();
+        if (!transform) return;
+
+        glm::vec3 movement = GetMovementInput();
 
         // Jump impulse on the Y axis when grounded (gravity brings player back to Y = 0)
         if (Engine::Input::IsKeyPressed(SDL_SCANCODE_SPACE)) {
-            if (collider && collider->isDynamic && collider->useGravity) {
-                if (collider->IsGrounded(transform->position.y)) {
-                    collider->verticalVelocity = jumpForce;
+            if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->UseGravityY) {
+                if (rb->IsGrounded(transform->position.y)) {
+                    rb->LaunchVertical(jumpForce);
                     if (auto* ss = GetGameObject()->GetComponent<Engine::SquashStretchComponent>()) {
                         ss->TriggerImpulse(ss->JumpLaunchStretch);
                     }
@@ -91,8 +113,8 @@ public:
             }
         }
 
-        // Apply fallback gravity if no dynamic BoxCollider2D handles vertical physics
-        if (!collider || !collider->isDynamic || !collider->useGravity) {
+        // Apply fallback gravity if no dynamic Rigidbody2D handles vertical physics
+        if (!rb || rb->Type != Engine::Rigidbody2D::BodyType::Dynamic || !rb->UseGravityY) {
             if (transform->position.y > 0.0f || m_FallbackVerticalVelocity != 0.0f) {
                 m_FallbackVerticalVelocity += -9.8f * deltaTime;
                 transform->position.y += m_FallbackVerticalVelocity * deltaTime;
@@ -106,9 +128,13 @@ public:
         const bool isMoving = (movement.x * movement.x + movement.z * movement.z) > 1e-5f;
 
         if (isMoving) {
-            movement = glm::normalize(movement);
             ENGINE_DEBUG("PlayerController moving: ({:.2f}, {:.2f}, {:.2f})", movement.x, movement.y, movement.z);
-            transform->Translate(movement * moveSpeed * deltaTime);
+
+            if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid()) {
+                rb->SetVelocityXZ(movement.x * moveSpeed, movement.z * moveSpeed);
+            } else {
+                transform->Translate(movement * moveSpeed * deltaTime);
+            }
 
             if (animator) animator->Play("Walk");
 
@@ -118,6 +144,9 @@ public:
                 particleSystem->Emit(m_DustProps);
             }
         } else {
+            if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid()) {
+                rb->SetVelocityXZ(0.0f, 0.0f);
+            }
             if (animator) animator->Play("Idle");
         }
     }

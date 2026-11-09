@@ -145,10 +145,14 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
 
     player->AddComponent<Engine::ParticleSystem>(500);
 
+    auto* playerRb = player->AddComponent<Engine::Rigidbody2D>();
+    playerRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    playerRb->UseGravityY = true;
+    playerRb->GroundLevelY = 0.0f;
+
     auto* playerCollider = player->AddComponent<Engine::BoxCollider2D>();
     playerCollider->size = { 0.55f, 0.45f };
-    playerCollider->isDynamic = true;
-    playerCollider->useGravity = true;
+    playerCollider->Friction = 0.0f;
 
     auto* playerAudio = player->AddComponent<Engine::AudioSource>();
     playerAudio->SetClip(Engine::ResourceManager::Load<Engine::AudioClip>("jump.wav"));
@@ -166,7 +170,6 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     shrineSprite->SetEmissive(0.28f);
     auto* shrineCollider = shrine->AddComponent<Engine::BoxCollider2D>();
     shrineCollider->size = { 1.15f, 0.65f };
-    shrineCollider->isDynamic = false;
     auto* shrineLight = shrine->AddComponent<Engine::PointLightComponent>();
     shrineLight->Color = { 0.95f, 0.22f, 0.18f };
     shrineLight->Intensity = 0.95f;
@@ -196,7 +199,6 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
 
         auto* bCollider = brazier->AddComponent<Engine::BoxCollider2D>();
         bCollider->size = { 0.55f, 0.45f };
-        bCollider->isDynamic = false;
 
         auto* bLight = brazier->AddComponent<Engine::PointLightComponent>();
         bLight->Color = { 1.0f, 0.58f, 0.20f };
@@ -248,7 +250,6 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
         sprite->SetWindPhaseOffset(static_cast<float>(treeIdx) * 0.71f);
         auto* trunkCollider = tree->AddComponent<Engine::BoxCollider2D>();
         trunkCollider->size = { 0.55f, 0.45f };
-        trunkCollider->isDynamic = false;
         ++treeIdx;
     }
 
@@ -296,7 +297,6 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
         sprite->SetWindPhaseOffset(static_cast<float>(bannerIdx) * 1.45f);
         auto* baseCollider = banner->AddComponent<Engine::BoxCollider2D>();
         baseCollider->size = { 0.42f, 0.38f };
-        baseCollider->isDynamic = false;
         banner->AddComponent<Engine::SquashStretchComponent>();
         ++bannerIdx;
     }

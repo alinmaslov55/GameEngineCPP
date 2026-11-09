@@ -23,6 +23,7 @@ namespace Engine {
 
 class Scene;
 class Rigidbody2D;
+class Collider2D;
 class BoxCollider2D;
 class CircleCollider2D;
 class CapsuleCollider2D;
@@ -98,6 +99,11 @@ public:
 
         m_Components.push_back(std::move(component));
         m_ComponentMask |= Detail::GetComponentTypeMask<std::remove_cv_t<T>>();
+        if constexpr (std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
+                      std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
+                      std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D>) {
+            m_ComponentMask |= Detail::GetComponentTypeMask<Collider2D>();
+        }
         ENGINE_CORE_DEBUG("GameObject '{}': Added component", GetName());
         rawPtr->Awake();
         if (IsActiveInHierarchy() && rawPtr->IsEnabled()) {
@@ -105,6 +111,7 @@ public:
         }
 
         if constexpr (std::is_same_v<std::remove_cv_t<T>, Rigidbody2D> ||
+                      std::is_same_v<std::remove_cv_t<T>, Collider2D> ||
                       std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
                       std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
                       std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D> ||
@@ -324,9 +331,26 @@ public:
                 }
                 if (!hasMore) {
                     m_ComponentMask &= ~Detail::GetComponentTypeMask<std::remove_cv_t<T>>();
+                    if constexpr (std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
+                                  std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
+                                  std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D>) {
+                        bool hasAnyCollider = false;
+                        for (const auto& other : m_Components) {
+                            if (other.get() != comp && !other->IsPendingRemoval()) {
+                                if (dynamic_cast<Collider2D*>(other.get())) {
+                                    hasAnyCollider = true;
+                                    break;
+                                }
+                            }
+                        }
+                        if (!hasAnyCollider) {
+                            m_ComponentMask &= ~Detail::GetComponentTypeMask<Collider2D>();
+                        }
+                    }
                 }
 
                 if constexpr (std::is_same_v<std::remove_cv_t<T>, Rigidbody2D> ||
+                              std::is_same_v<std::remove_cv_t<T>, Collider2D> ||
                               std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
                               std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
                               std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D> ||

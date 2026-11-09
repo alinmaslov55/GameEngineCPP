@@ -175,7 +175,6 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                         sprite->SetWindSwayWeight(0.38f);
                         auto* col = spawned->AddComponent<Engine::BoxCollider2D>();
                         col->size = { 0.55f, 0.45f };
-                        col->isDynamic = false;
                         break;
                     }
                     case DioramaDropArchetype::RitualBanner: {
@@ -186,7 +185,6 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                         sprite->SetWindSwayWeight(0.72f);
                         auto* col = spawned->AddComponent<Engine::BoxCollider2D>();
                         col->size = { 0.45f, 0.40f };
-                        col->isDynamic = false;
                         spawned->AddComponent<Engine::SquashStretchComponent>();
                         break;
                     }
@@ -208,7 +206,6 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                         sprite->SetWindSwayWeight(0.0f);
                         auto* col = spawned->AddComponent<Engine::BoxCollider2D>();
                         col->size = { std::clamp(0.45f * transform->scale.x, 0.35f, 1.40f), 0.48f };
-                        col->isDynamic = false;
                         break;
                     }
                 }

@@ -1,6 +1,7 @@
 #ifndef SCENE_TILEMAP_H
 #define SCENE_TILEMAP_H
 #include "Engine/Scene/Component.h"
+#include "Engine/Physics/PhysicsHandles.h"
 #include "Engine/Renderer/SubTexture2D.h"
 #include "Engine/Utils/Logger.h"
 #include <vector>
@@ -58,8 +59,8 @@ public:
     uint32_t GetWidth() const { return m_Width; }
     uint32_t GetHeight() const { return m_Height; }
 
-    // Pointer or handle to internal Box2D static body during runtime
-    void* RuntimeBody = nullptr;
+    // Type-safe handle to internal Box2D static body during runtime
+    BodyHandle RuntimeBody;
 
     std::shared_ptr<TileSet> tileSet = std::make_shared<TileSet>();
 private:

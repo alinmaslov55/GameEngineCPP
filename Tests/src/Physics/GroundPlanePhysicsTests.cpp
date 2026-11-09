@@ -123,7 +123,7 @@ TEST(GroundPlanePhysicsTest, StandeeFixedRotationMaintainsYawZero) {
     scene.OnRuntimeStart();
 
     // Directly set angular velocity in Box2D
-    b2BodyId bodyId = b2LoadBodyId(reinterpret_cast<uintptr_t>(rb2d->RuntimeBody));
+    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
     ASSERT_TRUE(b2Body_IsValid(bodyId));
     b2Body_SetAngularVelocity(bodyId, 5.0f);
 
@@ -154,7 +154,7 @@ TEST(GroundPlanePhysicsTest, BoxColliderDimensionsScaleByXandZ) {
 
     scene.OnRuntimeStart();
 
-    b2ShapeId shapeId = b2LoadShapeId(reinterpret_cast<uintptr_t>(col->RuntimeFixture));
+    b2ShapeId shapeId = b2LoadShapeId(col->RuntimeShape.Value);
     ASSERT_TRUE(b2Shape_IsValid(shapeId));
 
     b2Polygon poly = b2Shape_GetPolygon(shapeId);
@@ -231,15 +231,15 @@ TEST(GroundPlanePhysicsTest, SolverGatingSkipsAdHocSolversDuringRuntime) {
     auto* wall = scene.CreateGameObject("Wall");
     wall->GetTransform()->position = { 2.0f, 0.0f, 2.0f };
     auto* wallCol = wall->AddComponent<Engine::BoxCollider2D>();
-    wallCol->isDynamic = false;
     wallCol->size = { 1.0f, 1.0f };
 
     auto* player = scene.CreateGameObject("Player");
     auto* playerTransform = player->GetTransform();
     playerTransform->position = { 1.4f, 0.0f, 2.0f };
+    auto* playerRb = player->AddComponent<Engine::Rigidbody2D>();
+    playerRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    playerRb->UseGravityY = false;
     auto* playerCol = player->AddComponent<Engine::BoxCollider2D>();
-    playerCol->isDynamic = true;
-    playerCol->useGravity = false;
     playerCol->size = { 1.0f, 1.0f };
 
     // In Edit mode (!m_IsRuntimeRunning), Scene::Update executes spatial grid resolution
@@ -258,6 +258,65 @@ TEST(GroundPlanePhysicsTest, SolverGatingSkipsAdHocSolversDuringRuntime) {
     scene.Update(0.016f);
     // Since solvers are gated out during runtime, the spatial grid remains untouched (dirty)
     EXPECT_TRUE(scene.IsSpatialGridDirty());
+
+    scene.OnRuntimeStop();
+}
+
+class MockMovementScript : public Engine::Component {
+public:
+    glm::vec2 DesiredVelocity{ 0.0f, 0.0f };
+
+    void FixedUpdate(float fixedDt) override {
+        if (auto* rb = GetGameObject()->GetComponent<Engine::Rigidbody2D>()) {
+            rb->SetVelocityXZ(DesiredVelocity);
+        }
+    }
+};
+
+TEST(GroundPlanePhysicsTest, ContinuousRuntimeControllerMovementUpdatesTransformAndStopsCleanly) {
+    Engine::Scene scene("ControllerMovementScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    auto* transform = player->GetTransform();
+    transform->position = { 0.0f, 0.0f, 0.0f };
+
+    auto* rb2d = player->AddComponent<Engine::Rigidbody2D>();
+    rb2d->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb2d->FixedRotation = true;
+
+    auto* col = player->AddComponent<Engine::BoxCollider2D>();
+    col->size = { 1.0f, 1.0f };
+
+    auto* controller = player->AddComponent<MockMovementScript>();
+    controller->DesiredVelocity = { 3.0f, 4.0f }; // speed = 5.0 m/s
+
+    scene.OnRuntimeStart();
+
+    // Step 30 frames (0.5s) at 5.0 m/s -> should move ~2.5m total (X ~ 1.5, Z ~ 2.0)
+    constexpr float dt = 1.0f / 60.0f;
+    for (int i = 0; i < 30; ++i) {
+        scene.UpdateRuntime(dt);
+    }
+
+    EXPECT_NEAR(transform->position.x, 1.5f, 0.15f);
+    EXPECT_NEAR(transform->position.z, 2.0f, 0.15f);
+
+    // Stop moving
+    controller->DesiredVelocity = { 0.0f, 0.0f };
+    for (int i = 0; i < 30; ++i) {
+        scene.UpdateRuntime(dt);
+    }
+
+    const float stoppedX = transform->position.x;
+    const float stoppedZ = transform->position.z;
+
+    // Advance another 30 frames: should stay in place when stopped
+    for (int i = 0; i < 30; ++i) {
+        scene.UpdateRuntime(dt);
+    }
+
+    EXPECT_FLOAT_EQ(transform->position.x, stoppedX);
+    EXPECT_FLOAT_EQ(transform->position.z, stoppedZ);
 
     scene.OnRuntimeStop();
 }

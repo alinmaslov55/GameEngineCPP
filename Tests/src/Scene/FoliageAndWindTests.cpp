@@ -56,9 +56,10 @@ TEST(WindAndMotionTest, WindFieldRootLockProximityPartingAndVolumePreservingSpri
     Engine::GameObject* player = testScene.CreateGameObject("Player");
     player->GetTransform()->position = { 2.0f, 0.0f, 3.0f };
     player->GetTransform()->scale = { 1.25f, 1.35f, 1.0f };
+    auto* rb = player->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->UseGravityY = true;
     auto* collider = player->AddComponent<Engine::BoxCollider2D>();
-    collider->isDynamic = true;
-    collider->useGravity = true;
     auto* ss = player->AddComponent<Engine::SquashStretchComponent>();
 
     ss->TriggerImpulse(2.4f, 8.0f);

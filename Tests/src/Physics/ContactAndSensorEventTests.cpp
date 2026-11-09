@@ -139,7 +139,6 @@ TEST_F(ContactAndSensorEventTest, DynamicCircleVsStaticFenceCollision) {
     fence->GetTransform()->position = { 3.0f, 0.0f, 0.0f };
     auto* fenceCol = fence->AddComponent<Engine::BoxCollider2D>();
     fenceCol->size = { 1.0f, 2.0f };
-    fenceCol->isDynamic = false;
     fenceCol->EnableHitEvents = true;
     auto* fenceReceiver = fence->AddComponent<TestEventReceiver>();
 

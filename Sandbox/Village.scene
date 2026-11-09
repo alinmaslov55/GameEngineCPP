@@ -54,7 +54,7 @@
             "Name": "Sun Light",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 2590028556808905777
+            "UUID": 16441309355542326103
         },
         {
             "Components": {
@@ -117,7 +117,7 @@
             "Name": "Post Process Volume",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17500329493481081564
+            "UUID": 14593355904413413068
         },
         {
             "Components": {
@@ -155,7 +155,7 @@
             "Name": "Wind Zone",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8380193770812959468
+            "UUID": 3152882629626624448
         },
         {
             "Components": {
@@ -208,7 +208,7 @@
             "Name": "Terrain",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 4435934133455858764
+            "UUID": 6464783155377906461
         },
         {
             "Components": {
@@ -494,7 +494,7 @@
             "Name": "Map",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 4021723957068334276
+            "UUID": 5903368505317824422
         },
         {
             "Components": {
@@ -502,13 +502,13 @@
                     "ClipPath": "jump.wav"
                 },
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
-                    "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": true,
+                    "Friction": 0.0,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -518,8 +518,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "ParticleSystem": {
                     "AutoEmit": false,
@@ -559,6 +558,27 @@
                             0.3499999940395355
                         ]
                     }
+                },
+                "Rigidbody2D": {
+                    "AirborneClearanceHeight": 0.75,
+                    "AirbornePassThroughMask": 266,
+                    "AngularDamping": 6.0,
+                    "BodyType": 1,
+                    "EnableAirbornePassThrough": true,
+                    "FixedRotation": true,
+                    "GravityScaleY": 1.0,
+                    "GravityY": -22.0,
+                    "GroundLevelY": 0.0,
+                    "GroundRestitutionY": 0.0,
+                    "InitialLinearVelocityXZ": [
+                        0.0,
+                        0.0
+                    ],
+                    "IsBullet": false,
+                    "IsStasisFrozen": false,
+                    "LinearDamping": 4.5,
+                    "MassMultiplier": 1.0,
+                    "UseGravityY": true
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -611,18 +631,18 @@
             "Name": "Player",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3549941825292632247
+            "UUID": 10198276323564373563
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -632,8 +652,7 @@
                     "Size": [
                         1.149999976158142,
                         0.6499999761581421
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "PointLight": {
                     "Color": [
@@ -687,18 +706,18 @@
             "Name": "Cult Shrine",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17328544902961050998
+            "UUID": 8000045990047825037
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -708,8 +727,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "ParticleSystem": {
                     "AutoEmit": true,
@@ -802,18 +820,18 @@
             "Name": "Ritual Brazier 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3715767202257315229
+            "UUID": 7131784740467329493
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -823,8 +841,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "ParticleSystem": {
                     "AutoEmit": true,
@@ -917,18 +934,18 @@
             "Name": "Ritual Brazier 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 7700992114954441765
+            "UUID": 1370100637953600314
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -938,8 +955,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -979,18 +995,18 @@
             "Name": "Pine Tree 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8340577733955977079
+            "UUID": 13829968998421073219
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1000,8 +1016,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1041,18 +1056,18 @@
             "Name": "Pine Tree 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 12605156066922997965
+            "UUID": 516849226919070902
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1062,8 +1077,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1103,18 +1117,18 @@
             "Name": "Pine Tree 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 11822482558756830427
+            "UUID": 11167911425799324009
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1124,8 +1138,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1165,18 +1178,18 @@
             "Name": "Pine Tree 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17832083089022429639
+            "UUID": 11686281472325389287
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1186,8 +1199,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1227,18 +1239,18 @@
             "Name": "Pine Tree 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17915606987244099761
+            "UUID": 7354780230610003245
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1248,8 +1260,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1289,18 +1300,18 @@
             "Name": "Pine Tree 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 9526791967149018359
+            "UUID": 8920647166940031181
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1310,8 +1321,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1351,18 +1361,18 @@
             "Name": "Pine Tree 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 14259146807359348960
+            "UUID": 10901695146371686241
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1372,8 +1382,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1413,18 +1422,18 @@
             "Name": "Pine Tree 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 2220886828687565128
+            "UUID": 17608482528854463825
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1434,8 +1443,7 @@
                     "Size": [
                         0.550000011920929,
                         0.44999998807907104
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1475,7 +1483,7 @@
             "Name": "Pine Tree 9",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8670748730736076479
+            "UUID": 16500591878767476157
         },
         {
             "Components": {
@@ -1517,7 +1525,7 @@
             "Name": "Berry Bush 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 11483823852270451868
+            "UUID": 103462920502772566
         },
         {
             "Components": {
@@ -1559,7 +1567,7 @@
             "Name": "Berry Bush 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 2792240482969470295
+            "UUID": 2487512156398360225
         },
         {
             "Components": {
@@ -1601,7 +1609,7 @@
             "Name": "Berry Bush 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 14909151992355893235
+            "UUID": 1991519201806796042
         },
         {
             "Components": {
@@ -1643,7 +1651,7 @@
             "Name": "Berry Bush 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8711688668586452370
+            "UUID": 5251938000240587052
         },
         {
             "Components": {
@@ -1685,7 +1693,7 @@
             "Name": "Berry Bush 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 11729059220905241602
+            "UUID": 5367481439675768656
         },
         {
             "Components": {
@@ -1727,7 +1735,7 @@
             "Name": "Berry Bush 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 4713989456745208242
+            "UUID": 1234354438689248902
         },
         {
             "Components": {
@@ -1769,7 +1777,7 @@
             "Name": "Berry Bush 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 7066416917515173317
+            "UUID": 4039365262184475337
         },
         {
             "Components": {
@@ -1811,18 +1819,18 @@
             "Name": "Berry Bush 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 12260505541913445611
+            "UUID": 15074822201542490801
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1832,8 +1840,7 @@
                     "Size": [
                         0.41999998688697815,
                         0.3799999952316284
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1886,18 +1893,18 @@
             "Name": "Cult Banner 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 2361682588342521539
+            "UUID": 465716270751112213
         },
         {
             "Components": {
                 "BoxCollider2D": {
+                    "CategoryBits": 512,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
-                    "Gravity": -9.800000190734863,
-                    "GroundLevel": 0.0,
-                    "IsDynamic": false,
+                    "GroupIndex": 0,
                     "IsSensor": false,
+                    "MaskBits": 18446744073709551615,
                     "Offset": [
                         0.0,
                         0.0
@@ -1907,8 +1914,7 @@
                     "Size": [
                         0.41999998688697815,
                         0.3799999952316284
-                    ],
-                    "UseGravity": true
+                    ]
                 },
                 "SpriteRenderer": {
                     "AlphaCutoff": 0.18000000715255737,
@@ -1961,7 +1967,7 @@
             "Name": "Cult Banner 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 18240129722758750021
+            "UUID": 16831779392479358131
         },
         {
             "Components": {
@@ -2003,7 +2009,7 @@
             "Name": "Tall Grass 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 11025951774529892340
+            "UUID": 9809726476268774505
         },
         {
             "Components": {
@@ -2045,7 +2051,7 @@
             "Name": "Tall Grass 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 16999586182112507183
+            "UUID": 2255327937087057529
         },
         {
             "Components": {
@@ -2087,7 +2093,7 @@
             "Name": "Tall Grass 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13180286444450738747
+            "UUID": 3779079672465252073
         },
         {
             "Components": {
@@ -2129,7 +2135,7 @@
             "Name": "Tall Grass 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 15370641104729800618
+            "UUID": 14140955897629195024
         },
         {
             "Components": {
@@ -2171,7 +2177,7 @@
             "Name": "Tall Grass 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 5782134414511139006
+            "UUID": 3344994076275800898
         },
         {
             "Components": {
@@ -2213,7 +2219,7 @@
             "Name": "Tall Grass 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 12140701258531935463
+            "UUID": 16270818135324234071
         },
         {
             "Components": {
@@ -2255,7 +2261,7 @@
             "Name": "Tall Grass 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1820821142502705944
+            "UUID": 3950355835050080393
         },
         {
             "Components": {
@@ -2297,7 +2303,7 @@
             "Name": "Tall Grass 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 15251031431075562845
+            "UUID": 14382090157461377353
         },
         {
             "Components": {
@@ -2339,7 +2345,7 @@
             "Name": "Tall Grass 9",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 12419735511761823067
+            "UUID": 8405312737874180543
         },
         {
             "Components": {
@@ -2381,7 +2387,7 @@
             "Name": "Tall Grass 10",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13584244081887012863
+            "UUID": 5369304024730222114
         },
         {
             "Components": {
@@ -2531,7 +2537,7 @@
             "Name": "HUD",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 15825887077131417808
+            "UUID": 11292545671170989637
         }
     ],
     "OrthographicSize": 5.0,

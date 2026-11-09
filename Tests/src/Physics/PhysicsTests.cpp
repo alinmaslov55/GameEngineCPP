@@ -8,22 +8,28 @@
 
 namespace {
 
-TEST(BoxCollider2DTest, DefaultValuesAndGroundedCheck) {
+TEST(BoxCollider2DTest, DefaultValuesAndMaterials) {
     Engine::BoxCollider2D collider;
     EXPECT_EQ(collider.size, glm::vec2(1.0f, 1.0f));
     EXPECT_EQ(collider.offset, glm::vec2(0.0f, 0.0f));
-    EXPECT_FALSE(collider.isDynamic);
-    EXPECT_FLOAT_EQ(collider.density, 1.0f);
-    EXPECT_FLOAT_EQ(collider.friction, 0.5f);
-    EXPECT_FLOAT_EQ(collider.restitution, 0.0f);
-    EXPECT_FLOAT_EQ(collider.groundLevel, 0.0f);
-    EXPECT_FLOAT_EQ(collider.verticalVelocity, 0.0f);
-    EXPECT_TRUE(collider.IsGrounded(0.0f));
-    EXPECT_FALSE(collider.IsGrounded(1.0f));
+    EXPECT_FLOAT_EQ(collider.Density, 1.0f);
+    EXPECT_FLOAT_EQ(collider.Friction, 0.5f);
+    EXPECT_FLOAT_EQ(collider.Restitution, 0.0f);
+    EXPECT_FLOAT_EQ(collider.RestitutionThreshold, 0.5f);
+    EXPECT_FALSE(collider.IsSensor);
+    EXPECT_TRUE(collider.EnableHitEvents);
+    EXPECT_EQ(collider.CategoryBits, Engine::PhysicsLayer::Default);
+    EXPECT_EQ(collider.MaskBits, Engine::PhysicsLayer::All);
 
-    // If moving upward, it's not grounded even if at ground level
-    collider.verticalVelocity = 2.0f;
-    EXPECT_FALSE(collider.IsGrounded(0.0f));
+    // Verify Rigidbody2D vertical grounding checks
+    Engine::Rigidbody2D rb;
+    rb.GroundLevelY = 0.0f;
+    EXPECT_TRUE(rb.IsGrounded(0.0f));
+    EXPECT_FALSE(rb.IsGrounded(1.0f));
+
+    // If moving upward, it's airborne even if at ground level
+    rb.VerticalVelocity = 2.0f;
+    EXPECT_FALSE(rb.IsGrounded(0.0f));
 }
 
 TEST(Rigidbody2DTest, DefaultsAndType) {
@@ -44,19 +50,21 @@ TEST(IsometricPhysicsTest, JumpArcRisesAndReturnsToGroundLevel) {
     auto* transform = player->GetTransform();
     transform->position = {2.0f, 0.0f, 2.0f};
 
-    auto* collider = player->AddComponent<Engine::BoxCollider2D>();
-    collider->isDynamic = true;
-    collider->useGravity = true;
-    collider->gravity = -10.0f;
-    collider->groundLevel = 0.0f;
+    auto* rb = player->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->UseGravityY = true;
+    rb->GravityY = -10.0f;
+    rb->GravityScaleY = 1.0f;
+    rb->GroundLevelY = 0.0f;
 
-    EXPECT_TRUE(collider->IsGrounded(transform->position.y));
+    auto* collider = player->AddComponent<Engine::BoxCollider2D>();
+    EXPECT_TRUE(rb->IsGrounded(transform->position.y));
 
     // Apply upward jump impulse
-    collider->verticalVelocity = 5.0f;
+    rb->VerticalVelocity = 5.0f;
     scene.Update(0.1f);
     EXPECT_GT(transform->position.y, 0.0f);
-    EXPECT_FALSE(collider->IsGrounded(transform->position.y));
+    EXPECT_FALSE(rb->IsGrounded(transform->position.y));
 
     // Simulate enough frames for the jump arc to complete and clamp to groundLevel
     for (int step = 0; step < 30; ++step) {
@@ -64,8 +72,8 @@ TEST(IsometricPhysicsTest, JumpArcRisesAndReturnsToGroundLevel) {
     }
 
     EXPECT_FLOAT_EQ(transform->position.y, 0.0f);
-    EXPECT_FLOAT_EQ(collider->verticalVelocity, 0.0f);
-    EXPECT_TRUE(collider->IsGrounded(transform->position.y));
+    EXPECT_FLOAT_EQ(rb->VerticalVelocity, 0.0f);
+    EXPECT_TRUE(rb->IsGrounded(transform->position.y));
 }
 
 TEST(IsometricPhysicsTest, NonWalkableTileBlocksDynamicColliderWhileWalkableAllowsPassage) {
@@ -83,10 +91,11 @@ TEST(IsometricPhysicsTest, NonWalkableTileBlocksDynamicColliderWhileWalkableAllo
 
     auto* player = scene.CreateGameObject("Player");
     auto* playerTransform = player->GetTransform();
+    auto* playerRb = player->AddComponent<Engine::Rigidbody2D>();
+    playerRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    playerRb->UseGravityY = false;
     auto* collider = player->AddComponent<Engine::BoxCollider2D>();
-    collider->isDynamic = true;
     collider->size = {0.6f, 0.6f};
-    collider->useGravity = false;
 
     // 1. Walkable tile at (1, 2): player stays unimpeded
     playerTransform->position = {1.0f, 0.0f, 2.0f};
@@ -241,16 +250,16 @@ TEST(SpatialGrid2DTest, DynamicVsStaticCollisionResolution) {
     auto* wall = scene.CreateGameObject("Wall");
     wall->GetTransform()->position = { 2.0f, 0.0f, 2.0f };
     auto* wallCollider = wall->AddComponent<Engine::BoxCollider2D>();
-    wallCollider->isDynamic = false;
     wallCollider->size = { 1.0f, 1.0f };
 
     // Dynamic player at (1.4, 0.0, 2.0), size (1.0, 1.0) -> right edge 1.9 penetrates wall left edge 1.5
     auto* player = scene.CreateGameObject("Player");
     auto* playerTransform = player->GetTransform();
     playerTransform->position = { 1.4f, 0.0f, 2.0f };
+    auto* playerRb = player->AddComponent<Engine::Rigidbody2D>();
+    playerRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    playerRb->UseGravityY = false;
     auto* playerCollider = player->AddComponent<Engine::BoxCollider2D>();
-    playerCollider->isDynamic = true;
-    playerCollider->useGravity = false;
     playerCollider->size = { 1.0f, 1.0f };
 
     EXPECT_TRUE(scene.IsSpatialGridDirty());
@@ -275,16 +284,16 @@ TEST(SpatialGrid2DTest, StaticColliderInDifferentCellDoesNotInterfere) {
     auto* farWall = scene.CreateGameObject("FarWall");
     farWall->GetTransform()->position = { 50.0f, 0.0f, 50.0f };
     auto* wallCollider = farWall->AddComponent<Engine::BoxCollider2D>();
-    wallCollider->isDynamic = false;
     wallCollider->size = { 1.0f, 1.0f };
 
     // Dynamic player at origin (0.0, 0.0, 0.0)
     auto* player = scene.CreateGameObject("Player");
     auto* playerTransform = player->GetTransform();
     playerTransform->position = { 0.0f, 0.0f, 0.0f };
+    auto* playerRb = player->AddComponent<Engine::Rigidbody2D>();
+    playerRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    playerRb->UseGravityY = false;
     auto* playerCollider = player->AddComponent<Engine::BoxCollider2D>();
-    playerCollider->isDynamic = true;
-    playerCollider->useGravity = false;
     playerCollider->size = { 1.0f, 1.0f };
 
     scene.Update(0.016f);
@@ -302,16 +311,16 @@ TEST(SpatialGrid2DTest, MultiCellSpanningStaticColliderDeduplication) {
     auto* longWall = scene.CreateGameObject("LongWall");
     longWall->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
     auto* wallCollider = longWall->AddComponent<Engine::BoxCollider2D>();
-    wallCollider->isDynamic = false;
     wallCollider->size = { 4.0f, 1.0f };
 
     // Dynamic player at (0.1, 0.0, 0.4), size (0.6, 0.6) -> overlaps the wall in multiple cells
     auto* player = scene.CreateGameObject("Player");
     auto* playerTransform = player->GetTransform();
     playerTransform->position = { 0.1f, 0.0f, 0.4f };
+    auto* playerRb = player->AddComponent<Engine::Rigidbody2D>();
+    playerRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    playerRb->UseGravityY = false;
     auto* playerCollider = player->AddComponent<Engine::BoxCollider2D>();
-    playerCollider->isDynamic = true;
-    playerCollider->useGravity = false;
     playerCollider->size = { 0.6f, 0.6f };
 
     scene.Update(0.016f);
@@ -329,7 +338,6 @@ TEST(SpatialGrid2DTest, GridInvalidationAndDynamicRebuild) {
     auto* wall1 = scene.CreateGameObject("Wall1");
     wall1->GetTransform()->position = { 2.0f, 0.0f, 2.0f };
     auto* col1 = wall1->AddComponent<Engine::BoxCollider2D>();
-    col1->isDynamic = false;
 
     scene.Update(0.016f);
     EXPECT_FALSE(scene.IsSpatialGridDirty());
@@ -339,7 +347,6 @@ TEST(SpatialGrid2DTest, GridInvalidationAndDynamicRebuild) {
     auto* wall2 = scene.CreateGameObject("Wall2");
     wall2->GetTransform()->position = { 6.0f, 0.0f, 6.0f };
     auto* col2 = wall2->AddComponent<Engine::BoxCollider2D>();
-    col2->isDynamic = false;
 
     EXPECT_TRUE(scene.IsSpatialGridDirty());
 
