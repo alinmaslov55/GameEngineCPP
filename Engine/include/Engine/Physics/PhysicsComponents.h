@@ -105,6 +105,10 @@ public:
     void SetStasisFrozen(bool frozen);
     [[nodiscard]] bool IsStasisFrozen() const noexcept { return m_IsStasisFrozen; }
     [[nodiscard]] const glm::vec2& GetQueuedStasisImpulseXZ() const noexcept { return m_QueuedStasisImpulseXZ; }
+    [[nodiscard]] const glm::vec2& GetStasisCachedVelocityXZ() const noexcept { return m_StasisCachedVelocityXZ; }
+    void SetStasisCachedVelocityXZ(const glm::vec2& vel) noexcept { m_StasisCachedVelocityXZ = vel; }
+    [[nodiscard]] float GetStasisCachedVerticalVelocity() const noexcept { return m_StasisCachedVerticalVelocity; }
+    void SetStasisCachedVerticalVelocity(float v) noexcept { m_StasisCachedVerticalVelocity = v; }
 
 private:
     bool m_AirbornePassThroughActive = false;

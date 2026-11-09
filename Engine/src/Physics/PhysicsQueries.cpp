@@ -2,6 +2,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Scene/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
 
 #include <box2d/box2d.h>
@@ -64,32 +65,37 @@ void PhysicsQueries::OverlapCircleXZ(const Scene& scene, glm::vec2 centerXZ, flo
         if (!go || !go->IsActiveInHierarchy()) continue;
         auto* t = go->GetTransform();
         if (!t) continue;
-        glm::vec2 posXZ{ t->position.x, t->position.z };
+        const glm::vec3 worldPos = t->GetWorldPosition();
+        const glm::vec3 worldScale = t->GetWorldScale();
+        const glm::vec2 posXZ{ worldPos.x, worldPos.z };
+        const glm::vec2 scaleXZ{ std::abs(worldScale.x), std::abs(worldScale.z) };
 
         bool overlaps = false;
         if (auto* cc = go->GetComponent<CircleCollider2D>()) {
             if ((cc->CategoryBits & maskBits) != 0) {
-                float dist = glm::distance(centerXZ, posXZ + cc->OffsetXZ);
-                if (dist <= (radius + cc->Radius)) overlaps = true;
+                float effectiveRadius = cc->Radius * std::max(scaleXZ.x, scaleXZ.y);
+                float dist = glm::distance(centerXZ, posXZ + cc->OffsetXZ * scaleXZ);
+                if (dist <= (radius + effectiveRadius)) overlaps = true;
             }
         }
         if (auto* bc = go->GetComponent<BoxCollider2D>()) {
             if ((bc->CategoryBits & maskBits) != 0) {
-                glm::vec2 bMin = posXZ + bc->offset - bc->size * 0.5f;
-                glm::vec2 bMax = posXZ + bc->offset + bc->size * 0.5f;
+                glm::vec2 bMin = posXZ + bc->offset * scaleXZ - bc->size * scaleXZ * 0.5f;
+                glm::vec2 bMax = posXZ + bc->offset * scaleXZ + bc->size * scaleXZ * 0.5f;
                 glm::vec2 closest = glm::clamp(centerXZ, bMin, bMax);
                 if (glm::distance(centerXZ, closest) <= radius) overlaps = true;
             }
         }
         if (auto* cap = go->GetComponent<CapsuleCollider2D>()) {
             if ((cap->CategoryBits & maskBits) != 0) {
-                glm::vec2 a = posXZ + cap->Center1;
-                glm::vec2 b = posXZ + cap->Center2;
+                glm::vec2 a = posXZ + cap->Center1 * scaleXZ;
+                glm::vec2 b = posXZ + cap->Center2 * scaleXZ;
+                float effectiveRadius = cap->Radius * std::max(scaleXZ.x, scaleXZ.y);
                 glm::vec2 ab = b - a;
                 float abLenSq = glm::dot(ab, ab);
                 float tParam = (abLenSq > 1e-6f) ? glm::clamp(glm::dot(centerXZ - a, ab) / abLenSq, 0.0f, 1.0f) : 0.0f;
                 glm::vec2 closest = a + tParam * ab;
-                if (glm::distance(centerXZ, closest) <= (radius + cap->Radius)) overlaps = true;
+                if (glm::distance(centerXZ, closest) <= (radius + effectiveRadius)) overlaps = true;
             }
         }
         if (overlaps) {
@@ -122,7 +128,8 @@ void PhysicsQueries::OverlapArcXZ(const Scene& scene, glm::vec2 originXZ, glm::v
         auto* t = go->GetTransform();
         if (!t) continue;
 
-        glm::vec2 targetXZ{ t->position.x, t->position.z };
+        const glm::vec3 worldPos = t->GetWorldPosition();
+        glm::vec2 targetXZ{ worldPos.x, worldPos.z };
         glm::vec2 toTarget = targetXZ - originXZ;
         float distSq = glm::dot(toTarget, toTarget);
 
@@ -185,77 +192,333 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
         if (!go || !go->IsActiveInHierarchy()) continue;
         auto* t = go->GetTransform();
         if (!t) continue;
-        glm::vec2 posXZ{ t->position.x, t->position.z };
+        const glm::vec3 worldPos = t->GetWorldPosition();
+        const glm::vec3 worldScale = t->GetWorldScale();
+        const glm::vec2 posXZ{ worldPos.x, worldPos.z };
+        const glm::vec2 scaleXZ{ std::abs(worldScale.x), std::abs(worldScale.z) };
 
+        // 1. CircleCollider2D
         if (auto* cc = go->GetComponent<CircleCollider2D>()) {
             if ((cc->CategoryBits & maskBits) != 0) {
-                glm::vec2 center = posXZ + cc->OffsetXZ;
-                glm::vec2 d = diff;
-                glm::vec2 f = startXZ - center;
-                float a = glm::dot(d, d);
-                float b = 2.0f * glm::dot(f, d);
-                float c = glm::dot(f, f) - cc->Radius * cc->Radius;
-                float discriminant = b * b - 4.0f * a * c;
-                if (discriminant >= 0.0f) {
-                    discriminant = std::sqrt(discriminant);
-                    float t1 = (-b - discriminant) / (2.0f * a);
-                    if (t1 >= 0.0f && t1 < closestFraction) {
-                        closestFraction = t1;
+                const float effectiveRadius = cc->Radius * std::max(scaleXZ.x, scaleXZ.y);
+                const glm::vec2 center = posXZ + cc->OffsetXZ * scaleXZ;
+                const glm::vec2 d = diff;
+                const glm::vec2 f = startXZ - center;
+                const float c = glm::dot(f, f) - effectiveRadius * effectiveRadius;
+
+                if (c <= 0.0f) {
+                    // Containment: Ray starts inside circle
+                    if (0.0f < closestFraction) {
+                        closestFraction = 0.0f;
                         outHit.Entity = go.get();
-                        outHit.Fraction = t1;
-                        outHit.PointXZ = startXZ + t1 * diff;
-                        outHit.NormalXZ = glm::normalize(outHit.PointXZ - center);
+                        outHit.Fraction = 0.0f;
+                        outHit.PointXZ = startXZ;
+                        const float dist = glm::length(f);
+                        outHit.NormalXZ = (dist > 1e-6f) ? (-f / dist) : -glm::normalize(diff);
+                        foundHit = true;
+                    }
+                } else {
+                    const float a = glm::dot(d, d);
+                    const float b = 2.0f * glm::dot(f, d);
+                    float discriminant = b * b - 4.0f * a * c;
+                    if (discriminant >= 0.0f) {
+                        discriminant = std::sqrt(discriminant);
+                        const float t1 = (-b - discriminant) / (2.0f * a);
+                        if (t1 >= 0.0f && t1 < closestFraction) {
+                            closestFraction = t1;
+                            outHit.Entity = go.get();
+                            outHit.Fraction = t1;
+                            outHit.PointXZ = startXZ + t1 * diff;
+                            outHit.NormalXZ = glm::normalize(outHit.PointXZ - center);
+                            foundHit = true;
+                        }
+                    }
+                }
+            }
+        }
+
+        // 2. BoxCollider2D
+        if (auto* bc = go->GetComponent<BoxCollider2D>()) {
+            if ((bc->CategoryBits & maskBits) != 0) {
+                const glm::vec2 bMin = posXZ + bc->offset * scaleXZ - bc->size * scaleXZ * 0.5f;
+                const glm::vec2 bMax = posXZ + bc->offset * scaleXZ + bc->size * scaleXZ * 0.5f;
+
+                if (startXZ.x >= bMin.x && startXZ.x <= bMax.x &&
+                    startXZ.y >= bMin.y && startXZ.y <= bMax.y) {
+                    // Containment: Ray starts inside box
+                    if (0.0f < closestFraction) {
+                        closestFraction = 0.0f;
+                        outHit.Entity = go.get();
+                        outHit.Fraction = 0.0f;
+                        outHit.PointXZ = startXZ;
+                        outHit.NormalXZ = -glm::normalize(diff);
+                        foundHit = true;
+                    }
+                } else {
+                    float tMin = 0.0f;
+                    float tMax = closestFraction;
+                    glm::vec2 hitNormal{ 0.0f };
+
+                    bool hitBox = true;
+                    for (int axis = 0; axis < 2; ++axis) {
+                        if (std::abs(diff[axis]) < 1e-6f) {
+                            if (startXZ[axis] < bMin[axis] || startXZ[axis] > bMax[axis]) {
+                                hitBox = false;
+                                break;
+                            }
+                        } else {
+                            const float ood = 1.0f / diff[axis];
+                            float t1 = (bMin[axis] - startXZ[axis]) * ood;
+                            float t2 = (bMax[axis] - startXZ[axis]) * ood;
+                            glm::vec2 n1{ 0.0f }, n2{ 0.0f };
+                            n1[axis] = -1.0f;
+                            n2[axis] = 1.0f;
+
+                            if (t1 > t2) {
+                                std::swap(t1, t2);
+                                std::swap(n1, n2);
+                            }
+                            if (t1 > tMin) {
+                                tMin = t1;
+                                hitNormal = n1;
+                            }
+                            tMax = std::min(tMax, t2);
+                            if (tMin > tMax) {
+                                hitBox = false;
+                                break;
+                            }
+                        }
+                    }
+                    if (hitBox && tMin >= 0.0f && tMin < closestFraction) {
+                        closestFraction = tMin;
+                        outHit.Entity = go.get();
+                        outHit.Fraction = tMin;
+                        outHit.PointXZ = startXZ + tMin * diff;
+                        outHit.NormalXZ = hitNormal;
                         foundHit = true;
                     }
                 }
             }
         }
-        if (auto* bc = go->GetComponent<BoxCollider2D>()) {
-            if ((bc->CategoryBits & maskBits) != 0) {
-                glm::vec2 bMin = posXZ + bc->offset - bc->size * 0.5f;
-                glm::vec2 bMax = posXZ + bc->offset + bc->size * 0.5f;
 
-                float tMin = 0.0f;
-                float tMax = closestFraction;
-                glm::vec2 hitNormal{ 0.0f };
+        // 3. CapsuleCollider2D
+        if (auto* cap = go->GetComponent<CapsuleCollider2D>()) {
+            if ((cap->CategoryBits & maskBits) != 0) {
+                const glm::vec2 p1 = posXZ + cap->Center1 * scaleXZ;
+                const glm::vec2 p2 = posXZ + cap->Center2 * scaleXZ;
+                const float r = cap->Radius * std::max(scaleXZ.x, scaleXZ.y);
+                const glm::vec2 seg = p2 - p1;
+                const float segLenSq = glm::dot(seg, seg);
 
-                bool hitBox = true;
-                for (int axis = 0; axis < 2; ++axis) {
-                    if (std::abs(diff[axis]) < 1e-6f) {
-                        if (startXZ[axis] < bMin[axis] || startXZ[axis] > bMax[axis]) {
-                            hitBox = false;
-                            break;
-                        }
-                    } else {
-                        float ood = 1.0f / diff[axis];
-                        float t1 = (bMin[axis] - startXZ[axis]) * ood;
-                        float t2 = (bMax[axis] - startXZ[axis]) * ood;
-                        glm::vec2 n1{ 0.0f }, n2{ 0.0f };
-                        n1[axis] = -1.0f;
-                        n2[axis] = 1.0f;
+                // Check containment: distance from startXZ to segment <= r
+                const float tSeg = (segLenSq > 1e-6f) ? glm::clamp(glm::dot(startXZ - p1, seg) / segLenSq, 0.0f, 1.0f) : 0.0f;
+                const glm::vec2 closestOnSeg = p1 + tSeg * seg;
+                if (glm::distance(startXZ, closestOnSeg) <= r) {
+                    if (0.0f < closestFraction) {
+                        closestFraction = 0.0f;
+                        outHit.Entity = go.get();
+                        outHit.Fraction = 0.0f;
+                        outHit.PointXZ = startXZ;
+                        outHit.NormalXZ = -glm::normalize(diff);
+                        foundHit = true;
+                    }
+                } else {
+                    float bestCapT = closestFraction;
+                    glm::vec2 bestCapNormal{ 0.0f };
+                    bool hitCap = false;
 
-                        if (t1 > t2) {
-                            std::swap(t1, t2);
-                            std::swap(n1, n2);
+                    // A. Check oriented rectangular body if segment length > 0
+                    if (segLenSq > 1e-6f) {
+                        const float L = std::sqrt(segLenSq);
+                        const glm::vec2 U = seg / L;
+                        const glm::vec2 V{ -U.y, U.x };
+
+                        // Transform ray start and diff to capsule local space (u along seg, v perp)
+                        const glm::vec2 lStart{ glm::dot(startXZ - p1, U), glm::dot(startXZ - p1, V) };
+                        const glm::vec2 lDiff{ glm::dot(diff, U), glm::dot(diff, V) };
+
+                        // Box bounds: u in [0, L], v in [-r, +r]
+                        float tMin = 0.0f;
+                        float tMax = bestCapT;
+                        glm::vec2 lHitNormal{ 0.0f };
+                        bool hitBox = true;
+
+                        const glm::vec2 boxMin{ 0.0f, -r };
+                        const glm::vec2 boxMax{ L, r };
+
+                        for (int axis = 0; axis < 2; ++axis) {
+                            if (std::abs(lDiff[axis]) < 1e-6f) {
+                                if (lStart[axis] < boxMin[axis] || lStart[axis] > boxMax[axis]) {
+                                    hitBox = false;
+                                    break;
+                                }
+                            } else {
+                                const float ood = 1.0f / lDiff[axis];
+                                float t1 = (boxMin[axis] - lStart[axis]) * ood;
+                                float t2 = (boxMax[axis] - lStart[axis]) * ood;
+                                glm::vec2 n1{ 0.0f }, n2{ 0.0f };
+                                n1[axis] = -1.0f;
+                                n2[axis] = 1.0f;
+
+                                if (t1 > t2) {
+                                    std::swap(t1, t2);
+                                    std::swap(n1, n2);
+                                }
+                                if (t1 > tMin) {
+                                    tMin = t1;
+                                    lHitNormal = n1;
+                                }
+                                tMax = std::min(tMax, t2);
+                                if (tMin > tMax) {
+                                    hitBox = false;
+                                    break;
+                                }
+                            }
                         }
-                        if (t1 > tMin) {
-                            tMin = t1;
-                            hitNormal = n1;
-                        }
-                        tMax = std::min(tMax, t2);
-                        if (tMin > tMax) {
-                            hitBox = false;
-                            break;
+                        if (hitBox && tMin >= 0.0f && tMin < bestCapT) {
+                            bestCapT = tMin;
+                            bestCapNormal = lHitNormal.x * U + lHitNormal.y * V;
+                            hitCap = true;
                         }
                     }
+
+                    // B. Check cap circle 1 (at p1)
+                    auto testCapCircle = [&](const glm::vec2& center) {
+                        const glm::vec2 f = startXZ - center;
+                        const float a = glm::dot(diff, diff);
+                        const float b = 2.0f * glm::dot(f, diff);
+                        const float c = glm::dot(f, f) - r * r;
+                        float disc = b * b - 4.0f * a * c;
+                        if (disc >= 0.0f) {
+                            disc = std::sqrt(disc);
+                            const float t1 = (-b - disc) / (2.0f * a);
+                            if (t1 >= 0.0f && t1 < bestCapT) {
+                                bestCapT = t1;
+                                bestCapNormal = glm::normalize((startXZ + t1 * diff) - center);
+                                hitCap = true;
+                            }
+                        }
+                    };
+
+                    testCapCircle(p1);
+                    testCapCircle(p2);
+
+                    if (hitCap && bestCapT < closestFraction) {
+                        closestFraction = bestCapT;
+                        outHit.Entity = go.get();
+                        outHit.Fraction = bestCapT;
+                        outHit.PointXZ = startXZ + bestCapT * diff;
+                        outHit.NormalXZ = bestCapNormal;
+                        foundHit = true;
+                    }
                 }
-                if (hitBox && tMin >= 0.0f && tMin < closestFraction) {
-                    closestFraction = tMin;
-                    outHit.Entity = go.get();
-                    outHit.Fraction = tMin;
-                    outHit.PointXZ = startXZ + tMin * diff;
-                    outHit.NormalXZ = hitNormal;
-                    foundHit = true;
+            }
+        }
+
+        // 4. Tilemap
+        if (auto* tm = go->GetComponent<Tilemap>()) {
+            if ((PhysicsLayer::Environment & maskBits) != 0) {
+                const uint32_t width = tm->GetWidth();
+                const uint32_t height = tm->GetHeight();
+                if (width > 0 && height > 0) {
+                    const glm::vec2 tmMin = posXZ - glm::vec2(0.5f * scaleXZ.x, 0.5f * scaleXZ.y);
+                    const glm::vec2 tmMax = posXZ + glm::vec2((static_cast<float>(width) - 0.5f) * scaleXZ.x,
+                                                              (static_cast<float>(height) - 0.5f) * scaleXZ.y);
+
+                    float tEnter = 0.0f;
+                    float tExit = closestFraction;
+                    bool hitsTmBounds = true;
+                    for (int axis = 0; axis < 2; ++axis) {
+                        if (std::abs(diff[axis]) < 1e-6f) {
+                            if (startXZ[axis] < tmMin[axis] || startXZ[axis] > tmMax[axis]) {
+                                hitsTmBounds = false;
+                                break;
+                            }
+                        } else {
+                            const float ood = 1.0f / diff[axis];
+                            float t1 = (tmMin[axis] - startXZ[axis]) * ood;
+                            float t2 = (tmMax[axis] - startXZ[axis]) * ood;
+                            if (t1 > t2) std::swap(t1, t2);
+                            tEnter = std::max(tEnter, t1);
+                            tExit = std::min(tExit, t2);
+                            if (tEnter > tExit) {
+                                hitsTmBounds = false;
+                                break;
+                            }
+                        }
+                    }
+
+                    if (hitsTmBounds) {
+                        for (uint32_t gz = 0; gz < height; ++gz) {
+                            for (uint32_t gx = 0; gx < width; ++gx) {
+                                if (tm->GetTile(gx, gz).walkable) continue;
+
+                                const float centerX = posXZ.x + static_cast<float>(gx) * scaleXZ.x;
+                                const float centerZ = posXZ.y + static_cast<float>(gz) * scaleXZ.y;
+                                const float halfW = 0.5f * scaleXZ.x;
+                                const float halfD = 0.5f * scaleXZ.y;
+
+                                const glm::vec2 bMin{ centerX - halfW, centerZ - halfD };
+                                const glm::vec2 bMax{ centerX + halfW, centerZ + halfD };
+
+                                if (startXZ.x >= bMin.x && startXZ.x <= bMax.x &&
+                                    startXZ.y >= bMin.y && startXZ.y <= bMax.y) {
+                                    if (0.0f < closestFraction) {
+                                        closestFraction = 0.0f;
+                                        outHit.Entity = go.get();
+                                        outHit.Fraction = 0.0f;
+                                        outHit.PointXZ = startXZ;
+                                        outHit.NormalXZ = -glm::normalize(diff);
+                                        foundHit = true;
+                                    }
+                                } else {
+                                    float tMin = 0.0f;
+                                    float tMax = closestFraction;
+                                    glm::vec2 hitNormal{ 0.0f };
+                                    bool hitBox = true;
+
+                                    for (int axis = 0; axis < 2; ++axis) {
+                                        if (std::abs(diff[axis]) < 1e-6f) {
+                                            if (startXZ[axis] < bMin[axis] || startXZ[axis] > bMax[axis]) {
+                                                hitBox = false;
+                                                break;
+                                            }
+                                        } else {
+                                            const float ood = 1.0f / diff[axis];
+                                            float t1 = (bMin[axis] - startXZ[axis]) * ood;
+                                            float t2 = (bMax[axis] - startXZ[axis]) * ood;
+                                            glm::vec2 n1{ 0.0f }, n2{ 0.0f };
+                                            n1[axis] = -1.0f;
+                                            n2[axis] = 1.0f;
+
+                                            if (t1 > t2) {
+                                                std::swap(t1, t2);
+                                                std::swap(n1, n2);
+                                            }
+                                            if (t1 > tMin) {
+                                                tMin = t1;
+                                                hitNormal = n1;
+                                            }
+                                            tMax = std::min(tMax, t2);
+                                            if (tMin > tMax) {
+                                                hitBox = false;
+                                                break;
+                                            }
+                                        }
+                                    }
+
+                                    if (hitBox && tMin >= 0.0f && tMin < closestFraction) {
+                                        closestFraction = tMin;
+                                        outHit.Entity = go.get();
+                                        outHit.Fraction = tMin;
+                                        outHit.PointXZ = startXZ + tMin * diff;
+                                        outHit.NormalXZ = hitNormal;
+                                        foundHit = true;
+                                    }
+                                }
+                            }
+                        }
+                    }
                 }
             }
         }

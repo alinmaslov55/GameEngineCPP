@@ -369,6 +369,13 @@ void SerializeRigidbody2D(const GameObject* go, json& compsJson) {
     auto* rb2d = go->GetComponent<Rigidbody2D>();
     if (!rb2d) return;
 
+    glm::vec2 linearVel = rb2d->InitialLinearVelocityXZ;
+    if (rb2d->IsStasisFrozen()) {
+        linearVel = rb2d->GetStasisCachedVelocityXZ();
+    } else if (rb2d->RuntimeBody) {
+        linearVel = rb2d->GetVelocityXZ();
+    }
+
     compsJson["Rigidbody2D"] = {
         {"BodyType", static_cast<int>(rb2d->Type)},
         {"FixedRotation", rb2d->FixedRotation},
@@ -384,6 +391,7 @@ void SerializeRigidbody2D(const GameObject* go, json& compsJson) {
         {"AirborneClearanceHeight", rb2d->AirborneClearanceHeight},
         {"EnableAirbornePassThrough", rb2d->EnableAirbornePassThrough},
         {"AirbornePassThroughMask", rb2d->AirbornePassThroughMask},
+        {"InitialLinearVelocityXZ", ToJson(linearVel)},
         {"IsStasisFrozen", rb2d->IsStasisFrozen()}
     };
 }
@@ -878,6 +886,9 @@ void DeserializeRigidbody2D(GameObject* go, const json& rbJson, const std::strin
     rb2d->AirborneClearanceHeight = rbJson.value("AirborneClearanceHeight", 0.75f);
     rb2d->EnableAirbornePassThrough = rbJson.value("EnableAirbornePassThrough", true);
     rb2d->AirbornePassThroughMask = rbJson.value("AirbornePassThroughMask", PhysicsLayer::DefaultAirborneExcluded);
+    if (rbJson.contains("InitialLinearVelocityXZ")) {
+        rb2d->InitialLinearVelocityXZ = AsVec2(rbJson["InitialLinearVelocityXZ"], rb2d->InitialLinearVelocityXZ);
+    }
     if (rbJson.value("IsStasisFrozen", false)) {
         rb2d->SetStasisFrozen(true);
     }

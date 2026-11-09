@@ -125,7 +125,8 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
             InitialLinearVelocityXZ = m_StasisCachedVelocityXZ;
             VerticalVelocity = m_StasisCachedVerticalVelocity;
             if (glm::length(m_QueuedStasisImpulseXZ) > 0.0f) {
-                InitialLinearVelocityXZ += m_QueuedStasisImpulseXZ / GetMass();
+                const float mass = std::max(GetMass(), 1e-4f);
+                InitialLinearVelocityXZ += m_QueuedStasisImpulseXZ / mass;
                 m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
             }
         }

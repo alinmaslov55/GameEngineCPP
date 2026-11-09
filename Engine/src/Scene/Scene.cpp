@@ -250,7 +250,9 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
         bool baseMassRecomputed = false;
         if (rb2d->RuntimeBody == nullptr) {
             b2BodyDef bodyDef = b2DefaultBodyDef();
-            if (rb2d->Type == Rigidbody2D::BodyType::Static) {
+            if (rb2d->IsStasisFrozen()) {
+                bodyDef.type = b2_kinematicBody;
+            } else if (rb2d->Type == Rigidbody2D::BodyType::Static) {
                 bodyDef.type = b2_staticBody;
             } else if (rb2d->Type == Rigidbody2D::BodyType::Dynamic) {
                 bodyDef.type = b2_dynamicBody;
@@ -272,7 +274,10 @@ void Scene::RegisterRuntimeBody(GameObject* go) {
             rb2d->RuntimeBody = reinterpret_cast<void*>(static_cast<uintptr_t>(b2StoreBodyId(bodyId)));
             baseMassRecomputed = true;
 
-            if (rb2d->InitialLinearVelocityXZ.x != 0.0f || rb2d->InitialLinearVelocityXZ.y != 0.0f) {
+            if (rb2d->IsStasisFrozen()) {
+                b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+                b2Body_SetAngularVelocity(bodyId, 0.0f);
+            } else if (rb2d->InitialLinearVelocityXZ.x != 0.0f || rb2d->InitialLinearVelocityXZ.y != 0.0f) {
                 b2Body_SetLinearVelocity(bodyId, b2Vec2{ rb2d->InitialLinearVelocityXZ.x, rb2d->InitialLinearVelocityXZ.y });
             }
 

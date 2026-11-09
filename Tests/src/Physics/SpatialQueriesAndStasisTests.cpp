@@ -6,6 +6,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Scene/Tilemap.h"
 #include "Engine/Scene/Transform.h"
 #include <box2d/box2d.h>
 
@@ -318,6 +319,194 @@ TEST(SpatialQueriesAndStasisTest, SceneSerializerStasisRoundTrip) {
     auto* loadedRb = loadedGhoul->GetComponent<Engine::Rigidbody2D>();
     ASSERT_NE(loadedRb, nullptr);
     EXPECT_TRUE(loadedRb->IsStasisFrozen());
+}
+
+// Test 7: Deserialized frozen entity remains suspended on OnRuntimeStart and steps 60 frames motionless
+TEST(SpatialQueriesAndStasisTest, ChronosStasis_DeserializedFrozenEntityRemainsSuspendedOnRuntimeStart) {
+    auto scene = std::make_shared<Engine::Scene>("StasisOnRuntimeStartScene");
+
+    constexpr uint64_t kBossUUID = 9988776655ULL;
+    auto* boss = scene->CreateGameObjectWithUUID(kBossUUID, "StasisBoss");
+    boss->GetTransform()->position = { 5.0f, 2.0f, 5.0f };
+
+    auto* rb = boss->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->InitialLinearVelocityXZ = { 10.0f, 10.0f };
+    rb->VerticalVelocity = 5.0f;
+    rb->GroundLevelY = 0.0f;
+    rb->UseGravityY = true;
+    rb->SetStasisFrozen(true);
+    EXPECT_TRUE(rb->IsStasisFrozen());
+
+    auto* col = boss->AddComponent<Engine::CircleCollider2D>();
+    col->Radius = 0.8f;
+
+    // Serialize
+    Engine::SceneSerializer sourceSerializer(scene);
+    const std::string jsonPayload = sourceSerializer.SerializeToString();
+    ASSERT_FALSE(jsonPayload.empty());
+
+    // Deserialize into fresh scene
+    auto loadedScene = std::make_shared<Engine::Scene>("LoadedScene");
+    Engine::SceneSerializer cloneSerializer(loadedScene);
+    ASSERT_TRUE(cloneSerializer.DeserializeFromString(jsonPayload));
+
+    auto* loadedBoss = loadedScene->FindGameObjectByUUID(kBossUUID);
+    ASSERT_NE(loadedBoss, nullptr);
+    auto* loadedRb = loadedBoss->GetComponent<Engine::Rigidbody2D>();
+    ASSERT_NE(loadedRb, nullptr);
+    EXPECT_TRUE(loadedRb->IsStasisFrozen());
+
+    // Start runtime! Body should spawn as b2_kinematicBody with zero velocity
+    loadedScene->OnRuntimeStart();
+
+    const glm::vec3 posFrozen = loadedBoss->GetTransform()->position;
+    EXPECT_FLOAT_EQ(posFrozen.x, 5.0f);
+    EXPECT_FLOAT_EQ(posFrozen.y, 2.0f);
+    EXPECT_FLOAT_EQ(posFrozen.z, 5.0f);
+
+    // Step 60 frames (1 full second): entity must remain suspended in mid-air
+    constexpr float dt = 1.0f / 60.0f;
+    for (int i = 0; i < 60; ++i) {
+        loadedScene->UpdateRuntime(dt);
+    }
+
+    const glm::vec3 posAfter60Frames = loadedBoss->GetTransform()->position;
+    EXPECT_FLOAT_EQ(posAfter60Frames.x, posFrozen.x);
+    EXPECT_FLOAT_EQ(posAfter60Frames.y, posFrozen.y);
+    EXPECT_FLOAT_EQ(posAfter60Frames.z, posFrozen.z);
+
+    // Unfreeze! Entity should restore original velocities and resume motion
+    loadedRb->SetStasisFrozen(false);
+    EXPECT_FALSE(loadedRb->IsStasisFrozen());
+
+    for (int i = 0; i < 30; ++i) {
+        loadedScene->UpdateRuntime(dt);
+    }
+
+    const glm::vec3 posResumed = loadedBoss->GetTransform()->position;
+    EXPECT_GT(posResumed.x, posFrozen.x + 1.0f);
+    EXPECT_GT(posResumed.z, posFrozen.z + 1.0f);
+
+    loadedScene->OnRuntimeStop();
+}
+
+// Test 8: Offline queued impulse does not divide by zero if mass is zero
+TEST(SpatialQueriesAndStasisTest, ChronosStasis_OfflineQueuedImpulseSafeDivisionByMass) {
+    Engine::Scene scene("OfflineStasisScene");
+
+    auto* go = scene.CreateGameObject("NoShapeEntity");
+    auto* rb = go->AddComponent<Engine::Rigidbody2D>();
+    rb->MassMultiplier = 0.0f;
+    EXPECT_FLOAT_EQ(rb->GetMass(), 0.0f);
+
+    rb->SetStasisFrozen(true);
+    EXPECT_TRUE(rb->IsStasisFrozen());
+
+    // Apply impulse offline while frozen
+    rb->ApplyImpulseXZ(glm::vec2{ 15.0f, 25.0f });
+    EXPECT_EQ(rb->GetQueuedStasisImpulseXZ(), glm::vec2(15.0f, 25.0f));
+
+    // Unfreeze offline: should not produce NaN or Inf
+    rb->SetStasisFrozen(false);
+    EXPECT_FALSE(rb->IsStasisFrozen());
+    EXPECT_FALSE(std::isnan(rb->InitialLinearVelocityXZ.x));
+    EXPECT_FALSE(std::isnan(rb->InitialLinearVelocityXZ.y));
+    EXPECT_FALSE(std::isinf(rb->InitialLinearVelocityXZ.x));
+    EXPECT_FALSE(std::isinf(rb->InitialLinearVelocityXZ.y));
+    EXPECT_GT(rb->InitialLinearVelocityXZ.x, 0.0f);
+    EXPECT_GT(rb->InitialLinearVelocityXZ.y, 0.0f);
+}
+
+// Test 9: Non-runtime spatial queries handle parent-child hierarchy and scale
+TEST(SpatialQueriesAndStasisTest, PhysicsQueries_NonRuntimeQueriesWithTransformHierarchyAndScale) {
+    Engine::Scene scene("NonRuntimeHierarchyScene");
+
+    // Parent at (10, 0, 10), scaled 2x
+    auto* parent = scene.CreateGameObject("Parent");
+    parent->GetTransform()->position = { 10.0f, 0.0f, 10.0f };
+    parent->GetTransform()->scale = { 2.0f, 1.0f, 2.0f };
+
+    // Child at local position (2, 0, 0) -> world position is (14, 0, 10)
+    auto* child = scene.CreateGameObject("Child");
+    child->GetTransform()->position = { 2.0f, 0.0f, 0.0f };
+    child->GetTransform()->SetParent(parent->GetTransform(), false);
+
+    auto* col = child->AddComponent<Engine::CircleCollider2D>();
+    col->Radius = 0.5f;
+    col->CategoryBits = Engine::PhysicsLayer::Enemy;
+
+    // Do NOT call OnRuntimeStart() -> strictly non-runtime fallback!
+    EXPECT_FALSE(scene.IsRuntimeRunning());
+
+    // Query 1: Overlap at world position (14, 10) with radius 1.5 -> must find Child
+    std::vector<Engine::GameObject*> hits;
+    scene.OverlapCircleXZ(glm::vec2{ 14.0f, 10.0f }, 1.5f, Engine::PhysicsLayer::Enemy, hits);
+    ASSERT_EQ(hits.size(), 1u);
+    EXPECT_EQ(hits[0], child);
+
+    // Query 2: Overlap at local position (2, 0) -> must find nothing
+    hits.clear();
+    scene.OverlapCircleXZ(glm::vec2{ 2.0f, 0.0f }, 1.0f, Engine::PhysicsLayer::Enemy, hits);
+    EXPECT_EQ(hits.size(), 0u);
+
+    // Query 3: OverlapArcXZ facing +X from (10, 10) towards child at (14, 10) -> must hit
+    hits.clear();
+    scene.OverlapArcXZ(glm::vec2{ 10.0f, 10.0f }, glm::vec2{ 1.0f, 0.0f }, 6.0f, 45.0f, Engine::PhysicsLayer::Enemy, hits);
+    ASSERT_EQ(hits.size(), 1u);
+    EXPECT_EQ(hits[0], child);
+}
+
+// Test 10: Non-runtime RaycastClosestXZ handles ray containment, CapsuleCollider2D, and Tilemap
+TEST(SpatialQueriesAndStasisTest, PhysicsQueries_NonRuntimeRaycastContainmentAndShapes) {
+    Engine::Scene scene("NonRuntimeRaycastScene");
+    EXPECT_FALSE(scene.IsRuntimeRunning());
+
+    // 1. Circle containment: ray starts inside CircleCollider2D
+    auto* circleGo = scene.CreateGameObject("CircleEntity");
+    circleGo->GetTransform()->position = { 0.0f, 0.0f, 2.0f };
+    auto* circleCol = circleGo->AddComponent<Engine::CircleCollider2D>();
+    circleCol->Radius = 1.0f;
+    circleCol->CategoryBits = Engine::PhysicsLayer::Enemy;
+
+    Engine::RaycastHitXZ hit;
+    // Cast ray from (0, 2) [inside circle] towards (0, 10)
+    bool hasHit = scene.RaycastClosestXZ(glm::vec2{ 0.0f, 2.0f }, glm::vec2{ 0.0f, 10.0f }, Engine::PhysicsLayer::Enemy, hit);
+    EXPECT_TRUE(hasHit);
+    EXPECT_EQ(hit.Entity, circleGo);
+    EXPECT_FLOAT_EQ(hit.Fraction, 0.0f);
+    EXPECT_FLOAT_EQ(hit.PointXZ.x, 0.0f);
+    EXPECT_FLOAT_EQ(hit.PointXZ.y, 2.0f);
+
+    // 2. CapsuleCollider2D raycast
+    auto* capGo = scene.CreateGameObject("CapsuleEntity");
+    capGo->GetTransform()->position = { 10.0f, 0.0f, 5.0f };
+    auto* capCol = capGo->AddComponent<Engine::CapsuleCollider2D>();
+    capCol->Center1 = { 0.0f, -1.0f };
+    capCol->Center2 = { 0.0f, 1.0f };
+    capCol->Radius = 0.5f;
+    capCol->CategoryBits = Engine::PhysicsLayer::Enemy;
+
+    // Raycast from (5, 5) towards (15, 5) -> intersects capsule along horizontal ray at X approx 9.5
+    hasHit = scene.RaycastClosestXZ(glm::vec2{ 5.0f, 5.0f }, glm::vec2{ 15.0f, 5.0f }, Engine::PhysicsLayer::Enemy, hit);
+    EXPECT_TRUE(hasHit);
+    EXPECT_EQ(hit.Entity, capGo);
+    EXPECT_NEAR(hit.PointXZ.x, 9.5f, 0.05f);
+    EXPECT_NEAR(hit.PointXZ.y, 5.0f, 0.05f);
+
+    // 3. Tilemap with non-walkable tile
+    auto* tmGo = scene.CreateGameObject("TilemapEntity");
+    tmGo->GetTransform()->position = { 20.0f, 0.0f, 0.0f };
+    auto* tm = tmGo->AddComponent<Engine::Tilemap>(4u, 4u);
+    // Mark tile (1, 1) as non-walkable (centered at 20 + 1 = 21, 0 + 1 = 1)
+    tm->SetTile(1, 1, 1, false);
+
+    // Raycast from (21, -2) towards (21, 5) with Environment layer -> should hit tile (1, 1) at Z approx 0.5
+    hasHit = scene.RaycastClosestXZ(glm::vec2{ 21.0f, -2.0f }, glm::vec2{ 21.0f, 5.0f }, Engine::PhysicsLayer::Environment, hit);
+    EXPECT_TRUE(hasHit);
+    EXPECT_EQ(hit.Entity, tmGo);
+    EXPECT_NEAR(hit.PointXZ.x, 21.0f, 0.05f);
+    EXPECT_NEAR(hit.PointXZ.y, 0.5f, 0.05f);
 }
 
 } // namespace

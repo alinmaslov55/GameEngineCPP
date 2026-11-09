@@ -62,7 +62,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Apply `alignas(64)` to `Box2DTask` and `WorkerQueue`.
     - Verification (EngineTests): High-frequency single-job producer-consumer stress test (100k micro-dispatches with 1-8 workers) completes reliably with zero hangs.
 
-[ ] 7. Fix Chronos Stasis Initialization on OnRuntimeStart & Non-Runtime Fallback Bugs
+[x] 7. Fix Chronos Stasis Initialization on OnRuntimeStart & Non-Runtime Fallback Bugs
     - Files: Engine/src/Scene/Scene.cpp (lines 236-260), Engine/src/Physics/PhysicsComponents.cpp (line 121), Engine/src/Physics/PhysicsQueries.cpp (lines 62-99, 180-264)
     - Root Cause:
       * RegisterRuntimeBody() creates bodies as `b2_dynamicBody` even if `rb2d->IsStasisFrozen() == true` (e.g., loaded via SceneSerializer/Prefab prior to OnRuntimeStart()).
