@@ -22,6 +22,8 @@ JobHandle JobHandle::Then(std::function<void()> nextJob) const {
 
 JobSystem::JobSystem(uint32_t workerCount)
     : m_WorkerCount(workerCount) {
+    m_PendingJobs.store(0, std::memory_order_seq_cst);
+    m_WaitingWorkers.store(0, std::memory_order_seq_cst);
     m_WorkerQueues.reserve(workerCount);
     for (uint32_t i = 0; i < workerCount; ++i) {
         m_WorkerQueues.push_back(std::make_unique<WorkerQueue>());
@@ -49,6 +51,8 @@ JobSystem::~JobSystem() {
         }
         m_Workers.clear();
         m_WorkerQueues.clear();
+        m_PendingJobs.store(0, std::memory_order_seq_cst);
+        m_WaitingWorkers.store(0, std::memory_order_seq_cst);
         m_Initialized = false;
     }
 }
@@ -88,6 +92,8 @@ void JobSystem::Shutdown() {
     // 3. Clear workers (std::jthread destructor will wait/join each thread)
     s_Instance->m_Workers.clear();
     s_Instance->m_WorkerQueues.clear();
+    s_Instance->m_PendingJobs.store(0, std::memory_order_seq_cst);
+    s_Instance->m_WaitingWorkers.store(0, std::memory_order_seq_cst);
     s_Instance->m_Initialized = false;
     s_Instance.reset();
 
@@ -100,6 +106,14 @@ bool JobSystem::IsInitialized() noexcept {
 
 uint32_t JobSystem::GetWorkerCount() noexcept {
     return (s_Instance && s_Instance->m_Initialized) ? s_Instance->m_WorkerCount : 0;
+}
+
+size_t JobSystem::GetPendingJobCount() noexcept {
+    return (s_Instance && s_Instance->m_Initialized) ? s_Instance->m_PendingJobs.load(std::memory_order_relaxed) : 0;
+}
+
+uint32_t JobSystem::GetWaitingWorkerCount() noexcept {
+    return (s_Instance && s_Instance->m_Initialized) ? s_Instance->m_WaitingWorkers.load(std::memory_order_relaxed) : 0;
 }
 
 int32_t JobSystem::GetCurrentWorkerIndex() noexcept {
@@ -193,6 +207,30 @@ void JobSystem::WaitAll(const std::vector<JobHandle>& handles) {
     }
 }
 
+bool JobSystem::PopWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob) {
+    if (m_WorkerQueues[index]->PopLocal(outJob)) {
+        m_PendingJobs.fetch_sub(1, std::memory_order_seq_cst);
+        return true;
+    }
+    return false;
+}
+
+bool JobSystem::StealWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob) {
+    if (m_WorkerQueues[index]->Steal(outJob)) {
+        m_PendingJobs.fetch_sub(1, std::memory_order_seq_cst);
+        return true;
+    }
+    return false;
+}
+
+bool JobSystem::PopGlobalJob(std::shared_ptr<JobState>& outJob) {
+    if (m_GlobalQueue.Pop(outJob)) {
+        m_PendingJobs.fetch_sub(1, std::memory_order_seq_cst);
+        return true;
+    }
+    return false;
+}
+
 void JobSystem::WorkerLoop(std::stop_token stopToken, uint32_t workerIndex) {
     t_WorkerIndex = static_cast<int32_t>(workerIndex);
 
@@ -202,9 +240,15 @@ void JobSystem::WorkerLoop(std::stop_token stopToken, uint32_t workerIndex) {
             ExecuteJobState(job);
         } else {
             std::unique_lock lock(m_WakeMutex);
+            if (stopToken.stop_requested() || m_PendingJobs.load(std::memory_order_seq_cst) > 0) {
+                continue;
+            }
+
+            m_WaitingWorkers.fetch_add(1, std::memory_order_seq_cst);
             m_WakeCV.wait(lock, [&]() {
-                return stopToken.stop_requested() || HasPendingWork();
+                return stopToken.stop_requested() || m_PendingJobs.load(std::memory_order_seq_cst) > 0;
             });
+            m_WaitingWorkers.fetch_sub(1, std::memory_order_seq_cst);
         }
     }
 }
@@ -213,12 +257,12 @@ std::shared_ptr<JobState> JobSystem::FindWork(uint32_t workerIndex) {
     std::shared_ptr<JobState> job;
 
     // 1. Try local worker queue (LIFO for hot cache)
-    if (m_WorkerQueues[workerIndex]->PopLocal(job)) {
+    if (PopWorkerJob(workerIndex, job)) {
         return job;
     }
 
     // 2. Try global queue (FIFO)
-    if (m_GlobalQueue.Pop(job)) {
+    if (PopGlobalJob(job)) {
         return job;
     }
 
@@ -227,7 +271,7 @@ std::shared_ptr<JobState> JobSystem::FindWork(uint32_t workerIndex) {
     if (count > 1) {
         for (uint32_t i = 1; i < count; ++i) {
             uint32_t victim = (workerIndex + i) % count;
-            if (m_WorkerQueues[victim]->Steal(job)) {
+            if (StealWorkerJob(victim, job)) {
                 return job;
             }
         }
@@ -252,7 +296,12 @@ void JobSystem::SubmitJob(std::shared_ptr<JobState> job) {
         }
     }
 
-    m_WakeCV.notify_one();
+    m_PendingJobs.fetch_add(1, std::memory_order_seq_cst);
+
+    if (m_WaitingWorkers.load(std::memory_order_seq_cst) > 0) {
+        std::lock_guard lock(m_WakeMutex);
+        m_WakeCV.notify_one();
+    }
 }
 
 void JobSystem::ExecuteJobState(const std::shared_ptr<JobState>& jobState) {
@@ -286,15 +335,16 @@ void JobSystem::ExecuteJobState(const std::shared_ptr<JobState>& jobState) {
 }
 
 bool JobSystem::HasPendingWork() const {
-    if (!m_GlobalQueue.Empty()) return true;
-    for (const auto& q : m_WorkerQueues) {
-        if (!q->Empty()) return true;
-    }
-    return false;
+    return m_PendingJobs.load(std::memory_order_seq_cst) > 0;
 }
 
 bool JobSystem::ExecuteOneJob() {
     if (!s_Instance || !s_Instance->m_Initialized) {
+        return false;
+    }
+
+    // Fast-path early exit: if no pending jobs in any queue, don't lock anything!
+    if (s_Instance->m_PendingJobs.load(std::memory_order_acquire) == 0) {
         return false;
     }
 
@@ -304,10 +354,10 @@ bool JobSystem::ExecuteOneJob() {
     if (wIdx >= 0 && static_cast<size_t>(wIdx) < s_Instance->m_WorkerQueues.size()) {
         job = s_Instance->FindWork(static_cast<uint32_t>(wIdx));
     } else {
-        if (!s_Instance->m_GlobalQueue.Pop(job)) {
+        if (!s_Instance->PopGlobalJob(job)) {
             const size_t count = s_Instance->m_WorkerQueues.size();
             for (size_t i = 0; i < count; ++i) {
-                if (s_Instance->m_WorkerQueues[i]->Steal(job)) {
+                if (s_Instance->StealWorkerJob(static_cast<uint32_t>(i), job)) {
                     break;
                 }
             }

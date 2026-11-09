@@ -52,6 +52,8 @@ public:
 
     [[nodiscard]] static bool IsInitialized() noexcept;
     [[nodiscard]] static uint32_t GetWorkerCount() noexcept;
+    [[nodiscard]] static size_t GetPendingJobCount() noexcept;
+    [[nodiscard]] static uint32_t GetWaitingWorkerCount() noexcept;
 
     // Returns the worker index [0, GetWorkerCount() - 1] if called from a JobSystem worker thread,
     // or -1 if called from the main thread or an external calling thread.
@@ -188,8 +190,7 @@ public:
     JobSystem(uint32_t workerCount);
     ~JobSystem();
 
-private:
-    class WorkerQueue {
+    class alignas(64) WorkerQueue {
     public:
         void Push(std::shared_ptr<JobState> job) {
             std::lock_guard lock(m_Mutex);
@@ -222,7 +223,7 @@ private:
         std::deque<std::shared_ptr<JobState>> m_Jobs;
     };
 
-    class GlobalQueue {
+    class alignas(64) GlobalQueue {
     public:
         void Push(std::shared_ptr<JobState> job) {
             std::lock_guard lock(m_Mutex);
@@ -254,6 +255,10 @@ private:
     static void ExecuteJobState(const std::shared_ptr<JobState>& jobState);
     bool HasPendingWork() const;
 
+    bool PopWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob);
+    bool StealWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob);
+    bool PopGlobalJob(std::shared_ptr<JobState>& outJob);
+
 private:
     static std::unique_ptr<JobSystem> s_Instance;
 
@@ -261,9 +266,12 @@ private:
     uint32_t m_WorkerCount = 0;
     std::vector<std::jthread> m_Workers;
     std::vector<std::unique_ptr<WorkerQueue>> m_WorkerQueues;
-    GlobalQueue m_GlobalQueue;
+    alignas(64) GlobalQueue m_GlobalQueue;
 
-    mutable std::mutex m_WakeMutex;
+    alignas(64) std::atomic<size_t> m_PendingJobs{ 0 };
+    alignas(64) std::atomic<uint32_t> m_WaitingWorkers{ 0 };
+
+    alignas(64) mutable std::mutex m_WakeMutex;
     std::condition_variable m_WakeCV;
 };
 

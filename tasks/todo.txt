@@ -52,7 +52,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Mark DrawStandeesParallel read-only against POD command fields; change `GenerateUUID()` RNG to `thread_local std::mt19937_64`.
     - Verification (EngineTests): Render parented hierarchical standees across multi-threaded JobSystem with ThreadSanitizer/concurrent stress test -> zero data races and smooth sub-frame alpha interpolation.
 
-[ ] 6. Fix Missed-Wakeup Race & False Sharing in JobSystem
+[x] 6. Fix Missed-Wakeup Race & False Sharing in JobSystem
     - Files: Engine/include/Engine/Core/JobSystem.h, Engine/src/Core/JobSystem.cpp (lines 204-295), Engine/include/Engine/Scene/Scene.h (line 136)
     - Root Cause:
       * SubmitJob() calls `m_WakeCV.notify_one()` WITHOUT holding `m_WakeMutex`, while WorkerLoop evaluates `HasPendingWork()` scanning N worker queue mutexes sequentially inside cv.wait(). A notification occurring after HasPendingWork() checked queue[0] and before kernel park can be lost, stranding workers.

@@ -155,8 +155,7 @@ public:
     [[nodiscard]] float GetPhysicsAlpha() const noexcept { return m_PhysicsAlpha; }
     void ResetPhysicsAccumulator() noexcept { m_PhysicsAccumulator = 0.0f; m_PhysicsAlpha = 0.0f; }
 
-private:
-    struct Box2DTask {
+    struct alignas(64) Box2DTask {
         std::atomic<int> remaining{ 0 };
         std::atomic<bool> done{ false };
         std::atomic<bool> inUse{ false };
@@ -168,6 +167,11 @@ private:
         Box2DTask& operator=(Box2DTask&&) = delete;
     };
 
+    static constexpr size_t kMaxBox2DTasks = 16;
+    [[nodiscard]] const Box2DTask* GetBox2DTaskSlots() const noexcept { return m_Box2DTasks.data(); }
+    [[nodiscard]] size_t GetBox2DTaskSlotCount() const noexcept { return kMaxBox2DTasks; }
+
+private:
     static void* Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int minRange, void* taskContext, void* userContext);
     static void Box2DFinishTask(void* userTask, void* userContext);
 
@@ -219,8 +223,7 @@ private:
     std::vector<GameObject*> m_PendingPhysicsSync;
 
     // Box2D v3 multithreaded task management pool (zero heap allocation)
-    static constexpr size_t kMaxBox2DTasks = 16;
-    std::array<Box2DTask, kMaxBox2DTasks> m_Box2DTasks;
+    alignas(64) std::array<Box2DTask, kMaxBox2DTasks> m_Box2DTasks;
     uint64_t m_Box2DParallelTasksDispatched = 0;
     uint64_t m_Box2DSerialTasksExecuted = 0;
 

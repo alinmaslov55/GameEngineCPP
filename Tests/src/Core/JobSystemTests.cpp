@@ -1,5 +1,6 @@
 #include <gtest/gtest.h>
 #include "Engine/Core/JobSystem.h"
+#include "Engine/Scene/Scene.h"
 
 #include <atomic>
 #include <chrono>
@@ -215,6 +216,68 @@ TEST(JobSystemTest, UninitializedFallbackExecutesSynchronously) {
     for (int x : data) {
         EXPECT_EQ(x, 7);
     }
+}
+
+TEST(JobSystemTest, CacheLineAlignmentAndFalseSharingPrevention) {
+    // 1. Verify Scene::Box2DTask alignment and size
+    static_assert(alignof(Engine::Scene::Box2DTask) == 64, "Box2DTask must be aligned to 64 bytes");
+    static_assert(sizeof(Engine::Scene::Box2DTask) == 64, "Box2DTask size must equal 64 bytes for cache isolation");
+    EXPECT_EQ(alignof(Engine::Scene::Box2DTask), 64u);
+    EXPECT_EQ(sizeof(Engine::Scene::Box2DTask), 64u);
+
+    // 2. Verify adjacent task slots in Scene::m_Box2DTasks array are exactly 64 bytes apart
+    Engine::Scene scene;
+    const auto* slots = scene.GetBox2DTaskSlots();
+    const uintptr_t slot0 = reinterpret_cast<uintptr_t>(&slots[0]);
+    const uintptr_t slot1 = reinterpret_cast<uintptr_t>(&slots[1]);
+    EXPECT_EQ(slot1 - slot0, 64u);
+    EXPECT_EQ(slot0 % 64, 0u);
+    EXPECT_EQ(slot1 % 64, 0u);
+
+    // 3. Verify JobSystem queue alignments
+    static_assert(alignof(Engine::JobSystem::WorkerQueue) >= 64, "WorkerQueue must be aligned to 64 bytes");
+    static_assert(alignof(Engine::JobSystem::GlobalQueue) >= 64, "GlobalQueue must be aligned to 64 bytes");
+    EXPECT_GE(alignof(Engine::JobSystem::WorkerQueue), 64u);
+    EXPECT_GE(alignof(Engine::JobSystem::GlobalQueue), 64u);
+}
+
+TEST(JobSystemTest, HighFrequencySingleJobProducerConsumerStress) {
+    // Test with 4 worker threads
+    Engine::JobSystem::Init(4);
+    EXPECT_TRUE(Engine::JobSystem::IsInitialized());
+
+    // 1. High-frequency sequential producer-consumer stress (single job dispatch + wait in tight loop)
+    // This is the maximum hazard pattern for condition variable lost wakeups
+    constexpr int kSequentialIterations = 10000;
+    std::atomic<int> seqCounter{ 0 };
+
+    for (int i = 0; i < kSequentialIterations; ++i) {
+        auto handle = Engine::JobSystem::Dispatch([&seqCounter]() {
+            seqCounter.fetch_add(1, std::memory_order_relaxed);
+        });
+        handle.Wait();
+    }
+    EXPECT_EQ(seqCounter.load(std::memory_order_relaxed), kSequentialIterations);
+    EXPECT_EQ(Engine::JobSystem::GetPendingJobCount(), 0u);
+
+    // 2. High-frequency parallel producer-consumer stress (100k micro-jobs dispatched concurrently)
+    constexpr int kConcurrentJobs = 100000;
+    std::atomic<int> concurrentCounter{ 0 };
+    std::vector<Engine::JobHandle> handles;
+    handles.reserve(kConcurrentJobs);
+
+    for (int i = 0; i < kConcurrentJobs; ++i) {
+        handles.push_back(Engine::JobSystem::Dispatch([&concurrentCounter]() {
+            concurrentCounter.fetch_add(1, std::memory_order_relaxed);
+        }));
+    }
+
+    Engine::JobSystem::WaitAll(handles);
+    EXPECT_EQ(concurrentCounter.load(std::memory_order_relaxed), kConcurrentJobs);
+    EXPECT_EQ(Engine::JobSystem::GetPendingJobCount(), 0u);
+
+    Engine::JobSystem::Shutdown();
+    EXPECT_FALSE(Engine::JobSystem::IsInitialized());
 }
 
 } // namespace
