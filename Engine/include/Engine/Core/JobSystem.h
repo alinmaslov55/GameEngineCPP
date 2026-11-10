@@ -1,18 +1,20 @@
 #ifndef CORE_JOBSYSTEM_H
 #define CORE_JOBSYSTEM_H
 
+#include <algorithm>
+#include <array>
+#include <atomic>
+#include <concepts>
+#include <condition_variable>
 #include <cstdint>
 #include <functional>
-#include <memory>
-#include <vector>
-#include <concepts>
 #include <latch>
-#include <atomic>
-#include <thread>
+#include <memory>
 #include <mutex>
-#include <condition_variable>
-#include <deque>
-#include <algorithm>
+#include <thread>
+#include <type_traits>
+#include <utility>
+#include <vector>
 
 namespace Engine {
 
@@ -24,6 +26,20 @@ struct JobState {
     std::function<void()> jobFunction;
     std::vector<std::shared_ptr<JobState>> continuations;
     std::mutex continuationMutex;
+};
+
+struct QueuedJob {
+    using RawCallback = void (*)(void*);
+
+    RawCallback callback = nullptr;
+    void* userData = nullptr;
+    std::shared_ptr<JobState> retainedState;
+
+    [[nodiscard]] bool IsValid() const noexcept {
+        return callback != nullptr || retainedState != nullptr;
+    }
+
+    void Execute();
 };
 
 class JobHandle {
@@ -78,59 +94,11 @@ public:
     // Returns true if a job was found and executed; false if no work is currently available
     static bool ExecuteOneJob();
 
-    // ParallelFor: Distributes [start, end) index iterations across worker threads using std::latch
-    // The calling thread participates in work stealing and returns only when all iterations complete
+    // ParallelFor: Distributes [start, end) index iterations across worker threads without per-chunk heap allocation
     template <typename IndexType, typename Func>
     requires std::integral<IndexType> && std::invocable<Func, IndexType>
     static void ParallelFor(IndexType start, IndexType end, Func&& func, size_t chunkSize = 0) {
-        if (start >= end) {
-            return;
-        }
-
-        const size_t totalItems = static_cast<size_t>(end - start);
-        const uint32_t workers = GetWorkerCount();
-
-        // If not initialized, only 1 item, or 0 workers, run sequentially on current thread
-        if (!IsInitialized() || workers == 0 || totalItems <= 1) {
-            for (IndexType i = start; i < end; ++i) {
-                func(i);
-            }
-            return;
-        }
-
-        const size_t threadsToUse = std::max<size_t>(1, workers + 1);
-        if (chunkSize == 0) {
-            chunkSize = std::max<size_t>(1, totalItems / (threadsToUse * 4));
-        }
-
-        const size_t chunkCount = (totalItems + chunkSize - 1) / chunkSize;
-        if (chunkCount <= 1) {
-            for (IndexType i = start; i < end; ++i) {
-                func(i);
-            }
-            return;
-        }
-
-        std::latch workDone(static_cast<ptrdiff_t>(chunkCount));
-
-        for (size_t c = 0; c < chunkCount; ++c) {
-            const IndexType chunkStart = start + static_cast<IndexType>(c * chunkSize);
-            const IndexType chunkEnd = std::min(end, chunkStart + static_cast<IndexType>(chunkSize));
-
-            Dispatch([&workDone, &func, chunkStart, chunkEnd]() {
-                for (IndexType i = chunkStart; i < chunkEnd; ++i) {
-                    func(i);
-                }
-                workDone.count_down();
-            });
-        }
-
-        while (!workDone.try_wait()) {
-            if (!ExecuteOneJob()) {
-                workDone.wait();
-                break;
-            }
-        }
+        ParallelForImpl<IndexType, Func, false>(start, end, std::forward<Func>(func), chunkSize);
     }
 
     // ParallelFor overload for count [0, count)
@@ -140,10 +108,124 @@ public:
         ParallelFor(static_cast<IndexType>(0), count, std::forward<Func>(func), chunkSize);
     }
 
-    // ParallelForBatched: Distributes [start, end) ranges as batches [batchStart, batchEnd)
+    // ParallelForBatched: Distributes [start, end) ranges as batches [batchStart, batchEnd) without per-chunk heap allocation
     template <typename IndexType, typename Func>
     requires std::integral<IndexType> && std::invocable<Func, IndexType, IndexType>
     static void ParallelForBatched(IndexType start, IndexType end, Func&& func, size_t chunkSize = 0) {
+        ParallelForImpl<IndexType, Func, true>(start, end, std::forward<Func>(func), chunkSize);
+    }
+
+    JobSystem(uint32_t workerCount);
+    ~JobSystem();
+
+    class JobRingBuffer {
+    public:
+        JobRingBuffer() : m_Buffer(128) {}
+
+        void PushBack(QueuedJob job) {
+            if (m_Size == m_Buffer.size()) {
+                Grow();
+            }
+            const size_t mask = m_Buffer.size() - 1;
+            m_Buffer[(m_Head + m_Size) & mask] = std::move(job);
+            ++m_Size;
+        }
+
+        bool PopBack(QueuedJob& outJob) noexcept {
+            if (m_Size == 0) return false;
+            --m_Size;
+            const size_t mask = m_Buffer.size() - 1;
+            const size_t tail = (m_Head + m_Size) & mask;
+            outJob = std::move(m_Buffer[tail]);
+            m_Buffer[tail] = QueuedJob{};
+            return true;
+        }
+
+        bool PopFront(QueuedJob& outJob) noexcept {
+            if (m_Size == 0) return false;
+            const size_t mask = m_Buffer.size() - 1;
+            outJob = std::move(m_Buffer[m_Head]);
+            m_Buffer[m_Head] = QueuedJob{};
+            m_Head = (m_Head + 1) & mask;
+            --m_Size;
+            return true;
+        }
+
+        [[nodiscard]] bool Empty() const noexcept { return m_Size == 0; }
+
+    private:
+        void Grow() {
+            const size_t oldCap = m_Buffer.size();
+            const size_t newCap = oldCap * 2;
+            std::vector<QueuedJob> next(newCap);
+            const size_t oldMask = oldCap - 1;
+            for (size_t i = 0; i < m_Size; ++i) {
+                next[i] = std::move(m_Buffer[(m_Head + i) & oldMask]);
+            }
+            m_Buffer = std::move(next);
+            m_Head = 0;
+        }
+
+        std::vector<QueuedJob> m_Buffer;
+        size_t m_Head = 0;
+        size_t m_Size = 0;
+    };
+
+    class alignas(64) WorkerQueue {
+    public:
+        void Push(QueuedJob job) {
+            std::lock_guard lock(m_Mutex);
+            m_Ring.PushBack(std::move(job));
+        }
+
+        bool PopLocal(QueuedJob& outJob) {
+            std::lock_guard lock(m_Mutex);
+            return m_Ring.PopBack(outJob);
+        }
+
+        bool Steal(QueuedJob& outJob) {
+            std::unique_lock lock(m_Mutex, std::try_to_lock);
+            if (!lock.owns_lock()) return false;
+            return m_Ring.PopFront(outJob);
+        }
+
+        bool Empty() const {
+            std::lock_guard lock(m_Mutex);
+            return m_Ring.Empty();
+        }
+
+    private:
+        mutable std::mutex m_Mutex;
+        JobRingBuffer m_Ring;
+    };
+
+    class alignas(64) GlobalQueue {
+    public:
+        void Push(QueuedJob job) {
+            std::lock_guard lock(m_Mutex);
+            m_Ring.PushBack(std::move(job));
+        }
+
+        bool Pop(QueuedJob& outJob) {
+            std::lock_guard lock(m_Mutex);
+            return m_Ring.PopFront(outJob);
+        }
+
+        bool Empty() const {
+            std::lock_guard lock(m_Mutex);
+            return m_Ring.Empty();
+        }
+
+    private:
+        mutable std::mutex m_Mutex;
+        JobRingBuffer m_Ring;
+    };
+
+private:
+    friend struct QueuedJob;
+
+    template <typename IndexType, typename Func, bool IsBatched>
+    static void ParallelForImpl(IndexType start, IndexType end, Func&& func, size_t chunkSize) {
         if (start >= end) {
             return;
         }
@@ -151,8 +233,14 @@ public:
         const size_t totalItems = static_cast<size_t>(end - start);
         const uint32_t workers = GetWorkerCount();
 
-        if (!IsInitialized() || workers == 0 || totalItems <= 1) {
-            func(start, end);
+        if (!IsInitialized() || workers == 0 || (!IsBatched && totalItems <= 1)) {
+            if constexpr (IsBatched) {
+                func(start, end);
+            } else {
+                for (IndexType i = start; i < end; ++i) {
+                    func(i);
+                }
+            }
             return;
         }
 
@@ -163,101 +251,91 @@ public:
 
         const size_t chunkCount = (totalItems + chunkSize - 1) / chunkSize;
         if (chunkCount <= 1) {
-            func(start, end);
+            if constexpr (IsBatched) {
+                func(start, end);
+            } else {
+                for (IndexType i = start; i < end; ++i) {
+                    func(i);
+                }
+            }
             return;
         }
 
+        using CleanFunc = std::remove_reference_t<Func>;
+        struct ParallelChunkPacket {
+            CleanFunc* func = nullptr;
+            std::latch* workDone = nullptr;
+            IndexType start{};
+            IndexType end{};
+        };
+
+        auto runner = [](void* raw) {
+            auto* packet = static_cast<ParallelChunkPacket*>(raw);
+            std::latch* latch = packet->workDone;
+            CleanFunc& fn = *(packet->func);
+            const IndexType s = packet->start;
+            const IndexType e = packet->end;
+            if constexpr (IsBatched) {
+                fn(s, e);
+            } else {
+                for (IndexType i = s; i < e; ++i) {
+                    fn(i);
+                }
+            }
+            latch->count_down();
+        };
+
         std::latch workDone(static_cast<ptrdiff_t>(chunkCount));
+
+        constexpr size_t kInlineChunkLimit = 64;
+        std::array<ParallelChunkPacket, kInlineChunkLimit> inlinePackets{};
+        std::vector<ParallelChunkPacket> overflowPackets;
+        ParallelChunkPacket* packets = nullptr;
+        if (chunkCount <= kInlineChunkLimit) {
+            packets = inlinePackets.data();
+        } else {
+            overflowPackets.resize(chunkCount);
+            packets = overflowPackets.data();
+        }
 
         for (size_t c = 0; c < chunkCount; ++c) {
             const IndexType chunkStart = start + static_cast<IndexType>(c * chunkSize);
             const IndexType chunkEnd = std::min(end, chunkStart + static_cast<IndexType>(chunkSize));
-
-            Dispatch([&workDone, &func, chunkStart, chunkEnd]() {
-                func(chunkStart, chunkEnd);
-                workDone.count_down();
-            });
+            packets[c].func = &func;
+            packets[c].workDone = &workDone;
+            packets[c].start = chunkStart;
+            packets[c].end = chunkEnd;
         }
 
-        while (!workDone.try_wait()) {
-            if (!ExecuteOneJob()) {
-                workDone.wait();
-                break;
+        // Synchronize with all workers before stack packets leave scope
+        struct LatchWaitGuard {
+            std::latch& latch;
+            ~LatchWaitGuard() {
+                while (!latch.try_wait()) {
+                    if (!ExecuteOneJob()) {
+                        latch.wait();
+                        break;
+                    }
+                }
             }
+        } waitGuard{ workDone };
+
+        for (size_t c = 0; c < chunkCount; ++c) {
+            SubmitRawJob(+runner, &packets[c]);
         }
     }
 
-    JobSystem(uint32_t workerCount);
-    ~JobSystem();
-
-    class alignas(64) WorkerQueue {
-    public:
-        void Push(std::shared_ptr<JobState> job) {
-            std::lock_guard lock(m_Mutex);
-            m_Jobs.push_back(std::move(job));
-        }
-
-        bool PopLocal(std::shared_ptr<JobState>& outJob) {
-            std::lock_guard lock(m_Mutex);
-            if (m_Jobs.empty()) return false;
-            outJob = std::move(m_Jobs.back());
-            m_Jobs.pop_back();
-            return true;
-        }
-
-        bool Steal(std::shared_ptr<JobState>& outJob) {
-            std::unique_lock lock(m_Mutex, std::try_to_lock);
-            if (!lock.owns_lock() || m_Jobs.empty()) return false;
-            outJob = std::move(m_Jobs.front());
-            m_Jobs.pop_front();
-            return true;
-        }
-
-        bool Empty() const {
-            std::lock_guard lock(m_Mutex);
-            return m_Jobs.empty();
-        }
-
-    private:
-        mutable std::mutex m_Mutex;
-        std::deque<std::shared_ptr<JobState>> m_Jobs;
-    };
-
-    class alignas(64) GlobalQueue {
-    public:
-        void Push(std::shared_ptr<JobState> job) {
-            std::lock_guard lock(m_Mutex);
-            m_Jobs.push_back(std::move(job));
-        }
-
-        bool Pop(std::shared_ptr<JobState>& outJob) {
-            std::lock_guard lock(m_Mutex);
-            if (m_Jobs.empty()) return false;
-            outJob = std::move(m_Jobs.front());
-            m_Jobs.pop_front();
-            return true;
-        }
-
-        bool Empty() const {
-            std::lock_guard lock(m_Mutex);
-            return m_Jobs.empty();
-        }
-
-    private:
-        mutable std::mutex m_Mutex;
-        std::deque<std::shared_ptr<JobState>> m_Jobs;
-    };
-
-private:
+    static void SubmitRawJob(QueuedJob::RawCallback callback, void* userData);
     void WorkerLoop(std::stop_token stopToken, uint32_t workerIndex);
-    std::shared_ptr<JobState> FindWork(uint32_t workerIndex);
+    QueuedJob FindWork(uint32_t workerIndex);
     void SubmitJob(std::shared_ptr<JobState> job);
+    void SubmitQueuedJob(QueuedJob&& job);
     static void ExecuteJobState(const std::shared_ptr<JobState>& jobState);
     bool HasPendingWork() const;
 
-    bool PopWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob);
-    bool StealWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob);
-    bool PopGlobalJob(std::shared_ptr<JobState>& outJob);
+    bool PopWorkerJob(uint32_t index, QueuedJob& outJob);
+    bool StealWorkerJob(uint32_t index, QueuedJob& outJob);
+    bool PopGlobalJob(QueuedJob& outJob);
 
 private:
     static std::unique_ptr<JobSystem> s_Instance;

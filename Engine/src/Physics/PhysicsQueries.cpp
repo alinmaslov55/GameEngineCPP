@@ -16,8 +16,8 @@ namespace Engine {
 namespace {
 
 struct OverlapContext {
-    std::unordered_set<GameObject*> uniqueHits;
     std::vector<GameObject*>* outHits = nullptr;
+    std::unordered_set<GameObject*>* overflowSet = nullptr;
 };
 
 bool Box2DOverlapCallback(b2ShapeId shapeId, void* context) {
@@ -29,8 +29,24 @@ bool Box2DOverlapCallback(b2ShapeId shapeId, void* context) {
     if (userData) {
         auto* go = static_cast<GameObject*>(userData);
         if (go && !go->IsPendingDestroy() && go->IsActiveInHierarchy()) {
-            if (ctx->uniqueHits.insert(go).second) {
-                ctx->outHits->push_back(go);
+            auto* hits = ctx->outHits;
+            constexpr size_t kLinearDedupThreshold = 32;
+            if (!ctx->overflowSet) {
+                if (std::find(hits->begin(), hits->end(), go) != hits->end()) {
+                    return true;
+                }
+                if (hits->size() >= kLinearDedupThreshold) {
+                    thread_local std::unordered_set<GameObject*> t_OverflowSet;
+                    t_OverflowSet.clear();
+                    t_OverflowSet.insert(hits->begin(), hits->end());
+                    ctx->overflowSet = &t_OverflowSet;
+                    if (!ctx->overflowSet->insert(go).second) {
+                        return true;
+                    }
+                }
+                hits->push_back(go);
+            } else if (ctx->overflowSet->insert(go).second) {
+                hits->push_back(go);
             }
         }
     }
@@ -110,41 +126,35 @@ void PhysicsQueries::OverlapArcXZ(const Scene& scene, glm::vec2 originXZ, glm::v
     outHits.clear();
     if (radius <= 0.0f) return;
 
-    std::vector<GameObject*> candidates;
-    OverlapCircleXZ(scene, originXZ, radius, maskBits, candidates);
-    if (candidates.empty()) return;
+    OverlapCircleXZ(scene, originXZ, radius, maskBits, outHits);
+    if (outHits.empty()) return;
 
     const float lenSq = glm::dot(forwardXZ, forwardXZ);
     if (lenSq < 1e-6f || halfAngleDegrees >= 180.0f) {
-        outHits = std::move(candidates);
         return;
     }
 
     const glm::vec2 fwd = forwardXZ / std::sqrt(lenSq);
     const float cosThreshold = std::cos(glm::radians(halfAngleDegrees));
 
-    for (auto* go : candidates) {
-        if (!go) continue;
+    std::erase_if(outHits, [&](GameObject* go) {
+        if (!go) return true;
         auto* t = go->GetTransform();
-        if (!t) continue;
+        if (!t) return true;
 
         const glm::vec3 worldPos = t->GetWorldPosition();
-        glm::vec2 targetXZ{ worldPos.x, worldPos.z };
-        glm::vec2 toTarget = targetXZ - originXZ;
-        float distSq = glm::dot(toTarget, toTarget);
+        const glm::vec2 targetXZ{ worldPos.x, worldPos.z };
+        const glm::vec2 toTarget = targetXZ - originXZ;
+        const float distSq = glm::dot(toTarget, toTarget);
 
         if (distSq < 1e-6f) {
-            // Target is coincident with query origin
-            outHits.push_back(go);
-            continue;
+            return false; // Target is coincident with query origin -> keep
         }
 
-        glm::vec2 dir = toTarget / std::sqrt(distSq);
-        float dot = glm::dot(fwd, dir);
-        if (dot >= (cosThreshold - 1e-5f)) {
-            outHits.push_back(go);
-        }
-    }
+        const glm::vec2 dir = toTarget / std::sqrt(distSq);
+        const float dot = glm::dot(fwd, dir);
+        return dot < (cosThreshold - 1e-5f);
+    });
 }
 
 bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm::vec2 endXZ,

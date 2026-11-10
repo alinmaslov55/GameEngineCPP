@@ -280,5 +280,57 @@ TEST(JobSystemTest, HighFrequencySingleJobProducerConsumerStress) {
     EXPECT_FALSE(Engine::JobSystem::IsInitialized());
 }
 
+TEST(JobSystemTest, ParallelFor_StackPacketInlineAndOverflowExecution) {
+    Engine::JobSystem::Init(4);
+
+    // 1. Default inline stack packet path (chunkCount <= 64) for ParallelFor & ParallelForBatched
+    constexpr size_t kInlineItems = 1024;
+    std::vector<int> values(kInlineItems, 0);
+
+    Engine::JobSystem::ParallelFor(kInlineItems, [&values](size_t i) {
+        values[i] = static_cast<int>(i * 2);
+    });
+    for (size_t i = 0; i < kInlineItems; ++i) {
+        EXPECT_EQ(values[i], static_cast<int>(i * 2));
+    }
+
+    Engine::JobSystem::ParallelForBatched(size_t(0), kInlineItems, [&values](size_t start, size_t end) {
+        for (size_t i = start; i < end; ++i) {
+            values[i] += 1;
+        }
+    });
+    for (size_t i = 0; i < kInlineItems; ++i) {
+        EXPECT_EQ(values[i], static_cast<int>(i * 2 + 1));
+    }
+
+    // 2. Overflow packet path (chunkCount = 150 > kInlineChunkLimit=64 via explicit chunkSize=1)
+    constexpr size_t kOverflowChunks = 150;
+    std::vector<std::atomic<int>> overflowCounts(kOverflowChunks);
+    for (auto& c : overflowCounts) c.store(0, std::memory_order_relaxed);
+
+    Engine::JobSystem::ParallelFor(kOverflowChunks, [&overflowCounts](size_t i) {
+        overflowCounts[i].fetch_add(1, std::memory_order_relaxed);
+    }, /*chunkSize=*/1);
+
+    for (size_t i = 0; i < kOverflowChunks; ++i) {
+        EXPECT_EQ(overflowCounts[i].load(std::memory_order_relaxed), 1);
+    }
+
+    // 3. Nested ParallelFor + Ring buffer wrap-around burst (> 128 initial slots)
+    constexpr size_t kBurstRounds = 20;
+    std::atomic<int> nestedSum{ 0 };
+    for (size_t round = 0; round < kBurstRounds; ++round) {
+        Engine::JobSystem::ParallelFor(size_t(8), [&nestedSum](size_t) {
+            Engine::JobSystem::ParallelFor(size_t(16), [&nestedSum](size_t) {
+                nestedSum.fetch_add(1, std::memory_order_relaxed);
+            }, /*chunkSize=*/2);
+        }, /*chunkSize=*/1);
+    }
+    EXPECT_EQ(nestedSum.load(std::memory_order_relaxed), static_cast<int>(kBurstRounds * 8 * 16));
+    EXPECT_EQ(Engine::JobSystem::GetPendingJobCount(), 0u);
+
+    Engine::JobSystem::Shutdown();
+}
+
 } // namespace
 

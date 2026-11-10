@@ -90,6 +90,7 @@ public:
     [[nodiscard]] bool IsSpatialGridDirty() const noexcept { return m_StaticCollidersDirty; }
     [[nodiscard]] size_t GetStaticGridCellCount() const noexcept { return m_StaticGrid.size(); }
     [[nodiscard]] size_t GetStaticColliderCount() const noexcept { return m_StaticColliders.size(); }
+    [[nodiscard]] size_t GetContactedPairsScratchCapacity() const noexcept { return m_ContactedPairsScratch.capacity(); }
 
 private:
     static void* Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int minRange, void* taskContext, void* userContext);
@@ -126,6 +127,12 @@ private:
         BoxCollider2D* collider = nullptr;
     };
 
+    struct ShapePairKey {
+        uint64_t a = 0;
+        uint64_t b = 0;
+        bool operator==(const ShapePairKey&) const noexcept = default;
+    };
+
     Scene* m_Scene{ nullptr };
     bool m_IsRuntimeRunning{ false };
     uint32_t m_PhysicsWorldId{ 0 };
@@ -134,6 +141,7 @@ private:
     std::vector<GameObject*> m_PendingPhysicsSync;
     std::vector<PhysicsBodyEntry> m_PhysicsBodies;
     std::unordered_map<GameObject*, size_t> m_PhysicsBodyIndices;
+    std::vector<ShapePairKey> m_ContactedPairsScratch;
 
     // Box2D v3 multithreaded task management pool (zero heap allocation)
     alignas(64) std::array<Box2DTask, kMaxBox2DTasks> m_Box2DTasks;

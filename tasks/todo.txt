@@ -140,7 +140,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Optional: Parallelize pure math vertical integration across dense entries via `JobSystem::ParallelForBatched` (collecting only threshold-crossing entities for main-thread `b2Shape_SetFilter`).
     - Expected Impact: 5x-15x faster physics sync & elevation step on cluttered diorama scenes with 300+ standees.
 
-[ ] 14. Eliminate Per-Step & Per-Query Dynamic Heap Allocations (Zero-Allocation Hot Paths)
+[x] 14. Eliminate Per-Step & Per-Query Dynamic Heap Allocations (Zero-Allocation Hot Paths)
     - Files: Engine/src/Scene/Scene.cpp (lines 1831-1915), Engine/src/Physics/PhysicsQueries.cpp (lines 17-37, 41-141), Engine/include/Engine/Core/JobSystem.h (lines 114-185)
     - Details:
       * `ProcessPhysicsEvents()`: Allocate persistent `m_ContactedPairsScratch` (sorted uint64 key vector or reusable hash set) instead of constructing a fresh `std::unordered_set` every substep; early-return before allocation when all Box2D event counts are 0.

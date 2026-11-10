@@ -3,6 +3,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsWorld2D.h"
 #include "Engine/Physics/Collision2DInfo.h"
 #include "Engine/Scene/SceneSerializer.h"
 #include <box2d/box2d.h>
@@ -428,4 +429,55 @@ TEST_F(ContactAndSensorEventTest, SceneSerializerCircleAndCapsuleRoundTrip) {
     EXPECT_FLOAT_EQ(dstCapsule->Restitution, 0.2f);
     EXPECT_FALSE(dstCapsule->IsSensor);
     EXPECT_TRUE(dstCapsule->EnableHitEvents);
+}
+
+// 8. Persistent zero-allocation contact scratch deduplication and empty-event early return
+TEST_F(ContactAndSensorEventTest, ProcessPhysicsEvents_EarlyReturnAndReusableScratchDeduplication) {
+    Engine::Scene scene("ZeroAllocContactEventScene");
+    scene.OnRuntimeStart();
+
+    // 1. Pre-reserved capacity persists across empty physics steps
+    EXPECT_GE(scene.GetPhysicsWorld().GetContactedPairsScratchCapacity(), 64u);
+    for (int i = 0; i < 10; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    const size_t capBefore = scene.GetPhysicsWorld().GetContactedPairsScratchCapacity();
+
+    // 2. High-speed collision triggering Hit + Begin events deduplicates into a single OnCollisionEnter2D call
+    auto* striker = scene.CreateGameObject("Striker");
+    striker->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* rbA = striker->AddComponent<Engine::Rigidbody2D>();
+    rbA->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rbA->LinearDamping = 0.0f;
+    rbA->IsBullet = true;
+    auto* colA = striker->AddComponent<Engine::CircleCollider2D>();
+    colA->Radius = 0.35f;
+    colA->EnableHitEvents = true;
+    auto* recvA = striker->AddComponent<TestEventReceiver>();
+
+    auto* target = scene.CreateGameObject("TargetWall");
+    target->GetTransform()->position = { 1.5f, 0.0f, 0.0f };
+    auto* colB = target->AddComponent<Engine::BoxCollider2D>();
+    colB->size = { 0.5f, 2.0f };
+    colB->EnableHitEvents = true;
+    auto* recvB = target->AddComponent<TestEventReceiver>();
+
+    rbA->SetVelocityXZ({ 25.0f, 0.0f });
+
+    bool entered = false;
+    for (int i = 0; i < 10; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+        if (recvA->CollisionEnterCount > 0) {
+            entered = true;
+            break;
+        }
+    }
+
+    EXPECT_TRUE(entered);
+    EXPECT_EQ(recvA->CollisionEnterCount, 1);
+    EXPECT_EQ(recvB->CollisionEnterCount, 1);
+    EXPECT_GT(recvA->LastCollisionInfo.ApproachSpeed, 0.0f);
+    EXPECT_EQ(scene.GetPhysicsWorld().GetContactedPairsScratchCapacity(), capBefore);
+
+    scene.OnRuntimeStop();
 }

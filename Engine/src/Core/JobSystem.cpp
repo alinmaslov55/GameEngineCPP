@@ -207,7 +207,15 @@ void JobSystem::WaitAll(const std::vector<JobHandle>& handles) {
     }
 }
 
-bool JobSystem::PopWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob) {
+void QueuedJob::Execute() {
+    if (callback) {
+        callback(userData);
+    } else if (retainedState) {
+        JobSystem::ExecuteJobState(retainedState);
+    }
+}
+
+bool JobSystem::PopWorkerJob(uint32_t index, QueuedJob& outJob) {
     if (m_WorkerQueues[index]->PopLocal(outJob)) {
         m_PendingJobs.fetch_sub(1, std::memory_order_seq_cst);
         return true;
@@ -215,7 +223,7 @@ bool JobSystem::PopWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob) 
     return false;
 }
 
-bool JobSystem::StealWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob) {
+bool JobSystem::StealWorkerJob(uint32_t index, QueuedJob& outJob) {
     if (m_WorkerQueues[index]->Steal(outJob)) {
         m_PendingJobs.fetch_sub(1, std::memory_order_seq_cst);
         return true;
@@ -223,7 +231,7 @@ bool JobSystem::StealWorkerJob(uint32_t index, std::shared_ptr<JobState>& outJob
     return false;
 }
 
-bool JobSystem::PopGlobalJob(std::shared_ptr<JobState>& outJob) {
+bool JobSystem::PopGlobalJob(QueuedJob& outJob) {
     if (m_GlobalQueue.Pop(outJob)) {
         m_PendingJobs.fetch_sub(1, std::memory_order_seq_cst);
         return true;
@@ -235,9 +243,9 @@ void JobSystem::WorkerLoop(std::stop_token stopToken, uint32_t workerIndex) {
     t_WorkerIndex = static_cast<int32_t>(workerIndex);
 
     while (!stopToken.stop_requested()) {
-        std::shared_ptr<JobState> job = FindWork(workerIndex);
-        if (job) {
-            ExecuteJobState(job);
+        QueuedJob job = FindWork(workerIndex);
+        if (job.IsValid()) {
+            job.Execute();
         } else {
             std::unique_lock lock(m_WakeMutex);
             if (stopToken.stop_requested() || m_PendingJobs.load(std::memory_order_seq_cst) > 0) {
@@ -253,8 +261,8 @@ void JobSystem::WorkerLoop(std::stop_token stopToken, uint32_t workerIndex) {
     }
 }
 
-std::shared_ptr<JobState> JobSystem::FindWork(uint32_t workerIndex) {
-    std::shared_ptr<JobState> job;
+QueuedJob JobSystem::FindWork(uint32_t workerIndex) {
+    QueuedJob job;
 
     // 1. Try local worker queue (LIFO for hot cache)
     if (PopWorkerJob(workerIndex, job)) {
@@ -277,23 +285,19 @@ std::shared_ptr<JobState> JobSystem::FindWork(uint32_t workerIndex) {
         }
     }
 
-    return nullptr;
+    return {};
 }
 
-void JobSystem::SubmitJob(std::shared_ptr<JobState> job) {
-    if (!job) return;
-
-    int32_t wIdx = t_WorkerIndex;
+void JobSystem::SubmitQueuedJob(QueuedJob&& job) {
+    const int32_t wIdx = t_WorkerIndex;
     if (wIdx >= 0 && static_cast<size_t>(wIdx) < m_WorkerQueues.size()) {
         m_WorkerQueues[wIdx]->Push(std::move(job));
+    } else if (!m_WorkerQueues.empty()) {
+        static std::atomic<uint32_t> s_WorkerDispatchIndex{ 0 };
+        const uint32_t idx = s_WorkerDispatchIndex.fetch_add(1, std::memory_order_relaxed) % m_WorkerQueues.size();
+        m_WorkerQueues[idx]->Push(std::move(job));
     } else {
-        if (!m_WorkerQueues.empty()) {
-            static std::atomic<uint32_t> s_WorkerDispatchIndex{ 0 };
-            uint32_t idx = s_WorkerDispatchIndex.fetch_add(1, std::memory_order_relaxed) % m_WorkerQueues.size();
-            m_WorkerQueues[idx]->Push(std::move(job));
-        } else {
-            m_GlobalQueue.Push(std::move(job));
-        }
+        m_GlobalQueue.Push(std::move(job));
     }
 
     m_PendingJobs.fetch_add(1, std::memory_order_seq_cst);
@@ -302,6 +306,25 @@ void JobSystem::SubmitJob(std::shared_ptr<JobState> job) {
         std::lock_guard lock(m_WakeMutex);
         m_WakeCV.notify_one();
     }
+}
+
+void JobSystem::SubmitJob(std::shared_ptr<JobState> job) {
+    if (!job) return;
+    QueuedJob entry;
+    entry.retainedState = std::move(job);
+    SubmitQueuedJob(std::move(entry));
+}
+
+void JobSystem::SubmitRawJob(QueuedJob::RawCallback callback, void* userData) {
+    if (!callback) return;
+    if (!IsInitialized()) {
+        callback(userData);
+        return;
+    }
+    QueuedJob entry;
+    entry.callback = callback;
+    entry.userData = userData;
+    s_Instance->SubmitQueuedJob(std::move(entry));
 }
 
 void JobSystem::ExecuteJobState(const std::shared_ptr<JobState>& jobState) {
@@ -348,8 +371,8 @@ bool JobSystem::ExecuteOneJob() {
         return false;
     }
 
-    int32_t wIdx = t_WorkerIndex;
-    std::shared_ptr<JobState> job;
+    const int32_t wIdx = t_WorkerIndex;
+    QueuedJob job;
 
     if (wIdx >= 0 && static_cast<size_t>(wIdx) < s_Instance->m_WorkerQueues.size()) {
         job = s_Instance->FindWork(static_cast<uint32_t>(wIdx));
@@ -364,8 +387,8 @@ bool JobSystem::ExecuteOneJob() {
         }
     }
 
-    if (job) {
-        ExecuteJobState(job);
+    if (job.IsValid()) {
+        job.Execute();
         return true;
     }
 

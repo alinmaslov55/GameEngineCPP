@@ -15,13 +15,14 @@
 #include <box2d/math_functions.h>
 #include <algorithm>
 #include <cmath>
-#include <unordered_set>
 #include <utility>
 
 namespace Engine {
 
 PhysicsWorld2D::PhysicsWorld2D(Scene* scene) noexcept
-    : m_Scene(scene) {}
+    : m_Scene(scene) {
+    m_ContactedPairsScratch.reserve(64);
+}
 
 PhysicsWorld2D::~PhysicsWorld2D() {
     if (m_IsRuntimeRunning) {
@@ -783,21 +784,21 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
     b2ContactEvents contacts = b2World_GetContactEvents(worldId);
     b2SensorEvents sensors = b2World_GetSensorEvents(worldId);
 
+    if (contacts.hitCount == 0 && contacts.beginCount == 0 && contacts.endCount == 0 &&
+        sensors.beginCount == 0 && sensors.endCount == 0) {
+        return;
+    }
+
     // Guard entity lifecycle so DestroyGameObject calls during event dispatch defer to lifecycle queues
     Scene::ScopedIterationGuard guard(*m_Scene);
 
-    struct PairHash {
-        size_t operator()(const std::pair<uint64_t, uint64_t>& p) const noexcept {
-            return std::hash<uint64_t>{}(p.first) ^ (std::hash<uint64_t>{}(p.second) + 0x9e3779b97f4a7c15ULL + (std::hash<uint64_t>{}(p.first) << 6) + (std::hash<uint64_t>{}(p.first) >> 2));
-        }
-    };
-    std::unordered_set<std::pair<uint64_t, uint64_t>, PairHash> contactedPairs;
+    m_ContactedPairsScratch.clear();
 
-    auto makePair = [](b2ShapeId a, b2ShapeId b) {
+    auto makePair = [](b2ShapeId a, b2ShapeId b) noexcept -> ShapePairKey {
         uint64_t idA = b2StoreShapeId(a);
         uint64_t idB = b2StoreShapeId(b);
         if (idA > idB) std::swap(idA, idB);
-        return std::make_pair(idA, idB);
+        return ShapePairKey{ idA, idB };
     };
 
     // 1. Process Contact Hit Events
@@ -814,7 +815,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         if (!goA || !goB || goA == goB) continue;
         if (goA->IsPendingDestroy() || goB->IsPendingDestroy()) continue;
 
-        contactedPairs.insert(makePair(hit.shapeIdA, hit.shapeIdB));
+        m_ContactedPairsScratch.push_back(makePair(hit.shapeIdA, hit.shapeIdB));
 
         const b2BodyType typeA = b2Body_GetType(bodyA);
         const b2BodyType typeB = b2Body_GetType(bodyB);
@@ -859,9 +860,11 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         const b2ContactBeginTouchEvent& begin = contacts.beginEvents[i];
         if (!b2Shape_IsValid(begin.shapeIdA) || !b2Shape_IsValid(begin.shapeIdB)) continue;
 
-        auto pair = makePair(begin.shapeIdA, begin.shapeIdB);
-        if (contactedPairs.count(pair) > 0) continue;
-        contactedPairs.insert(pair);
+        const ShapePairKey pair = makePair(begin.shapeIdA, begin.shapeIdB);
+        if (std::find(m_ContactedPairsScratch.begin(), m_ContactedPairsScratch.end(), pair) != m_ContactedPairsScratch.end()) {
+            continue;
+        }
+        m_ContactedPairsScratch.push_back(pair);
 
         b2BodyId bodyA = b2Shape_GetBody(begin.shapeIdA);
         b2BodyId bodyB = b2Shape_GetBody(begin.shapeIdB);

@@ -509,4 +509,85 @@ TEST(SpatialQueriesAndStasisTest, PhysicsQueries_NonRuntimeRaycastContainmentAnd
     EXPECT_NEAR(hit.PointXZ.y, 0.5f, 0.05f);
 }
 
+TEST(SpatialQueriesAndStasisTest, OverlapCircleXZ_ZeroAllocationDedupBelowAndAbove32) {
+    Engine::Scene scene("OverlapDedupScaleScene");
+
+    // 45 entities clustered near origin, each with TWO shapes (Box + Circle) to stress multi-shape dedup
+    constexpr int kEntityCount = 45;
+    for (int i = 0; i < kEntityCount; ++i) {
+        auto* go = scene.CreateGameObject("ClusterTarget");
+        // First 10 tightly inside radius 1.5m; remaining 35 inside radius 8.0m
+        const float dist = (i < 10) ? (0.1f * static_cast<float>(i)) : (2.0f + 0.1f * static_cast<float>(i));
+        go->GetTransform()->position = { dist, 0.0f, 0.0f };
+        auto* rb = go->AddComponent<Engine::Rigidbody2D>();
+        rb->Type = Engine::Rigidbody2D::BodyType::Static;
+        auto* box = go->AddComponent<Engine::BoxCollider2D>();
+        box->size = { 0.4f, 0.4f };
+        box->CategoryBits = Engine::PhysicsLayer::Enemy;
+        auto* circle = go->AddComponent<Engine::CircleCollider2D>();
+        circle->Radius = 0.25f;
+        circle->CategoryBits = Engine::PhysicsLayer::Enemy;
+    }
+
+    scene.OnRuntimeStart();
+
+    std::vector<Engine::GameObject*> hits;
+    hits.reserve(64);
+    const auto* initialDataPtr = hits.data();
+    const size_t initialCap = hits.capacity();
+
+    // 1. Small query (<= 32 hits): linear scan dedup returns strictly unique entities with zero reallocation
+    scene.OverlapCircleXZ(glm::vec2{ 0.0f, 0.0f }, 1.5f, Engine::PhysicsLayer::Enemy, hits);
+    EXPECT_EQ(hits.size(), 10u);
+    EXPECT_EQ(hits.data(), initialDataPtr);
+    EXPECT_EQ(hits.capacity(), initialCap);
+
+    // 2. Overflow query (> 32 hits): transitions seamlessly to thread-local overflow set & dedups all 45 multi-shape bodies
+    scene.OverlapCircleXZ(glm::vec2{ 0.0f, 0.0f }, 10.0f, Engine::PhysicsLayer::Enemy, hits);
+    EXPECT_EQ(hits.size(), static_cast<size_t>(kEntityCount));
+    EXPECT_EQ(hits.data(), initialDataPtr);
+    EXPECT_EQ(hits.capacity(), initialCap);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SpatialQueriesAndStasisTest, OverlapArcXZ_InPlaceFilteringReusesCallerBuffer) {
+    Engine::Scene scene("OverlapArcInPlaceScene");
+
+    // Front target (+Z), Coincident target (0,0), Rear target (-Z)
+    auto* front = scene.CreateGameObject("FrontTarget");
+    front->GetTransform()->position = { 0.0f, 0.0f, 2.0f };
+    front->AddComponent<Engine::CircleCollider2D>()->CategoryBits = Engine::PhysicsLayer::Enemy;
+
+    auto* coincident = scene.CreateGameObject("CoincidentTarget");
+    coincident->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    coincident->AddComponent<Engine::CircleCollider2D>()->CategoryBits = Engine::PhysicsLayer::Enemy;
+
+    auto* rear = scene.CreateGameObject("RearTarget");
+    rear->GetTransform()->position = { 0.0f, 0.0f, -2.0f };
+    rear->AddComponent<Engine::CircleCollider2D>()->CategoryBits = Engine::PhysicsLayer::Enemy;
+
+    scene.OnRuntimeStart();
+
+    std::vector<Engine::GameObject*> hits;
+    hits.reserve(32);
+    const auto* initialDataPtr = hits.data();
+    const size_t initialCap = hits.capacity();
+
+    scene.OverlapArcXZ(glm::vec2{ 0.0f, 0.0f }, glm::vec2{ 0.0f, 1.0f }, 5.0f, 45.0f, Engine::PhysicsLayer::Enemy, hits);
+
+    EXPECT_EQ(hits.data(), initialDataPtr);
+    EXPECT_EQ(hits.capacity(), initialCap);
+    EXPECT_EQ(hits.size(), 2u);
+
+    const bool hasFront = std::find(hits.begin(), hits.end(), front) != hits.end();
+    const bool hasCoincident = std::find(hits.begin(), hits.end(), coincident) != hits.end();
+    const bool hasRear = std::find(hits.begin(), hits.end(), rear) != hits.end();
+    EXPECT_TRUE(hasFront);
+    EXPECT_TRUE(hasCoincident);
+    EXPECT_FALSE(hasRear);
+
+    scene.OnRuntimeStop();
+}
+
 } // namespace
