@@ -8,6 +8,22 @@
 
 namespace Engine {
 
+namespace {
+
+[[nodiscard]] float ComputeEffectiveVerticalFOVRadians(float verticalFovDeg,
+                                                       float portraitHorizontalFovDeg,
+                                                       float aspectRatio,
+                                                       FOVAdaptationMode mode) noexcept {
+    if (mode == FOVAdaptationMode::LandscapeVert_PortraitHorz && aspectRatio < 1.0f) {
+        const float horizFovRad = glm::radians(portraitHorizontalFovDeg);
+        const float halfHorizTan = std::tan(horizFovRad * 0.5f);
+        return 2.0f * std::atan(halfHorizTan / aspectRatio);
+    }
+    return glm::radians(verticalFovDeg);
+}
+
+} // namespace
+
 PerspectiveCamera::PerspectiveCamera(float fovDegrees, float aspectRatio, float nearClip, float farClip)
     : m_FOVDegrees(std::clamp(fovDegrees, 10.0f, 110.0f)),
       m_AspectRatio(aspectRatio > 0.001f ? aspectRatio : (16.0f / 9.0f)),
@@ -40,8 +56,42 @@ void PerspectiveCamera::SetAspectRatio(float aspectRatio) {
 }
 
 void PerspectiveCamera::SetFOVDegrees(float fovDegrees) {
-    m_FOVDegrees = std::clamp(fovDegrees, 10.0f, 110.0f);
+    const float clamped = std::clamp(fovDegrees, 10.0f, 110.0f);
+    if (std::abs(m_FOVDegrees - clamped) < 1e-6f) {
+        return;
+    }
+    m_FOVDegrees = clamped;
     RecalculateProjection();
+}
+
+void PerspectiveCamera::SetFOVAdaptationMode(FOVAdaptationMode mode) {
+    if (m_FOVAdaptationMode == mode) {
+        return;
+    }
+    m_FOVAdaptationMode = mode;
+    RecalculateProjection();
+}
+
+void PerspectiveCamera::SetPortraitHorizontalFOVDegrees(float horizontalFovDegrees) {
+    const float clamped = std::clamp(horizontalFovDegrees, 10.0f, 120.0f);
+    if (std::abs(m_PortraitHorizontalFOVDegrees - clamped) < 1e-6f) {
+        return;
+    }
+    m_PortraitHorizontalFOVDegrees = clamped;
+    RecalculateProjection();
+}
+
+float PerspectiveCamera::GetEffectiveVerticalFOVDegrees() const noexcept {
+    return glm::degrees(ComputeEffectiveVerticalFOVRadians(
+        m_FOVDegrees, m_PortraitHorizontalFOVDegrees, m_AspectRatio, m_FOVAdaptationMode));
+}
+
+float PerspectiveCamera::GetEffectiveHorizontalFOVDegrees() const noexcept {
+    if (m_FOVAdaptationMode == FOVAdaptationMode::LandscapeVert_PortraitHorz && m_AspectRatio < 1.0f) {
+        return m_PortraitHorizontalFOVDegrees;
+    }
+    const float halfVertTan = std::tan(glm::radians(m_FOVDegrees) * 0.5f);
+    return glm::degrees(2.0f * std::atan(halfVertTan * m_AspectRatio));
 }
 
 void PerspectiveCamera::SetFocalPoint(const glm::vec3& focalPoint) {
@@ -71,7 +121,9 @@ void PerspectiveCamera::UpdateDerivedMatrices() {
 }
 
 void PerspectiveCamera::RecalculateProjection() {
-    m_ProjectionMatrix = glm::perspective(glm::radians(m_FOVDegrees), m_AspectRatio, m_NearClip, m_FarClip);
+    const float effectiveVertFovRad = ComputeEffectiveVerticalFOVRadians(
+        m_FOVDegrees, m_PortraitHorizontalFOVDegrees, m_AspectRatio, m_FOVAdaptationMode);
+    m_ProjectionMatrix = glm::perspective(effectiveVertFovRad, m_AspectRatio, m_NearClip, m_FarClip);
     UpdateDerivedMatrices();
 }
 

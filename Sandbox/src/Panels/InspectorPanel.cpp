@@ -685,7 +685,16 @@ void InspectorPanel::DrawCapsuleCollider2D(Engine::CapsuleCollider2D& capsuleCol
 
 void InspectorPanel::DrawCamera(Engine::CameraComponent& camComp, Engine::GameObject* entity) {
     bool changed = false;
-    changed |= ImGui::SliderFloat("FOV (deg)", &camComp.FOV, 15.0f, 90.0f, "%.1f");
+    const char* modeItems[] = { "Fixed Vertical (Hor+)", "Adaptive (Landscape vFOV / Portrait hFOV)" };
+    int currentMode = static_cast<int>(camComp.FOVMode);
+    if (ImGui::Combo("FOV Adaptation", &currentMode, modeItems, IM_ARRAYSIZE(modeItems))) {
+        camComp.FOVMode = static_cast<Engine::FOVAdaptationMode>(currentMode);
+        changed = true;
+    }
+    changed |= ImGui::SliderFloat("Landscape vFOV (deg)", &camComp.FOV, 15.0f, 90.0f, "%.1f");
+    if (camComp.FOVMode == Engine::FOVAdaptationMode::LandscapeVert_PortraitHorz) {
+        changed |= ImGui::SliderFloat("Portrait hFOV (deg)", &camComp.PortraitHorizontalFOV, 12.0f, 90.0f, "%.1f");
+    }
     changed |= ImGui::DragFloat("Distance", &camComp.Distance, 0.2f, 2.0f, 80.0f);
     changed |= ImGui::SliderFloat("Pitch (deg)", &camComp.Pitch, 15.0f, 80.0f, "%.1f");
     changed |= ImGui::DragFloat("Yaw (deg)", &camComp.Yaw, 0.5f, -360.0f, 360.0f);

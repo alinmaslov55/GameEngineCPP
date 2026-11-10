@@ -36,7 +36,7 @@ void EditorCamera::Pan(const glm::vec2& pixelDelta, const glm::vec2& viewportSiz
         return;
     }
 
-    const float halfFovTan = std::tan(glm::radians(m_Camera.GetFOVDegrees() * 0.5f));
+    const float halfFovTan = std::tan(glm::radians(m_Camera.GetEffectiveVerticalFOVDegrees() * 0.5f));
     const float frustumHeight = 2.0f * m_Camera.GetDistance() * halfFovTan;
     const float frustumWidth = frustumHeight * m_Camera.GetAspectRatio();
 

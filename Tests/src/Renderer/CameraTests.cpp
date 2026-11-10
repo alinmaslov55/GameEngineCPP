@@ -3,10 +3,30 @@
 #include "Engine/Renderer/EditorCamera.h"
 #include "Engine/Renderer/OrthographicCamera.h"
 #include "Engine/Scene/CameraComponent.h"
+#include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/Scene.h"
+#include "Engine/Scene/SceneSerializer.h"
 #include "Engine/Scene/Transform.h"
 
+#include <algorithm>
+#include <cmath>
+#include <filesystem>
+
 namespace {
+
+[[nodiscard]] glm::vec3 UnprojectRayFromNDC(const Engine::PerspectiveCamera& cam, const glm::vec2& ndc) {
+    const glm::mat4 invVP = cam.GetInverseViewProjectionMatrix();
+    glm::vec4 nearPt = invVP * glm::vec4(ndc.x, ndc.y, -1.0f, 1.0f);
+    glm::vec4 farPt  = invVP * glm::vec4(ndc.x, ndc.y,  1.0f, 1.0f);
+    nearPt /= nearPt.w;
+    farPt  /= farPt.w;
+    return glm::normalize(glm::vec3(farPt) - glm::vec3(nearPt));
+}
+
+[[nodiscard]] float RayConeAngleDegrees(const glm::vec3& rayA, const glm::vec3& rayB) {
+    return glm::degrees(std::acos(std::clamp(glm::dot(rayA, rayB), -1.0f, 1.0f)));
+}
 
 TEST(PerspectiveCameraTest, OrthonormalBasisAndGroundRaycasting) {
     Engine::PerspectiveCamera cam(32.0f, 16.0f / 9.0f, 0.1f, 250.0f);
@@ -49,6 +69,129 @@ TEST(PerspectiveCameraTest, OrthonormalBasisAndGroundRaycasting) {
     EXPECT_NEAR(angledCenterHit.z, 7.0f, 1e-3f);
 }
 
+TEST(PerspectiveCameraTest, AdaptiveFOVLandscapeAndPortraitRayCones) {
+    Engine::PerspectiveCamera cam(32.0f, 16.0f / 9.0f, 0.1f, 250.0f);
+    cam.SetFocalPoint({ 0.0f, 0.0f, 0.0f });
+    cam.SetDistance(15.0f);
+    cam.SetPitchDegrees(40.0f);
+    cam.SetYawDegrees(0.0f);
+    cam.SetPortraitHorizontalFOVDegrees(22.0f);
+    cam.SetFOVAdaptationMode(Engine::FOVAdaptationMode::LandscapeVert_PortraitHorz);
+
+    // 1. 16:9 Landscape (1920x1080): Locks 32.0 deg vertical FOV and expands horizontal visibility (Hor+)
+    cam.SetAspectRatio(1920.0f / 1080.0f);
+    {
+        const glm::vec3 rayBottom = UnprojectRayFromNDC(cam, { 0.0f, -1.0f });
+        const glm::vec3 rayTop    = UnprojectRayFromNDC(cam, { 0.0f,  1.0f });
+        const glm::vec3 rayLeft   = UnprojectRayFromNDC(cam, { -1.0f, 0.0f });
+        const glm::vec3 rayRight  = UnprojectRayFromNDC(cam, {  1.0f, 0.0f });
+
+        const float vertAngle  = RayConeAngleDegrees(rayBottom, rayTop);
+        const float horizAngle = RayConeAngleDegrees(rayLeft, rayRight);
+        const float expectedHoriz = glm::degrees(
+            2.0f * std::atan(std::tan(glm::radians(32.0f) * 0.5f) * (1920.0f / 1080.0f)));
+
+        EXPECT_NEAR(cam.GetEffectiveVerticalFOVDegrees(), 32.0f, 1e-4f);
+        EXPECT_NEAR(vertAngle, 32.0f, 1e-3f);
+        EXPECT_NEAR(horizAngle, expectedHoriz, 1e-3f);
+        EXPECT_NEAR(cam.GetEffectiveHorizontalFOVDegrees(), expectedHoriz, 1e-4f);
+    }
+
+    // 2. 9:16 Portrait (1080x1920): Locks exact 22.0 deg horizontal ray cone & expands vertical Z sightline (~38.07 deg)
+    cam.SetAspectRatio(1080.0f / 1920.0f);
+    {
+        const glm::vec3 rayLeft   = UnprojectRayFromNDC(cam, { -1.0f, 0.0f });
+        const glm::vec3 rayRight  = UnprojectRayFromNDC(cam, {  1.0f, 0.0f });
+        const glm::vec3 rayBottom = UnprojectRayFromNDC(cam, { 0.0f, -1.0f });
+        const glm::vec3 rayTop    = UnprojectRayFromNDC(cam, { 0.0f,  1.0f });
+
+        const float horizAngle = RayConeAngleDegrees(rayLeft, rayRight);
+        const float vertAngle  = RayConeAngleDegrees(rayBottom, rayTop);
+        const float expectedVert = glm::degrees(
+            2.0f * std::atan(std::tan(glm::radians(22.0f) * 0.5f) / (1080.0f / 1920.0f)));
+
+        EXPECT_NEAR(horizAngle, 22.0f, 1e-3f);
+        EXPECT_NEAR(cam.GetEffectiveHorizontalFOVDegrees(), 22.0f, 1e-4f);
+        EXPECT_NEAR(vertAngle, expectedVert, 1e-3f);
+        EXPECT_NEAR(vertAngle, 38.1269f, 1e-3f);
+        EXPECT_NEAR(cam.GetEffectiveVerticalFOVDegrees(), expectedVert, 1e-4f);
+    }
+
+    // 3. 10:16 Portrait (1200x1920): Preserves exact 22.0 deg horizontal cone angle
+    cam.SetAspectRatio(1200.0f / 1920.0f);
+    {
+        const glm::vec3 rayLeft  = UnprojectRayFromNDC(cam, { -1.0f, 0.0f });
+        const glm::vec3 rayRight = UnprojectRayFromNDC(cam, {  1.0f, 0.0f });
+        EXPECT_NEAR(RayConeAngleDegrees(rayLeft, rayRight), 22.0f, 1e-3f);
+    }
+
+    // 4. 1:1 Square boundary (aspect == 1.0f >= 1.0f): Locks 32.0 deg vertical FOV
+    cam.SetAspectRatio(1.0f);
+    {
+        const glm::vec3 rayBottom = UnprojectRayFromNDC(cam, { 0.0f, -1.0f });
+        const glm::vec3 rayTop    = UnprojectRayFromNDC(cam, { 0.0f,  1.0f });
+        const glm::vec3 rayLeft   = UnprojectRayFromNDC(cam, { -1.0f, 0.0f });
+        const glm::vec3 rayRight  = UnprojectRayFromNDC(cam, {  1.0f, 0.0f });
+        EXPECT_NEAR(RayConeAngleDegrees(rayBottom, rayTop), 32.0f, 1e-3f);
+        EXPECT_NEAR(RayConeAngleDegrees(rayLeft, rayRight), 32.0f, 1e-3f);
+    }
+
+    // 5. Legacy FixedVertical opt-out in 9:16 Portrait locks 32.0 deg vFOV and narrows hFOV (~18.43 deg)
+    cam.SetFOVAdaptationMode(Engine::FOVAdaptationMode::FixedVertical);
+    cam.SetAspectRatio(1080.0f / 1920.0f);
+    {
+        const glm::vec3 rayBottom = UnprojectRayFromNDC(cam, { 0.0f, -1.0f });
+        const glm::vec3 rayTop    = UnprojectRayFromNDC(cam, { 0.0f,  1.0f });
+        const glm::vec3 rayLeft   = UnprojectRayFromNDC(cam, { -1.0f, 0.0f });
+        const glm::vec3 rayRight  = UnprojectRayFromNDC(cam, {  1.0f, 0.0f });
+        EXPECT_NEAR(RayConeAngleDegrees(rayBottom, rayTop), 32.0f, 1e-3f);
+        EXPECT_LT(RayConeAngleDegrees(rayLeft, rayRight), 19.0f);
+    }
+}
+
+TEST(CameraComponentTest, AdaptiveFOVPortraitViewportAndSerializerRoundTrip) {
+    auto srcScene = std::make_shared<Engine::Scene>("AdaptiveFovTest");
+    srcScene->GetCamera().SetFOVDegrees(34.0f);
+    srcScene->GetCamera().SetPortraitHorizontalFOVDegrees(24.0f);
+    srcScene->GetCamera().SetFOVAdaptationMode(Engine::FOVAdaptationMode::LandscapeVert_PortraitHorz);
+
+    auto* camEntity = srcScene->CreateGameObject("PortraitCamera");
+    auto* camComp = camEntity->AddComponent<Engine::CameraComponent>();
+    camComp->FOV = 36.0f;
+    camComp->PortraitHorizontalFOV = 22.0f;
+    camComp->FOVMode = Engine::FOVAdaptationMode::LandscapeVert_PortraitHorz;
+    camComp->SetViewportSize(1080, 1920);
+    EXPECT_NEAR(camComp->Camera.GetEffectiveHorizontalFOVDegrees(), 22.0f, 1e-4f);
+    EXPECT_GT(camComp->Camera.GetEffectiveVerticalFOVDegrees(), 37.5f);
+
+    const std::filesystem::path tempScenePath =
+        std::filesystem::temp_directory_path() / "cam01_adaptive_fov_roundtrip.scene";
+    std::filesystem::remove(tempScenePath);
+
+    ASSERT_TRUE(Engine::SceneSerializer(srcScene).Serialize(tempScenePath.string()));
+
+    auto dstScene = std::make_shared<Engine::Scene>("Loaded");
+    ASSERT_TRUE(Engine::SceneSerializer(dstScene).Deserialize(tempScenePath.string()));
+
+    EXPECT_FLOAT_EQ(dstScene->GetCamera().GetFOVDegrees(), 34.0f);
+    EXPECT_FLOAT_EQ(dstScene->GetCamera().GetPortraitHorizontalFOVDegrees(), 24.0f);
+    EXPECT_EQ(dstScene->GetCamera().GetFOVAdaptationMode(),
+              Engine::FOVAdaptationMode::LandscapeVert_PortraitHorz);
+
+    dstScene->OnViewportResize(1080, 1920);
+    EXPECT_NEAR(dstScene->GetCamera().GetEffectiveHorizontalFOVDegrees(), 24.0f, 1e-4f);
+
+    Engine::GameObject* loadedEntity = dstScene->GetGameObjects().front().get();
+    auto* loadedComp = loadedEntity->GetComponent<Engine::CameraComponent>();
+    ASSERT_NE(loadedComp, nullptr);
+    EXPECT_FLOAT_EQ(loadedComp->FOV, 36.0f);
+    EXPECT_FLOAT_EQ(loadedComp->PortraitHorizontalFOV, 22.0f);
+    EXPECT_EQ(loadedComp->FOVMode, Engine::FOVAdaptationMode::LandscapeVert_PortraitHorz);
+    EXPECT_NEAR(loadedComp->Camera.GetEffectiveHorizontalFOVDegrees(), 22.0f, 1e-4f);
+
+    std::filesystem::remove(tempScenePath);
+}
+
 TEST(EditorCameraTest, ScrollPanOrbitAndResetUpdateStateDeterministically) {
     Engine::EditorCamera editorCam(16.0f / 9.0f, 15.0f);
     const glm::vec3 defaultFocal = editorCam.GetFocalPoint();
@@ -77,6 +220,21 @@ TEST(EditorCameraTest, ScrollPanOrbitAndResetUpdateStateDeterministically) {
     EXPECT_FLOAT_EQ(editorCam.GetPitchDegrees(), 40.0f);
     EXPECT_FLOAT_EQ(editorCam.GetFocalPoint().x, defaultFocal.x);
     EXPECT_FLOAT_EQ(editorCam.GetFocalPoint().z, defaultFocal.z);
+}
+
+TEST(EditorCameraTest, PortraitPanUsesEffectiveVerticalFOV) {
+    Engine::EditorCamera adaptiveCam(9.0f / 16.0f, 15.0f);
+    Engine::EditorCamera legacyCam(9.0f / 16.0f, 15.0f);
+    legacyCam.GetCamera().SetFOVAdaptationMode(Engine::FOVAdaptationMode::FixedVertical);
+
+    const glm::vec3 startFocal = adaptiveCam.GetFocalPoint();
+    adaptiveCam.Pan({ 0.0f, 100.0f }, { 1080.0f, 1920.0f });
+    legacyCam.Pan({ 0.0f, 100.0f }, { 1080.0f, 1920.0f });
+
+    const float adaptiveDeltaZ = std::abs(adaptiveCam.GetFocalPoint().z - startFocal.z);
+    const float legacyDeltaZ   = std::abs(legacyCam.GetFocalPoint().z - startFocal.z);
+    // In portrait mode (38.127 deg effective vFOV > 32.0 deg fixed vFOV), vertical pan covers proportionally more ground
+    EXPECT_GT(adaptiveDeltaZ, legacyDeltaZ);
 }
 
 TEST(OrthographicCameraTest, ProjectionAndViewMatrix) {

@@ -3,9 +3,15 @@
 
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <glm/glm.hpp>
 
 namespace Engine {
+
+enum class FOVAdaptationMode : uint8_t {
+    FixedVertical = 0,              // Legacy Hor+ (always locks vertical FOV)
+    LandscapeVert_PortraitHorz = 1
+};
 
 struct Frustum {
     // 6 inward-facing planes (Left, Right, Bottom, Top, Near, Far): (nx, ny, nz, d)
@@ -71,6 +77,15 @@ public:
     [[nodiscard]] float GetFOVDegrees() const noexcept { return m_FOVDegrees; }
     void SetFOVDegrees(float fovDegrees);
 
+    [[nodiscard]] FOVAdaptationMode GetFOVAdaptationMode() const noexcept { return m_FOVAdaptationMode; }
+    void SetFOVAdaptationMode(FOVAdaptationMode mode);
+
+    [[nodiscard]] float GetPortraitHorizontalFOVDegrees() const noexcept { return m_PortraitHorizontalFOVDegrees; }
+    void SetPortraitHorizontalFOVDegrees(float horizontalFovDegrees);
+
+    [[nodiscard]] float GetEffectiveVerticalFOVDegrees() const noexcept;
+    [[nodiscard]] float GetEffectiveHorizontalFOVDegrees() const noexcept;
+
     [[nodiscard]] float GetAspectRatio() const noexcept { return m_AspectRatio; }
     [[nodiscard]] float GetNearClip() const noexcept { return m_NearClip; }
     [[nodiscard]] float GetFarClip() const noexcept { return m_FarClip; }
@@ -115,6 +130,8 @@ private:
 
 private:
     float m_FOVDegrees = 32.0f;
+    float m_PortraitHorizontalFOVDegrees = 22.0f;
+    FOVAdaptationMode m_FOVAdaptationMode = FOVAdaptationMode::LandscapeVert_PortraitHorz;
     float m_AspectRatio = 16.0f / 9.0f;
     float m_NearClip = 0.1f;
     float m_FarClip = 250.0f;

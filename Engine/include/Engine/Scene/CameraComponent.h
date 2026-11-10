@@ -12,6 +12,8 @@ class CameraComponent final : public Component {
 public:
     PerspectiveCamera Camera;
     float FOV = 32.0f;
+    float PortraitHorizontalFOV = 22.0f;
+    FOVAdaptationMode FOVMode = FOVAdaptationMode::LandscapeVert_PortraitHorz;
     float Distance = 14.0f;
     float Pitch = 40.0f;
     float Yaw = 0.0f;
@@ -24,6 +26,8 @@ public:
 
     void ApplySettings() {
         Camera.SetFOVDegrees(FOV);
+        Camera.SetPortraitHorizontalFOVDegrees(PortraitHorizontalFOV);
+        Camera.SetFOVAdaptationMode(FOVMode);
         Camera.SetDistance(Distance);
         Camera.SetPitchDegrees(Pitch);
         Camera.SetYawDegrees(Yaw);

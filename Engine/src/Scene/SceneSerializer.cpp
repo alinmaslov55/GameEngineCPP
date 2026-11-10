@@ -100,6 +100,8 @@ void SerializeSceneCamera(const PerspectiveCamera& sceneCam, json& outJson) {
     const auto& focal = sceneCam.GetFocalPoint();
     outJson = {
         {"FOV", sceneCam.GetFOVDegrees()},
+        {"PortraitHorizontalFOV", sceneCam.GetPortraitHorizontalFOVDegrees()},
+        {"FOVMode", static_cast<int>(sceneCam.GetFOVAdaptationMode())},
         {"Distance", sceneCam.GetDistance()},
         {"Pitch", sceneCam.GetPitchDegrees()},
         {"Yaw", sceneCam.GetYawDegrees()},
@@ -109,14 +111,21 @@ void SerializeSceneCamera(const PerspectiveCamera& sceneCam, json& outJson) {
 
 void DeserializeSceneCamera(const json& camJson, PerspectiveCamera& sceneCam) {
     sceneCam.SetFOVDegrees(camJson.value("FOV", 32.0f));
+    sceneCam.SetPortraitHorizontalFOVDegrees(camJson.value("PortraitHorizontalFOV", 22.0f));
+    const int rawMode = camJson.value("FOVMode", static_cast<int>(FOVAdaptationMode::LandscapeVert_PortraitHorz));
+    sceneCam.SetFOVAdaptationMode(rawMode == static_cast<int>(FOVAdaptationMode::FixedVertical)
+                                      ? FOVAdaptationMode::FixedVertical
+                                      : FOVAdaptationMode::LandscapeVert_PortraitHorz);
     sceneCam.SetDistance(camJson.value("Distance", 15.0f));
     sceneCam.SetPitchDegrees(camJson.value("Pitch", 40.0f));
     sceneCam.SetYawDegrees(camJson.value("Yaw", 0.0f));
     if (camJson.contains("FocalPoint")) {
         sceneCam.SetFocalPoint(AsVec3(camJson["FocalPoint"], sceneCam.GetFocalPoint()));
     }
-    ENGINE_CORE_DEBUG("SceneSerializer: Restored Camera (FOV={:.1f}, Dist={:.1f}, Pitch={:.1f}, Yaw={:.1f})",
-                      sceneCam.GetFOVDegrees(), sceneCam.GetDistance(), sceneCam.GetPitchDegrees(), sceneCam.GetYawDegrees());
+    ENGINE_CORE_DEBUG("SceneSerializer: Restored Camera (FOV={:.1f}, hFOV={:.1f}, Mode={}, Dist={:.1f}, Pitch={:.1f}, Yaw={:.1f})",
+                      sceneCam.GetFOVDegrees(), sceneCam.GetPortraitHorizontalFOVDegrees(),
+                      static_cast<int>(sceneCam.GetFOVAdaptationMode()),
+                      sceneCam.GetDistance(), sceneCam.GetPitchDegrees(), sceneCam.GetYawDegrees());
 }
 
 // =========================================================================
@@ -461,6 +470,8 @@ void SerializeCameraComponent(const GameObject* go, json& compsJson) {
 
     compsJson["CameraComponent"] = {
         {"FOV", cameraComp->FOV},
+        {"PortraitHorizontalFOV", cameraComp->PortraitHorizontalFOV},
+        {"FOVMode", static_cast<int>(cameraComp->FOVMode)},
         {"Distance", cameraComp->Distance},
         {"Pitch", cameraComp->Pitch},
         {"Yaw", cameraComp->Yaw},
@@ -943,6 +954,11 @@ void DeserializeCapsuleCollider2D(GameObject* go, const json& capJson, const std
 void DeserializeCameraComponent(GameObject* go, const json& camJson, const std::string&) {
     auto* camComp = go->AddComponent<CameraComponent>();
     camComp->FOV = camJson.value("FOV", 32.0f);
+    camComp->PortraitHorizontalFOV = camJson.value("PortraitHorizontalFOV", 22.0f);
+    const int rawMode = camJson.value("FOVMode", static_cast<int>(FOVAdaptationMode::LandscapeVert_PortraitHorz));
+    camComp->FOVMode = (rawMode == static_cast<int>(FOVAdaptationMode::FixedVertical))
+                           ? FOVAdaptationMode::FixedVertical
+                           : FOVAdaptationMode::LandscapeVert_PortraitHorz;
     camComp->Distance = camJson.value("Distance", 14.0f);
     camComp->Pitch = camJson.value("Pitch", 40.0f);
     camComp->Yaw = camJson.value("Yaw", 0.0f);
