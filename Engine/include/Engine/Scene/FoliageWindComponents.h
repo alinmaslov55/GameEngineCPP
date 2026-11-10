@@ -16,7 +16,7 @@ namespace Engine {
 // ============================================================================
 // WindComponent: Global 2.5D Diorama Wind Field & Interactive Foliage Parting
 // ============================================================================
-class WindComponent : public Component {
+class WindComponent final : public Component {
 public:
     enum class Preset {
         GentleMeadowBreeze = 0,
@@ -178,7 +178,7 @@ public:
 // ============================================================================
 // SquashStretchComponent: Physics-Safe Secondary Spring Motion for Standees
 // ============================================================================
-class SquashStretchComponent : public Component {
+class SquashStretchComponent final : public Component {
 public:
     bool Enabled = true;
 

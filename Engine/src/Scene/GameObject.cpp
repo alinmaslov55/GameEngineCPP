@@ -15,9 +15,7 @@ void GameObject::NotifyPhysicsComponentAdded() {
 
 void GameObject::NotifyPhysicsComponentRemoved() {
     if (m_Scene && m_Scene->IsRuntimeRunning()) {
-        if (HasComponent<Rigidbody2D>() || HasComponent<BoxCollider2D>() ||
-            HasComponent<CircleCollider2D>() || HasComponent<CapsuleCollider2D>() ||
-            HasComponent<Tilemap>()) {
+        if (HasComponent<Rigidbody2D>() || HasComponent<Collider2D>() || HasComponent<Tilemap>()) {
             m_Scene->MarkPhysicsDirty(this);
         } else {
             m_Scene->UnregisterRuntimeBody(this);

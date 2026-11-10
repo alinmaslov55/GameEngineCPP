@@ -18,7 +18,7 @@ struct TerrainLayer {
     float TilingScale = 0.45f; // UV repeats per world meter
 };
 
-class TerrainComponent : public Component {
+class TerrainComponent final : public Component {
 public:
     static constexpr uint32_t MaxLayers = 4;
 

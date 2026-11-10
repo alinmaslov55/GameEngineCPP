@@ -8,7 +8,7 @@
 #include <cstdint>
 
 namespace Engine {
-class CameraComponent : public Component {
+class CameraComponent final : public Component {
 public:
     PerspectiveCamera Camera;
     float FOV = 32.0f;

@@ -10,7 +10,7 @@
 #include <algorithm>
 #include <cmath>
 
-class CameraController : public Engine::Component {
+class CameraController final : public Engine::Component {
 public:
     Engine::PerspectiveCamera* camera = nullptr;
 

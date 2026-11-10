@@ -14,7 +14,7 @@
 #include <Engine/Utils/Logger.h>
 #include <glm/glm.hpp>
 
-class PlayerController : public Engine::Component {
+class PlayerController final : public Engine::Component {
 public:
     float moveSpeed = 3.8f;
     float jumpForce = 5.0f;

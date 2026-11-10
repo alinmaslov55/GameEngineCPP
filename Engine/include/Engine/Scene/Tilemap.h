@@ -35,7 +35,7 @@ private:
     std::unordered_map<uint32_t, std::shared_ptr<SubTexture2D>> m_Tiles;
 };
 
-class Tilemap : public Component {
+class Tilemap final : public Component {
 public:
     Tilemap(uint32_t width, uint32_t height) : m_Width(width), m_Height(height) {
         ENGINE_CORE_INFO("Tilemap created with dimensions: {}x{} ({} total tiles)", width, height, width * height);

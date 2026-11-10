@@ -8,7 +8,7 @@
 #include <memory>
 
 namespace Engine {
-class UIPanel : public Component {
+class UIPanel final : public Component {
 public:
     // Screen space coordinates (pixels)
     // By standard convention, (0,0) is often the bottom-left or top-left depending on GL setup.

@@ -4,7 +4,10 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Component.h"
 #include "Engine/Physics/Collision2DInfo.h"
+#include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Renderer/SpriteRenderer.h"
 #include <memory>
+#include <type_traits>
 
 namespace {
 
@@ -269,6 +272,110 @@ TEST(GameObjectTest, MidDispatchDeactivationHaltsSubsequentComponents) {
     EXPECT_EQ(disabler->callCount, 1);
     EXPECT_EQ(trailer->callCount, 0); // Trailing component must NOT receive callback!
     EXPECT_FALSE(entity.IsActiveInHierarchy());
+}
+
+TEST(GameObjectTest, TypeIDAssignmentAndZeroMemoryOverhead) {
+    // Structural & compile-time invariants
+    static_assert(sizeof(Engine::Component) == 24, "Component size must remain 24 bytes (zero memory bloat)");
+    static_assert(std::is_final_v<Engine::Transform>);
+    static_assert(std::is_final_v<Engine::Rigidbody2D>);
+    static_assert(std::is_final_v<Engine::BoxCollider2D>);
+    static_assert(std::is_final_v<Engine::CircleCollider2D>);
+    static_assert(std::is_final_v<Engine::CapsuleCollider2D>);
+    static_assert(std::is_final_v<Engine::SpriteRenderer>);
+    static_assert(Engine::Detail::IsRegisteredPolymorphicBase<Engine::Collider2D>());
+    static_assert(!std::is_final_v<Engine::Collider2D>);
+
+    Engine::GameObject entity("TypeIDEntity");
+    auto* rb = entity.AddComponent<Engine::Rigidbody2D>();
+    auto* box = entity.AddComponent<Engine::BoxCollider2D>();
+    auto* sprite = entity.AddComponent<Engine::SpriteRenderer>();
+
+    EXPECT_EQ(entity.GetTransform()->GetTypeID(), Engine::Detail::GetComponentTypeID<Engine::Transform>());
+    EXPECT_EQ(entity.GetTransform()->GetBaseTypeID(), Engine::Component::kInvalidTypeID);
+
+    EXPECT_EQ(rb->GetTypeID(), Engine::Detail::GetComponentTypeID<Engine::Rigidbody2D>());
+    EXPECT_EQ(rb->GetBaseTypeID(), Engine::Component::kInvalidTypeID);
+
+    EXPECT_EQ(sprite->GetTypeID(), Engine::Detail::GetComponentTypeID<Engine::SpriteRenderer>());
+    EXPECT_EQ(sprite->GetBaseTypeID(), Engine::Component::kInvalidTypeID);
+
+    EXPECT_EQ(box->GetTypeID(), Engine::Detail::GetComponentTypeID<Engine::BoxCollider2D>());
+    EXPECT_EQ(box->GetBaseTypeID(), Engine::Detail::GetComponentTypeID<Engine::Collider2D>());
+
+    // Const queries resolve identically and map to the same TypeID
+    EXPECT_EQ(entity.GetComponent<const Engine::SpriteRenderer>(), sprite);
+    EXPECT_EQ(entity.GetComponent<const Engine::Rigidbody2D>(), rb);
+}
+
+TEST(GameObjectTest, PolymorphicColliderQueriesAndMaskCleanup) {
+    Engine::GameObject entity("ColliderEntity");
+    auto* box = entity.AddComponent<Engine::BoxCollider2D>();
+    auto* circle = entity.AddComponent<Engine::CircleCollider2D>();
+
+    EXPECT_TRUE(entity.HasComponent<Engine::Collider2D>());
+    EXPECT_TRUE(entity.HasComponent<Engine::BoxCollider2D>());
+    EXPECT_TRUE(entity.HasComponent<Engine::CircleCollider2D>());
+
+    EXPECT_EQ(entity.GetComponent<Engine::Collider2D>(), static_cast<Engine::Collider2D*>(box));
+
+    auto colliders = entity.GetComponents<Engine::Collider2D>();
+    ASSERT_EQ(colliders.size(), 2u);
+    EXPECT_EQ(colliders[0], static_cast<Engine::Collider2D*>(box));
+    EXPECT_EQ(colliders[1], static_cast<Engine::Collider2D*>(circle));
+
+    // Removing via base class removes the first derived collider AND clears its derived mask bit
+    EXPECT_TRUE(entity.RemoveComponent<Engine::Collider2D>());
+    EXPECT_FALSE(entity.HasComponent<Engine::BoxCollider2D>());
+    EXPECT_TRUE(entity.HasComponent<Engine::CircleCollider2D>());
+    EXPECT_TRUE(entity.HasComponent<Engine::Collider2D>());
+    EXPECT_EQ(entity.GetComponent<Engine::Collider2D>(), static_cast<Engine::Collider2D*>(circle));
+
+    // Removing remaining collider clears both CircleCollider2D and Collider2D mask bits
+    EXPECT_TRUE(entity.RemoveComponent<Engine::Collider2D>());
+    EXPECT_FALSE(entity.HasComponent<Engine::CircleCollider2D>());
+    EXPECT_FALSE(entity.HasComponent<Engine::Collider2D>());
+    EXPECT_EQ(entity.GetComponent<Engine::Collider2D>(), nullptr);
+    EXPECT_TRUE(entity.GetComponents<Engine::Collider2D>().empty());
+}
+
+TEST(GameObjectTest, CustomRegisteredPolymorphicHierarchyZeroRTTI) {
+    class CustomPolyBase : public Engine::Component {
+    public:
+        using ComponentBaseType = CustomPolyBase;
+        virtual int GetValue() const { return 1; }
+    };
+
+    class CustomPolyDerived final : public CustomPolyBase {
+    public:
+        int GetValue() const override { return 42; }
+    };
+
+    static_assert(Engine::Detail::IsRegisteredPolymorphicBase<CustomPolyBase>());
+    static_assert(std::is_final_v<CustomPolyDerived>);
+
+    Engine::GameObject entity("CustomPolyEntity");
+    auto* derived = entity.AddComponent<CustomPolyDerived>();
+    ASSERT_NE(derived, nullptr);
+
+    EXPECT_EQ(derived->GetTypeID(), Engine::Detail::GetComponentTypeID<CustomPolyDerived>());
+    EXPECT_EQ(derived->GetBaseTypeID(), Engine::Detail::GetComponentTypeID<CustomPolyBase>());
+
+    EXPECT_TRUE(entity.HasComponent<CustomPolyBase>());
+    EXPECT_TRUE(entity.HasComponent<CustomPolyDerived>());
+
+    auto* basePtr = entity.GetComponent<CustomPolyBase>();
+    ASSERT_EQ(basePtr, static_cast<CustomPolyBase*>(derived));
+    EXPECT_EQ(basePtr->GetValue(), 42);
+
+    auto allBases = entity.GetComponents<CustomPolyBase>();
+    ASSERT_EQ(allBases.size(), 1u);
+    EXPECT_EQ(allBases[0], derived);
+
+    EXPECT_TRUE(entity.RemoveComponent<CustomPolyBase>());
+    EXPECT_FALSE(entity.HasComponent<CustomPolyBase>());
+    EXPECT_FALSE(entity.HasComponent<CustomPolyDerived>());
+    EXPECT_EQ(entity.GetComponent<CustomPolyBase>(), nullptr);
 }
 
 } // namespace

@@ -11,7 +11,7 @@
 
 namespace Engine {
 
-class DirectionalLightComponent : public Component {
+class DirectionalLightComponent final : public Component {
 public:
     float ElevationDegrees = 42.0f; // [10, 85] degrees above horizon
     float AzimuthDegrees = -38.0f;  // [-180, 180] horizontal sun direction
@@ -82,7 +82,7 @@ public:
     }
 };
 
-class PointLightComponent : public Component {
+class PointLightComponent final : public Component {
 public:
     glm::vec3 Color = { 1.0f, 0.62f, 0.24f };
     float Intensity = 1.75f;

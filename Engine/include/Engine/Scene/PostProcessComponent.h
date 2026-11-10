@@ -10,7 +10,7 @@
 
 namespace Engine {
 
-class PostProcessComponent : public Component {
+class PostProcessComponent final : public Component {
 public:
     enum class ToneMapMode {
         ACESFilmic = 0,

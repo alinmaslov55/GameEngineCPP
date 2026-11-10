@@ -6,7 +6,7 @@
 #include <memory>
 
 namespace Engine {
-class AudioSource : public Component {
+class AudioSource final : public Component {
 public:
     AudioSource() = default;
     

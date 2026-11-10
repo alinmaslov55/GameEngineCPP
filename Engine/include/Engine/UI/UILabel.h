@@ -9,7 +9,7 @@
 #include <glm/glm.hpp>
 
 namespace Engine {
-class UILabel : public Component {
+class UILabel final : public Component {
 public:
     std::string text = "";
     std::shared_ptr<Font> font = nullptr;

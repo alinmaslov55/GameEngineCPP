@@ -7,72 +7,72 @@
 #include <cstdint>
 
 namespace Engine {
-    // Defines how a particle behaves when spawned
-    struct ParticleProps {
-        glm::vec3 position = { 0.0f, 0.0f, 0.0f };
-        glm::vec3 velocity = { 0.0f, 0.0f, 0.0f };
-        glm::vec3 velocityVariation = { 0.0f, 0.0f, 0.0f };
+// Defines how a particle behaves when spawned
+struct ParticleProps {
+    glm::vec3 position = { 0.0f, 0.0f, 0.0f };
+    glm::vec3 velocity = { 0.0f, 0.0f, 0.0f };
+    glm::vec3 velocityVariation = { 0.0f, 0.0f, 0.0f };
 
-        glm::vec4 colorBegin = { 1.0f, 1.0f, 1.0f, 1.0f };
-        glm::vec4 colorEnd = { 1.0f, 1.0f, 1.0f, 0.0f };
+    glm::vec4 colorBegin = { 1.0f, 1.0f, 1.0f, 1.0f };
+    glm::vec4 colorEnd = { 1.0f, 1.0f, 1.0f, 0.0f };
 
-        float sizeBegin = 0.5f;
-        float sizeEnd = 0.0f;
-        float sizeVariation = 0.1f;
+    float sizeBegin = 0.5f;
+    float sizeEnd = 0.0f;
+    float sizeVariation = 0.1f;
 
+    float lifeTime = 1.0f;
+};
+
+class ParticleSystem final : public Component {
+public:
+    ParticleSystem(uint32_t maxParticles = 1000);
+
+    void Emit(const ParticleProps& particleProps);
+    void Update(float deltaTime) override;
+    void Reset() noexcept;
+
+    void OnPoolAcquire() override { Reset(); }
+    void OnPoolRelease() override { Reset(); }
+
+    // Optional continuous ambient emission (fire embers, shrine wisps, chimneys)
+    bool AutoEmit = false;
+    float EmitRate = 8.0f; // Particles per second
+    glm::vec3 SpawnOffset = { 0.0f, 0.95f, 0.0f };
+    bool EmissiveParticles = false;
+    ParticleProps TemplateProps{
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 1.15f, 0.0f },
+        { 0.35f, 0.35f, 0.35f },
+        { 1.0f, 0.72f, 0.22f, 0.95f },
+        { 0.90f, 0.18f, 0.08f, 0.0f },
+        0.12f,
+        0.02f,
+        0.04f,
+        1.15f
+    };
+
+    // Expose to the Scene for rendering
+    struct Particle {
+        glm::vec3 position{ 0.0f };
+        glm::vec3 velocity{ 0.0f };
+        glm::vec4 colorBegin{ 1.0f }, colorEnd{ 1.0f, 1.0f, 1.0f, 0.0f };
+        float rotation = 0.0f;
+        float sizeBegin = 0.5f, sizeEnd = 0.0f;
         float lifeTime = 1.0f;
+        float lifeRemaining = 0.0f;
+        bool active = false;
     };
 
-    class ParticleSystem : public Component {
-    public:
-        ParticleSystem(uint32_t maxParticles = 1000);
+    [[nodiscard]] const std::vector<Particle>& GetParticles() const noexcept { return m_ParticlePool; }
+    [[nodiscard]] uint32_t GetActiveParticleCount() const noexcept { return m_ActiveParticleCount; }
 
-        void Emit(const ParticleProps& particleProps);
-        void Update(float deltaTime) override;
-        void Reset() noexcept;
-
-        void OnPoolAcquire() override { Reset(); }
-        void OnPoolRelease() override { Reset(); }
-
-        // Optional continuous ambient emission (fire embers, shrine wisps, chimneys)
-        bool AutoEmit = false;
-        float EmitRate = 8.0f; // Particles per second
-        glm::vec3 SpawnOffset = { 0.0f, 0.95f, 0.0f };
-        bool EmissiveParticles = false;
-        ParticleProps TemplateProps{
-            { 0.0f, 0.0f, 0.0f },
-            { 0.0f, 1.15f, 0.0f },
-            { 0.35f, 0.35f, 0.35f },
-            { 1.0f, 0.72f, 0.22f, 0.95f },
-            { 0.90f, 0.18f, 0.08f, 0.0f },
-            0.12f,
-            0.02f,
-            0.04f,
-            1.15f
-        };
-
-        // Expose to the Scene for rendering
-        struct Particle {
-            glm::vec3 position{ 0.0f };
-            glm::vec3 velocity{ 0.0f };
-            glm::vec4 colorBegin{ 1.0f }, colorEnd{ 1.0f, 1.0f, 1.0f, 0.0f };
-            float rotation = 0.0f;
-            float sizeBegin = 0.5f, sizeEnd = 0.0f;
-            float lifeTime = 1.0f;
-            float lifeRemaining = 0.0f;
-            bool active = false;
-        };
-
-        [[nodiscard]] const std::vector<Particle>& GetParticles() const noexcept { return m_ParticlePool; }
-        [[nodiscard]] uint32_t GetActiveParticleCount() const noexcept { return m_ActiveParticleCount; }
-
-    private:
-        std::vector<Particle> m_ParticlePool;
-        uint32_t m_PoolIndex{0};
-        uint32_t m_ActiveParticleCount{0};
-        float m_EmitAccumulator{0.0f};
-        uint32_t m_RngState{0x853c49e6};
-    };
+private:
+    std::vector<Particle> m_ParticlePool;
+    uint32_t m_PoolIndex{0};
+    uint32_t m_ActiveParticleCount{0};
+    float m_EmitAccumulator{0.0f};
+    uint32_t m_RngState{0x853c49e6};
+};
 } // namespace Engine
 
 #endif // PARTICLES_PARTICLESYSTEM_H

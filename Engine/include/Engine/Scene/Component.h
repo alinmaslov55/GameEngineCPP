@@ -1,6 +1,8 @@
 #ifndef SCENE_COMPONENT_H
 #define SCENE_COMPONENT_H
 
+#include <cstdint>
+
 namespace Engine {
 class GameObject;
 class Scene;
@@ -8,6 +10,8 @@ struct Collision2DInfo;
 
 class Component {
 public:
+    static constexpr uint16_t kInvalidTypeID = 0xFFFF;
+
     virtual ~Component() = default;
 
     virtual void Awake() {}
@@ -34,6 +38,9 @@ public:
     [[nodiscard]] bool HasStarted() const noexcept { return m_HasStarted; }
     [[nodiscard]] bool IsPendingRemoval() const noexcept { return m_PendingRemoval; }
 
+    [[nodiscard]] uint16_t GetTypeID() const noexcept { return m_TypeID; }
+    [[nodiscard]] uint16_t GetBaseTypeID() const noexcept { return m_BaseTypeID; }
+
     [[nodiscard]] GameObject* GetGameObject() const noexcept { return m_GameObject; }
 
 protected:
@@ -44,6 +51,8 @@ private:
     friend class Scene;
 
     GameObject* m_GameObject{ nullptr };
+    uint16_t m_TypeID{ kInvalidTypeID };
+    uint16_t m_BaseTypeID{ kInvalidTypeID };
     bool m_Enabled{ true };
     bool m_HasStarted{ false };
     bool m_PendingRemoval{ false };

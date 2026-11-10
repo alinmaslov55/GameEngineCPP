@@ -10,7 +10,7 @@
 #include <string>
 
 namespace Engine {
-class Animator : public Component {
+class Animator final : public Component {
 public:
     void AddClip(const std::shared_ptr<AnimationClip>& clip) {
         if (!clip) {

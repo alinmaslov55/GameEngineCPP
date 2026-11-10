@@ -46,12 +46,36 @@ inline uint32_t GetNextComponentTypeID() {
 }
 
 template<typename T>
-inline ComponentMask128 GetComponentTypeMask() {
-    static const ComponentMask128 s_Mask = []() {
-        uint32_t id = GetNextComponentTypeID();
-        return ComponentMask128::FromBit(id);
-    }();
+[[nodiscard]] inline uint16_t GetComponentTypeID() noexcept {
+    static const uint16_t s_TypeID = static_cast<uint16_t>(GetNextComponentTypeID());
+    return s_TypeID;
+}
+
+template<typename T>
+[[nodiscard]] inline ComponentMask128 GetComponentTypeMask() noexcept {
+    static const ComponentMask128 s_Mask = ComponentMask128::FromBit(GetComponentTypeID<T>());
     return s_Mask;
+}
+
+template<typename T>
+concept HasComponentBaseType = requires { typename T::ComponentBaseType; };
+
+template<typename T>
+[[nodiscard]] constexpr bool IsRegisteredPolymorphicBase() noexcept {
+    if constexpr (HasComponentBaseType<T>) {
+        return std::is_same_v<T, typename T::ComponentBaseType>;
+    }
+    return false;
+}
+
+template<typename CleanT, typename BaseT>
+[[nodiscard]] constexpr bool IsComponentWithBase() noexcept {
+    if constexpr (std::is_same_v<CleanT, BaseT>) {
+        return true;
+    } else if constexpr (HasComponentBaseType<CleanT>) {
+        return std::is_same_v<typename CleanT::ComponentBaseType, BaseT>;
+    }
+    return false;
 }
 } // namespace Detail
 
@@ -83,39 +107,53 @@ public:
     [[nodiscard]] bool IsInLayer(uint32_t layerMask) const noexcept { return (m_LayerMask & layerMask) != 0; }
 
     template<std::derived_from<Component> T>
-    [[nodiscard]] bool HasComponent() const {
-        if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
+    [[nodiscard]] bool HasComponent() const noexcept {
+        using CleanT = std::remove_cv_t<T>;
+        if constexpr (std::is_same_v<CleanT, Transform>) {
             return m_Transform != nullptr;
+        } else if constexpr (std::is_same_v<CleanT, Component>) {
+            for (const auto& component : m_Components) {
+                if (component && !component->IsPendingRemoval()) {
+                    return true;
+                }
+            }
+            return false;
+        } else {
+            return m_ComponentMask.Intersects(Detail::GetComponentTypeMask<CleanT>());
         }
-        return m_ComponentMask.Intersects(Detail::GetComponentTypeMask<std::remove_cv_t<T>>());
     }
 
     template<std::derived_from<Component> T, typename... Args>
     T* AddComponent(Args&&... args) {
+        using CleanT = std::remove_cv_t<T>;
         auto component = std::make_unique<T>(std::forward<Args>(args)...);
         T* rawPtr = component.get();
 
+        const uint16_t typeID = Detail::GetComponentTypeID<CleanT>();
         component->m_GameObject = this;
+        component->m_TypeID = typeID;
 
         m_Components.push_back(std::move(component));
-        m_ComponentMask |= Detail::GetComponentTypeMask<std::remove_cv_t<T>>();
-        if constexpr (std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
-                      std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
-                      std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D>) {
-            m_ComponentMask |= Detail::GetComponentTypeMask<Collider2D>();
+        m_ComponentMask |= ComponentMask128::FromBit(typeID);
+
+        if constexpr (Detail::HasComponentBaseType<CleanT>) {
+            using BaseT = typename CleanT::ComponentBaseType;
+            if constexpr (!std::is_same_v<CleanT, BaseT>) {
+                const uint16_t baseID = Detail::GetComponentTypeID<BaseT>();
+                rawPtr->m_BaseTypeID = baseID;
+                m_ComponentMask |= ComponentMask128::FromBit(baseID);
+            }
         }
+
         ENGINE_CORE_DEBUG("GameObject '{}': Added component", GetName());
         rawPtr->Awake();
         if (IsActiveInHierarchy() && rawPtr->IsEnabled()) {
             rawPtr->OnEnable();
         }
 
-        if constexpr (std::is_same_v<std::remove_cv_t<T>, Rigidbody2D> ||
-                      std::is_same_v<std::remove_cv_t<T>, Collider2D> ||
-                      std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
-                      std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
-                      std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D> ||
-                      std::is_same_v<std::remove_cv_t<T>, Tilemap>) {
+        if constexpr (std::is_same_v<CleanT, Rigidbody2D> ||
+                      std::is_same_v<CleanT, Tilemap> ||
+                      Detail::IsComponentWithBase<CleanT, Collider2D>()) {
             NotifyPhysicsComponentAdded();
         }
 
@@ -278,36 +316,76 @@ public:
     }
 
     template<std::derived_from<Component> T>
-    [[nodiscard]] T* GetComponent() const {
-        if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
+    [[nodiscard]] T* GetComponent() const noexcept {
+        using CleanT = std::remove_cv_t<T>;
+        if constexpr (std::is_same_v<CleanT, Transform>) {
             return m_Transform;
-        }
-        if (!m_ComponentMask.Intersects(Detail::GetComponentTypeMask<std::remove_cv_t<T>>())) {
+        } else if constexpr (std::is_same_v<CleanT, Component>) {
+            for (const auto& component : m_Components) {
+                if (component && !component->IsPendingRemoval()) {
+                    return component.get();
+                }
+            }
+            return nullptr;
+        } else {
+            const uint16_t targetID = Detail::GetComponentTypeID<CleanT>();
+            if (!m_ComponentMask.Intersects(ComponentMask128::FromBit(targetID))) {
+                return nullptr;
+            }
+            // Pass 1: Zero-RTTI O(N) integer ID match
+            for (const auto& component : m_Components) {
+                if (!component || component->IsPendingRemoval()) continue;
+                if (component->GetTypeID() == targetID || component->GetBaseTypeID() == targetID) {
+                    return static_cast<T*>(component.get());
+                }
+            }
+            // Pass 2: Fallback for non-final, unregistered polymorphic hierarchies (compiled out for final & registered bases)
+            if constexpr (!std::is_final_v<CleanT> && !Detail::IsRegisteredPolymorphicBase<CleanT>()) {
+                for (const auto& component : m_Components) {
+                    if (!component || component->IsPendingRemoval()) continue;
+                    if (T* casted = dynamic_cast<T*>(component.get())) {
+                        return casted;
+                    }
+                }
+            }
             return nullptr;
         }
-        for (const auto& component : m_Components) {
-            if (component->IsPendingRemoval()) continue;
-            if (T* casted = dynamic_cast<T*>(component.get())) {
-                return casted;
-            }
-        }
-        return nullptr;
     }
 
     template<std::derived_from<Component> T>
     [[nodiscard]] std::vector<T*> GetComponents() const {
         std::vector<T*> result;
-        if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
+        using CleanT = std::remove_cv_t<T>;
+        if constexpr (std::is_same_v<CleanT, Transform>) {
             if (m_Transform) result.push_back(m_Transform);
-            return result;
-        }
-        if (!m_ComponentMask.Intersects(Detail::GetComponentTypeMask<std::remove_cv_t<T>>())) {
-            return result;
-        }
-        for (const auto& component : m_Components) {
-            if (component->IsPendingRemoval()) continue;
-            if (T* casted = dynamic_cast<T*>(component.get())) {
-                result.push_back(casted);
+        } else if constexpr (std::is_same_v<CleanT, Component>) {
+            result.reserve(m_Components.size());
+            for (const auto& component : m_Components) {
+                if (component && !component->IsPendingRemoval()) {
+                    result.push_back(component.get());
+                }
+            }
+        } else {
+            const uint16_t targetID = Detail::GetComponentTypeID<CleanT>();
+            if (!m_ComponentMask.Intersects(ComponentMask128::FromBit(targetID))) {
+                return result;
+            }
+            if constexpr (std::is_final_v<CleanT> || Detail::IsRegisteredPolymorphicBase<CleanT>()) {
+                for (const auto& component : m_Components) {
+                    if (!component || component->IsPendingRemoval()) continue;
+                    if (component->GetTypeID() == targetID || component->GetBaseTypeID() == targetID) {
+                        result.push_back(static_cast<T*>(component.get()));
+                    }
+                }
+            } else {
+                for (const auto& component : m_Components) {
+                    if (!component || component->IsPendingRemoval()) continue;
+                    if (component->GetTypeID() == targetID || component->GetBaseTypeID() == targetID) {
+                        result.push_back(static_cast<T*>(component.get()));
+                    } else if (T* casted = dynamic_cast<T*>(component.get())) {
+                        result.push_back(casted);
+                    }
+                }
             }
         }
         return result;
@@ -315,66 +393,112 @@ public:
 
     template<std::derived_from<Component> T>
     bool RemoveComponent() {
-        if constexpr (std::is_same_v<std::remove_cv_t<T>, Transform>) {
+        using CleanT = std::remove_cv_t<T>;
+        if constexpr (std::is_same_v<CleanT, Transform>) {
             ENGINE_CORE_WARN("GameObject '{}': Cannot remove mandatory Transform component", GetName());
             return false;
-        }
+        } else {
+            const uint16_t targetID = Detail::GetComponentTypeID<CleanT>();
 
-        for (auto it = m_Components.begin(); it != m_Components.end(); ++it) {
-            auto* comp = it->get();
-            if (comp && !comp->IsPendingRemoval() && dynamic_cast<T*>(comp) != nullptr) {
-                if (comp->IsEnabled() && IsActiveInHierarchy()) {
-                    comp->OnDisable();
-                }
-                comp->m_Enabled = false;
-
-                bool hasMore = false;
-                for (const auto& other : m_Components) {
-                    if (other.get() != comp && !other->IsPendingRemoval() && dynamic_cast<T*>(other.get())) {
-                        hasMore = true;
-                        break;
-                    }
-                }
-                if (!hasMore) {
-                    m_ComponentMask &= ~Detail::GetComponentTypeMask<std::remove_cv_t<T>>();
-                    if constexpr (std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
-                                  std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
-                                  std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D>) {
-                        bool hasAnyCollider = false;
-                        for (const auto& other : m_Components) {
-                            if (other.get() != comp && !other->IsPendingRemoval()) {
-                                if (dynamic_cast<Collider2D*>(other.get())) {
-                                    hasAnyCollider = true;
-                                    break;
-                                }
-                            }
-                        }
-                        if (!hasAnyCollider) {
-                            m_ComponentMask &= ~Detail::GetComponentTypeMask<Collider2D>();
-                        }
-                    }
-                }
-
-                if constexpr (std::is_same_v<std::remove_cv_t<T>, Rigidbody2D> ||
-                              std::is_same_v<std::remove_cv_t<T>, Collider2D> ||
-                              std::is_same_v<std::remove_cv_t<T>, BoxCollider2D> ||
-                              std::is_same_v<std::remove_cv_t<T>, CircleCollider2D> ||
-                              std::is_same_v<std::remove_cv_t<T>, CapsuleCollider2D> ||
-                              std::is_same_v<std::remove_cv_t<T>, Tilemap>) {
-                    NotifyPhysicsComponentRemoved();
-                }
-
-                if (m_ComponentIterationDepth > 0) {
-                    comp->m_PendingRemoval = true;
+            auto matchesTarget = [targetID](Component* c) noexcept -> bool {
+                if (!c || c->IsPendingRemoval()) return false;
+                if constexpr (std::is_same_v<CleanT, Component>) {
+                    return true;
                 } else {
-                    comp->OnDestroy();
-                    m_Components.erase(it);
+                    if (c->GetTypeID() == targetID || c->GetBaseTypeID() == targetID) {
+                        return true;
+                    }
+                    if constexpr (!std::is_final_v<CleanT> && !Detail::IsRegisteredPolymorphicBase<CleanT>()) {
+                        return dynamic_cast<CleanT*>(c) != nullptr;
+                    }
+                    return false;
                 }
-                ENGINE_CORE_DEBUG("GameObject '{}': Removed component", GetName());
-                return true;
+            };
+
+            // Pass 1: Zero-RTTI exact or tracked-base match
+            auto foundIt = m_Components.end();
+            for (auto it = m_Components.begin(); it != m_Components.end(); ++it) {
+                auto* comp = it->get();
+                if (!comp || comp->IsPendingRemoval()) continue;
+                if constexpr (std::is_same_v<CleanT, Component>) {
+                    foundIt = it;
+                    break;
+                } else if (comp->GetTypeID() == targetID || comp->GetBaseTypeID() == targetID) {
+                    foundIt = it;
+                    break;
+                }
             }
+            // Pass 2: Polymorphic RTTI fallback for unregistered bases
+            if constexpr (!std::is_same_v<CleanT, Component> &&
+                          !std::is_final_v<CleanT> &&
+                          !Detail::IsRegisteredPolymorphicBase<CleanT>()) {
+                if (foundIt == m_Components.end()) {
+                    for (auto it = m_Components.begin(); it != m_Components.end(); ++it) {
+                        auto* comp = it->get();
+                        if (comp && !comp->IsPendingRemoval() && dynamic_cast<CleanT*>(comp) != nullptr) {
+                            foundIt = it;
+                            break;
+                        }
+                    }
+                }
+            }
+
+            if (foundIt == m_Components.end()) {
+                return false;
+            }
+
+            Component* comp = foundIt->get();
+            if (comp->IsEnabled() && IsActiveInHierarchy()) {
+                comp->OnDisable();
+            }
+            comp->m_Enabled = false;
+
+            const uint16_t removedExactID = comp->GetTypeID();
+            const uint16_t removedBaseID = comp->GetBaseTypeID();
+
+            bool hasMoreOfTarget = false;
+            bool hasMoreOfExact = false;
+            bool hasMoreOfBase = false;
+            for (const auto& other : m_Components) {
+                Component* otherPtr = other.get();
+                if (!otherPtr || otherPtr == comp || otherPtr->IsPendingRemoval()) continue;
+                if (otherPtr->GetTypeID() == removedExactID) {
+                    hasMoreOfExact = true;
+                }
+                if (removedBaseID != Component::kInvalidTypeID &&
+                    (otherPtr->GetTypeID() == removedBaseID || otherPtr->GetBaseTypeID() == removedBaseID)) {
+                    hasMoreOfBase = true;
+                }
+                if (matchesTarget(otherPtr)) {
+                    hasMoreOfTarget = true;
+                }
+            }
+
+            if (!hasMoreOfExact && removedExactID != Component::kInvalidTypeID) {
+                m_ComponentMask &= ~ComponentMask128::FromBit(removedExactID);
+            }
+            if (!hasMoreOfBase && removedBaseID != Component::kInvalidTypeID) {
+                m_ComponentMask &= ~ComponentMask128::FromBit(removedBaseID);
+            }
+            if (!hasMoreOfTarget) {
+                m_ComponentMask &= ~ComponentMask128::FromBit(targetID);
+            }
+
+            if constexpr (std::is_same_v<CleanT, Rigidbody2D> ||
+                          std::is_same_v<CleanT, Tilemap> ||
+                          Detail::IsComponentWithBase<CleanT, Collider2D>()) {
+                NotifyPhysicsComponentRemoved();
+            }
+
+            if (m_ComponentIterationDepth > 0) {
+                comp->m_PendingRemoval = true;
+            } else {
+                comp->OnDestroy();
+                m_Components.erase(foundIt);
+            }
+            ENGINE_CORE_DEBUG("GameObject '{}': Removed component", GetName());
+            return true;
         }
-        return false;
     }
 
 private:

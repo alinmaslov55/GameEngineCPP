@@ -11,7 +11,7 @@
 #include <memory>
 
 namespace Engine {
-class SpriteRenderer : public Component {
+class SpriteRenderer final : public Component {
 public:
     enum class BillboardMode {
         ViewPlane = 0,    // Parallel to camera view plane (Cult of the Lamb cutout standee)

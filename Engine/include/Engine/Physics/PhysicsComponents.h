@@ -11,7 +11,7 @@ namespace Engine {
 
 class Transform;
 
-class Rigidbody2D : public Component {
+class Rigidbody2D final : public Component {
 public:
     enum class BodyType {
         Static = 0,
@@ -132,6 +132,8 @@ private:
 /// Implements Template Method Pattern for shape creation and unified filter/lifecycle management.
 class Collider2D : public Component {
 public:
+    using ComponentBaseType = Collider2D;
+
     Collider2D() = default;
     Collider2D(bool isSensor, uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex)
         : IsSensor(isSensor), CategoryBits(categoryBits), MaskBits(maskBits), GroupIndex(groupIndex) {}
@@ -174,7 +176,7 @@ public:
     virtual void BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) = 0;
 };
 
-class BoxCollider2D : public Collider2D {
+class BoxCollider2D final : public Collider2D {
 public:
     BoxCollider2D() = default;
     BoxCollider2D(const glm::vec2& boxSize, bool isSensor = false, const glm::vec2& boxOffset = { 0.0f, 0.0f },
@@ -217,7 +219,7 @@ public:
     void BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) override;
 };
 
-class CircleCollider2D : public Collider2D {
+class CircleCollider2D final : public Collider2D {
 public:
     CircleCollider2D() {
         Restitution = 0.15f;
@@ -235,7 +237,7 @@ public:
     void BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) override;
 };
 
-class CapsuleCollider2D : public Collider2D {
+class CapsuleCollider2D final : public Collider2D {
 public:
     CapsuleCollider2D() {
         Restitution = 0.15f;

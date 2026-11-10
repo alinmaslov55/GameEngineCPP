@@ -120,7 +120,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
 
 [P2] HOT-PATH DATA-ORIENTED OPTIMIZATIONS & ALLOCATION REMOVAL
 --------------------------------------------------------------------------------
-[ ] 12. Eliminate RTTI dynamic_cast in GameObject::GetComponent<T>()
+[x] 12. Eliminate RTTI dynamic_cast in GameObject::GetComponent<T>()
     - Files: Engine/include/Engine/Scene/Component.h, Engine/include/Engine/Scene/GameObject.h (lines 40-48, 205-237)
     - Root Cause:
       * Whenever `ComponentMask128` bit matches, `GetComponent<T>()` and `GetComponents<T>()` perform a linear scan executing slow C++ RTTI `dynamic_cast<T*>()` per component. Hot paths invoke this tens of thousands of times per second.

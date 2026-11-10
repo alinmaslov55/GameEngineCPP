@@ -10,7 +10,7 @@
 
 namespace Engine {
 
-class Transform : public Component {
+class Transform final : public Component {
 public:
     glm::vec3 position{ 0.0f, 0.0f, 0.0f };
     glm::vec3 prevPosition{ 0.0f, 0.0f, 0.0f };
