@@ -14,6 +14,9 @@
 #include <Engine/Utils/Logger.h>
 #include <glm/glm.hpp>
 
+#include <algorithm>
+#include <cmath>
+
 class PlayerController final : public Engine::Component {
 public:
     float moveSpeed = 3.8f;
@@ -32,6 +35,12 @@ public:
     }
 
     [[nodiscard]] glm::vec3 GetMovementInput() const {
+        const glm::vec2 moveInput = Engine::Input::GetMoveVector(0.20f);
+        const float inputLenSq = moveInput.x * moveInput.x + moveInput.y * moveInput.y;
+        if (inputLenSq <= 1e-5f) {
+            return glm::vec3(0.0f);
+        }
+
         glm::vec3 forwardXZ = { 0.0f, 0.0f, -1.0f };
         glm::vec3 rightXZ   = { 1.0f, 0.0f,  0.0f };
         if (auto activeScene = Engine::SceneManager::GetActiveScene()) {
@@ -40,30 +49,14 @@ public:
             rightXZ   = cam.GetRightXZ();
         }
 
-        float inputForward = 0.0f;
-        float inputRight   = 0.0f;
-
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_W)) inputForward += 1.0f;
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_S)) inputForward -= 1.0f;
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_D)) inputRight   += 1.0f;
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_A)) inputRight   -= 1.0f;
-
-        if (Engine::Input::IsGamepadConnected()) {
-            const float axisX = Engine::Input::GetGamepadAxis(SDL_GAMEPAD_AXIS_LEFTX);
-            const float axisY = -Engine::Input::GetGamepadAxis(SDL_GAMEPAD_AXIS_LEFTY);
-            if (axisX != 0.0f || axisY != 0.0f) {
-                inputRight   = axisX;
-                inputForward = axisY;
-            }
+        const glm::vec3 movement = forwardXZ * moveInput.y + rightXZ * moveInput.x;
+        const float dirLenSq = movement.x * movement.x + movement.z * movement.z;
+        if (dirLenSq <= 1e-5f) {
+            return glm::vec3(0.0f);
         }
 
-        glm::vec3 movement = forwardXZ * inputForward + rightXZ * inputRight;
-        if ((movement.x * movement.x + movement.z * movement.z) > 1e-5f) {
-            movement = glm::normalize(movement);
-        } else {
-            movement = glm::vec3(0.0f);
-        }
-        return movement;
+        const float analogMagnitude = std::min(1.0f, std::sqrt(inputLenSq));
+        return (movement / std::sqrt(dirLenSq)) * analogMagnitude;
     }
 
     void FixedUpdate(float fixedDt) override {
@@ -89,7 +82,7 @@ public:
         glm::vec3 movement = GetMovementInput();
 
         // Jump impulse on the Y axis when grounded (gravity brings player back to Y = 0)
-        if (Engine::Input::IsKeyPressed(SDL_SCANCODE_SPACE)) {
+        if (Engine::Input::IsActionJustPressed("Jump")) {
             if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->UseGravityY) {
                 if (rb->IsGrounded(transform->position.y)) {
                     rb->LaunchVertical(jumpForce);

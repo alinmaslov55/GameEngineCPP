@@ -196,7 +196,7 @@ flowchart TD
 | **`PHY-03`** | Contact Events, Sensor Triggers & Circle Shapes | `DONE` | **P0** | W3 | `PHY-02` | `AUD-02` (impact SFX) | `PHY-04`, `PHY-05`, `EDT-02` |
 | **`PHY-04`** | Collision Filter Masks & Elevation Pass-Through | `DONE` | **P1** | W4 | `PHY-03`, `ECS-05` | `AIX-02` (Jiangshi hop) | Airborne combat & clean pickup filtering |
 | **`PHY-05`** | Spatial Physics Queries & Selective Chronos Stasis | `DONE` | **P1** | W4 | `PHY-03` | `ECS-02` | `AIX-01`, Maul cleave, Chronos Rune |
-| **`INP-01`** | Edge-Triggered Input States & Action Binding Map | `TODO` | **P0** | W0 | *None (Root)* | `SAV-02` (save bindings) | `INP-02`, `UIX-04`, `SAV-02` |
+| **`INP-01`** | Edge-Triggered Input States & Action Binding Map | `DONE` | **P0** | W0 | *None (Root)* | `SAV-02` (save bindings) | `INP-02`, `UIX-04`, `SAV-02` |
 | **`INP-02`** | Ground-Plane Aim Resolver & Gamepad Haptics | `TODO` | **P1** | W1 | `INP-01`, `CAM-01` | `ECS-02` (pause mute) | Directional combat swings & drop placement |
 | **`LGT-01`** | Omnidirectional Point-Light Torch Shadow Casting | `TODO` | **P0** | W1 | `LGT-02` | `WindComponent` | `TER-03`, `RND-01` |
 | **`LGT-02`** | Expanded Priority-Sorted Point Light Pipeline | `TODO` | **P1** | W0 | *None (Root)* | `ECS-05` | `LGT-01`, `LGT-03`, `EDT-02` |
@@ -535,7 +535,7 @@ flowchart TD
 ---
 
 #### `INP-01` — Edge-Triggered Input States & Action Binding Map
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `INP-02`, `UIX-04`, `SAV-02`
 - **Current Gap:** `Input` (`Input.h`) only exposes continuous `IsKeyPressed` / `IsMouseButtonPressed` / `IsGamepadButtonPressed` with hardcoded `SDL_SCANCODE_*` checks in gameplay scripts and no scroll wheel or active-device tracking.
 - **Proposed C++ Specification:**
@@ -1463,8 +1463,8 @@ Without these 15 features, the core physics + torch shadow + surface interaction
 | **`PHY-01`** | `DONE` | **Full:** Remap Box2D `(x, y)` to world `(X, Z)` with `(0, 0)` gravity, disable legacy `ResolveEntityCollisions()`, and add vertical `Y` parabola for knock-ups & hops. |
 | **`PHY-02`** | `DONE` | **Full:** Runtime `b2BodyId` spawn/destroy + `ApplyLinearImpulseXZ`, `SetLinearVelocityXZ`, and `LinearDamping` (powers all knockback bowling). |
 | **`PHY-03`** | `DONE` | **Full:** `CircleCollider2D` (prevents crowd snagging), sensor triggers (pickups/torch rim), and `b2ContactEvents` with `approachSpeed` (domino body-slam damage). |
-| **`PHY-05`** | `TODO` | **Lean:** `OverlapCircleXZ` and `OverlapArcXZ` for melee weapon cleave cones and ground-slam shockwaves. *(Defer raycasts & Chronos stasis rune).* |
-| **`INP-01`** | `TODO` | **Lean:** `WasKeyPressedThisFrame` / `WasMouseButtonPressedThisFrame` edge states. *(Defer JSON rebinding until Beta).* |
+| **`PHY-05`** | `DONE` | **Lean:** `OverlapCircleXZ` and `OverlapArcXZ` for melee weapon cleave cones and ground-slam shockwaves. *(Defer raycasts & Chronos stasis rune).* |
+| **`INP-01`** | `DONE` | **Lean:** `WasKeyPressedThisFrame` / `WasMouseButtonPressedThisFrame` edge states. *(Defer JSON rebinding until Beta).* |
 | **`INP-02`** | `TODO` | **Lean:** Mouse ray to `Y = 0` ground plane intersection for 360° directional swing & dash aiming. *(Defer gamepad rumble).* |
 | **`LGT-01`** | `TODO` | **Full:** Omnidirectional 2.5D Torch Shadow Map. The signature visual and tactical hook: trees and pillars must cast real-time radial shadows from the Hero's torch. |
 | **`LGT-03`** | `TODO` | **Full:** CPU `GetIlluminationAt(posXZ)` & `IsWithinTorchSafeRadius(posXZ)` to drive darkness vulnerability, searing-rim burn ticks, and monster light reactions. |

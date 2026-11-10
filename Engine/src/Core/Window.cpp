@@ -2,6 +2,7 @@
 #include "Engine/Core/Input.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
+#include <algorithm>
 #ifdef ENGINE_BUILD_EDITOR
 #include <imgui_impl_sdl3.h>
 #endif
@@ -60,26 +61,72 @@ Window::~Window() {
 
 void Window::PollEvents() {
     ENGINE_CORE_TRACE("Window::PollEvents");
+    Input::BeginFrame();
+
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
 #ifdef ENGINE_BUILD_EDITOR
         ImGui_ImplSDL3_ProcessEvent(&event);
 #endif
-        if (event.type == SDL_EVENT_QUIT) {
-            ENGINE_CORE_INFO("Window close event received");
-            m_ShouldClose = true;
-        } else if (event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED || event.type == SDL_EVENT_WINDOW_RESIZED) {
-            if (event.window.data1 > 0 && event.window.data2 > 0) {
-                m_Width = event.window.data1;
-                m_Height = event.window.data2;
-                ENGINE_CORE_DEBUG("Window resized to {}x{}", m_Width, m_Height);
+        switch (event.type) {
+            case SDL_EVENT_QUIT:
+                ENGINE_CORE_INFO("Window close event received");
+                m_ShouldClose = true;
+                break;
+
+            case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+            case SDL_EVENT_WINDOW_RESIZED:
+                if (event.window.data1 > 0 && event.window.data2 > 0) {
+                    m_Width = event.window.data1;
+                    m_Height = event.window.data2;
+                    ENGINE_CORE_DEBUG("Window resized to {}x{}", m_Width, m_Height);
+                }
+                break;
+
+            case SDL_EVENT_MOUSE_WHEEL: {
+                const float wheelDir = (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -1.0f : 1.0f;
+                Input::OnMouseWheel(event.wheel.x * wheelDir, event.wheel.y * wheelDir);
+                break;
             }
-        } else if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
-            Input::OnGamepadAdded(event.gdevice.which);
-        } else if (event.type == SDL_EVENT_GAMEPAD_REMOVED) {
-            Input::OnGamepadRemoved(event.gdevice.which);
+
+            case SDL_EVENT_KEY_DOWN:
+                if (!event.key.repeat) {
+                    Input::OnKeyEvent(true);
+                }
+                break;
+
+            case SDL_EVENT_MOUSE_BUTTON_DOWN:
+                Input::OnMouseButtonEvent(true);
+                break;
+
+            case SDL_EVENT_MOUSE_MOTION:
+                Input::OnMouseMotionEvent(event.motion.xrel, event.motion.yrel);
+                break;
+
+            case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
+                Input::OnGamepadButtonEvent(true);
+                break;
+
+            case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
+                const float normalized = std::clamp(static_cast<float>(event.gaxis.value) / 32767.0f, -1.0f, 1.0f);
+                Input::OnGamepadAxisEvent(static_cast<SDL_GamepadAxis>(event.gaxis.axis), normalized);
+                break;
+            }
+
+            case SDL_EVENT_GAMEPAD_ADDED:
+                Input::OnGamepadAdded(event.gdevice.which);
+                break;
+
+            case SDL_EVENT_GAMEPAD_REMOVED:
+                Input::OnGamepadRemoved(event.gdevice.which);
+                break;
+
+            default:
+                break;
         }
     }
+
+    Input::Update();
 }
 
 void Window::SwapBuffers() {

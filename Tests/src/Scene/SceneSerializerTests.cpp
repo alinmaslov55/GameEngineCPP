@@ -380,5 +380,141 @@ TEST(SceneSerializerTest, TransformSnapshotPreviousAndMidAirVelocityRoundTrip) {
     loadedScene->OnRuntimeStop();
 }
 
+TEST(SceneSerializerTest, SandboxScenesLoadAndSimulateFeatureScenarios) {
+    const std::filesystem::path prevAssetRoot = Engine::ResourceManager::GetAssetRoot();
+    struct AssetRootGuard {
+        std::filesystem::path prev;
+        ~AssetRootGuard() {
+            if (!prev.empty()) {
+                Engine::ResourceManager::SetAssetRoot(prev);
+            }
+        }
+    } assetRootGuard{ prevAssetRoot };
+
+    const std::filesystem::path sandboxRoot = Engine::ResourceManager::DiscoverAssetRoot("Sandbox");
+    ASSERT_TRUE(std::filesystem::exists(sandboxRoot / "Village.scene"));
+    ASSERT_TRUE(std::filesystem::exists(sandboxRoot / "assets" / "level.scene"));
+
+    auto findByName = [](Engine::Scene& scene, const std::string& name) -> Engine::GameObject* {
+        for (const auto& go : scene.GetGameObjects()) {
+            if (go->GetName() == name) {
+                return go.get();
+            }
+        }
+        return nullptr;
+    };
+
+    // 1. Verify rewritten Sandbox/assets/level.scene (Engine Feature Verification Arena)
+    {
+        auto levelScene = std::make_shared<Engine::Scene>("LevelLoader");
+        ASSERT_TRUE(Engine::SceneSerializer(levelScene).Deserialize("assets/level.scene"));
+        EXPECT_GE(levelScene->GetGameObjects().size(), 25u);
+
+        auto* player = levelScene->FindFirstGameObjectWithTag(Engine::EntityTag::Player);
+        ASSERT_NE(player, nullptr);
+        EXPECT_EQ(player->GetName(), "Player");
+        EXPECT_EQ(player->GetLayer(), Engine::EntityLayer::Player);
+
+        auto* torchSocket = findByName(*levelScene, "Player Torch Socket");
+        ASSERT_NE(torchSocket, nullptr);
+        EXPECT_EQ(torchSocket->GetTransform()->GetParent(), player->GetTransform());
+
+        auto* shrine = findByName(*levelScene, "Hierarchy Shrine Parent");
+        ASSERT_NE(shrine, nullptr);
+        EXPECT_EQ(shrine->GetTransform()->GetChildren().size(), 2u);
+
+        auto* stasisRelic = findByName(*levelScene, "Stasis MidAir Relic");
+        ASSERT_NE(stasisRelic, nullptr);
+        auto* stasisRb = stasisRelic->GetComponent<Engine::Rigidbody2D>();
+        ASSERT_NE(stasisRb, nullptr);
+        EXPECT_TRUE(stasisRb->IsStasisFrozen());
+        EXPECT_FLOAT_EQ(stasisRb->GetStasisCachedVerticalVelocity(), 5.5f);
+        const glm::vec3 frozenPos = stasisRelic->GetTransform()->position;
+
+        auto* dropPickup = findByName(*levelScene, "Bouncing MidAir Drop");
+        ASSERT_NE(dropPickup, nullptr);
+        auto* dropRb = dropPickup->GetComponent<Engine::Rigidbody2D>();
+        ASSERT_NE(dropRb, nullptr);
+        EXPECT_GT(dropRb->VerticalVelocity, 0.0f);
+
+        auto* tilemapGo = findByName(*levelScene, "Arena Tilemap");
+        ASSERT_NE(tilemapGo, nullptr);
+        auto* tilemap = tilemapGo->GetComponent<Engine::Tilemap>();
+        ASSERT_NE(tilemap, nullptr);
+        EXPECT_FALSE(tilemap->GetTile(0, 0).walkable);
+
+        auto* terrainGo = findByName(*levelScene, "Arena Terrain");
+        ASSERT_NE(terrainGo, nullptr);
+        EXPECT_NE(terrainGo->GetComponent<Engine::TerrainComponent>(), nullptr);
+
+        // Verify simulation runtime: stasis stays locked, bouncing drop integrates, player jump clears LowObstacle
+        levelScene->OnRuntimeStart();
+        player->GetComponent<Engine::Rigidbody2D>()->LaunchVertical(5.0f);
+
+        bool sawAirbornePassThrough = false;
+        constexpr float dt = 1.0f / 60.0f;
+        for (int i = 0; i < 60; ++i) {
+            levelScene->UpdateRuntime(dt);
+            if (player->GetComponent<Engine::Rigidbody2D>()->IsAirbornePassThroughActive()) {
+                sawAirbornePassThrough = true;
+            }
+        }
+        EXPECT_TRUE(sawAirbornePassThrough);
+        EXPECT_FLOAT_EQ(stasisRelic->GetTransform()->position.x, frozenPos.x);
+        EXPECT_FLOAT_EQ(stasisRelic->GetTransform()->position.y, frozenPos.y);
+        EXPECT_FLOAT_EQ(stasisRelic->GetTransform()->position.z, frozenPos.z);
+        EXPECT_NE(dropPickup->GetTransform()->position.y, 3.0f);
+
+        // Spatial query check over LowObstacle barrier
+        std::vector<Engine::GameObject*> lowHits;
+        levelScene->OverlapCircleXZ({ 7.5f, 9.6f }, 1.2f, Engine::PhysicsLayer::LowObstacle, lowHits);
+        EXPECT_FALSE(lowHits.empty());
+
+        levelScene->OnRuntimeStop();
+    }
+
+    // 2. Verify rewritten Sandbox/Village.scene (Enhanced Cult Diorama Clearing)
+    {
+        auto villageScene = std::make_shared<Engine::Scene>("VillageLoader");
+        ASSERT_TRUE(Engine::SceneSerializer(villageScene).Deserialize("Village.scene"));
+        EXPECT_GE(villageScene->GetGameObjects().size(), 40u);
+
+        auto* player = villageScene->FindFirstGameObjectWithTag(Engine::EntityTag::Player);
+        ASSERT_NE(player, nullptr);
+        EXPECT_EQ(player->GetLayer(), Engine::EntityLayer::Player);
+
+        auto* shrine = villageScene->FindFirstGameObjectWithTag(Engine::EntityTag::Shrine);
+        ASSERT_NE(shrine, nullptr);
+        EXPECT_GE(shrine->GetTransform()->GetChildren().size(), 1u);
+
+        auto* shrineSensor = findByName(*villageScene, "Shrine Sanctuary Sensor");
+        ASSERT_NE(shrineSensor, nullptr);
+        auto* sensorCol = shrineSensor->GetComponent<Engine::CircleCollider2D>();
+        ASSERT_NE(sensorCol, nullptr);
+        EXPECT_TRUE(sensorCol->IsSensor);
+
+        auto* westBarricade = findByName(*villageScene, "Village Barricade West");
+        ASSERT_NE(westBarricade, nullptr);
+        EXPECT_EQ(westBarricade->GetLayer(), Engine::EntityLayer::LowObstacle);
+        EXPECT_NE(westBarricade->GetComponent<Engine::CapsuleCollider2D>(), nullptr);
+
+        auto* stasisShard = findByName(*villageScene, "Chronos Stasis Shard");
+        ASSERT_NE(stasisShard, nullptr);
+        EXPECT_TRUE(stasisShard->GetComponent<Engine::Rigidbody2D>()->IsStasisFrozen());
+
+        villageScene->OnRuntimeStart();
+        player->GetComponent<Engine::Rigidbody2D>()->LaunchVertical(5.0f);
+        bool villageVaultActive = false;
+        for (int i = 0; i < 60; ++i) {
+            villageScene->UpdateRuntime(1.0f / 60.0f);
+            if (player->GetComponent<Engine::Rigidbody2D>()->IsAirbornePassThroughActive()) {
+                villageVaultActive = true;
+            }
+        }
+        EXPECT_TRUE(villageVaultActive);
+        villageScene->OnRuntimeStop();
+    }
+}
+
 } // namespace
 
