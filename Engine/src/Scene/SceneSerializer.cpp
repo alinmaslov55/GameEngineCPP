@@ -370,9 +370,11 @@ void SerializeRigidbody2D(const GameObject* go, json& compsJson) {
     if (!rb2d) return;
 
     glm::vec2 linearVel = rb2d->InitialLinearVelocityXZ;
+    float verticalVel = rb2d->VerticalVelocity;
     if (rb2d->IsStasisFrozen()) {
         linearVel = rb2d->GetStasisCachedVelocityXZ();
-    } else if (rb2d->RuntimeBody) {
+        verticalVel = rb2d->GetStasisCachedVerticalVelocity();
+    } else if (rb2d->RuntimeBody.IsValid()) {
         linearVel = rb2d->GetVelocityXZ();
     }
 
@@ -392,6 +394,7 @@ void SerializeRigidbody2D(const GameObject* go, json& compsJson) {
         {"EnableAirbornePassThrough", rb2d->EnableAirbornePassThrough},
         {"AirbornePassThroughMask", rb2d->AirbornePassThroughMask},
         {"InitialLinearVelocityXZ", ToJson(linearVel)},
+        {"VerticalVelocity", verticalVel},
         {"IsStasisFrozen", rb2d->IsStasisFrozen()}
     };
 }
@@ -636,6 +639,8 @@ void DeserializeTransform(GameObject* go, const json& tJson, const std::string&)
     if (tJson.contains("Position")) transform->position = AsVec3(tJson["Position"], transform->position);
     if (tJson.contains("Rotation")) transform->rotation = AsVec3(tJson["Rotation"], transform->rotation);
     if (tJson.contains("Scale"))    transform->scale    = AsVec3(tJson["Scale"], transform->scale);
+    transform->SnapshotPrevious();
+    transform->SetDirty();
 }
 
 void DeserializeSpriteRenderer(GameObject* go, const json& srJson, const std::string& name) {
@@ -885,6 +890,7 @@ void DeserializeRigidbody2D(GameObject* go, const json& rbJson, const std::strin
     if (rbJson.contains("InitialLinearVelocityXZ")) {
         rb2d->InitialLinearVelocityXZ = AsVec2(rbJson["InitialLinearVelocityXZ"], rb2d->InitialLinearVelocityXZ);
     }
+    rb2d->VerticalVelocity = rbJson.value("VerticalVelocity", 0.0f);
     if (rbJson.value("IsStasisFrozen", false)) {
         rb2d->SetStasisFrozen(true);
     }

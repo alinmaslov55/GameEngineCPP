@@ -14,6 +14,7 @@
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/UI/UIPanel.h"
 #include "Engine/Core/ResourceManager.h"
+#include <box2d/box2d.h>
 #include <filesystem>
 #include <memory>
 #include <string>
@@ -295,6 +296,88 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
 
     Engine::ResourceManager::SetAssetRoot(prevAssetRoot);
     std::filesystem::remove_all(tempDir, ec);
+}
+
+TEST(SceneSerializerTest, TransformSnapshotPreviousAndMidAirVelocityRoundTrip) {
+    auto sourceScene = std::make_shared<Engine::Scene>("MidAirSaveScene");
+
+    // 1. Hierarchical non-origin Transform state
+    auto* parent = sourceScene->CreateGameObjectWithUUID(10101ULL, "Parent");
+    parent->GetTransform()->position = { 12.5f, 3.25f, -7.5f };
+    parent->GetTransform()->rotation = { 10.0f, 45.0f, 5.0f };
+    parent->GetTransform()->scale = { 2.0f, 1.5f, 1.0f };
+
+    auto* child = sourceScene->CreateGameObjectWithUUID(20202ULL, "Child");
+    child->GetTransform()->position = { 1.0f, 2.0f, 0.0f };
+    child->GetTransform()->SetParent(parent->GetTransform(), /*keepWorldTransform=*/false);
+
+    // 2. Active mid-air Dynamic Rigidbody2D (XZ + vertical velocities) saved mid-flight
+    sourceScene->OnRuntimeStart();
+
+    auto* jumper = sourceScene->CreateGameObjectWithUUID(30303ULL, "MidAirJumper");
+    jumper->GetTransform()->position = { 2.0f, 4.0f, -1.0f };
+    auto* rb = jumper->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->LinearDamping = 0.0f;
+    rb->UseGravityY = true;
+    rb->GravityY = -10.0f;
+    rb->GroundLevelY = 0.0f;
+    rb->AirborneClearanceHeight = 0.75f;
+    auto* col = jumper->AddComponent<Engine::BoxCollider2D>();
+    col->size = { 1.0f, 1.0f };
+    sourceScene->RegisterRuntimeBody(jumper);
+
+    rb->SetVelocityXZ({ 6.0f, -3.0f });
+    rb->LaunchVertical(9.5f);
+
+    const std::string savedJson = Engine::SceneSerializer(sourceScene).SerializeToString();
+    ASSERT_FALSE(savedJson.empty());
+    sourceScene->OnRuntimeStop();
+
+    // Deserialize into fresh scene
+    auto loadedScene = std::make_shared<Engine::Scene>("LoadedMidAirScene");
+    ASSERT_TRUE(Engine::SceneSerializer(loadedScene).DeserializeFromString(savedJson));
+
+    // Transform prevPosition/prevRotation must match loaded values immediately (zero frame-0 origin snap)
+    auto* loadedParent = loadedScene->FindGameObjectByUUID(10101ULL);
+    auto* loadedChild = loadedScene->FindGameObjectByUUID(20202ULL);
+    ASSERT_NE(loadedParent, nullptr);
+    ASSERT_NE(loadedChild, nullptr);
+
+    const glm::vec3 interpPos0 = loadedParent->GetTransform()->GetInterpolatedPosition(0.0f);
+    const glm::vec3 interpPosHalf = loadedParent->GetTransform()->GetInterpolatedPosition(0.5f);
+    const glm::vec3 interpRot0 = loadedParent->GetTransform()->GetInterpolatedRotation(0.0f);
+    EXPECT_NEAR(interpPos0.x, 12.5f, 1e-4f);
+    EXPECT_NEAR(interpPos0.y, 3.25f, 1e-4f);
+    EXPECT_NEAR(interpPos0.z, -7.5f, 1e-4f);
+    EXPECT_NEAR(interpPosHalf.x, 12.5f, 1e-4f);
+    EXPECT_NEAR(interpRot0.y, 45.0f, 1e-4f);
+    EXPECT_GT(glm::length(loadedChild->GetTransform()->GetWorldPosition() - loadedParent->GetTransform()->position), 0.1f);
+
+    // Mid-air Rigidbody2D XZ & Y velocities must survive save/load and continue airborne arc cleanly
+    auto* loadedJumper = loadedScene->FindGameObjectByUUID(30303ULL);
+    ASSERT_NE(loadedJumper, nullptr);
+    auto* loadedRb = loadedJumper->GetComponent<Engine::Rigidbody2D>();
+    ASSERT_NE(loadedRb, nullptr);
+    EXPECT_NEAR(loadedRb->InitialLinearVelocityXZ.x, 6.0f, 1e-3f);
+    EXPECT_NEAR(loadedRb->InitialLinearVelocityXZ.y, -3.0f, 1e-3f);
+    EXPECT_NEAR(loadedRb->VerticalVelocity, 9.5f, 1e-4f);
+    EXPECT_NEAR(loadedJumper->GetTransform()->GetInterpolatedPosition(0.0f).y, 4.0f, 1e-4f);
+
+    loadedScene->OnRuntimeStart();
+    ASSERT_TRUE(loadedRb->RuntimeBody.IsValid());
+    const b2Vec2 b2Vel = b2Body_GetLinearVelocity(b2LoadBodyId(loadedRb->RuntimeBody.Value));
+    EXPECT_NEAR(b2Vel.x, 6.0f, 1e-3f);
+    EXPECT_NEAR(b2Vel.y, -3.0f, 1e-3f);
+    EXPECT_TRUE(loadedRb->IsAirbornePassThroughActive());
+
+    // Step 1/60s: entity continues upward from y = 4.0f and moves along +X, -Z
+    loadedScene->UpdateRuntime(1.0f / 60.0f);
+    EXPECT_GT(loadedJumper->GetTransform()->position.y, 4.0f);
+    EXPECT_GT(loadedJumper->GetTransform()->position.x, 2.0f);
+    EXPECT_LT(loadedJumper->GetTransform()->position.z, -1.0f);
+
+    loadedScene->OnRuntimeStop();
 }
 
 } // namespace

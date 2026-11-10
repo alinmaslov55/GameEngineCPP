@@ -356,6 +356,7 @@ TEST(SpatialQueriesAndStasisTest, ChronosStasis_DeserializedFrozenEntityRemainsS
     auto* loadedRb = loadedBoss->GetComponent<Engine::Rigidbody2D>();
     ASSERT_NE(loadedRb, nullptr);
     EXPECT_TRUE(loadedRb->IsStasisFrozen());
+    EXPECT_FLOAT_EQ(loadedRb->GetStasisCachedVerticalVelocity(), 5.0f);
 
     // Start runtime! Body should spawn as b2_kinematicBody with zero velocity
     loadedScene->OnRuntimeStart();
@@ -379,6 +380,7 @@ TEST(SpatialQueriesAndStasisTest, ChronosStasis_DeserializedFrozenEntityRemainsS
     // Unfreeze! Entity should restore original velocities and resume motion
     loadedRb->SetStasisFrozen(false);
     EXPECT_FALSE(loadedRb->IsStasisFrozen());
+    EXPECT_FLOAT_EQ(loadedRb->VerticalVelocity, 5.0f);
 
     for (int i = 0; i < 30; ++i) {
         loadedScene->UpdateRuntime(dt);

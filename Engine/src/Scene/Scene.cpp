@@ -372,6 +372,7 @@ GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worl
     if (rootGameObject) {
         if (auto* tr = rootGameObject->GetTransform()) {
             tr->position = worldPos;
+            tr->SnapshotPrevious();
             tr->SetDirty();
         }
     }

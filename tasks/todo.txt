@@ -164,7 +164,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * Promote `GetNextComponentTypeID() < 128` from debug-only `assert` to a logged fatal error guard in Release so overflow cannot fail silently.
       * Record `m_OwnerThreadId` on Scene / PhysicsWorld2D in debug builds and assert main-thread affinity before mutating Box2D world or entity lifecycle queues.
 
-[ ] 17. Serializer Completeness & Deterministic Prefab Test Isolation
+[x] 17. Serializer Completeness & Deterministic Prefab Test Isolation
     - Files: Engine/src/Scene/SceneSerializer.cpp (lines 368-389, 865-884), Tests/src/Scene/PrefabAndPoolingTests.cpp (line 66)
     - Details:
       * Serialize/deserialize `Transform` with `SetDirty()` + `SnapshotPrevious()` on load, and optionally serialize `InitialLinearVelocityXZ` & `VerticalVelocity` for full mid-air save-state restoration (`SAV-02` prep).

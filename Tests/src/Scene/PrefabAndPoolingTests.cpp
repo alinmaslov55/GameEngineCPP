@@ -12,6 +12,7 @@
 #include "Engine/Scene/FoliageWindComponents.h"
 
 #include <box2d/box2d.h>
+#include <filesystem>
 #include <memory>
 #include <unordered_set>
 #include <vector>
@@ -65,9 +66,22 @@ TEST(PrefabAndPoolingTest, PrefabSerializationAndFileRoundTrip) {
     EXPECT_EQ(rootEntityJson["Components"]["Transform"]["Position"][1], 0.0f);
     EXPECT_EQ(rootEntityJson["Components"]["Transform"]["Position"][2], 0.0f);
 
-    // Save to disk
-    const std::string testPath = "assets/test_brazier.prefab";
+    // Save to an isolated temp path so test runs never dirty tracked assets/test_brazier.prefab
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "engine_prefab_roundtrip_test";
+    std::error_code ec;
+    std::filesystem::remove_all(tempDir, ec);
+    std::filesystem::create_directories(tempDir, ec);
+    struct TempDirCleanup {
+        std::filesystem::path dir;
+        ~TempDirCleanup() {
+            std::error_code cleanupEc;
+            std::filesystem::remove_all(dir, cleanupEc);
+        }
+    } cleanupGuard{ tempDir };
+
+    const std::string testPath = (tempDir / "test_brazier.prefab").string();
     EXPECT_TRUE(prefab->SaveToFile(testPath));
+    EXPECT_TRUE(std::filesystem::exists(testPath, ec));
 
     // Load back from disk
     auto loadedPrefab = Engine::Prefab::LoadFromFile(testPath);
