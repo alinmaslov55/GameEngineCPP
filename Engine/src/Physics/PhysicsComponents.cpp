@@ -363,6 +363,15 @@ void Rigidbody2D::OnPoolRelease() {
 // Collider2D Base Class Implementation (Template Method Pattern)
 // ============================================================================
 
+static uint64_t ResolveEffectiveMaskBits(GameObject* go, uint64_t baseMaskBits) noexcept {
+    if (go) {
+        if (const auto* rb2d = go->GetComponent<Rigidbody2D>(); rb2d && rb2d->IsAirbornePassThroughActive()) {
+            return baseMaskBits & ~rb2d->AirbornePassThroughMask;
+        }
+    }
+    return baseMaskBits;
+}
+
 static b2ShapeDef BuildDefaultColliderShapeDef(Collider2D* col, GameObject* go) {
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.density = col->Density;
@@ -377,7 +386,7 @@ static b2ShapeDef BuildDefaultColliderShapeDef(Collider2D* col, GameObject* go) 
         col->CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
     }
     shapeDef.filter.categoryBits = col->CategoryBits;
-    shapeDef.filter.maskBits = col->MaskBits;
+    shapeDef.filter.maskBits = ResolveEffectiveMaskBits(go, col->MaskBits);
     shapeDef.filter.groupIndex = col->GroupIndex;
     return shapeDef;
 }
@@ -484,7 +493,7 @@ void Collider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t gro
         if (b2Shape_IsValid(shapeId)) {
             b2Filter f;
             f.categoryBits = CategoryBits;
-            f.maskBits = MaskBits;
+            f.maskBits = ResolveEffectiveMaskBits(GetGameObject(), MaskBits);
             f.groupIndex = GroupIndex;
             b2Shape_SetFilter(shapeId, f);
         }

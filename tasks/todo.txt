@@ -129,7 +129,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * In `GetComponent<T>()`, compare `comp->GetTypeID() == Detail::GetComponentTypeID<T>()` cleanly for exact types (falling back to `dynamic_cast` only for base-class polymorphic queries via `std::is_final_v` or an `exact_match` vs `base` fast path, or storing base mask).
     - Expected Impact: Eliminates RTTI string/typeinfo tree traversal on all hot component lookups.
 
-[ ] 13. Maintain Dense Contiguous Physics Registry & Sync Only Moved Bodies via b2World_GetBodyEvents
+[x] 13. Maintain Dense Contiguous Physics Registry & Sync Only Moved Bodies via b2World_GetBodyEvents
     - Files: Engine/src/Scene/Scene.cpp (lines 1663-1798)
     - Root Cause:
       * Each physics substep (up to 6x/frame) loops over ALL `m_GameObjects` (including hundreds of static grass tufts, trees, and inactive UI objects) 5 separate times: PreviousSnapshot, FixedUpdate, Pre-Step Airborne Check, Post-Step Box2D Sync, and IntegrateVerticalElevation (including duplicate Airborne Check!).

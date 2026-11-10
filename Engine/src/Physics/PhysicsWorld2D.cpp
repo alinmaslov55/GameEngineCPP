@@ -147,6 +147,18 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             }
         }
 
+        if (rb2d->Type == Rigidbody2D::BodyType::Dynamic && rb2d->EnableAirbornePassThrough) {
+            const float worldY = transform->GetParent() ? transform->GetWorldPosition().y : transform->position.y;
+            const bool wasAirborne = rb2d->IsAirbornePassThroughActive();
+            if (worldY > rb2d->AirborneClearanceHeight && !wasAirborne) {
+                rb2d->SetAirbornePassThroughActive(true);
+                ApplyAirbornePassThroughFilter(go, true);
+            } else if (worldY <= rb2d->GroundLevelY && wasAirborne) {
+                rb2d->SetAirbornePassThroughActive(false);
+                ApplyAirbornePassThroughFilter(go, false);
+            }
+        }
+
         for (auto* col : colliders) {
             col->RuntimeBody = rb2d->RuntimeBody;
             const bool hadShape = col->RuntimeShape.IsValid();
@@ -164,38 +176,48 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             rb2d->SetBaseMass((unscaledMass > 0.0001f) ? unscaledMass : 1.0f);
         }
         rb2d->ApplyMassMultiplierToBody();
-    } else if (!colliders.empty()) {
-        BodyHandle bodyHandle;
-        for (auto* col : colliders) {
-            if (col->RuntimeBody.IsValid()) {
-                bodyHandle = col->RuntimeBody;
-                break;
-            }
-        }
 
-        b2BodyId bodyId;
-        if (bodyHandle.IsValid()) {
-            bodyId = b2LoadBodyId(bodyHandle.Value);
+        if (rb2d->RuntimeBody.IsValid()) {
+            UpsertPhysicsBodyEntry(go, transform, rb2d, rb2d->RuntimeBody);
         } else {
-            b2BodyDef bodyDef = b2DefaultBodyDef();
-            bodyDef.type = b2_staticBody;
-            const glm::vec3 worldPos = transform->GetWorldPosition();
-            const glm::vec3 worldRot = transform->GetWorldRotation();
-            bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
-            bodyDef.rotation = b2MakeRot(glm::radians(worldRot.y));
-            bodyDef.name = go->GetName().c_str();
-            bodyDef.userData = go;
-
-            bodyId = b2CreateBody(worldId, &bodyDef);
-            if (!go->IsActiveInHierarchy()) {
-                b2Body_Disable(bodyId);
-            }
-            bodyHandle = BodyHandle{ b2StoreBodyId(bodyId) };
+            RemovePhysicsBodyEntry(go);
         }
+    } else {
+        RemovePhysicsBodyEntry(go);
 
-        for (auto* col : colliders) {
-            col->RuntimeBody = bodyHandle;
-            col->CreateOrUpdateShape(bodyHandle, *transform, go);
+        if (!colliders.empty()) {
+            BodyHandle bodyHandle;
+            for (auto* col : colliders) {
+                if (col->RuntimeBody.IsValid()) {
+                    bodyHandle = col->RuntimeBody;
+                    break;
+                }
+            }
+
+            b2BodyId bodyId;
+            if (bodyHandle.IsValid()) {
+                bodyId = b2LoadBodyId(bodyHandle.Value);
+            } else {
+                b2BodyDef bodyDef = b2DefaultBodyDef();
+                bodyDef.type = b2_staticBody;
+                const glm::vec3 worldPos = transform->GetWorldPosition();
+                const glm::vec3 worldRot = transform->GetWorldRotation();
+                bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
+                bodyDef.rotation = b2MakeRot(glm::radians(worldRot.y));
+                bodyDef.name = go->GetName().c_str();
+                bodyDef.userData = go;
+
+                bodyId = b2CreateBody(worldId, &bodyDef);
+                if (!go->IsActiveInHierarchy()) {
+                    b2Body_Disable(bodyId);
+                }
+                bodyHandle = BodyHandle{ b2StoreBodyId(bodyId) };
+            }
+
+            for (auto* col : colliders) {
+                col->RuntimeBody = bodyHandle;
+                col->CreateOrUpdateShape(bodyHandle, *transform, go);
+            }
         }
     }
 
@@ -204,9 +226,41 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
     }
 }
 
+void PhysicsWorld2D::UpsertPhysicsBodyEntry(GameObject* go, Transform* transform, Rigidbody2D* rb2d, BodyHandle handle) {
+    if (!go || !transform || !rb2d || !handle.IsValid()) return;
+    auto it = m_PhysicsBodyIndices.find(go);
+    if (it != m_PhysicsBodyIndices.end()) {
+        auto& entry = m_PhysicsBodies[it->second];
+        entry.gameObject = go;
+        entry.transform = transform;
+        entry.rigidbody = rb2d;
+        entry.bodyHandle = handle;
+    } else {
+        const size_t newIndex = m_PhysicsBodies.size();
+        m_PhysicsBodies.push_back(PhysicsBodyEntry{ go, transform, rb2d, handle, 0, false });
+        m_PhysicsBodyIndices[go] = newIndex;
+    }
+}
+
+void PhysicsWorld2D::RemovePhysicsBodyEntry(GameObject* go) {
+    if (!go) return;
+    auto it = m_PhysicsBodyIndices.find(go);
+    if (it != m_PhysicsBodyIndices.end()) {
+        const size_t idx = it->second;
+        const size_t lastIdx = m_PhysicsBodies.size() - 1;
+        if (idx != lastIdx) {
+            m_PhysicsBodies[idx] = m_PhysicsBodies[lastIdx];
+            m_PhysicsBodyIndices[m_PhysicsBodies[idx].gameObject] = idx;
+        }
+        m_PhysicsBodies.pop_back();
+        m_PhysicsBodyIndices.erase(it);
+    }
+}
+
 void PhysicsWorld2D::UnregisterRuntimeBody(GameObject* go) {
     if (!m_IsRuntimeRunning || !go) return;
     std::erase(m_PendingPhysicsSync, go);
+    RemovePhysicsBodyEntry(go);
 
     BodyHandle destroyedBody;
     if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
@@ -441,6 +495,8 @@ void PhysicsWorld2D::OnRuntimeStart() {
     m_PhysicsWorldId = b2StoreWorldId(worldId);
     m_IsRuntimeRunning = true;
     m_PendingPhysicsSync.clear();
+    m_PhysicsBodies.clear();
+    m_PhysicsBodyIndices.clear();
     ResetPhysicsAccumulator();
 
     if (m_Scene) {
@@ -470,6 +526,8 @@ void PhysicsWorld2D::OnRuntimeStop() {
     m_PhysicsWorldId = 0;
     m_IsRuntimeRunning = false;
     m_PendingPhysicsSync.clear();
+    m_PhysicsBodies.clear();
+    m_PhysicsBodyIndices.clear();
     ResetPhysicsAccumulator();
 
     for (auto& slot : m_Box2DTasks) {
@@ -493,6 +551,35 @@ void PhysicsWorld2D::OnRuntimeStop() {
         }
     }
     m_StaticCollidersDirty = true;
+}
+
+void PhysicsWorld2D::SyncMovedBodyTransform(const b2BodyMoveEvent& ev) {
+    auto* go = static_cast<GameObject*>(ev.userData);
+    if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) {
+        return;
+    }
+
+    auto* transform = go->GetTransform();
+    auto* rb2d = go->GetComponent<Rigidbody2D>();
+    if (!transform || !rb2d) {
+        return;
+    }
+
+    const b2Vec2 pos = ev.transform.p;
+    const b2Rot rot = ev.transform.q;
+    if (transform->GetParent()) {
+        transform->SetWorldPosition({ pos.x, transform->GetWorldPosition().y, pos.y });
+        if (!rb2d->FixedRotation) {
+            transform->SetWorldRotation({ transform->rotation.x, glm::degrees(b2Rot_GetAngle(rot)), transform->rotation.z });
+        }
+    } else {
+        transform->position.x = pos.x;
+        transform->position.z = pos.y;
+        if (!rb2d->FixedRotation) {
+            transform->rotation.y = glm::degrees(b2Rot_GetAngle(rot));
+        }
+        transform->SetDirty();
+    }
 }
 
 void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
@@ -519,85 +606,38 @@ void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
         b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
 
         while (m_PhysicsAccumulator >= fixedDt) {
+            // Pass 1: Snapshot previous transforms across dense registered physics entries only
+            for (const auto& entry : m_PhysicsBodies) {
+                if (entry.transform && entry.gameObject && !entry.gameObject->IsPendingDestroy() && entry.gameObject->IsActiveInHierarchy()) {
+                    entry.transform->SnapshotPrevious();
+                }
+            }
+
+            // Pass 2: Fixed update dispatch on active components under iteration guard
             if (m_Scene) {
-                // Snapshot previous positions for sub-frame visual interpolation
-                for (auto& go : m_Scene->GetGameObjects()) {
-                    if (!go->IsActiveInHierarchy()) continue;
-                    if (auto* transform = go->GetTransform()) {
-                        transform->SnapshotPrevious();
-                    }
-                }
-
-                // Fixed update dispatch on active components under iteration guard
-                {
-                    Scene::ScopedIterationGuard guard(*m_Scene);
-                    const auto& gameObjects = m_Scene->GetGameObjects();
-                    for (size_t i = 0; i < gameObjects.size(); ++i) {
-                        auto& go = gameObjects[i];
-                        if (go->IsActiveInHierarchy()) {
-                            go->FixedUpdate(fixedDt);
-                        }
-                    }
-                }
-
-                // Synchronize airborne pass-through filter state before physics simulation step
-                for (auto& go : m_Scene->GetGameObjects()) {
-                    if (!go->IsActiveInHierarchy()) continue;
-                    auto* rb2d = go->GetComponent<Rigidbody2D>();
-                    if (!rb2d || rb2d->Type != Rigidbody2D::BodyType::Dynamic || !rb2d->EnableAirbornePassThrough) continue;
-                    auto* t = go->GetTransform();
-                    if (!t) continue;
-
-                    const bool shouldBeAirborne = (t->position.y > rb2d->AirborneClearanceHeight);
-                    const bool isTouchdown = (t->position.y <= rb2d->GroundLevelY);
-
-                    if (shouldBeAirborne && !rb2d->IsAirbornePassThroughActive()) {
-                        rb2d->SetAirbornePassThroughActive(true);
-                        ApplyAirbornePassThroughFilter(go.get(), true);
-                    } else if (isTouchdown && rb2d->IsAirbornePassThroughActive()) {
-                        rb2d->SetAirbornePassThroughActive(false);
-                        ApplyAirbornePassThroughFilter(go.get(), false);
+                Scene::ScopedIterationGuard guard(*m_Scene);
+                const auto& gameObjects = m_Scene->GetGameObjects();
+                for (size_t i = 0; i < gameObjects.size(); ++i) {
+                    auto& go = gameObjects[i];
+                    if (go->IsActiveInHierarchy()) {
+                        go->FixedUpdate(fixedDt);
                     }
                 }
             }
 
-            // Step Box2D simulation
+            // Step Box2D, sync ONLY moved bodies via b2World_GetBodyEvents, then dispatch contact/sensor events
             if (b2World_IsValid(worldId)) {
                 b2World_Step(worldId, fixedDt, 4);
+
+                const b2BodyEvents bodyEvents = b2World_GetBodyEvents(worldId);
+                for (int i = 0; i < bodyEvents.moveCount; ++i) {
+                    SyncMovedBodyTransform(bodyEvents.moveEvents[i]);
+                }
+
                 ProcessPhysicsEvents();
             }
 
-            // Sync Box2D physics simulation results back to Engine Transform
-            if (m_Scene) {
-                for (auto& go : m_Scene->GetGameObjects()) {
-                    if (!go->IsActiveInHierarchy()) continue;
-                    auto* transform = go->GetTransform();
-                    auto* rb2d = go->GetComponent<Rigidbody2D>();
-
-                    if (rb2d && transform && rb2d->RuntimeBody) {
-                        b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
-                        if (b2Body_IsValid(bodyId)) {
-                            b2Vec2 pos = b2Body_GetPosition(bodyId);
-                            b2Rot rot = b2Body_GetRotation(bodyId);
-                            if (transform->GetParent()) {
-                                transform->SetWorldPosition({ pos.x, transform->GetWorldPosition().y, pos.y });
-                                if (!rb2d->FixedRotation) {
-                                    transform->SetWorldRotation({ transform->rotation.x, glm::degrees(b2Rot_GetAngle(rot)), transform->rotation.z });
-                                }
-                            } else {
-                                transform->position.x = pos.x;
-                                transform->position.z = pos.y;
-                                if (!rb2d->FixedRotation) {
-                                    transform->rotation.y = glm::degrees(b2Rot_GetAngle(rot));
-                                }
-                                transform->SetDirty();
-                            }
-                        }
-                    }
-                }
-            }
-
-            // Integrate 2.5D vertical elevation and ground bounces
+            // Pass 3: Dense vertical elevation integration & deduplicated airborne pass-through checks
             IntegrateVerticalElevation(fixedDt);
 
             m_PhysicsAccumulator -= fixedDt;
@@ -616,45 +656,105 @@ void PhysicsWorld2D::UpdateNonRuntime(float deltaTime) {
     ResolveTilemapCollisions();
 }
 
+void PhysicsWorld2D::EvaluateVerticalEntry(PhysicsBodyEntry& entry, float fixedDt, bool evaluateWorldY) noexcept {
+    entry.pendingAirborneTransition = 0;
+    entry.pendingTransformDirty = false;
+
+    GameObject* go = entry.gameObject;
+    Transform* transform = entry.transform;
+    Rigidbody2D* rb2d = entry.rigidbody;
+    if (!go || !transform || !rb2d || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) {
+        return;
+    }
+    if (rb2d->Type != Rigidbody2D::BodyType::Dynamic || rb2d->IsStasisFrozen()) {
+        return;
+    }
+
+    if (rb2d->UseGravityY) {
+        const float prevY = transform->position.y;
+        rb2d->VerticalVelocity += (rb2d->GravityY * rb2d->GravityScaleY) * fixedDt;
+        transform->position.y += rb2d->VerticalVelocity * fixedDt;
+
+        if (transform->position.y <= rb2d->GroundLevelY && rb2d->VerticalVelocity < 0.0f) {
+            if (rb2d->GroundRestitutionY > 0.05f && std::abs(rb2d->VerticalVelocity) > 0.8f) {
+                transform->position.y = rb2d->GroundLevelY;
+                rb2d->VerticalVelocity = -rb2d->VerticalVelocity * rb2d->GroundRestitutionY;
+            } else {
+                transform->position.y = rb2d->GroundLevelY;
+                rb2d->VerticalVelocity = 0.0f;
+            }
+        }
+        entry.pendingTransformDirty = (transform->position.y != prevY);
+    }
+
+    if (rb2d->EnableAirbornePassThrough) {
+        if (!evaluateWorldY && transform->GetParent()) {
+            // Defer parented world-Y evaluation safely to sequential main-thread phase
+            return;
+        }
+        const float effectiveY = (evaluateWorldY && transform->GetParent())
+            ? transform->GetWorldPosition().y
+            : transform->position.y;
+        const bool shouldBeAirborne = (effectiveY > rb2d->AirborneClearanceHeight);
+        const bool isTouchdown = (effectiveY <= rb2d->GroundLevelY);
+
+        if (shouldBeAirborne && !rb2d->IsAirbornePassThroughActive()) {
+            entry.pendingAirborneTransition = 1;
+        } else if (isTouchdown && rb2d->IsAirbornePassThroughActive()) {
+            entry.pendingAirborneTransition = -1;
+        }
+    }
+}
+
 void PhysicsWorld2D::IntegrateVerticalElevation(float fixedDt) {
-    if (!m_Scene) return;
-    for (auto& go : m_Scene->GetGameObjects()) {
-        if (!go->IsActiveInHierarchy()) continue;
-        auto* transform = go->GetTransform();
-        if (!transform) continue;
+    if (m_PhysicsBodies.empty()) return;
 
-        auto* rb2d = go->GetComponent<Rigidbody2D>();
+    constexpr size_t kParallelVerticalThreshold = 64;
+    const bool runParallel = (m_PhysicsBodies.size() >= kParallelVerticalThreshold) &&
+                             JobSystem::IsInitialized() &&
+                             (JobSystem::GetWorkerCount() > 0);
 
-        if (rb2d && rb2d->Type == Rigidbody2D::BodyType::Dynamic && rb2d->UseGravityY) {
-            if (rb2d->IsStasisFrozen()) {
-                continue;
+    if (runParallel) {
+        JobSystem::ParallelForBatched(size_t(0), m_PhysicsBodies.size(), [this, fixedDt](size_t start, size_t end) {
+            for (size_t i = start; i < end; ++i) {
+                EvaluateVerticalEntry(m_PhysicsBodies[i], fixedDt, /*evaluateWorldY=*/false);
             }
-            rb2d->VerticalVelocity += (rb2d->GravityY * rb2d->GravityScaleY) * fixedDt;
-            transform->position.y += rb2d->VerticalVelocity * fixedDt;
+        });
+    } else {
+        for (auto& entry : m_PhysicsBodies) {
+            EvaluateVerticalEntry(entry, fixedDt, /*evaluateWorldY=*/true);
+        }
+    }
 
-            if (transform->position.y <= rb2d->GroundLevelY && rb2d->VerticalVelocity < 0.0f) {
-                if (rb2d->GroundRestitutionY > 0.05f && std::abs(rb2d->VerticalVelocity) > 0.8f) {
-                    transform->position.y = rb2d->GroundLevelY;
-                    rb2d->VerticalVelocity = -rb2d->VerticalVelocity * rb2d->GroundRestitutionY;
-                } else {
-                    transform->position.y = rb2d->GroundLevelY;
-                    rb2d->VerticalVelocity = 0.0f;
-                }
+    // Main-thread apply pass: dirty flags, parented world-Y elevation checks, and Box2D shape filter writes
+    for (auto& entry : m_PhysicsBodies) {
+        if (entry.pendingTransformDirty && entry.transform) {
+            entry.transform->SetDirty();
+            entry.pendingTransformDirty = false;
+        }
+
+        GameObject* go = entry.gameObject;
+        Transform* transform = entry.transform;
+        Rigidbody2D* rb2d = entry.rigidbody;
+        if (!go || !transform || !rb2d || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) {
+            continue;
+        }
+
+        if (runParallel && rb2d->EnableAirbornePassThrough && rb2d->Type == Rigidbody2D::BodyType::Dynamic &&
+            !rb2d->IsStasisFrozen() && transform->GetParent()) {
+            const float worldY = transform->GetWorldPosition().y;
+            if (worldY > rb2d->AirborneClearanceHeight && !rb2d->IsAirbornePassThroughActive()) {
+                entry.pendingAirborneTransition = 1;
+            } else if (worldY <= rb2d->GroundLevelY && rb2d->IsAirbornePassThroughActive()) {
+                entry.pendingAirborneTransition = -1;
             }
+        }
 
-            // Airborne Elevation Filtering
-            if (rb2d->EnableAirbornePassThrough) {
-                const bool shouldBeAirborne = (transform->position.y > rb2d->AirborneClearanceHeight);
-                const bool isTouchdown = (transform->position.y <= rb2d->GroundLevelY);
-
-                if (shouldBeAirborne && !rb2d->IsAirbornePassThroughActive()) {
-                    rb2d->SetAirbornePassThroughActive(true);
-                    ApplyAirbornePassThroughFilter(go.get(), true);
-                } else if (isTouchdown && rb2d->IsAirbornePassThroughActive()) {
-                    rb2d->SetAirbornePassThroughActive(false);
-                    ApplyAirbornePassThroughFilter(go.get(), false);
-                }
-            }
+        if (entry.pendingAirborneTransition != 0) {
+            const bool airborne = (entry.pendingAirborneTransition > 0);
+            entry.pendingAirborneTransition = 0;
+            rb2d->SetAirbornePassThroughActive(airborne);
+            ApplyAirbornePassThroughFilter(go, airborne);
         }
     }
 }

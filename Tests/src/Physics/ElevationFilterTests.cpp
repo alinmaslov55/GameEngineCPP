@@ -425,4 +425,75 @@ TEST(ElevationFilterTest, SerializationOfFilterAndAirborneProperties) {
     EXPECT_EQ(loadedCapsule->GroupIndex, -1);
 }
 
+// Test 8: Modifying collider MaskBits while mid-air preserves active airborne exclusion until landing
+TEST(ElevationFilterTest, MidAirSetMaskBits_PreservesAirbornePassThroughUntilTouchdown) {
+    Engine::Scene scene("MidAirSetMaskScene");
+
+    // Static LowObstacle Fence at (0, 0, 3)
+    auto* fence = scene.CreateGameObject("Fence");
+    fence->GetTransform()->position = { 0.0f, 0.0f, 3.0f };
+    auto* fenceCol = fence->AddComponent<Engine::BoxCollider2D>();
+    fenceCol->size = { 4.0f, 0.5f };
+    fenceCol->CategoryBits = Engine::PhysicsLayer::LowObstacle;
+    fenceCol->MaskBits = Engine::PhysicsLayer::All;
+
+    // Jumping Actor
+    auto* actor = scene.CreateGameObject("Jumper");
+    actor->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* rb = actor->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->FixedRotation = true;
+    rb->LinearDamping = 0.0f;
+    rb->GroundLevelY = 0.0f;
+    rb->UseGravityY = true;
+    rb->GravityY = -20.0f;
+    rb->EnableAirbornePassThrough = true;
+    rb->AirborneClearanceHeight = 0.75f;
+
+    auto* col = actor->AddComponent<Engine::CircleCollider2D>();
+    col->Radius = 0.4f;
+    col->CategoryBits = Engine::PhysicsLayer::Player;
+    col->MaskBits = Engine::PhysicsLayer::Environment;
+
+    scene.OnRuntimeStart();
+    rb->SetLinearVelocityXZ(glm::vec2{ 0.0f, 6.0f });
+    rb->LaunchVertical(12.0f);
+
+    constexpr float dt = 1.0f / 60.0f;
+    // Step 12 frames so jumper rises clearly past AirborneClearanceHeight (0.75m)
+    for (int i = 0; i < 12; ++i) {
+        scene.UpdateRuntime(dt);
+    }
+    ASSERT_TRUE(rb->IsAirbornePassThroughActive());
+    ASSERT_GT(actor->GetTransform()->position.y, 0.75f);
+
+    // Mid-air SetMaskBits includes LowObstacle and Pickup alongside Environment!
+    const uint64_t newAuthoredMask = Engine::PhysicsLayer::Environment |
+                                     Engine::PhysicsLayer::LowObstacle |
+                                     Engine::PhysicsLayer::Pickup;
+    col->SetMaskBits(newAuthoredMask);
+
+    // Authored MaskBits updates, while live Box2D shape filter still suppresses airborne-excluded bits
+    EXPECT_EQ(col->MaskBits, newAuthoredMask);
+    b2Filter midAirFilter = b2Shape_GetFilter(b2LoadShapeId(col->RuntimeShape.Value));
+    EXPECT_EQ(midAirFilter.maskBits, Engine::PhysicsLayer::Environment);
+    EXPECT_EQ(midAirFilter.maskBits & Engine::PhysicsLayer::LowObstacle, 0ULL);
+
+    // Continue stepping over the fence and until landing
+    for (int i = 0; i < 70; ++i) {
+        scene.UpdateRuntime(dt);
+    }
+
+    // Must have vaulted cleanly past fence Z = 3.0f and landed back at Y = 0.0f
+    EXPECT_GT(actor->GetTransform()->position.z, 5.0f);
+    EXPECT_FLOAT_EQ(actor->GetTransform()->position.y, 0.0f);
+    EXPECT_FALSE(rb->IsAirbornePassThroughActive());
+
+    // After touchdown, live Box2D shape filter restores the new authored MaskBits including LowObstacle & Pickup!
+    b2Filter landedFilter = b2Shape_GetFilter(b2LoadShapeId(col->RuntimeShape.Value));
+    EXPECT_EQ(landedFilter.maskBits, newAuthoredMask);
+
+    scene.OnRuntimeStop();
+}
+
 } // namespace

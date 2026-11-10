@@ -1,6 +1,7 @@
 #ifndef PHYSICS_PHYSICSWORLD2D_H
 #define PHYSICS_PHYSICSWORLD2D_H
 
+#include "Engine/Physics/PhysicsHandles.h"
 #include <box2d/types.h>
 #include <array>
 #include <atomic>
@@ -15,6 +16,7 @@ namespace Engine {
 class Scene;
 class GameObject;
 class Transform;
+class Rigidbody2D;
 class BoxCollider2D;
 class Collider2D;
 class Tilemap;
@@ -70,6 +72,7 @@ public:
     void DisableRuntimeBody(GameObject* go);
     void MarkPhysicsDirty(GameObject* go);
     [[nodiscard]] size_t GetPendingPhysicsSyncCount() const noexcept { return m_PendingPhysicsSync.size(); }
+    [[nodiscard]] size_t GetRegisteredPhysicsBodyCount() const noexcept { return m_PhysicsBodies.size(); }
 
     // Spatial queries (PHY-05)
     void OverlapCircleXZ(glm::vec2 centerXZ, float radius, uint64_t maskBits, std::vector<GameObject*>& outHits) const;
@@ -94,6 +97,9 @@ private:
 
     void CreateRuntimePhysicsBody(GameObject* go);
     void CreateRuntimeTilemapBody(GameObject* go);
+    void UpsertPhysicsBodyEntry(GameObject* go, Transform* transform, Rigidbody2D* rb2d, BodyHandle handle);
+    void RemovePhysicsBodyEntry(GameObject* go);
+    void SyncMovedBodyTransform(const b2BodyMoveEvent& ev);
     void IntegrateVerticalElevation(float fixedDt);
     void ProcessPhysicsEvents();
     void ApplyAirbornePassThroughFilter(GameObject* go, bool airborne);
@@ -103,6 +109,17 @@ private:
     void ResolveTilemapCollisions();
 
 private:
+    struct PhysicsBodyEntry {
+        GameObject* gameObject = nullptr;
+        Transform* transform = nullptr;
+        Rigidbody2D* rigidbody = nullptr;
+        BodyHandle bodyHandle{};
+        int8_t pendingAirborneTransition = 0; // 0 = none, +1 = entered airborne, -1 = touched down
+        bool pendingTransformDirty = false;
+    };
+
+    static void EvaluateVerticalEntry(PhysicsBodyEntry& entry, float fixedDt, bool evaluateWorldY) noexcept;
+
     struct ColliderCacheEntry {
         GameObject* gameObject = nullptr;
         Transform* transform = nullptr;
@@ -115,6 +132,8 @@ private:
     float m_PhysicsAccumulator{ 0.0f };
     float m_PhysicsAlpha{ 0.0f };
     std::vector<GameObject*> m_PendingPhysicsSync;
+    std::vector<PhysicsBodyEntry> m_PhysicsBodies;
+    std::unordered_map<GameObject*, size_t> m_PhysicsBodyIndices;
 
     // Box2D v3 multithreaded task management pool (zero heap allocation)
     alignas(64) std::array<Box2DTask, kMaxBox2DTasks> m_Box2DTasks;

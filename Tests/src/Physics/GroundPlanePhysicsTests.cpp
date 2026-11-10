@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "Engine/Core/Time.h"
+#include "Engine/Core/JobSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsWorld2D.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Tilemap.h"
@@ -475,6 +477,178 @@ TEST(GroundPlanePhysicsTest, ChildCollider_InheritsParentScale) {
     EXPECT_NEAR(maxZ, 1.5f, 1e-3f);
 
     scene.OnRuntimeStop();
+}
+
+TEST(GroundPlanePhysicsTest, DensePhysicsRegistry_ExcludesNonPhysicsAndStaticPropEntities) {
+    Engine::Scene scene("DenseRegistryScene");
+
+    // 300 visual-only standees / props (no Rigidbody2D, no Collider2D)
+    for (int i = 0; i < 300; ++i) {
+        auto* prop = scene.CreateGameObject("GrassTuft");
+        prop->GetTransform()->position = { static_cast<float>(i % 20), 0.0f, static_cast<float>(i / 20) };
+    }
+
+    // 5 standalone static colliders (trees/fences with no Rigidbody2D)
+    for (int i = 0; i < 5; ++i) {
+        auto* staticProp = scene.CreateGameObject("StaticTree");
+        staticProp->GetTransform()->position = { -10.0f - static_cast<float>(i), 0.0f, 0.0f };
+        staticProp->AddComponent<Engine::BoxCollider2D>();
+    }
+
+    // 3 entities with Rigidbody2D (mixed Dynamic and Kinematic)
+    std::vector<Engine::GameObject*> rbEntities;
+    for (int i = 0; i < 3; ++i) {
+        auto* actor = scene.CreateGameObject("PhysicsActor");
+        actor->GetTransform()->position = { 0.0f, 0.0f, static_cast<float>(i) * 3.0f };
+        auto* rb = actor->AddComponent<Engine::Rigidbody2D>();
+        rb->Type = (i == 2) ? Engine::Rigidbody2D::BodyType::Kinematic : Engine::Rigidbody2D::BodyType::Dynamic;
+        actor->AddComponent<Engine::BoxCollider2D>();
+        rbEntities.push_back(actor);
+    }
+
+    EXPECT_EQ(scene.GetGameObjects().size(), 308u);
+
+    scene.OnRuntimeStart();
+
+    // Dense physics registry must track ONLY the 3 Rigidbody2D entities!
+    auto& physics = scene.GetPhysicsWorld();
+    EXPECT_EQ(physics.GetRegisteredPhysicsBodyCount(), 3u);
+
+    // Destroy entity 0 -> swap_and_pop cleanly reduces count to 2
+    scene.DestroyGameObject(rbEntities[0]);
+    scene.FlushEntityLifecycleQueues();
+    EXPECT_EQ(physics.GetRegisteredPhysicsBodyCount(), 2u);
+
+    // Remove Rigidbody2D component from entity 1 (leaving BoxCollider2D as standalone static collider)
+    EXPECT_TRUE(rbEntities[1]->RemoveComponent<Engine::Rigidbody2D>());
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_EQ(physics.GetRegisteredPhysicsBodyCount(), 1u);
+
+    scene.OnRuntimeStop();
+    EXPECT_EQ(physics.GetRegisteredPhysicsBodyCount(), 0u);
+}
+
+TEST(GroundPlanePhysicsTest, BodyMoveEvents_SyncsOnlyMovedDynamicBodiesAndLeavesSleepingUntouched) {
+    Engine::Scene scene("BodyMoveEventsScene");
+
+    // Stationary sleeping/resting dynamic body
+    auto* sleeper = scene.CreateGameObject("RestingBox");
+    sleeper->GetTransform()->position = { -5.0f, 0.0f, -5.0f };
+    auto* sleeperRb = sleeper->AddComponent<Engine::Rigidbody2D>();
+    sleeperRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    sleeper->AddComponent<Engine::BoxCollider2D>();
+
+    // Actively moving dynamic body
+    auto* runner = scene.CreateGameObject("MovingRunner");
+    runner->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* runnerRb = runner->AddComponent<Engine::Rigidbody2D>();
+    runnerRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    runnerRb->FixedRotation = false;
+    runnerRb->LinearDamping = 0.0f;
+    runnerRb->InitialLinearVelocityXZ = { 6.0f, 0.0f };
+    runner->AddComponent<Engine::BoxCollider2D>();
+
+    scene.OnRuntimeStart();
+
+    constexpr float dt = 1.0f / 60.0f;
+    for (int i = 0; i < 30; ++i) {
+        scene.UpdateRuntime(dt);
+    }
+
+    // Moving body synced cleanly to ~3.0m along X
+    EXPECT_NEAR(runner->GetTransform()->position.x, 3.0f, 0.15f);
+    EXPECT_NEAR(runner->GetTransform()->position.z, 0.0f, 1e-3f);
+
+    // Stationary body remained completely undisturbed
+    EXPECT_FLOAT_EQ(sleeper->GetTransform()->position.x, -5.0f);
+    EXPECT_FLOAT_EQ(sleeper->GetTransform()->position.z, -5.0f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(GroundPlanePhysicsTest, ParallelVerticalIntegration_BatchedExecutionAcrossManyBodies) {
+    const bool weInitializedJobs = !Engine::JobSystem::IsInitialized();
+    if (weInitializedJobs) {
+        Engine::JobSystem::Init(4);
+    }
+
+    {
+        Engine::Scene scene("ParallelVerticalScene");
+        constexpr int kBodyCount = 80; // Above parallel threshold (64)
+        std::vector<Engine::GameObject*> actors;
+        actors.reserve(kBodyCount);
+
+        for (int i = 0; i < kBodyCount; ++i) {
+            auto* actor = scene.CreateGameObject("HopActor");
+            actor->GetTransform()->position = { static_cast<float>(i % 10) * 2.0f, 0.0f, static_cast<float>(i / 10) * 2.0f };
+            auto* rb = actor->AddComponent<Engine::Rigidbody2D>();
+            rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+            rb->UseGravityY = true;
+            rb->GravityY = -20.0f;
+            rb->GroundLevelY = 0.0f;
+            rb->EnableAirbornePassThrough = true;
+            rb->AirborneClearanceHeight = 0.75f;
+            auto* col = actor->AddComponent<Engine::BoxCollider2D>();
+            col->CategoryBits = Engine::PhysicsLayer::Player;
+            col->MaskBits = Engine::PhysicsLayer::All;
+            actors.push_back(actor);
+        }
+
+        scene.OnRuntimeStart();
+        ASSERT_EQ(scene.GetPhysicsWorld().GetRegisteredPhysicsBodyCount(), static_cast<size_t>(kBodyCount));
+
+        // Even indices hop high enough to cross AirborneClearanceHeight; odd indices stay on ground
+        for (int i = 0; i < kBodyCount; ++i) {
+            if (i % 2 == 0) {
+                actors[i]->GetComponent<Engine::Rigidbody2D>()->LaunchVertical(12.0f);
+            }
+        }
+
+        // Step 15 frames (0.25s) -> even bodies are well above 0.75m
+        constexpr float dt = 1.0f / 60.0f;
+        for (int step = 0; step < 15; ++step) {
+            scene.UpdateRuntime(dt);
+        }
+
+        for (int i = 0; i < kBodyCount; ++i) {
+            auto* t = actors[i]->GetTransform();
+            auto* rb = actors[i]->GetComponent<Engine::Rigidbody2D>();
+            auto* col = actors[i]->GetComponent<Engine::BoxCollider2D>();
+            ASSERT_TRUE(col->RuntimeShape.IsValid());
+            b2Filter filter = b2Shape_GetFilter(b2LoadShapeId(col->RuntimeShape.Value));
+
+            if (i % 2 == 0) {
+                EXPECT_GT(t->position.y, 1.5f);
+                EXPECT_TRUE(rb->IsAirbornePassThroughActive());
+                EXPECT_EQ(filter.maskBits, Engine::PhysicsLayer::All & ~rb->AirbornePassThroughMask);
+            } else {
+                EXPECT_FLOAT_EQ(t->position.y, 0.0f);
+                EXPECT_FALSE(rb->IsAirbornePassThroughActive());
+                EXPECT_EQ(filter.maskBits, Engine::PhysicsLayer::All);
+            }
+        }
+
+        // Step 60 more frames -> all even bodies land back at ground Y=0 and restore ground mask
+        for (int step = 0; step < 60; ++step) {
+            scene.UpdateRuntime(dt);
+        }
+
+        for (int i = 0; i < kBodyCount; ++i) {
+            auto* t = actors[i]->GetTransform();
+            auto* rb = actors[i]->GetComponent<Engine::Rigidbody2D>();
+            auto* col = actors[i]->GetComponent<Engine::BoxCollider2D>();
+            b2Filter filter = b2Shape_GetFilter(b2LoadShapeId(col->RuntimeShape.Value));
+            EXPECT_FLOAT_EQ(t->position.y, 0.0f);
+            EXPECT_FALSE(rb->IsAirbornePassThroughActive());
+            EXPECT_EQ(filter.maskBits, Engine::PhysicsLayer::All);
+        }
+
+        scene.OnRuntimeStop();
+    }
+
+    if (weInitializedJobs) {
+        Engine::JobSystem::Shutdown();
+    }
 }
 
 } // namespace
