@@ -1,8 +1,14 @@
 #include <gtest/gtest.h>
 #include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/Scene.h"
+#include "Engine/Scene/GameObject.h"
+#include "Engine/Scene/Transform.h"
 #include "Engine/Renderer/SceneLighting.h"
+#include "Engine/Renderer/SceneRenderer.h"
+#include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/ShadowMap.h"
 #include <cmath>
+#include <string>
 
 namespace {
 
@@ -92,7 +98,118 @@ TEST(SceneLightingDataTest, DefaultsInitialization) {
     EXPECT_FALSE(data.LightingActive);
     EXPECT_FALSE(data.ShadowsEnabled);
     EXPECT_EQ(data.PointLightCount, 0u);
+    EXPECT_EQ(Engine::SceneLightingData::MaxPointLights, 32u);
     EXPECT_FLOAT_EQ(data.AmbientIntensity, 1.0f);
+}
+
+TEST(SceneLightingPipelineTest, PrioritySortingCaps32AndPlacesHeroTorchFirst) {
+    Engine::Scene scene("PrioritySortTestScene");
+    Engine::SceneRenderer renderer;
+    renderer.OnViewportResize(scene, 1920u, 1080u);
+
+    const glm::vec3 camFocal = renderer.GetCamera().GetFocalPoint();
+
+    // Populate indices 0..38 with mixed Low_VFX / Normal_World / High_Tactical lights inside the frustum
+    for (int i = 0; i < 39; ++i) {
+        auto* go = scene.CreateGameObject("FillerLight_" + std::to_string(i));
+        const float offsetX = static_cast<float>((i % 5) - 2) * 0.7f;
+        const float offsetZ = static_cast<float>((i / 5) - 3) * 0.6f;
+        go->GetTransform()->position = { camFocal.x + offsetX, 0.0f, camFocal.z + offsetZ };
+
+        auto* pl = go->AddComponent<Engine::PointLightComponent>();
+        pl->Radius = 3.5f;
+        pl->Flicker = false;
+        pl->Intensity = 1.0f + static_cast<float>(i) * 0.01f;
+        pl->CastShadows = false;
+        if (i < 20) {
+            pl->Priority = Engine::LightPriority::Low_VFX;
+        } else if (i < 30) {
+            pl->Priority = Engine::LightPriority::Normal_World;
+        } else {
+            pl->Priority = Engine::LightPriority::High_Tactical;
+        }
+    }
+
+    // Place Critical Hero Torch at entity index 39 (worst entity-order position)
+    auto* hero = scene.CreateGameObject("HeroTorch");
+    hero->GetTransform()->position = { camFocal.x + 1.5f, 0.0f, camFocal.z };
+    auto* heroTorch = hero->AddComponent<Engine::PointLightComponent>();
+    heroTorch->Priority = Engine::LightPriority::Critical_HeroTorch;
+    heroTorch->CastShadows = true;
+    heroTorch->Color = { 1.0f, 0.42f, 0.12f };
+    heroTorch->Intensity = 2.5f;
+    heroTorch->Radius = 7.75f;
+    heroTorch->Falloff = 1.65f;
+    heroTorch->ShadowSoftness = 1.8f;
+    heroTorch->ShadowBias = 0.002f;
+    heroTorch->Flicker = false;
+
+    const Engine::SceneRenderContext ctx = renderer.GatherRenderContext(scene);
+
+    ASSERT_EQ(ctx.lighting.PointLightCount, 32u);
+    const auto& slot0 = ctx.lighting.PointLights[0];
+    EXPECT_FLOAT_EQ(slot0.PositionAndRadius.w, 7.75f);
+    EXPECT_FLOAT_EQ(slot0.ColorAndIntensity.r, 1.0f);
+    EXPECT_FLOAT_EQ(slot0.ColorAndIntensity.g, 0.42f);
+    EXPECT_FLOAT_EQ(slot0.ColorAndIntensity.b, 0.12f);
+    EXPECT_FLOAT_EQ(slot0.ColorAndIntensity.a, 2.5f);
+    EXPECT_FLOAT_EQ(slot0.Params.x, 1.65f);
+    EXPECT_FLOAT_EQ(slot0.Params.y, 1.0f);
+    EXPECT_FLOAT_EQ(slot0.Params.z, 1.8f);
+    EXPECT_FLOAT_EQ(slot0.Params.w, 0.002f);
+
+    // Slots 1..9 must hold all 9 High_Tactical lights (Intensity in [1.30, 1.38]), before Normal_World [1.20, 1.29]
+    for (uint32_t i = 1; i <= 9; ++i) {
+        EXPECT_GE(ctx.lighting.PointLights[i].ColorAndIntensity.a, 1.295f);
+        EXPECT_FLOAT_EQ(ctx.lighting.PointLights[i].Params.y, 0.0f);
+    }
+    for (uint32_t i = 10; i <= 19; ++i) {
+        EXPECT_GE(ctx.lighting.PointLights[i].ColorAndIntensity.a, 1.195f);
+        EXPECT_LT(ctx.lighting.PointLights[i].ColorAndIntensity.a, 1.295f);
+    }
+}
+
+TEST(SceneLightingPipelineTest, DistanceTieBreakerAndHeadlessUBOAlignment) {
+    Engine::Scene scene("TieBreakerScene");
+    Engine::SceneRenderer renderer;
+    renderer.OnViewportResize(scene, 1920u, 1080u);
+    const glm::vec3 camFocal = renderer.GetCamera().GetFocalPoint();
+
+    // Farther Normal_World added first
+    auto* farGo = scene.CreateGameObject("FarNormal");
+    farGo->GetTransform()->position = { camFocal.x + 3.5f, 0.0f, camFocal.z };
+    auto* farPl = farGo->AddComponent<Engine::PointLightComponent>();
+    farPl->Priority = Engine::LightPriority::Normal_World;
+    farPl->Intensity = 1.1f;
+    farPl->Flicker = false;
+
+    // Closer Normal_World added second
+    auto* nearGo = scene.CreateGameObject("NearNormal");
+    nearGo->GetTransform()->position = { camFocal.x, 0.0f, camFocal.z };
+    auto* nearPl = nearGo->AddComponent<Engine::PointLightComponent>();
+    nearPl->Priority = Engine::LightPriority::Normal_World;
+    nearPl->Intensity = 2.2f;
+    nearPl->Flicker = false;
+
+    // Shadow caster (Low_VFX priority but CastShadows = true -> ranks first!)
+    auto* shadowGo = scene.CreateGameObject("ShadowLow");
+    shadowGo->GetTransform()->position = { camFocal.x + 4.0f, 0.0f, camFocal.z };
+    auto* shadowPl = shadowGo->AddComponent<Engine::PointLightComponent>();
+    shadowPl->Priority = Engine::LightPriority::Low_VFX;
+    shadowPl->CastShadows = true;
+    shadowPl->Intensity = 3.3f;
+    shadowPl->Flicker = false;
+
+    const Engine::SceneRenderContext ctx = renderer.GatherRenderContext(scene);
+    ASSERT_EQ(ctx.lighting.PointLightCount, 3u);
+    EXPECT_FLOAT_EQ(ctx.lighting.PointLights[0].ColorAndIntensity.a, 3.3f);
+    EXPECT_FLOAT_EQ(ctx.lighting.PointLights[1].ColorAndIntensity.a, 2.2f);
+    EXPECT_FLOAT_EQ(ctx.lighting.PointLights[2].ColorAndIntensity.a, 1.1f);
+
+    // std140 UBO upload in headless test environment must be a safe no-op
+    Engine::Renderer::UploadPointLights(&ctx.lighting);
+    Engine::Renderer::UploadPointLights(nullptr);
+    SUCCEED();
 }
 
 } // namespace

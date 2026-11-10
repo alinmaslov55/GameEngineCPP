@@ -1,8 +1,17 @@
 #include "Engine/Renderer/Renderer.h"
+#include "Engine/Renderer/Buffer.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
+#include <algorithm>
+#include <memory>
 
 namespace Engine {
+
+namespace {
+std::unique_ptr<UniformBuffer> s_PointLightUBO = nullptr;
+PointLightUBOBlock s_PointLightUploadScratch{};
+} // namespace
+
 void Renderer::Init() {
     ENGINE_CORE_INFO("Initializing Renderer (3D Depth Buffering enabled)...");
     glEnable(GL_DEPTH_TEST);
@@ -11,7 +20,42 @@ void Renderer::Init() {
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    if (glad_glGenBuffers != nullptr) {
+        s_PointLightUBO = std::make_unique<UniformBuffer>(
+            static_cast<uint32_t>(sizeof(PointLightUBOBlock)),
+            SceneLightingData::PointLightUBOBinding
+        );
+    }
     ENGINE_CORE_INFO("Renderer initialized");
+}
+
+void Renderer::Shutdown() {
+    s_PointLightUBO.reset();
+    ENGINE_CORE_INFO("Renderer shut down");
+}
+
+void Renderer::UploadPointLights(const SceneLightingData* lighting) {
+    if (!s_PointLightUBO) {
+        return;
+    }
+
+    uint32_t count = 0;
+    int shadowLightActive = 0;
+    if (lighting && lighting->LightingActive) {
+        count = std::min(lighting->PointLightCount, SceneLightingData::MaxPointLights);
+        if (count > 0 && lighting->PointLights[0].Params.y > 0.5f) {
+            shadowLightActive = 1;
+        }
+        if (count > 0) {
+            std::copy_n(lighting->PointLights.begin(), count, s_PointLightUploadScratch.PointLights.begin());
+        }
+    }
+
+    s_PointLightUploadScratch.Header = { static_cast<int>(count), shadowLightActive, 0, 0 };
+    const uint32_t uploadBytes = static_cast<uint32_t>(sizeof(glm::ivec4)) +
+                                 count * static_cast<uint32_t>(sizeof(PointLightUniform));
+    s_PointLightUBO->SetData(&s_PointLightUploadScratch, uploadBytes, 0);
 }
 
 void Renderer::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {

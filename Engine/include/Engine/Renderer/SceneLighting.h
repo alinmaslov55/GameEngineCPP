@@ -7,14 +7,23 @@
 
 namespace Engine {
 
-struct PointLightUniform {
-    glm::vec4 PositionAndRadius{ 0.0f, 0.85f, 0.0f, 4.5f }; // xyz = world pos, w = radius
+struct alignas(16) PointLightUniform {
+    glm::vec4 PositionAndRadius{ 0.0f, 0.85f, 0.0f, 4.5f };  // xyz = world pos, w = radius
     glm::vec4 ColorAndIntensity{ 1.0f, 0.65f, 0.25f, 1.5f }; // rgb = color, a = effective intensity
-    float Falloff = 1.8f;
+    glm::vec4 Params{ 1.8f, 0.0f, 1.6f, 0.0025f };           // x = falloff, y = castsShadow (0/1), z = softness, w = bias
 };
+static_assert(sizeof(PointLightUniform) == 48, "PointLightUniform must match std140 stride (48 bytes)");
+
+struct alignas(16) PointLightUBOBlock {
+    static constexpr uint32_t MaxPointLights = 32;
+    glm::ivec4 Header{ 0, 0, 0, 0 }; // x = active point light count, y = primary shadow light enabled
+    std::array<PointLightUniform, MaxPointLights> PointLights{};
+};
+static_assert(sizeof(PointLightUBOBlock) == 16 + 32 * 48, "PointLightUBOBlock must match GLSL std140 layout");
 
 struct SceneLightingData {
-    static constexpr uint32_t MaxPointLights = 8;
+    static constexpr uint32_t MaxPointLights = PointLightUBOBlock::MaxPointLights;
+    static constexpr uint32_t PointLightUBOBinding = 0;
 
     bool LightingActive = false;
 

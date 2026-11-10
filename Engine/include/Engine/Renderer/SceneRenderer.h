@@ -66,8 +66,17 @@ public:
     [[nodiscard]] uint32_t GetViewportWidth() const noexcept { return m_ViewportWidth; }
     [[nodiscard]] uint32_t GetViewportHeight() const noexcept { return m_ViewportHeight; }
 
+    SceneRenderContext GatherRenderContext(Scene& scene, const PerspectiveCamera* overrideCamera = nullptr);
+
 private:
-    SceneRenderContext GatherRenderContext(Scene& scene, const PerspectiveCamera* overrideCamera);
+    struct PointLightCandidate {
+        PointLightUniform Uniform{};
+        bool CastShadows = false;
+        uint8_t Priority = 0;
+        float DistToFocalSq = 0.0f;
+        uint32_t SubmissionOrder = 0;
+    };
+
     void RenderPassShadowMap(SceneRenderContext& ctx);
     void RenderPassGroundPlane(SceneRenderContext& ctx);
     void RenderPassCutoutStandees(SceneRenderContext& ctx);
@@ -83,6 +92,7 @@ private:
     // Hot-path scratch buffers to prevent per-frame dynamic heap allocations
     std::vector<StandeeRenderCommand> m_StandeeCommands;
     std::vector<StandeeRenderCommand> m_ShadowStandeeCommands;
+    std::vector<PointLightCandidate> m_PointLightScratch;
     std::vector<std::pair<GameObject*, glm::vec3>> m_FoliageScratch;
     std::vector<std::pair<TerrainComponent*, Transform*>> m_TerrainScratch;
     std::vector<std::pair<Tilemap*, Transform*>> m_TilemapRenderScratch;

@@ -55,10 +55,16 @@ uniform float u_ShadowTexelSize;
 uniform float u_ShadowSoftness;
 uniform float u_ShadowBias;
 
-uniform int u_PointLightCount;
-uniform vec4 u_PointLightPosRadius[8];
-uniform vec4 u_PointLightColorIntensity[8];
-uniform float u_PointLightFalloff[8];
+struct PointLightStd140 {
+    vec4 PosRadius;      // xyz = world pos, w = radius
+    vec4 ColorIntensity; // rgb = color, a = effective intensity
+    vec4 Params;         // x = falloff, y = castsShadow (0/1), z = softness, w = bias
+};
+
+layout(std140) uniform PointLightBlock {
+    ivec4 u_PointLightHeader; // x = active point light count [0..32], y = primary shadow light active
+    PointLightStd140 u_PointLights[32];
+};
 
 // Live 3D Editor Brush Ring Uniforms
 uniform int u_BrushEnabled;
@@ -124,15 +130,19 @@ float computeShadowVisibility(vec3 worldPos) {
 
 vec3 evaluatePointLights(vec3 worldPos) {
     vec3 accum = vec3(0.0);
-    for (int i = 0; i < u_PointLightCount; ++i) {
-        vec3 toLight = u_PointLightPosRadius[i].xyz - worldPos;
+    int count = clamp(u_PointLightHeader.x, 0, 32);
+    for (int i = 0; i < count; ++i) {
+        vec4 posRadius = u_PointLights[i].PosRadius;
+        vec3 toLight = posRadius.xyz - worldPos;
         float distSq = dot(toLight, toLight);
-        float radius = max(u_PointLightPosRadius[i].w, 0.05);
+        float radius = max(posRadius.w, 0.05);
         if (distSq < radius * radius) {
             float dist = sqrt(distSq);
             float x = clamp(1.0 - (dist / radius), 0.0, 1.0);
-            float atten = pow(x * x * (3.0 - 2.0 * x), max(u_PointLightFalloff[i], 0.25));
-            accum += u_PointLightColorIntensity[i].rgb * (u_PointLightColorIntensity[i].a * atten);
+            float falloff = max(u_PointLights[i].Params.x, 0.25);
+            float atten = pow(x * x * (3.0 - 2.0 * x), falloff);
+            vec4 colInt = u_PointLights[i].ColorIntensity;
+            accum += colInt.rgb * (colInt.a * atten);
         }
     }
     return accum;

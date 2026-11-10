@@ -304,6 +304,10 @@ void SerializePointLight(const GameObject* go, json& compsJson) {
         {"Radius", pointLight->Radius},
         {"Falloff", pointLight->Falloff},
         {"HeightOffset", pointLight->HeightOffset},
+        {"Priority", static_cast<int>(pointLight->Priority)},
+        {"CastShadows", pointLight->CastShadows},
+        {"ShadowSoftness", pointLight->ShadowSoftness},
+        {"ShadowBias", pointLight->ShadowBias},
         {"Flicker", pointLight->Flicker},
         {"FlickerSpeed", pointLight->FlickerSpeed},
         {"FlickerAmount", pointLight->FlickerAmount}
@@ -812,6 +816,13 @@ void DeserializePointLight(GameObject* go, const json& plJson, const std::string
     pointLight->Radius = plJson.value("Radius", 4.5f);
     pointLight->Falloff = plJson.value("Falloff", 1.8f);
     pointLight->HeightOffset = plJson.value("HeightOffset", 0.85f);
+    const int rawPrio = std::clamp(plJson.value("Priority", static_cast<int>(LightPriority::Normal_World)),
+                                   static_cast<int>(LightPriority::Low_VFX),
+                                   static_cast<int>(LightPriority::Critical_HeroTorch));
+    pointLight->Priority = static_cast<LightPriority>(rawPrio);
+    pointLight->CastShadows = plJson.value("CastShadows", false);
+    pointLight->ShadowSoftness = plJson.value("ShadowSoftness", 1.6f);
+    pointLight->ShadowBias = plJson.value("ShadowBias", 0.0025f);
     pointLight->Flicker = plJson.value("Flicker", true);
     pointLight->FlickerSpeed = plJson.value("FlickerSpeed", 7.5f);
     pointLight->FlickerAmount = plJson.value("FlickerAmount", 0.14f);

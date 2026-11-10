@@ -90,6 +90,10 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     heroPointLight->Radius = 5.25f;
     heroPointLight->Falloff = 1.65f;
     heroPointLight->HeightOffset = 0.95f;
+    heroPointLight->Priority = Engine::LightPriority::Critical_HeroTorch;
+    heroPointLight->CastShadows = true;
+    heroPointLight->ShadowSoftness = 1.85f;
+    heroPointLight->ShadowBias = 0.0031f;
     heroPointLight->Flicker = true;
     heroPointLight->FlickerSpeed = 9.0f;
     heroPointLight->FlickerAmount = 0.22f;
@@ -223,6 +227,10 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     EXPECT_NEAR(clonedPointLight->Radius, 5.25f, 1e-5f);
     EXPECT_NEAR(clonedPointLight->Falloff, 1.65f, 1e-5f);
     EXPECT_NEAR(clonedPointLight->HeightOffset, 0.95f, 1e-5f);
+    EXPECT_EQ(clonedPointLight->Priority, Engine::LightPriority::Critical_HeroTorch);
+    EXPECT_TRUE(clonedPointLight->CastShadows);
+    EXPECT_NEAR(clonedPointLight->ShadowSoftness, 1.85f, 1e-5f);
+    EXPECT_NEAR(clonedPointLight->ShadowBias, 0.0031f, 1e-5f);
     EXPECT_TRUE(clonedPointLight->Flicker);
     EXPECT_NEAR(clonedPointLight->FlickerSpeed, 9.0f, 1e-5f);
     EXPECT_NEAR(clonedPointLight->FlickerAmount, 0.22f, 1e-5f);

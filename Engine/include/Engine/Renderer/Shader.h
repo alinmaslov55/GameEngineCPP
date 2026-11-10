@@ -44,9 +44,11 @@ public:
     void SetFloat3(std::string_view name, const glm::vec3& value) const;
     void SetFloat4(std::string_view name, const glm::vec4& value) const;
     void SetMat4(std::string_view name, const glm::mat4& matrix) const;
+    void BindUniformBlock(std::string_view blockName, uint32_t bindingPoint) const;
 
 private:
     [[nodiscard]] int GetUniformLocation(std::string_view name) const;
+    void ApplyUniformBlockBindings() const;
     std::string ReadFile(const std::string& filepath);
     std::unordered_map<uint32_t, std::string> PreProcess(const std::string& source);
     bool Compile(const std::unordered_map<uint32_t, std::string>& shaderSources);
@@ -63,6 +65,7 @@ private:
     std::string m_FilePath;
     std::string m_Name;
     mutable std::unordered_map<std::string, int, StringHash, std::equal_to<>> m_UniformLocationCache;
+    mutable std::unordered_map<std::string, uint32_t, StringHash, std::equal_to<>> m_UniformBlockBindings;
 };
 
 } // namespace Engine

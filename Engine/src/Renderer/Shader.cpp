@@ -147,6 +147,7 @@ bool Shader::Compile(const std::unordered_map<uint32_t, std::string>& shaderSour
     }
     m_RendererID = program;
     m_UniformLocationCache.clear();
+    ApplyUniformBlockBindings();
 
     ENGINE_CORE_INFO("Shader program '{}' created successfully with ID: {}",
                      m_Name.empty() ? "unnamed" : m_Name, m_RendererID);
@@ -191,7 +192,8 @@ Shader::Shader(Shader&& other) noexcept
     : m_RendererID(std::exchange(other.m_RendererID, 0)),
       m_FilePath(std::move(other.m_FilePath)),
       m_Name(std::move(other.m_Name)),
-      m_UniformLocationCache(std::move(other.m_UniformLocationCache)) {
+      m_UniformLocationCache(std::move(other.m_UniformLocationCache)),
+      m_UniformBlockBindings(std::move(other.m_UniformBlockBindings)) {
 }
 
 Shader& Shader::operator=(Shader&& other) noexcept {
@@ -203,6 +205,7 @@ Shader& Shader::operator=(Shader&& other) noexcept {
         m_FilePath = std::move(other.m_FilePath);
         m_Name = std::move(other.m_Name);
         m_UniformLocationCache = std::move(other.m_UniformLocationCache);
+        m_UniformBlockBindings = std::move(other.m_UniformBlockBindings);
     }
     return *this;
 }
@@ -293,6 +296,40 @@ void Shader::SetFloat4(std::string_view name, const glm::vec4& value) const {
 void Shader::SetMat4(std::string_view name, const glm::mat4& matrix) const {
     ENGINE_CORE_TRACE("Shader ID {} SetMat4: {}", m_RendererID, name);
     glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, glm::value_ptr(matrix));
+}
+
+void Shader::ApplyUniformBlockBindings() const {
+    if (m_RendererID == 0 || glad_glGetUniformBlockIndex == nullptr || glad_glUniformBlockBinding == nullptr) {
+        return;
+    }
+    for (const auto& [blockName, bindingPoint] : m_UniformBlockBindings) {
+        const GLuint blockIndex = glGetUniformBlockIndex(m_RendererID, blockName.c_str());
+        if (blockIndex != GL_INVALID_INDEX) {
+            glUniformBlockBinding(m_RendererID, blockIndex, bindingPoint);
+        }
+    }
+}
+
+void Shader::BindUniformBlock(std::string_view blockName, uint32_t bindingPoint) const {
+    if (blockName.empty()) {
+        return;
+    }
+    auto it = m_UniformBlockBindings.find(blockName);
+    if (it != m_UniformBlockBindings.end()) {
+        it->second = bindingPoint;
+    } else {
+        m_UniformBlockBindings.emplace(std::string(blockName), bindingPoint);
+    }
+
+    if (m_RendererID != 0 && glad_glGetUniformBlockIndex != nullptr && glad_glUniformBlockBinding != nullptr) {
+        std::string nameStr(blockName);
+        const GLuint blockIndex = glGetUniformBlockIndex(m_RendererID, nameStr.c_str());
+        if (blockIndex != GL_INVALID_INDEX) {
+            glUniformBlockBinding(m_RendererID, blockIndex, bindingPoint);
+        } else {
+            ENGINE_CORE_WARN("Shader ID {}: Uniform block '{}' not found or unused", m_RendererID, blockName);
+        }
+    }
 }
 
 } // namespace Engine

@@ -203,6 +203,7 @@ void Application::Shutdown() {
     ShadowMap::Shutdown();
     TerrainRenderer::Shutdown();
     Renderer2D::Shutdown();
+    Renderer::Shutdown();
     AudioManager::Shutdown();
     JobSystem::Shutdown();
     Input::Shutdown();

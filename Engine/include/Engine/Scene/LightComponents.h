@@ -82,6 +82,13 @@ public:
     }
 };
 
+enum class LightPriority : uint8_t {
+    Low_VFX = 0,           // Fire sparks, transient flashes
+    Normal_World = 1,      // Will-o'-the-Wisps, Umbral Shrines, Tar Firewall segments
+    High_Tactical = 2,     // Flare Pegs, Ignited Dead Braziers
+    Critical_HeroTorch = 3 // Player's Lifeline Torch (always slot 0 when CastShadows = true)
+};
+
 class PointLightComponent final : public Component {
 public:
     glm::vec3 Color = { 1.0f, 0.62f, 0.24f };
@@ -89,6 +96,11 @@ public:
     float Radius = 4.5f;
     float Falloff = 1.8f;
     float HeightOffset = 0.85f; // Elevates light source above Y=0 entity anchor
+
+    LightPriority Priority = LightPriority::Normal_World;
+    bool CastShadows = false;
+    float ShadowSoftness = 1.6f;
+    float ShadowBias = 0.0025f;
 
     bool Flicker = true;
     float FlickerSpeed = 7.5f;

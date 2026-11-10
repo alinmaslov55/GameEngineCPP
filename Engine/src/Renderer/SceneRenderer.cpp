@@ -138,6 +138,7 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
 
     const Frustum& camFrustum = ctx.activeCam->GetFrustum();
     const glm::vec3 camEye = ctx.activeCam->GetPosition();
+    const glm::vec3 camFocal = ctx.activeCam->GetFocalPoint();
     const glm::vec3 camForward = ctx.activeCam->GetForward();
     const glm::vec3 camRightXZ = ctx.activeCam->GetRightXZ();
 
@@ -145,6 +146,7 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     m_StandeeCommands.reserve(gameObjects.size());
     m_ShadowStandeeCommands.clear();
     m_ShadowStandeeCommands.reserve(gameObjects.size());
+    m_PointLightScratch.clear();
     m_FoliageScratch.clear();
     m_FoliageScratch.reserve(8);
     m_TerrainScratch.clear();
@@ -240,23 +242,32 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
 
         if (mask & kPointLightMask) {
             if (auto* pl = gameObject->GetComponent<PointLightComponent>()) {
-                if (ctx.lighting.PointLightCount < SceneLightingData::MaxPointLights) {
-                    auto* t = gameObject->GetTransform();
-                    const glm::vec3 basePos = t ? t->GetWorldPosition() : glm::vec3(0.0f);
-                    const glm::vec3 lightWorldPos = basePos + glm::vec3(0.0f, pl->HeightOffset, 0.0f);
-                    const float effectiveRadius = std::max(0.05f, pl->Radius);
+                auto* t = gameObject->GetTransform();
+                const glm::vec3 basePos = t ? t->GetWorldPosition() : glm::vec3(0.0f);
+                const glm::vec3 lightWorldPos = basePos + glm::vec3(0.0f, pl->HeightOffset, 0.0f);
+                const float effectiveRadius = std::max(0.05f, pl->Radius);
 
-                    if (camFrustum.IntersectsSphere(lightWorldPos, effectiveRadius)) {
-                        const float effectiveIntensity = pl->EvaluateEffectiveIntensity(
-                            ctx.totalTime,
-                            static_cast<uint32_t>(gameObject->GetUUID())
-                        );
+                if (camFrustum.IntersectsSphere(lightWorldPos, effectiveRadius)) {
+                    const float effectiveIntensity = pl->EvaluateEffectiveIntensity(
+                        ctx.totalTime,
+                        static_cast<uint32_t>(gameObject->GetUUID())
+                    );
+                    const glm::vec3 toFocal = lightWorldPos - camFocal;
 
-                        PointLightUniform& uniformSlot = ctx.lighting.PointLights[ctx.lighting.PointLightCount++];
-                        uniformSlot.PositionAndRadius = { lightWorldPos.x, lightWorldPos.y, lightWorldPos.z, effectiveRadius };
-                        uniformSlot.ColorAndIntensity = { pl->Color.r, pl->Color.g, pl->Color.b, effectiveIntensity };
-                        uniformSlot.Falloff = std::max(0.1f, pl->Falloff);
-                    }
+                    PointLightCandidate candidate;
+                    candidate.Uniform.PositionAndRadius = { lightWorldPos.x, lightWorldPos.y, lightWorldPos.z, effectiveRadius };
+                    candidate.Uniform.ColorAndIntensity = { pl->Color.r, pl->Color.g, pl->Color.b, effectiveIntensity };
+                    candidate.Uniform.Params = {
+                        std::max(0.1f, pl->Falloff),
+                        pl->CastShadows ? 1.0f : 0.0f,
+                        std::max(0.25f, pl->ShadowSoftness),
+                        std::clamp(pl->ShadowBias, 0.0001f, 0.05f)
+                    };
+                    candidate.CastShadows = pl->CastShadows;
+                    candidate.Priority = static_cast<uint8_t>(pl->Priority);
+                    candidate.DistToFocalSq = glm::dot(toFocal, toFocal);
+                    candidate.SubmissionOrder = static_cast<uint32_t>(m_PointLightScratch.size());
+                    m_PointLightScratch.push_back(candidate);
                 }
             }
         }
@@ -393,6 +404,39 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
             for (auto* label : gameObject->GetComponents<UILabel>()) {
                 m_UILabelScratch.push_back(label);
             }
+        }
+    }
+
+    if (!m_PointLightScratch.empty()) {
+        auto compareLights = [](const PointLightCandidate& a, const PointLightCandidate& b) noexcept {
+            if (a.CastShadows != b.CastShadows) {
+                return a.CastShadows > b.CastShadows;
+            }
+            if (a.Priority != b.Priority) {
+                return a.Priority > b.Priority;
+            }
+            if (std::abs(a.DistToFocalSq - b.DistToFocalSq) > 1e-6f) {
+                return a.DistToFocalSq < b.DistToFocalSq;
+            }
+            return a.SubmissionOrder < b.SubmissionOrder;
+        };
+
+        const size_t keepCount = std::min(m_PointLightScratch.size(),
+                                          static_cast<size_t>(SceneLightingData::MaxPointLights));
+        if (m_PointLightScratch.size() > keepCount) {
+            std::partial_sort(
+                m_PointLightScratch.begin(),
+                m_PointLightScratch.begin() + static_cast<ptrdiff_t>(keepCount),
+                m_PointLightScratch.end(),
+                compareLights
+            );
+        } else {
+            std::sort(m_PointLightScratch.begin(), m_PointLightScratch.end(), compareLights);
+        }
+
+        ctx.lighting.PointLightCount = static_cast<uint32_t>(keepCount);
+        for (size_t i = 0; i < keepCount; ++i) {
+            ctx.lighting.PointLights[i] = m_PointLightScratch[i].Uniform;
         }
     }
 
@@ -633,6 +677,7 @@ void SceneRenderer::Render(Scene& scene, const PerspectiveCamera* overrideCamera
         PostProcessor::BeginHDRScene(m_ViewportWidth, m_ViewportHeight, ctx.postProcess->BackdropColor);
     }
 
+    Renderer::UploadPointLights(&ctx.lighting);
     RenderPassGroundPlane(ctx);
     RenderPassCutoutStandees(ctx);
     RenderPassParticles(ctx);

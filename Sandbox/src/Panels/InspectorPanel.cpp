@@ -422,9 +422,20 @@ void InspectorPanel::DrawPointLight(Engine::PointLightComponent& pointLight, Eng
     (void)entity;
     ImGui::ColorEdit3("Light Color", &pointLight.Color.x);
     ImGui::SliderFloat("Intensity", &pointLight.Intensity, 0.0f, 5.0f, "%.2f");
-    ImGui::SliderFloat("Radius (m)", &pointLight.Radius, 0.5f, 16.0f, "%.2f");
+    ImGui::SliderFloat("Radius (m)", &pointLight.Radius, 0.5f, 18.0f, "%.2f");
     ImGui::SliderFloat("Falloff", &pointLight.Falloff, 0.3f, 4.0f, "%.2f");
     ImGui::DragFloat("Height Offset (Y)", &pointLight.HeightOffset, 0.05f, 0.0f, 6.0f, "%.2f m");
+    ImGui::Separator();
+    const char* priorityNames[] = { "Low (VFX)", "Normal (World)", "High (Tactical)", "Critical (Hero Torch)" };
+    int priorityIdx = std::clamp(static_cast<int>(pointLight.Priority), 0, 3);
+    if (ImGui::Combo("Priority", &priorityIdx, priorityNames, IM_ARRAYSIZE(priorityNames))) {
+        pointLight.Priority = static_cast<Engine::LightPriority>(priorityIdx);
+    }
+    ImGui::Checkbox("Cast Shadows", &pointLight.CastShadows);
+    if (pointLight.CastShadows) {
+        ImGui::SliderFloat("Shadow Softness", &pointLight.ShadowSoftness, 0.25f, 4.0f, "%.2f");
+        ImGui::SliderFloat("Shadow Bias", &pointLight.ShadowBias, 0.0002f, 0.01f, "%.4f");
+    }
     ImGui::Separator();
     ImGui::Checkbox("Torch Flicker", &pointLight.Flicker);
     if (pointLight.Flicker) {
