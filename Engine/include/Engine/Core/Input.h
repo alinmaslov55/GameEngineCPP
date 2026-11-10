@@ -10,6 +10,8 @@
 
 namespace Engine {
 
+class PerspectiveCamera;
+
 enum class InputDeviceMode : uint8_t {
     KeyboardMouse = 0,
     Gamepad = 1
@@ -65,6 +67,21 @@ public:
     static glm::vec2 ApplyRadialDeadzone(glm::vec2 rawStick, float deadzone = 0.20f) noexcept;
     static glm::vec2 GetMoveVector(float deadzone = 0.20f);
 
+    // Viewport-Aware Ground Raycasting, Unified Aim Resolver & Haptics
+    static void SetViewportRect(const glm::vec2& topLeftPx, const glm::vec2& sizePx) noexcept;
+    [[nodiscard]] static glm::vec2 GetViewportTopLeft() noexcept;
+    [[nodiscard]] static glm::vec2 GetViewportSize() noexcept;
+
+    static bool ScreenToViewportNDC(const glm::vec2& screenPx, glm::vec2& outNDC) noexcept;
+    static bool GetMouseGroundHitXZ(const PerspectiveCamera& camera, float planeY, glm::vec2& outWorldXZ);
+
+    static glm::vec2 ResolveAimDirectionXZ(const PerspectiveCamera& camera,
+                                           const glm::vec2& characterWorldXZ,
+                                           const glm::vec2& fallbackFacingXZ,
+                                           float planeY = 0.0f);
+
+    static void TriggerGamepadRumble(float lowFreq01, float highFreq01, uint32_t durationMs);
+
     // JSON Serialization of Action Bindings
     static std::string SerializeBindingsToString();
     static bool DeserializeBindingsFromString(std::string_view jsonStr);
@@ -84,10 +101,15 @@ public:
     // Deterministic Headless Testing Injection Helpers
     static void SetKeyStateForTesting(SDL_Scancode key, bool down);
     static void SetMouseButtonStateForTesting(int button, bool down);
+    static void SetMousePositionForTesting(const glm::vec2& position);
     static void SetGamepadConnectedForTesting(bool connected);
     static void SetGamepadButtonStateForTesting(SDL_GamepadButton btn, bool down);
     static void SetGamepadAxisStateForTesting(SDL_GamepadAxis axis, float normalizedValue);
     static void SetActiveDeviceModeForTesting(InputDeviceMode mode);
+    static void GetLastRumbleForTesting(float& outLowFreq01,
+                                        float& outHighFreq01,
+                                        uint32_t& outDurationMs,
+                                        uint32_t& outCallCount) noexcept;
 
 private:
     static void ConnectFirstGamepad();

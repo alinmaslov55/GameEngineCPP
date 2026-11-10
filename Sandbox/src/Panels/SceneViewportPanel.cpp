@@ -1,5 +1,6 @@
 #include "Panels/SceneViewportPanel.h"
 
+#include <Engine/Core/Input.h>
 #include <Engine/Core/ResourceManager.h>
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Renderer/SpriteRenderer.h>
@@ -92,6 +93,9 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                      ImVec2{ 1.0f, 0.0f });
     }
     const ImVec2 imageMin = ImGui::GetItemRectMin();
+    if (m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f) {
+        Engine::Input::SetViewportRect({ imageMin.x, imageMin.y }, m_ViewportSize);
+    }
 
     // 0. Drag-and-Drop 2.5D Prop Spawning from Asset Browser directly onto the 3D Ground Plane
     if (isEditMode && activeScene && ImGui::BeginDragDropTarget()) {

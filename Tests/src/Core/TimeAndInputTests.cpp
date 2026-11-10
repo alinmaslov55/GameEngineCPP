@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "Engine/Core/Time.h"
 #include "Engine/Core/Input.h"
+#include "Engine/Renderer/PerspectiveCamera.h"
 
 #include <cmath>
 #include <filesystem>
@@ -335,6 +336,157 @@ TEST(InputTest, ActionBindingJsonRoundTrip) {
     EXPECT_EQ(*Engine::Input::GetActionBinding("Dodge"), dodge);
 
     std::filesystem::remove(tempPath);
+}
+
+TEST(InputTest, MouseGroundHitXZViewportCenter16x9And9x16) {
+    ScopedInputSession input;
+
+    // 0. Uninitialized zero-sized viewport must return false safely
+    glm::vec2 hitXZ{ 0.0f };
+    Engine::PerspectiveCamera cam(32.0f, 16.0f / 9.0f, 0.1f, 250.0f);
+    cam.SetFocalPoint({ 6.5f, 0.0f, 7.0f });
+    cam.SetDistance(15.0f);
+    cam.SetPitchDegrees(40.0f);
+    cam.SetYawDegrees(0.0f);
+
+    Engine::Input::SetViewportRect({ 0.0f, 0.0f }, { 0.0f, 0.0f });
+    EXPECT_FALSE(Engine::Input::GetMouseGroundHitXZ(cam, 0.0f, hitXZ));
+
+    // 1. 16:9 Landscape Standalone viewport center (1920/2, 1080/2) -> FocalPoint.xz within 1e-4m
+    cam.SetAspectRatio(1920.0f / 1080.0f);
+    Engine::Input::SetViewportRect({ 0.0f, 0.0f }, { 1920.0f, 1080.0f });
+    Engine::Input::SetMousePositionForTesting({ 960.0f, 540.0f });
+    ASSERT_TRUE(Engine::Input::GetMouseGroundHitXZ(cam, 0.0f, hitXZ));
+    EXPECT_NEAR(hitXZ.x, cam.GetFocalPoint().x, 1e-4f);
+    EXPECT_NEAR(hitXZ.y, cam.GetFocalPoint().z, 1e-4f);
+
+    // Offset right of center lands East (+X), top half lands North (-Z)
+    Engine::Input::SetMousePositionForTesting({ 1440.0f, 270.0f });
+    ASSERT_TRUE(Engine::Input::GetMouseGroundHitXZ(cam, 0.0f, hitXZ));
+    EXPECT_GT(hitXZ.x, cam.GetFocalPoint().x);
+    EXPECT_LT(hitXZ.y, cam.GetFocalPoint().z);
+
+    // 2. 9:16 Portrait Docked Sub-Viewport center (topLeft + (W/2, H/2)) -> FocalPoint.xz within 1e-4m
+    cam.SetAspectRatio(1080.0f / 1920.0f);
+    const glm::vec2 dockedOrigin{ 284.0f, 48.0f };
+    const glm::vec2 dockedSize{ 540.0f, 960.0f };
+    Engine::Input::SetViewportRect(dockedOrigin, dockedSize);
+    Engine::Input::SetMousePositionForTesting(dockedOrigin + dockedSize * 0.5f);
+    ASSERT_TRUE(Engine::Input::GetMouseGroundHitXZ(cam, 0.0f, hitXZ));
+    EXPECT_NEAR(hitXZ.x, cam.GetFocalPoint().x, 1e-4f);
+    EXPECT_NEAR(hitXZ.y, cam.GetFocalPoint().z, 1e-4f);
+
+    // ScreenToViewportNDC maps top-left to (-1, +1) and bottom-right to (+1, -1)
+    glm::vec2 ndc{ 0.0f };
+    ASSERT_TRUE(Engine::Input::ScreenToViewportNDC(dockedOrigin, ndc));
+    EXPECT_NEAR(ndc.x, -1.0f, 1e-5f);
+    EXPECT_NEAR(ndc.y,  1.0f, 1e-5f);
+
+    ASSERT_TRUE(Engine::Input::ScreenToViewportNDC(dockedOrigin + dockedSize, ndc));
+    EXPECT_NEAR(ndc.x,  1.0f, 1e-5f);
+    EXPECT_NEAR(ndc.y, -1.0f, 1e-5f);
+}
+
+TEST(InputTest, ResolveAimDirectionXZKeyboardMouseAndGamepadParity) {
+    ScopedInputSession input;
+    Engine::Input::SetGamepadConnectedForTesting(true);
+
+    Engine::PerspectiveCamera cam(32.0f, 16.0f / 9.0f, 0.1f, 250.0f);
+    cam.SetFocalPoint({ 10.0f, 0.0f, 10.0f });
+    cam.SetDistance(15.0f);
+    cam.SetPitchDegrees(40.0f);
+    cam.SetYawDegrees(0.0f);
+
+    Engine::Input::SetViewportRect({ 0.0f, 0.0f }, { 1920.0f, 1080.0f });
+    const glm::vec2 charXZ{ 10.0f, 10.0f };
+    const glm::vec2 fallback{ 0.0f, 1.0f };
+
+    // 1. KeyboardMouse: mouse placed East of viewport center -> aim points (+X, 0)
+    Engine::Input::SetActiveDeviceModeForTesting(Engine::InputDeviceMode::KeyboardMouse);
+    Engine::Input::SetMousePositionForTesting({ 1440.0f, 540.0f });
+    glm::vec2 aimXZ = Engine::Input::ResolveAimDirectionXZ(cam, charXZ, fallback);
+    EXPECT_NEAR(glm::length(aimXZ), 1.0f, 1e-4f);
+    EXPECT_GT(aimXZ.x, 0.99f);
+    EXPECT_NEAR(aimXZ.y, 0.0f, 0.05f);
+
+    // Cursor directly over character feet at center -> cleanly falls back to normalized fallback
+    Engine::Input::SetMousePositionForTesting({ 960.0f, 540.0f });
+    aimXZ = Engine::Input::ResolveAimDirectionXZ(cam, charXZ, fallback);
+    EXPECT_NEAR(aimXZ.x, fallback.x, 1e-5f);
+    EXPECT_NEAR(aimXZ.y, fallback.y, 1e-5f);
+
+    // 2. Gamepad: Right Stick dominates Left Stick when pushed outside deadzone
+    Engine::Input::BeginFrame();
+    Engine::Input::SetActiveDeviceModeForTesting(Engine::InputDeviceMode::Gamepad);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_LEFTX, -1.0f);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_LEFTY, 0.0f);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_RIGHTX, 0.0f);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_RIGHTY, -0.8f); // Stick UP -> camera ForwardXZ (-Z)
+
+    aimXZ = Engine::Input::ResolveAimDirectionXZ(cam, charXZ, fallback);
+    EXPECT_NEAR(aimXZ.x, 0.0f, 1e-4f);
+    EXPECT_NEAR(aimXZ.y, -1.0f, 1e-4f);
+
+    // Right Stick inside deadzone -> falls back to Left Stick (-X West)
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_RIGHTX, 0.05f);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_RIGHTY, -0.05f);
+    aimXZ = Engine::Input::ResolveAimDirectionXZ(cam, charXZ, fallback);
+    EXPECT_NEAR(aimXZ.x, -1.0f, 1e-4f);
+    EXPECT_NEAR(aimXZ.y, 0.0f, 1e-4f);
+
+    // Orbiting camera Yaw to 90 deg projects Right Stick UP (+ForwardXZ) along +X world East
+    cam.SetYawDegrees(90.0f);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_RIGHTX, 0.0f);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_RIGHTY, -0.9f);
+    aimXZ = Engine::Input::ResolveAimDirectionXZ(cam, charXZ, fallback);
+    EXPECT_NEAR(aimXZ.x, 1.0f, 1e-4f);
+    EXPECT_NEAR(aimXZ.y, 0.0f, 1e-4f);
+
+    // Both sticks neutral -> falls back to normalized fallback
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_LEFTX, 0.0f);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_LEFTY, 0.0f);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_RIGHTX, 0.0f);
+    Engine::Input::SetGamepadAxisStateForTesting(SDL_GAMEPAD_AXIS_RIGHTY, 0.0f);
+    aimXZ = Engine::Input::ResolveAimDirectionXZ(cam, charXZ, fallback);
+    EXPECT_NEAR(aimXZ.x, fallback.x, 1e-5f);
+    EXPECT_NEAR(aimXZ.y, fallback.y, 1e-5f);
+
+    // Disconnected gamepad in Gamepad mode falls back cleanly
+    Engine::Input::SetGamepadConnectedForTesting(false);
+    aimXZ = Engine::Input::ResolveAimDirectionXZ(cam, charXZ, { 2.0f, 0.0f });
+    EXPECT_NEAR(aimXZ.x, 1.0f, 1e-5f);
+    EXPECT_NEAR(aimXZ.y, 0.0f, 1e-5f);
+}
+
+TEST(InputTest, GamepadRumbleClampingAndDisconnectedNoOp) {
+    ScopedInputSession input;
+
+    float low = -1.0f;
+    float high = -1.0f;
+    uint32_t dur = 999u;
+    uint32_t calls = 999u;
+
+    // Disconnected gamepad: safe no-op
+    Engine::Input::TriggerGamepadRumble(0.75f, 0.50f, 150u);
+    Engine::Input::GetLastRumbleForTesting(low, high, dur, calls);
+    EXPECT_EQ(calls, 0u);
+
+    // Connected gamepad: values clamp cleanly to [0.0f, 1.0f]
+    Engine::Input::SetGamepadConnectedForTesting(true);
+    Engine::Input::TriggerGamepadRumble(-0.4f, 1.8f, 220u);
+    Engine::Input::GetLastRumbleForTesting(low, high, dur, calls);
+    EXPECT_EQ(calls, 1u);
+    EXPECT_FLOAT_EQ(low, 0.0f);
+    EXPECT_FLOAT_EQ(high, 1.0f);
+    EXPECT_EQ(dur, 220u);
+
+    // Zero stop call propagates cleanly
+    Engine::Input::TriggerGamepadRumble(0.0f, 0.0f, 0u);
+    Engine::Input::GetLastRumbleForTesting(low, high, dur, calls);
+    EXPECT_EQ(calls, 2u);
+    EXPECT_FLOAT_EQ(low, 0.0f);
+    EXPECT_FLOAT_EQ(high, 0.0f);
+    EXPECT_EQ(dur, 0u);
 }
 
 } // namespace

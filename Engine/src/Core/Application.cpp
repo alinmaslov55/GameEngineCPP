@@ -45,6 +45,10 @@ void Application::Initialize() {
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
     Time::Init();
     Input::Init();
+    Input::SetViewportRect(
+        { 0.0f, 0.0f },
+        { static_cast<float>(m_Window->GetWidth()), static_cast<float>(m_Window->GetHeight()) }
+    );
     JobSystem::Init();
     AudioManager::Init();
     Renderer::Init();

@@ -79,6 +79,10 @@ void Window::PollEvents() {
                 if (event.window.data1 > 0 && event.window.data2 > 0) {
                     m_Width = event.window.data1;
                     m_Height = event.window.data2;
+                    Input::SetViewportRect(
+                        { 0.0f, 0.0f },
+                        { static_cast<float>(m_Width), static_cast<float>(m_Height) }
+                    );
                     ENGINE_CORE_DEBUG("Window resized to {}x{}", m_Width, m_Height);
                 }
                 break;

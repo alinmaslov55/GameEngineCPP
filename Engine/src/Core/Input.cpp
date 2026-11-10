@@ -1,4 +1,5 @@
 #include "Engine/Core/Input.h"
+#include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Utils/Logger.h"
 
 #include <nlohmann/json.hpp>
@@ -19,6 +20,7 @@ constexpr float kTriggerPressThreshold = 0.5f;
 constexpr float kDeviceSwitchAxisThreshold = 0.25f;
 constexpr float kDeviceSwitchMouseMotionThreshold = 2.0f;
 constexpr float kLegacySingleAxisDeadzone = 8000.0f / 32767.0f;
+constexpr float kAimStickDeadzone = 0.20f;
 
 struct TransparentStringHash {
     using is_transparent = void;
@@ -52,6 +54,14 @@ struct InputState {
     InputDeviceMode ActiveDeviceMode = InputDeviceMode::KeyboardMouse;
     bool GamepadConnectedForTesting = false;
 
+    glm::vec2 ViewportTopLeft{ 0.0f, 0.0f };
+    glm::vec2 ViewportSize{ 0.0f, 0.0f };
+
+    float LastRumbleLow01 = 0.0f;
+    float LastRumbleHigh01 = 0.0f;
+    uint32_t LastRumbleDurationMs = 0;
+    uint32_t RumbleCallCount = 0;
+
     std::unordered_map<std::string, ActionBinding, TransparentStringHash, std::equal_to<>> ActionBindings;
 
     void ResetBuffers() noexcept {
@@ -59,7 +69,7 @@ struct InputState {
         PrevKeys.fill(false);
         CurrMouseButtons.fill(false);
         PrevMouseButtons.fill(false);
-        MousePosition = {0.0f, 0.0f};
+        MousePosition = { 0.0f, 0.0f };
         ScrollDeltaX = 0.0f;
         ScrollDeltaY = 0.0f;
         CurrPadButtons.fill(false);
@@ -68,6 +78,12 @@ struct InputState {
         PrevPadAxes.fill(0.0f);
         ActiveDeviceMode = InputDeviceMode::KeyboardMouse;
         GamepadConnectedForTesting = false;
+        ViewportTopLeft = { 0.0f, 0.0f };
+        ViewportSize = { 0.0f, 0.0f };
+        LastRumbleLow01 = 0.0f;
+        LastRumbleHigh01 = 0.0f;
+        LastRumbleDurationMs = 0;
+        RumbleCallCount = 0;
     }
 };
 
@@ -87,6 +103,26 @@ bool IsValidGamepadButton(SDL_GamepadButton btn) noexcept {
 
 bool IsValidGamepadAxis(SDL_GamepadAxis axis) noexcept {
     return axis > SDL_GAMEPAD_AXIS_INVALID && static_cast<int>(axis) < SDL_GAMEPAD_AXIS_COUNT;
+}
+
+glm::vec2 NormalizeXZOrDefault(glm::vec2 vec, glm::vec2 defaultDir = { 0.0f, -1.0f }) noexcept {
+    if (!std::isfinite(vec.x) || !std::isfinite(vec.y)) {
+        return defaultDir;
+    }
+    const float lenSq = vec.x * vec.x + vec.y * vec.y;
+    if (lenSq <= 1e-6f) {
+        return defaultDir;
+    }
+    return vec / std::sqrt(lenSq);
+}
+
+glm::vec2 ProjectStickToCameraXZ(const PerspectiveCamera& camera, glm::vec2 stick2D) noexcept {
+    const glm::vec3& rightXZ = camera.GetRightXZ();
+    const glm::vec3& forwardXZ = camera.GetForwardXZ();
+    return {
+        rightXZ.x * stick2D.x + forwardXZ.x * stick2D.y,
+        rightXZ.z * stick2D.x + forwardXZ.z * stick2D.y
+    };
 }
 
 bool EvaluateBinding(const ActionBinding& binding, bool usePrevious) noexcept {
@@ -566,6 +602,105 @@ glm::vec2 Input::GetMoveVector(float deadzone) {
     return (stickLenSq >= keyLenSq) ? stickMove : keyMove;
 }
 
+void Input::SetViewportRect(const glm::vec2& topLeftPx, const glm::vec2& sizePx) noexcept {
+    s_State.ViewportTopLeft = topLeftPx;
+    s_State.ViewportSize = { std::max(0.0f, sizePx.x), std::max(0.0f, sizePx.y) };
+}
+
+glm::vec2 Input::GetViewportTopLeft() noexcept {
+    return s_State.ViewportTopLeft;
+}
+
+glm::vec2 Input::GetViewportSize() noexcept {
+    return s_State.ViewportSize;
+}
+
+bool Input::ScreenToViewportNDC(const glm::vec2& screenPx, glm::vec2& outNDC) noexcept {
+    if (s_State.ViewportSize.x <= 0.0f || s_State.ViewportSize.y <= 0.0f ||
+        !std::isfinite(screenPx.x) || !std::isfinite(screenPx.y)) {
+        return false;
+    }
+
+    const glm::vec2 rel = screenPx - s_State.ViewportTopLeft;
+    outNDC.x = (rel.x / s_State.ViewportSize.x) * 2.0f - 1.0f;
+    outNDC.y = 1.0f - (rel.y / s_State.ViewportSize.y) * 2.0f; // OpenGL bottom-up NDC [-1, 1]^2
+    return true;
+}
+
+bool Input::GetMouseGroundHitXZ(const PerspectiveCamera& camera, float planeY, glm::vec2& outWorldXZ) {
+    glm::vec2 ndc{ 0.0f };
+    if (!ScreenToViewportNDC(s_State.MousePosition, ndc)) {
+        return false;
+    }
+
+    glm::vec3 hitPoint{ 0.0f };
+    if (!camera.RaycastGroundPlane(ndc, planeY, hitPoint)) {
+        return false;
+    }
+
+    outWorldXZ = { hitPoint.x, hitPoint.z };
+    return true;
+}
+
+glm::vec2 Input::ResolveAimDirectionXZ(const PerspectiveCamera& camera,
+                                       const glm::vec2& characterWorldXZ,
+                                       const glm::vec2& fallbackFacingXZ,
+                                       float planeY) {
+    const glm::vec2 safeFallback = NormalizeXZOrDefault(fallbackFacingXZ);
+
+    if (s_State.ActiveDeviceMode == InputDeviceMode::Gamepad) {
+        if (!IsGamepadConnected()) {
+            return safeFallback;
+        }
+
+        const glm::vec2 rightStick = ApplyRadialDeadzone(
+            { s_State.CurrPadAxes[SDL_GAMEPAD_AXIS_RIGHTX], -s_State.CurrPadAxes[SDL_GAMEPAD_AXIS_RIGHTY] },
+            kAimStickDeadzone);
+        if ((rightStick.x * rightStick.x + rightStick.y * rightStick.y) > 1e-6f) {
+            return NormalizeXZOrDefault(ProjectStickToCameraXZ(camera, rightStick), safeFallback);
+        }
+
+        const glm::vec2 leftStick = ApplyRadialDeadzone(
+            { s_State.CurrPadAxes[SDL_GAMEPAD_AXIS_LEFTX], -s_State.CurrPadAxes[SDL_GAMEPAD_AXIS_LEFTY] },
+            kAimStickDeadzone);
+        if ((leftStick.x * leftStick.x + leftStick.y * leftStick.y) > 1e-6f) {
+            return NormalizeXZOrDefault(ProjectStickToCameraXZ(camera, leftStick), safeFallback);
+        }
+
+        return safeFallback;
+    }
+
+    glm::vec2 hitXZ{ 0.0f };
+    if (!GetMouseGroundHitXZ(camera, planeY, hitXZ) ||
+        !std::isfinite(characterWorldXZ.x) || !std::isfinite(characterWorldXZ.y)) {
+        return safeFallback;
+    }
+
+    return NormalizeXZOrDefault(hitXZ - characterWorldXZ, safeFallback);
+}
+
+void Input::TriggerGamepadRumble(float lowFreq01, float highFreq01, uint32_t durationMs) {
+    if (!IsGamepadConnected()) {
+        return;
+    }
+
+    const float clampedLow = std::isfinite(lowFreq01) ? std::clamp(lowFreq01, 0.0f, 1.0f) : 0.0f;
+    const float clampedHigh = std::isfinite(highFreq01) ? std::clamp(highFreq01, 0.0f, 1.0f) : 0.0f;
+
+    s_State.LastRumbleLow01 = clampedLow;
+    s_State.LastRumbleHigh01 = clampedHigh;
+    s_State.LastRumbleDurationMs = durationMs;
+    ++s_State.RumbleCallCount;
+
+    if (s_Gamepad) {
+        const Uint16 lowU16 = static_cast<Uint16>(std::lround(clampedLow * 65535.0f));
+        const Uint16 highU16 = static_cast<Uint16>(std::lround(clampedHigh * 65535.0f));
+        if (!SDL_RumbleGamepad(s_Gamepad, lowU16, highU16, durationMs)) {
+            ENGINE_CORE_TRACE("Input::TriggerGamepadRumble ignored or unsupported: {}", SDL_GetError());
+        }
+    }
+}
+
 std::string Input::SerializeBindingsToString() {
     nlohmann::json root;
     nlohmann::json bindingsJson = nlohmann::json::object();
@@ -657,6 +792,10 @@ void Input::SetMouseButtonStateForTesting(int button, bool down) {
     }
 }
 
+void Input::SetMousePositionForTesting(const glm::vec2& position) {
+    s_State.MousePosition = position;
+}
+
 void Input::SetGamepadConnectedForTesting(bool connected) {
     s_State.GamepadConnectedForTesting = connected;
     if (!connected && !s_Gamepad) {
@@ -686,6 +825,16 @@ void Input::SetGamepadAxisStateForTesting(SDL_GamepadAxis axis, float normalized
 
 void Input::SetActiveDeviceModeForTesting(InputDeviceMode mode) {
     s_State.ActiveDeviceMode = mode;
+}
+
+void Input::GetLastRumbleForTesting(float& outLowFreq01,
+                                    float& outHighFreq01,
+                                    uint32_t& outDurationMs,
+                                    uint32_t& outCallCount) noexcept {
+    outLowFreq01 = s_State.LastRumbleLow01;
+    outHighFreq01 = s_State.LastRumbleHigh01;
+    outDurationMs = s_State.LastRumbleDurationMs;
+    outCallCount = s_State.RumbleCallCount;
 }
 
 } // namespace Engine

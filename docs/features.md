@@ -197,7 +197,7 @@ flowchart TD
 | **`PHY-04`** | Collision Filter Masks & Elevation Pass-Through | `DONE` | **P1** | W4 | `PHY-03`, `ECS-05` | `AIX-02` (Jiangshi hop) | Airborne combat & clean pickup filtering |
 | **`PHY-05`** | Spatial Physics Queries & Selective Chronos Stasis | `DONE` | **P1** | W4 | `PHY-03` | `ECS-02` | `AIX-01`, Maul cleave, Chronos Rune |
 | **`INP-01`** | Edge-Triggered Input States & Action Binding Map | `DONE` | **P0** | W0 | *None (Root)* | `SAV-02` (save bindings) | `INP-02`, `UIX-04`, `SAV-02` |
-| **`INP-02`** | Ground-Plane Aim Resolver & Gamepad Haptics | `TODO` | **P1** | W1 | `INP-01`, `CAM-01` | `ECS-02` (pause mute) | Directional combat swings & drop placement |
+| **`INP-02`** | Ground-Plane Aim Resolver & Gamepad Haptics | `DONE` | **P1** | W1 | `INP-01`, `CAM-01` | `ECS-02` (pause mute) | Directional combat swings & drop placement |
 | **`LGT-01`** | Omnidirectional Point-Light Torch Shadow Casting | `TODO` | **P0** | W1 | `LGT-02` | `WindComponent` | `TER-03`, `RND-01` |
 | **`LGT-02`** | Expanded Priority-Sorted Point Light Pipeline | `TODO` | **P1** | W0 | *None (Root)* | `ECS-05` | `LGT-01`, `LGT-03`, `EDT-02` |
 | **`LGT-03`** | CPU Illumination & Umbral Visibility Query API | `TODO` | **P0** | W1 | `LGT-02` | `LGT-01` (line-of-light) | `AIX-02`, `UIX-04`, Torch survival rules |
@@ -213,7 +213,7 @@ flowchart TD
 | **`ANI-03`** | Sprite-Sheet Cutout Normalization & Pivot Lock | `TODO` | **P1** | W0 | *None (Root)* | `CutoutProcessor` | `ANI-01` |
 | **`VFX-01`** | Textured, Flipbook-Animated & Oriented Particles | `TODO` | **P0** | W1 | `RND-02` | `TER-04` (firewall) | Torch flame, shockwaves, bouncing splinters |
 | **`VFX-02`** | Ring-Buffered Ground Decal Pool | `TODO` | **P1** | W4 | `TER-04` | `RND-02` | Blood/ichor splatters & scorched craters |
-| **`CAM-01`** | Adaptive Hor+ (Landscape) & Vert+ (Portrait) FOV | `TODO` | **P1** | W0 | *None (Root)* | `PostProcessor` | `CAM-02`, `INP-02`, `EDT-01` |
+| **`CAM-01`** | Adaptive Hor+ (Landscape) & Vert+ (Portrait) FOV | `DONE` | **P1** | W0 | *None (Root)* | `PostProcessor` | `CAM-02`, `INP-02`, `EDT-01` |
 | **`CAM-02`** | Damped Brawler Camera Rig & Perlin Trauma Shake | `TODO` | **P0** | W1 | `CAM-01`, `ECS-02` | `INP-02` (look-ahead) | Maul/Jiangshi/Wendigo impact feel |
 | **`UIX-01`** | Resolution-Independent Canvas, Anchors & Safe Area| `TODO` | **P0** | W0 | *None (Root)* | `CAM-01` | `UIX-02`, `UIX-03`, `EDT-01` |
 | **`UIX-02`** | 9-Slice Frames, Clipped Bars & Radial Gauges | `TODO` | **P1** | W1 | `UIX-01` | `INP-01` (gamepad nav) | `UIX-04`, HUD HP/Torch/Rune widgets |
@@ -573,7 +573,7 @@ flowchart TD
 ---
 
 #### `INP-02` — Ground-Plane Aim Resolver & Gamepad Haptics
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W1`
 - **Dependencies:** Hard: `INP-01`, `CAM-01` | Unlocks: Twin-stick & mouse combat parity
 - **Proposed C++ Specification:**
   ```cpp
@@ -1465,7 +1465,7 @@ Without these 15 features, the core physics + torch shadow + surface interaction
 | **`PHY-03`** | `DONE` | **Full:** `CircleCollider2D` (prevents crowd snagging), sensor triggers (pickups/torch rim), and `b2ContactEvents` with `approachSpeed` (domino body-slam damage). |
 | **`PHY-05`** | `DONE` | **Lean:** `OverlapCircleXZ` and `OverlapArcXZ` for melee weapon cleave cones and ground-slam shockwaves. *(Defer raycasts & Chronos stasis rune).* |
 | **`INP-01`** | `DONE` | **Lean:** `WasKeyPressedThisFrame` / `WasMouseButtonPressedThisFrame` edge states. *(Defer JSON rebinding until Beta).* |
-| **`INP-02`** | `TODO` | **Lean:** Mouse ray to `Y = 0` ground plane intersection for 360° directional swing & dash aiming. *(Defer gamepad rumble).* |
+| **`INP-02`** | `DONE` | **Lean:** Mouse ray to `Y = 0` ground plane intersection for 360° directional swing & dash aiming. *(Defer gamepad rumble).* |
 | **`LGT-01`** | `TODO` | **Full:** Omnidirectional 2.5D Torch Shadow Map. The signature visual and tactical hook: trees and pillars must cast real-time radial shadows from the Hero's torch. |
 | **`LGT-03`** | `TODO` | **Full:** CPU `GetIlluminationAt(posXZ)` & `IsWithinTorchSafeRadius(posXZ)` to drive darkness vulnerability, searing-rim burn ticks, and monster light reactions. |
 | **`TER-04`** | `TODO` | **Single-Arena Mode:** Run the CPU splatmap sampler (`Grass`, `Ash`, `Tar`, `Chalk`) and `0.5m` Tar/Firewall cellular grid directly on the **existing single `TerrainComponent`**—validating surface friction and fire propagation *without* waiting for `TER-01..03`! |

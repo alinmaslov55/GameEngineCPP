@@ -150,17 +150,17 @@ void PerspectiveCamera::RecalculateView() {
 }
 
 bool PerspectiveCamera::RaycastGroundPlane(const glm::vec2& ndc, float planeY, glm::vec3& outHitPoint) const {
-    glm::vec4 nearPoint = m_InverseViewProjectionMatrix * glm::vec4(ndc.x, ndc.y, -1.0f, 1.0f);
-    glm::vec4 farPoint  = m_InverseViewProjectionMatrix * glm::vec4(ndc.x, ndc.y,  1.0f, 1.0f);
-    if (std::abs(nearPoint.w) < 1e-6f || std::abs(farPoint.w) < 1e-6f) {
+    if (std::abs(m_ProjectionMatrix[0][0]) < 1e-6f || std::abs(m_ProjectionMatrix[1][1]) < 1e-6f) {
         return false;
     }
 
-    nearPoint /= nearPoint.w;
-    farPoint  /= farPoint.w;
-
-    const glm::vec3 rayOrigin = glm::vec3(nearPoint);
-    const glm::vec3 rayDir = glm::normalize(glm::vec3(farPoint) - rayOrigin);
+    // Analytical perspective unprojection avoids far-plane hyperbolic w_far precision amplification
+    const glm::vec3 rayOrigin = m_Position;
+    const glm::vec3 rayDir = glm::normalize(
+        m_Right * (ndc.x / m_ProjectionMatrix[0][0]) +
+        m_Up    * (ndc.y / m_ProjectionMatrix[1][1]) +
+        m_Forward
+    );
 
     if (std::abs(rayDir.y) < 1e-5f) {
         return false;

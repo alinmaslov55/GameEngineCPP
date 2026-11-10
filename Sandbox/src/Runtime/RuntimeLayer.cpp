@@ -37,6 +37,10 @@ void RuntimeLayer::OnAttach() {
         m_ViewportWidth = static_cast<uint32_t>(window.GetWidth());
         m_ViewportHeight = static_cast<uint32_t>(window.GetHeight());
         m_ActiveScene->OnViewportResize(m_ViewportWidth, m_ViewportHeight);
+        Engine::Input::SetViewportRect(
+            { 0.0f, 0.0f },
+            { static_cast<float>(m_ViewportWidth), static_cast<float>(m_ViewportHeight) }
+        );
     }
 
     DemoScene::BindRuntimeGameplayScripts(m_ActiveScene);
@@ -70,6 +74,10 @@ void RuntimeLayer::OnUpdate(float deltaTime) {
             m_ViewportHeight = winH;
             m_ActiveScene->OnViewportResize(m_ViewportWidth, m_ViewportHeight);
         }
+        Engine::Input::SetViewportRect(
+            { 0.0f, 0.0f },
+            { static_cast<float>(m_ViewportWidth), static_cast<float>(m_ViewportHeight) }
+        );
     }
 
     // 2. Poll Input & Step Runtime Physics/Scripts
