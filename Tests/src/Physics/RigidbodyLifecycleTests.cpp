@@ -4,7 +4,12 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsWorld2D.h"
 #include <box2d/box2d.h>
+#include <thread>
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#endif
 
 class RigidbodyLifecycleTest : public ::testing::Test {
 protected:
@@ -317,5 +322,61 @@ TEST_F(RigidbodyLifecycleTest, MassMultiplierRemainsConstantAcross120FramesAndVe
     }
 
     EXPECT_NEAR( goScaled->GetTransform()->position.x, goRef->GetTransform()->position.x, 1e-4f );
+    scene.OnRuntimeStop();
+}
+
+TEST_F(RigidbodyLifecycleTest, PhysicsWorldAndComponentsEnforceMainThreadAffinity) {
+    Engine::Scene scene("PhysicsThreadAffinityScene");
+    scene.OnRuntimeStart();
+
+    auto* go = scene.CreateGameObject("PhysicsActor");
+    auto* rb2d = go->AddComponent<Engine::Rigidbody2D>();
+    rb2d->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    auto* col = go->AddComponent<Engine::BoxCollider2D>();
+
+    EXPECT_TRUE(scene.GetPhysicsWorld().IsOnOwnerThread());
+    scene.GetPhysicsWorld().MarkPhysicsDirty(go);
+    rb2d->ApplyImpulseXZ({ 1.0f, 0.0f });
+    col->SetMaskBits(Engine::PhysicsLayer::Environment);
+
+#if !defined(NDEBUG) && defined(GTEST_HAS_DEATH_TEST)
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    auto suppressCrtDialogs = []() {
+#ifdef _MSC_VER
+        _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+        _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+#endif
+    };
+    EXPECT_DEATH(
+        {
+            suppressCrtDialogs();
+            std::thread worker([&]() {
+                scene.GetPhysicsWorld().MarkPhysicsDirty(go);
+            });
+            worker.join();
+        },
+        "Main-thread affinity violation");
+    EXPECT_DEATH(
+        {
+            suppressCrtDialogs();
+            std::thread worker([&]() {
+                rb2d->ApplyImpulseXZ({ 2.0f, 0.0f });
+            });
+            worker.join();
+        },
+        "Main-thread affinity violation");
+    EXPECT_DEATH(
+        {
+            suppressCrtDialogs();
+            std::thread worker([&]() {
+                col->SetMaskBits(Engine::PhysicsLayer::All);
+            });
+            worker.join();
+        },
+        "Main-thread affinity violation");
+#endif
+
     scene.OnRuntimeStop();
 }

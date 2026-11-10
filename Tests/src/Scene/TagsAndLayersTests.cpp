@@ -5,8 +5,13 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
 
+#include <atomic>
 #include <vector>
 #include <string>
+
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#endif
 
 namespace {
 
@@ -268,6 +273,33 @@ TEST(TagsAndLayersTest, SceneSerializerTagAndLayerRoundTrip) {
     auto* oldObj = legacyScene->GetGameObjects()[0].get();
     EXPECT_EQ(oldObj->GetTag(), Engine::EntityTag::Untagged);
     EXPECT_EQ(oldObj->GetLayer(), Engine::EntityLayer::Default);
+}
+
+TEST(TagsAndLayersTest, ComponentMask128LimitEnforcedAtBoundary) {
+    std::atomic<uint32_t> counter{ 0 };
+    for (uint32_t expected = 0; expected < Engine::Detail::kMaxComponentTypes; ++expected) {
+        EXPECT_EQ(Engine::Detail::AllocateComponentTypeID(counter), expected);
+    }
+    EXPECT_EQ(counter.load(), Engine::Detail::kMaxComponentTypes);
+
+#ifdef GTEST_HAS_DEATH_TEST
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    auto suppressCrtDialogs = []() {
+#if defined(_MSC_VER) && !defined(NDEBUG)
+        _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+        _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+#endif
+    };
+    std::atomic<uint32_t> overflowCounter{ Engine::Detail::kMaxComponentTypes };
+    EXPECT_DEATH(
+        {
+            suppressCrtDialogs();
+            Engine::Detail::AllocateComponentTypeID(overflowCounter);
+        },
+        "ComponentMask128 limit exceeded");
+#endif
 }
 
 } // namespace

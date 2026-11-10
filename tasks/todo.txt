@@ -158,7 +158,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
       * In `FlushEntityLifecycleQueues()`, spawn checks blindly set `m_StaticCollidersDirty = true` for every non-physics entity; refine to set dirty only when a static `Collider2D`/`Tilemap` spawns or moves.
       * Reuse `m_TempChildrenScratch` or index-iterate children cleanly in `DestroyGameObject()` / `ReleaseToPool()` rather than copying `std::vector<Transform*>` at every hierarchy node.
 
-[ ] 16. Main-Thread Affinity Assertions & Safe Release Guard on ComponentMask128 Limit
+[x] 16. Main-Thread Affinity Assertions & Safe Release Guard on ComponentMask128 Limit
     - Files: Engine/include/Engine/Scene/GameObject.h (lines 33-38), Engine/src/Scene/Scene.cpp, Engine/src/Physics/PhysicsComponents.cpp
     - Details:
       * Promote `GetNextComponentTypeID() < 128` from debug-only `assert` to a logged fatal error guard in Release so overflow cannot fail silently.

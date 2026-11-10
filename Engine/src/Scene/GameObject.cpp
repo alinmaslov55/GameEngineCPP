@@ -34,6 +34,7 @@ void GameObject::NotifyPhysicsComponentAdded() {
     if (!m_Scene) {
         return;
     }
+    m_Scene->AssertMainThreadAffinity("GameObject::NotifyPhysicsComponentAdded");
     if (m_Scene->IsRuntimeRunning()) {
         m_Scene->RegisterRuntimeBody(this);
         m_Scene->MarkPhysicsDirty(this);
@@ -45,6 +46,7 @@ void GameObject::NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool remov
     if (!m_Scene) {
         return;
     }
+    m_Scene->AssertMainThreadAffinity("GameObject::NotifyPhysicsComponentRemoved");
     if (m_Scene->IsRuntimeRunning()) {
         if (HasComponent<Rigidbody2D>() || HasComponent<Collider2D>() || HasComponent<Tilemap>()) {
             m_Scene->MarkPhysicsDirty(this);

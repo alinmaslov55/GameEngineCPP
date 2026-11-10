@@ -2,10 +2,12 @@
 #define PHYSICS_PHYSICSWORLD2D_H
 
 #include "Engine/Physics/PhysicsHandles.h"
+#include "Engine/Core/ThreadAffinity.h"
 #include <box2d/types.h>
 #include <array>
 #include <atomic>
 #include <cstdint>
+#include <thread>
 #include <vector>
 #include <unordered_map>
 #include <glm/vec2.hpp>
@@ -92,6 +94,20 @@ public:
     [[nodiscard]] size_t GetStaticColliderCount() const noexcept { return m_StaticColliders.size(); }
     [[nodiscard]] size_t GetContactedPairsScratchCapacity() const noexcept { return m_ContactedPairsScratch.capacity(); }
 
+    // Debug owner-thread affinity enforcement
+    void AssertMainThreadAffinity([[maybe_unused]] const char* operation) const noexcept {
+#ifndef NDEBUG
+        Detail::AssertThreadAffinity(m_OwnerThreadId, operation);
+#endif
+    }
+    [[nodiscard]] bool IsOnOwnerThread() const noexcept {
+#ifndef NDEBUG
+        return std::this_thread::get_id() == m_OwnerThreadId;
+#else
+        return true;
+#endif
+    }
+
 private:
     static void* Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int minRange, void* taskContext, void* userContext);
     static void Box2DFinishTask(void* userTask, void* userContext);
@@ -139,6 +155,9 @@ private:
         bool operator==(const ShapePairKey&) const noexcept = default;
     };
 
+#ifndef NDEBUG
+    std::thread::id m_OwnerThreadId{ std::this_thread::get_id() };
+#endif
     Scene* m_Scene{ nullptr };
     bool m_IsRuntimeRunning{ false };
     uint32_t m_PhysicsWorldId{ 0 };

@@ -753,15 +753,17 @@ TEST(DeferredLifecycleTest, CascadingDestroyReusesTempChildrenScratch) {
     const size_t capBefore = scene.GetTempChildrenScratchCapacity();
     EXPECT_GE(capBefore, 64u);
 
-    scene.DestroyGameObject(root);
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+        scene.DestroyGameObject(root);
 
-    // Scratch capacity must remain unchanged (zero per-node std::vector allocations)
-    EXPECT_EQ(scene.GetTempChildrenScratchCapacity(), capBefore);
-    for (auto* node : allNodes) {
-        EXPECT_TRUE(node->IsPendingDestroy());
+        // Scratch capacity must remain unchanged (zero per-node std::vector allocations)
+        EXPECT_EQ(scene.GetTempChildrenScratchCapacity(), capBefore);
+        for (auto* node : allNodes) {
+            EXPECT_TRUE(node->IsPendingDestroy());
+        }
     }
 
-    scene.FlushEntityLifecycleQueues();
     EXPECT_EQ(scene.GetGameObjects().size(), 0u);
     EXPECT_EQ(scene.GetTempChildrenScratchCapacity(), capBefore);
 }

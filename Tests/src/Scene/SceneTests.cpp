@@ -2,6 +2,12 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneManager.h"
 #include "Engine/Scene/GameObject.h"
+#include "Engine/Physics/PhysicsWorld2D.h"
+
+#include <thread>
+#ifdef _MSC_VER
+#include <crtdbg.h>
+#endif
 
 namespace {
 
@@ -55,6 +61,60 @@ TEST(SceneRuntimeTest, RuntimeLifecycleState) {
 
     scene->OnRuntimeStop();
     EXPECT_FALSE(scene->IsRuntimeRunning());
+}
+
+TEST(SceneTest, OwnerThreadAffinityTrackingAndGuard) {
+    Engine::Scene scene("ThreadAffinityScene");
+    auto* existing = scene.CreateGameObject("MainThreadEntity");
+    ASSERT_NE(existing, nullptr);
+
+    EXPECT_TRUE(scene.IsOnOwnerThread());
+    EXPECT_TRUE(scene.GetPhysicsWorld().IsOnOwnerThread());
+
+    bool workerSawSceneOwner = true;
+    bool workerSawPhysicsOwner = true;
+    std::thread inspectorThread([&]() {
+        workerSawSceneOwner = scene.IsOnOwnerThread();
+        workerSawPhysicsOwner = scene.GetPhysicsWorld().IsOnOwnerThread();
+    });
+    inspectorThread.join();
+
+#ifndef NDEBUG
+    EXPECT_FALSE(workerSawSceneOwner);
+    EXPECT_FALSE(workerSawPhysicsOwner);
+#ifdef GTEST_HAS_DEATH_TEST
+    GTEST_FLAG_SET(death_test_style, "threadsafe");
+    auto suppressCrtDialogs = []() {
+#ifdef _MSC_VER
+        _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR);
+        _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE);
+        _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR);
+#endif
+    };
+    EXPECT_DEATH(
+        {
+            suppressCrtDialogs();
+            std::thread worker([&]() {
+                scene.CreateGameObject("IllegalWorkerSpawn");
+            });
+            worker.join();
+        },
+        "Main-thread affinity violation");
+    EXPECT_DEATH(
+        {
+            suppressCrtDialogs();
+            std::thread worker([&]() {
+                scene.DestroyGameObject(existing);
+            });
+            worker.join();
+        },
+        "Main-thread affinity violation");
+#endif
+#else
+    EXPECT_TRUE(workerSawSceneOwner);
+    EXPECT_TRUE(workerSawPhysicsOwner);
+#endif
 }
 
 } // namespace

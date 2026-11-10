@@ -4,11 +4,13 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Core/ThreadAffinity.h"
 
 #include <array>
 #include <atomic>
 #include <cstdint>
 #include <string>
+#include <thread>
 #include <vector>
 #include <memory>
 #include <utility>
@@ -164,7 +166,24 @@ public:
     [[nodiscard]] const std::string& GetName() const noexcept { return m_Name; }
     void SetName(const std::string& name) { m_Name = name; }
 
+    // Debug owner-thread affinity enforcement
+    void AssertMainThreadAffinity([[maybe_unused]] const char* operation) const noexcept {
+#ifndef NDEBUG
+        Detail::AssertThreadAffinity(m_OwnerThreadId, operation);
+#endif
+    }
+    [[nodiscard]] bool IsOnOwnerThread() const noexcept {
+#ifndef NDEBUG
+        return std::this_thread::get_id() == m_OwnerThreadId;
+#else
+        return true;
+#endif
+    }
+
 private:
+#ifndef NDEBUG
+    std::thread::id m_OwnerThreadId{ std::this_thread::get_id() };
+#endif
     std::string m_Name;
     std::vector<std::unique_ptr<GameObject>> m_GameObjects;
     std::vector<std::unique_ptr<GameObject>> m_PendingSpawnQueue;

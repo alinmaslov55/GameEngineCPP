@@ -54,7 +54,7 @@
             "Name": "Sun Light",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 16441309355542326103
+            "UUID": 9038924090836815132
         },
         {
             "Components": {
@@ -117,7 +117,7 @@
             "Name": "Post Process Volume",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 14593355904413413068
+            "UUID": 14290399336070673562
         },
         {
             "Components": {
@@ -155,7 +155,7 @@
             "Name": "Wind Zone",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3152882629626624448
+            "UUID": 18158096728671710827
         },
         {
             "Components": {
@@ -208,7 +208,7 @@
             "Name": "Terrain",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 6464783155377906461
+            "UUID": 9192277875881802034
         },
         {
             "Components": {
@@ -494,7 +494,7 @@
             "Name": "Map",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 5903368505317824422
+            "UUID": 8981574418645319643
         },
         {
             "Components": {
@@ -502,7 +502,7 @@
                     "ClipPath": "jump.wav"
                 },
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.0,
@@ -561,7 +561,7 @@
                 },
                 "Rigidbody2D": {
                     "AirborneClearanceHeight": 0.75,
-                    "AirbornePassThroughMask": 266,
+                    "AirbornePassThroughMask": 532,
                     "AngularDamping": 6.0,
                     "BodyType": 1,
                     "EnableAirbornePassThrough": true,
@@ -631,12 +631,12 @@
             "Name": "Player",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 10198276323564373563
+            "UUID": 12832743673769210417
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -706,12 +706,12 @@
             "Name": "Cult Shrine",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8000045990047825037
+            "UUID": 1737201251839248086
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -820,12 +820,12 @@
             "Name": "Ritual Brazier 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 7131784740467329493
+            "UUID": 7305686798086465518
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -934,12 +934,12 @@
             "Name": "Ritual Brazier 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1370100637953600314
+            "UUID": 3001165909924078517
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -995,12 +995,12 @@
             "Name": "Pine Tree 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13829968998421073219
+            "UUID": 16022214254596556407
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1056,12 +1056,12 @@
             "Name": "Pine Tree 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 516849226919070902
+            "UUID": 12430322149922200808
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1117,12 +1117,12 @@
             "Name": "Pine Tree 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 11167911425799324009
+            "UUID": 9958918347336982379
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1178,12 +1178,12 @@
             "Name": "Pine Tree 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 11686281472325389287
+            "UUID": 835189828362511567
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1239,12 +1239,12 @@
             "Name": "Pine Tree 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 7354780230610003245
+            "UUID": 12014276979598286804
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1300,12 +1300,12 @@
             "Name": "Pine Tree 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8920647166940031181
+            "UUID": 16005274044039101504
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1361,12 +1361,12 @@
             "Name": "Pine Tree 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 10901695146371686241
+            "UUID": 15994403130576669552
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1422,12 +1422,12 @@
             "Name": "Pine Tree 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17608482528854463825
+            "UUID": 16435187810224074492
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1483,7 +1483,7 @@
             "Name": "Pine Tree 9",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 16500591878767476157
+            "UUID": 17853904204046441914
         },
         {
             "Components": {
@@ -1525,7 +1525,7 @@
             "Name": "Berry Bush 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 103462920502772566
+            "UUID": 8569107027390008656
         },
         {
             "Components": {
@@ -1567,7 +1567,7 @@
             "Name": "Berry Bush 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 2487512156398360225
+            "UUID": 3992363739378481836
         },
         {
             "Components": {
@@ -1609,7 +1609,7 @@
             "Name": "Berry Bush 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1991519201806796042
+            "UUID": 3285187156999607801
         },
         {
             "Components": {
@@ -1651,7 +1651,7 @@
             "Name": "Berry Bush 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 5251938000240587052
+            "UUID": 15296710633659407120
         },
         {
             "Components": {
@@ -1693,7 +1693,7 @@
             "Name": "Berry Bush 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 5367481439675768656
+            "UUID": 1152557620818319123
         },
         {
             "Components": {
@@ -1735,7 +1735,7 @@
             "Name": "Berry Bush 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1234354438689248902
+            "UUID": 17508155174332575386
         },
         {
             "Components": {
@@ -1777,7 +1777,7 @@
             "Name": "Berry Bush 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 4039365262184475337
+            "UUID": 8662227093528297285
         },
         {
             "Components": {
@@ -1819,12 +1819,12 @@
             "Name": "Berry Bush 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 15074822201542490801
+            "UUID": 15811385222638026643
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1893,12 +1893,12 @@
             "Name": "Cult Banner 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 465716270751112213
+            "UUID": 17555599827576476169
         },
         {
             "Components": {
                 "BoxCollider2D": {
-                    "CategoryBits": 512,
+                    "CategoryBits": 1,
                     "Density": 1.0,
                     "EnableHitEvents": true,
                     "Friction": 0.5,
@@ -1967,7 +1967,7 @@
             "Name": "Cult Banner 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 16831779392479358131
+            "UUID": 16261614483664122677
         },
         {
             "Components": {
@@ -2009,7 +2009,7 @@
             "Name": "Tall Grass 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 9809726476268774505
+            "UUID": 9720492027346880101
         },
         {
             "Components": {
@@ -2051,7 +2051,7 @@
             "Name": "Tall Grass 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 2255327937087057529
+            "UUID": 17067840441736081654
         },
         {
             "Components": {
@@ -2093,7 +2093,7 @@
             "Name": "Tall Grass 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3779079672465252073
+            "UUID": 5218220115615979812
         },
         {
             "Components": {
@@ -2135,7 +2135,7 @@
             "Name": "Tall Grass 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 14140955897629195024
+            "UUID": 4275342976039121130
         },
         {
             "Components": {
@@ -2177,7 +2177,7 @@
             "Name": "Tall Grass 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3344994076275800898
+            "UUID": 6274441261932139887
         },
         {
             "Components": {
@@ -2219,7 +2219,7 @@
             "Name": "Tall Grass 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 16270818135324234071
+            "UUID": 13212229470637446400
         },
         {
             "Components": {
@@ -2261,7 +2261,7 @@
             "Name": "Tall Grass 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3950355835050080393
+            "UUID": 12324826627011044272
         },
         {
             "Components": {
@@ -2303,7 +2303,7 @@
             "Name": "Tall Grass 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 14382090157461377353
+            "UUID": 1784555023420757645
         },
         {
             "Components": {
@@ -2345,7 +2345,7 @@
             "Name": "Tall Grass 9",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8405312737874180543
+            "UUID": 10207238384831976673
         },
         {
             "Components": {
@@ -2387,7 +2387,7 @@
             "Name": "Tall Grass 10",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 5369304024730222114
+            "UUID": 11900985071138404738
         },
         {
             "Components": {
@@ -2537,7 +2537,7 @@
             "Name": "HUD",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 11292545671170989637
+            "UUID": 4198809412584343211
         }
     ],
     "OrthographicSize": 5.0,

@@ -59,6 +59,7 @@ const SceneRenderer& Scene::GetRenderer() const noexcept { return *m_Renderer; }
 // ============================================================================
 
 GameObject* Scene::CreateGameObject(const std::string& name) {
+    AssertMainThreadAffinity("Scene::CreateGameObject");
     ENGINE_CORE_DEBUG("Scene '{}': Creating GameObject '{}'", m_Name, name);
     auto gameObject = std::make_unique<GameObject>(name);
     GameObject* rawPtr = gameObject.get();
@@ -76,6 +77,7 @@ GameObject* Scene::CreateGameObject(const std::string& name) {
 }
 
 GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& name) {
+    AssertMainThreadAffinity("Scene::CreateGameObjectWithUUID");
     ENGINE_CORE_DEBUG("Scene '{}': Creating GameObject '{}' with UUID {}", m_Name, name, uuid);
     auto gameObject = std::make_unique<GameObject>(uuid, name);
     GameObject* rawPtr = gameObject.get();
@@ -93,6 +95,7 @@ GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& na
 }
 
 void Scene::DestroyGameObject(GameObject* gameObject) {
+    AssertMainThreadAffinity("Scene::DestroyGameObject");
     if (!gameObject) {
         ENGINE_CORE_WARN("Scene '{}': Attempted to destroy null GameObject", m_Name);
         return;
@@ -129,6 +132,7 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
 }
 
 void Scene::EndIteration() {
+    AssertMainThreadAffinity("Scene::EndIteration");
     if (m_IterationDepth > 0) {
         --m_IterationDepth;
         if (m_IterationDepth == 0) {
@@ -138,6 +142,7 @@ void Scene::EndIteration() {
 }
 
 void Scene::FlushEntityLifecycleQueues() {
+    AssertMainThreadAffinity("Scene::FlushEntityLifecycleQueues");
     if (m_IterationDepth > 0) {
         return;
     }
@@ -311,6 +316,7 @@ std::vector<GameObject*> Scene::FindGameObjectsInLayer(uint32_t layerMask) const
 // ============================================================================
 
 GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worldPos) {
+    AssertMainThreadAffinity("Scene::InstantiatePrefab");
     const auto& rootJson = prefab.GetJson();
     if (!rootJson.contains("Entities") || !rootJson["Entities"].is_array() || rootJson["Entities"].empty()) {
         ENGINE_CORE_ERROR("Scene::InstantiatePrefab: Invalid prefab JSON");
@@ -441,6 +447,7 @@ void Scene::ClearAllPools() {
 // ============================================================================
 
 void Scene::Update(float deltaTime) {
+    AssertMainThreadAffinity("Scene::Update");
     ENGINE_CORE_TRACE("Scene '{}': Update (deltaTime: {:.4f}s, {} GameObjects)", m_Name, deltaTime, m_GameObjects.size());
 
     {
@@ -505,6 +512,7 @@ void Scene::OnRuntimeStop() {
 }
 
 void Scene::UpdateRuntime(float deltaTime) {
+    AssertMainThreadAffinity("Scene::UpdateRuntime");
     if (m_PhysicsWorld) {
         m_PhysicsWorld->UpdateRuntime(deltaTime);
     }

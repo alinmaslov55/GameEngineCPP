@@ -12,6 +12,19 @@ static inline BodyHandle ToHandle(b2BodyId id) { return BodyHandle{ b2StoreBodyI
 static inline b2ShapeId ToB2(ShapeHandle h) { return b2LoadShapeId(h.Value); }
 static inline ShapeHandle ToHandle(b2ShapeId id) { return ShapeHandle{ b2StoreShapeId(id) }; }
 
+static inline void AssertPhysicsOwnerThread([[maybe_unused]] const Component* comp,
+                                            [[maybe_unused]] const char* operation) noexcept {
+#ifndef NDEBUG
+    if (comp) {
+        if (const auto* go = comp->GetGameObject()) {
+            if (const auto* scene = go->GetScene()) {
+                scene->AssertMainThreadAffinity(operation);
+            }
+        }
+    }
+#endif
+}
+
 bool Rigidbody2D::IsAirborne() const noexcept {
     float currentY = GroundLevelY;
     if (auto* go = GetGameObject()) {
@@ -23,6 +36,7 @@ bool Rigidbody2D::IsAirborne() const noexcept {
 }
 
 void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::ApplyImpulseXZ");
     if (m_IsStasisFrozen) {
         m_QueuedStasisImpulseXZ += impulseXZ;
         return;
@@ -41,6 +55,7 @@ void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
 }
 
 void Rigidbody2D::ApplyForceXZ(const glm::vec2& forceXZ, bool wake) {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::ApplyForceXZ");
     if (m_IsStasisFrozen) {
         return;
     }
@@ -56,6 +71,7 @@ void Rigidbody2D::ApplyForceXZ(const glm::vec2& forceXZ, bool wake) {
 }
 
 void Rigidbody2D::SetVelocityXZ(const glm::vec2& velocityXZ) {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::SetVelocityXZ");
     if (m_IsStasisFrozen) {
         m_StasisCachedVelocityXZ = velocityXZ;
         return;
@@ -84,6 +100,7 @@ glm::vec2 Rigidbody2D::GetVelocityXZ() const noexcept {
 }
 
 void Rigidbody2D::SetStasisFrozen(bool frozen) {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::SetStasisFrozen");
     if (m_IsStasisFrozen == frozen) return;
     m_IsStasisFrozen = frozen;
 
@@ -139,6 +156,7 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
 }
 
 void Rigidbody2D::SetPositionXZ(const glm::vec2& worldXZ) {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::SetPositionXZ");
     if (auto* go = GetGameObject()) {
         if (auto* t = go->GetTransform()) {
             if (t->GetParent()) {
@@ -160,6 +178,7 @@ void Rigidbody2D::SetPositionXZ(const glm::vec2& worldXZ) {
 }
 
 void Rigidbody2D::SetLinearDampingRuntime(float damping) {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::SetLinearDampingRuntime");
     LinearDamping = damping;
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
@@ -180,6 +199,7 @@ float Rigidbody2D::GetLinearDamping() const noexcept {
 }
 
 void Rigidbody2D::SetAngularDampingRuntime(float damping) {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::SetAngularDampingRuntime");
     AngularDamping = damping;
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
@@ -205,6 +225,7 @@ void Rigidbody2D::SetMassMultiplier(float multiplier) {
 }
 
 void Rigidbody2D::ApplyMassMultiplierToBody() {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::ApplyMassMultiplierToBody");
     if (!RuntimeBody.IsValid() || Type != BodyType::Dynamic || m_IsStasisFrozen) {
         return;
     }
@@ -230,6 +251,7 @@ void Rigidbody2D::ApplyMassMultiplierToBody() {
 }
 
 void Rigidbody2D::RefreshMassFromShapes() {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::RefreshMassFromShapes");
     if (!RuntimeBody.IsValid() || Type != BodyType::Dynamic) {
         return;
     }
@@ -260,6 +282,7 @@ float Rigidbody2D::GetMass() const noexcept {
 }
 
 void Rigidbody2D::SetBullet(bool bullet) {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::SetBullet");
     IsBullet = bullet;
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
@@ -280,6 +303,7 @@ bool Rigidbody2D::GetBullet() const noexcept {
 }
 
 void Rigidbody2D::OnEnable() {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::OnEnable");
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -293,6 +317,7 @@ void Rigidbody2D::OnEnable() {
 }
 
 void Rigidbody2D::OnDisable() {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::OnDisable");
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -302,6 +327,7 @@ void Rigidbody2D::OnDisable() {
 }
 
 void Rigidbody2D::OnDestroy() {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::OnDestroy");
     if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene()) {
             scene->UnregisterRuntimeBody(go);
@@ -311,6 +337,7 @@ void Rigidbody2D::OnDestroy() {
 }
 
 void Rigidbody2D::OnPoolAcquire() {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::OnPoolAcquire");
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -341,6 +368,7 @@ void Rigidbody2D::OnPoolAcquire() {
 }
 
 void Rigidbody2D::OnPoolRelease() {
+    AssertPhysicsOwnerThread(this, "Rigidbody2D::OnPoolRelease");
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -392,6 +420,7 @@ static b2ShapeDef BuildDefaultColliderShapeDef(Collider2D* col, GameObject* go) 
 }
 
 void Collider2D::OnEnable() {
+    AssertPhysicsOwnerThread(this, "Collider2D::OnEnable");
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -407,6 +436,7 @@ void Collider2D::OnEnable() {
 }
 
 void Collider2D::OnDisable() {
+    AssertPhysicsOwnerThread(this, "Collider2D::OnDisable");
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -416,6 +446,7 @@ void Collider2D::OnDisable() {
 }
 
 void Collider2D::OnDestroy() {
+    AssertPhysicsOwnerThread(this, "Collider2D::OnDestroy");
     if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene()) {
             if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
@@ -435,6 +466,7 @@ void Collider2D::OnDestroy() {
 }
 
 void Collider2D::OnPoolAcquire() {
+    AssertPhysicsOwnerThread(this, "Collider2D::OnPoolAcquire");
     if (RuntimeShape.IsValid()) {
         b2ShapeId shapeId = ToB2(RuntimeShape);
         if (b2Shape_IsValid(shapeId)) {
@@ -462,6 +494,7 @@ void Collider2D::OnPoolAcquire() {
 }
 
 void Collider2D::OnPoolRelease() {
+    AssertPhysicsOwnerThread(this, "Collider2D::OnPoolRelease");
     if (RuntimeShape.IsValid()) {
         b2ShapeId shapeId = ToB2(RuntimeShape);
         if (b2Shape_IsValid(shapeId)) {
@@ -485,6 +518,7 @@ void Collider2D::OnPoolRelease() {
 }
 
 void Collider2D::SetFilter(uint64_t categoryBits, uint64_t maskBits, int32_t groupIndex) {
+    AssertPhysicsOwnerThread(this, "Collider2D::SetFilter");
     CategoryBits = categoryBits;
     MaskBits = maskBits;
     GroupIndex = groupIndex;
@@ -513,6 +547,7 @@ void Collider2D::SetGroupIndex(int32_t groupIndex) {
 }
 
 void Collider2D::CreateOrUpdateShape(BodyHandle body, const Transform& transform, GameObject* go) {
+    AssertPhysicsOwnerThread(this, "Collider2D::CreateOrUpdateShape");
     if (!body.IsValid()) return;
     b2BodyId bodyId = ToB2(body);
     if (!b2Body_IsValid(bodyId)) return;

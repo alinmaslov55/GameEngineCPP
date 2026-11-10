@@ -13,6 +13,8 @@
 #include <cassert>
 #include <concepts>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -39,11 +41,30 @@ enum class EntityLifecycle : uint8_t {
 };
 
 namespace Detail {
-inline uint32_t GetNextComponentTypeID() {
-    static std::atomic<uint32_t> s_Counter{0};
-    uint32_t id = s_Counter.fetch_add(1);
-    assert(id < 128 && "Exceeded maximum allowed 128 unique Component types in ComponentMask128!");
+inline constexpr uint32_t kMaxComponentTypes = 128;
+
+inline uint32_t AllocateComponentTypeID(std::atomic<uint32_t>& counter) noexcept {
+    const uint32_t id = counter.fetch_add(1, std::memory_order_relaxed);
+    if (id >= kMaxComponentTypes) [[unlikely]] {
+        ENGINE_CORE_CRITICAL(
+            "ComponentMask128 limit exceeded: attempted to register component type ID {} (max allowed: {}).",
+            id, kMaxComponentTypes);
+        if (auto& logger = ::Engine::Logger::GetCoreLogger()) {
+            logger->flush();
+        }
+        std::fprintf(stderr,
+                     "[FATAL] ComponentMask128 limit exceeded: component type ID %u (max allowed: %u).\n",
+                     id, kMaxComponentTypes);
+        std::fflush(stderr);
+        assert(id < kMaxComponentTypes && "Exceeded maximum allowed 128 unique Component types in ComponentMask128!");
+        std::abort();
+    }
     return id;
+}
+
+inline uint32_t GetNextComponentTypeID() noexcept {
+    static std::atomic<uint32_t> s_Counter{0};
+    return AllocateComponentTypeID(s_Counter);
 }
 
 template<typename T>

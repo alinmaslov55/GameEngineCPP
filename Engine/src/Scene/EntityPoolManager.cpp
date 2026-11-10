@@ -39,6 +39,7 @@ void EntityPoolManager::PropagatePoolRelease(GameObject* root) {
 
 void EntityPoolManager::PrewarmPool(const std::string& poolKey, const Prefab& prefab, uint32_t count) {
     if (!m_Scene) return;
+    m_Scene->AssertMainThreadAffinity("EntityPoolManager::PrewarmPool");
     auto& pool = m_Pools[poolKey];
     pool.freeList.reserve(pool.freeList.size() + count);
     pool.allInstances.reserve(pool.allInstances.size() + count);
@@ -58,6 +59,7 @@ void EntityPoolManager::PrewarmPool(const std::string& poolKey, const Prefab& pr
 
 GameObject* EntityPoolManager::AcquirePooled(const std::string& poolKey, const Prefab& prefab, const glm::vec3& worldPos) {
     if (!m_Scene) return nullptr;
+    m_Scene->AssertMainThreadAffinity("EntityPoolManager::AcquirePooled");
     auto& pool = m_Pools[poolKey];
     GameObject* instance = nullptr;
 
@@ -95,6 +97,9 @@ GameObject* EntityPoolManager::AcquirePooled(const std::string& poolKey, const P
 }
 
 void EntityPoolManager::ReleaseToPool(const std::string& poolKey, GameObject* instance) {
+    if (m_Scene) {
+        m_Scene->AssertMainThreadAffinity("EntityPoolManager::ReleaseToPool");
+    }
     if (!instance) return;
 
     PropagatePoolRelease(instance);
@@ -127,6 +132,7 @@ size_t EntityPoolManager::GetPoolTotalCount(const std::string& poolKey) const no
 
 void EntityPoolManager::ClearPool(const std::string& poolKey) {
     if (!m_Scene) return;
+    m_Scene->AssertMainThreadAffinity("EntityPoolManager::ClearPool");
     auto it = m_Pools.find(poolKey);
     if (it == m_Pools.end()) return;
 
@@ -141,6 +147,7 @@ void EntityPoolManager::ClearPool(const std::string& poolKey) {
 
 void EntityPoolManager::ClearAllPools() {
     if (!m_Scene) return;
+    m_Scene->AssertMainThreadAffinity("EntityPoolManager::ClearAllPools");
     auto pools = m_Pools;
     for (auto& [key, pool] : pools) {
         for (auto* instance : pool.allInstances) {

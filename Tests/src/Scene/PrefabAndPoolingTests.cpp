@@ -508,10 +508,14 @@ TEST(PrefabAndPoolingTest, FreeListO1MembershipAndIdempotentRelease) {
     EXPECT_FALSE(a2->IsInFreeList());
     EXPECT_FALSE(a3->IsInFreeList());
 
-    // Destroy a2
-    scene->DestroyGameObject(a2);
-    scene->FlushEntityLifecycleQueues();
-    EXPECT_FALSE(a2->IsInFreeList());
+    // Destroy a2 (inspect state while still PendingDestroy before flush frees memory)
+    const uint64_t a2UUID = a2->GetUUID();
+    {
+        Engine::Scene::ScopedIterationGuard guard(*scene);
+        scene->DestroyGameObject(a2);
+        EXPECT_FALSE(a2->IsInFreeList());
+    }
+    EXPECT_EQ(scene->FindGameObjectByUUID(a2UUID), nullptr);
     EXPECT_EQ(scene->GetPoolTotalCount("FreeListPool"), 2u);
 
     // Release remaining

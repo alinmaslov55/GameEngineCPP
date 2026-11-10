@@ -31,6 +31,7 @@ PhysicsWorld2D::~PhysicsWorld2D() {
 }
 
 void PhysicsWorld2D::MarkPhysicsDirty(GameObject* go) {
+    AssertMainThreadAffinity("PhysicsWorld2D::MarkPhysicsDirty");
     if (!m_IsRuntimeRunning || !go || go->IsPendingDestroy()) return;
     if (std::find(m_PendingPhysicsSync.begin(), m_PendingPhysicsSync.end(), go) == m_PendingPhysicsSync.end()) {
         m_PendingPhysicsSync.push_back(go);
@@ -38,6 +39,7 @@ void PhysicsWorld2D::MarkPhysicsDirty(GameObject* go) {
 }
 
 void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
+    AssertMainThreadAffinity("PhysicsWorld2D::RegisterRuntimeBody");
     if (!m_IsRuntimeRunning || !go) return;
     b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
     if (!b2World_IsValid(worldId)) return;
@@ -259,6 +261,7 @@ void PhysicsWorld2D::RemovePhysicsBodyEntry(GameObject* go) {
 }
 
 void PhysicsWorld2D::UnregisterRuntimeBody(GameObject* go) {
+    AssertMainThreadAffinity("PhysicsWorld2D::UnregisterRuntimeBody");
     if (!m_IsRuntimeRunning || !go) return;
     std::erase(m_PendingPhysicsSync, go);
     RemovePhysicsBodyEntry(go);
@@ -303,6 +306,7 @@ void PhysicsWorld2D::UnregisterRuntimeBody(GameObject* go) {
 }
 
 void PhysicsWorld2D::DisableRuntimeBody(GameObject* go) {
+    AssertMainThreadAffinity("PhysicsWorld2D::DisableRuntimeBody");
     if (!m_IsRuntimeRunning || !go) return;
     if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
         if (rb2d->RuntimeBody.IsValid()) {
@@ -319,6 +323,7 @@ void PhysicsWorld2D::CreateRuntimePhysicsBody(GameObject* go) {
 }
 
 void PhysicsWorld2D::CreateRuntimeTilemapBody(GameObject* go) {
+    AssertMainThreadAffinity("PhysicsWorld2D::CreateRuntimeTilemapBody");
     if (!m_IsRuntimeRunning || !go) return;
     b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
     if (!b2World_IsValid(worldId)) return;
@@ -473,6 +478,7 @@ void PhysicsWorld2D::Box2DFinishTask(void* userTask, void* userContext) {
 }
 
 void PhysicsWorld2D::OnRuntimeStart() {
+    AssertMainThreadAffinity("PhysicsWorld2D::OnRuntimeStart");
     if (m_IsRuntimeRunning) {
         ENGINE_CORE_WARN("PhysicsWorld2D: OnRuntimeStart called while already running");
         return;
@@ -514,6 +520,7 @@ void PhysicsWorld2D::OnRuntimeStart() {
 }
 
 void PhysicsWorld2D::OnRuntimeStop() {
+    AssertMainThreadAffinity("PhysicsWorld2D::OnRuntimeStop");
     if (!m_IsRuntimeRunning) {
         return;
     }
@@ -584,6 +591,7 @@ void PhysicsWorld2D::SyncMovedBodyTransform(const b2BodyMoveEvent& ev) {
 }
 
 void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
+    AssertMainThreadAffinity("PhysicsWorld2D::UpdateRuntime");
     if (m_IsRuntimeRunning) {
         if (!m_PendingPhysicsSync.empty()) {
             auto pendingSync = std::move(m_PendingPhysicsSync);
@@ -652,6 +660,7 @@ void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
 }
 
 void PhysicsWorld2D::UpdateNonRuntime(float deltaTime) {
+    AssertMainThreadAffinity("PhysicsWorld2D::UpdateNonRuntime");
     UpdateCollidersAndGravity(deltaTime);
     ResolveEntityCollisions();
     ResolveTilemapCollisions();
@@ -761,6 +770,7 @@ void PhysicsWorld2D::IntegrateVerticalElevation(float fixedDt) {
 }
 
 void PhysicsWorld2D::ApplyAirbornePassThroughFilter(GameObject* go, bool airborne) {
+    AssertMainThreadAffinity("PhysicsWorld2D::ApplyAirbornePassThroughFilter");
     if (!go) return;
     auto* rb2d = go->GetComponent<Rigidbody2D>();
     const uint64_t excludedMask = rb2d ? rb2d->AirbornePassThroughMask : PhysicsLayer::DefaultAirborneExcluded;
@@ -777,6 +787,7 @@ void PhysicsWorld2D::ApplyAirbornePassThroughFilter(GameObject* go, bool airborn
 }
 
 void PhysicsWorld2D::ProcessPhysicsEvents() {
+    AssertMainThreadAffinity("PhysicsWorld2D::ProcessPhysicsEvents");
     if (!m_IsRuntimeRunning || !m_Scene) return;
     b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
     if (!b2World_IsValid(worldId)) return;
