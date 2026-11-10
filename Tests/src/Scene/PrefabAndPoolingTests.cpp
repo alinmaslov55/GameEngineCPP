@@ -2,6 +2,7 @@
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
+#include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Scene/LightComponents.h"
@@ -561,6 +562,60 @@ TEST(PrefabAndPoolingTest, PolymorphicResettableHookOnCustomComponent) {
     EXPECT_EQ(comp->customState, 0);
     EXPECT_TRUE(go->IsInFreeList());
     EXPECT_FALSE(go->IsActive());
+}
+
+TEST(PrefabAndPoolingTest, ReleaseToPoolMutatingChildrenUsesScratchSafely) {
+    class DetachOnReleaseComponent : public Engine::Component {
+    public:
+        bool detachArmed = false;
+        int releaseCount = 0;
+
+        void OnPoolRelease() override {
+            ++releaseCount;
+            if (detachArmed && GetGameObject() && GetGameObject()->GetTransform()) {
+                GetGameObject()->GetTransform()->SetParent(nullptr, true);
+            }
+        }
+    };
+
+    auto scene = std::make_shared<Engine::Scene>("PoolScratchSafeScene");
+    auto* root = scene->CreateGameObject("PoolRoot");
+    root->SetPoolKey("ScratchPool");
+
+    auto* childA = scene->CreateGameObject("ChildA_Detaching");
+    childA->GetTransform()->SetParent(root->GetTransform(), false);
+    auto* detachComp = childA->AddComponent<DetachOnReleaseComponent>();
+
+    auto* childB = scene->CreateGameObject("ChildB_Sibling");
+    childB->GetTransform()->SetParent(root->GetTransform(), false);
+    auto* siblingComp = childB->AddComponent<CustomPooledComponent>();
+
+    auto* childC = scene->CreateGameObject("ChildC_Sibling");
+    childC->GetTransform()->SetParent(root->GetTransform(), false);
+    auto* siblingCompC = childC->AddComponent<CustomPooledComponent>();
+
+    auto* grandchild = scene->CreateGameObject("GrandchildC");
+    grandchild->GetTransform()->SetParent(childC->GetTransform(), false);
+    auto* gcComp = grandchild->AddComponent<CustomPooledComponent>();
+
+    auto& poolMgr = scene->GetPoolManager();
+    const size_t capBefore = poolMgr.GetTempChildrenScratchCapacity();
+    EXPECT_GE(capBefore, 64u);
+
+    detachComp->detachArmed = true;
+    scene->ReleaseToPool("ScratchPool", root);
+
+    // ChildA detached from Root mid-ReleaseToPool; all siblings & descendants must still have been visited safely
+    EXPECT_EQ(childA->GetTransform()->GetParent(), nullptr);
+    EXPECT_EQ(root->GetTransform()->GetChildren().size(), 2u);
+    EXPECT_EQ(detachComp->releaseCount, 1);
+    EXPECT_EQ(siblingComp->releaseCount, 1);
+    EXPECT_EQ(siblingCompC->releaseCount, 1);
+    EXPECT_EQ(gcComp->releaseCount, 1);
+    EXPECT_EQ(siblingComp->customState, 0);
+    EXPECT_EQ(siblingCompC->customState, 0);
+    EXPECT_EQ(gcComp->customState, 0);
+    EXPECT_EQ(poolMgr.GetTempChildrenScratchCapacity(), capBefore);
 }
 
 } // namespace

@@ -57,6 +57,7 @@ public:
     void FindGameObjectsInLayer(uint32_t layerMask, std::vector<GameObject*>& out) const;
     [[nodiscard]] std::vector<GameObject*> FindGameObjectsInLayer(uint32_t layerMask) const;
     [[nodiscard]] size_t GetEntityUUIDMapCount() const noexcept { return m_EntityUUIDMap.size(); }
+    [[nodiscard]] size_t GetTempChildrenScratchCapacity() const noexcept { return m_TempChildrenScratch.capacity(); }
     [[nodiscard]] const std::vector<std::unique_ptr<GameObject>>& GetGameObjects() const noexcept { return m_GameObjects; }
 
     // Iteration safety guard
@@ -168,6 +169,7 @@ private:
     std::vector<std::unique_ptr<GameObject>> m_GameObjects;
     std::vector<std::unique_ptr<GameObject>> m_PendingSpawnQueue;
     std::vector<GameObject*> m_PendingDestroyQueue;
+    std::vector<Transform*> m_TempChildrenScratch;
     std::unordered_map<uint64_t, GameObject*> m_EntityUUIDMap;
     uint32_t m_IterationDepth = 0;
 

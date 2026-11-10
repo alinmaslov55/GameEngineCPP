@@ -8,6 +8,7 @@
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Utils/Logger.h"
 
+#include <array>
 #include <atomic>
 #include <cassert>
 #include <concepts>
@@ -207,14 +208,37 @@ public:
                 }
             }
         }
+        NotifyStaticSpatialColliderStateChanged();
         if (m_Transform) {
-            for (auto* child : m_Transform->GetChildren()) {
-                if (child && child->GetGameObject()) {
-                    child->GetGameObject()->NotifyHierarchyActiveChanged();
+            const auto& children = m_Transform->GetChildren();
+            if (children.empty()) {
+                return;
+            }
+            if (children.size() <= 16) {
+                std::array<Transform*, 16> stackChildren{};
+                const size_t count = children.size();
+                for (size_t i = 0; i < count; ++i) {
+                    stackChildren[i] = children[i];
+                }
+                for (size_t i = 0; i < count; ++i) {
+                    if (stackChildren[i] && stackChildren[i]->GetGameObject()) {
+                        stackChildren[i]->GetGameObject()->NotifyHierarchyActiveChanged();
+                    }
+                }
+            } else {
+                auto childrenCopy = children;
+                for (auto* child : childrenCopy) {
+                    if (child && child->GetGameObject()) {
+                        child->GetGameObject()->NotifyHierarchyActiveChanged();
+                    }
                 }
             }
         }
     }
+
+    [[nodiscard]] bool HasDynamicRigidbody() const noexcept;
+    [[nodiscard]] bool HasStaticSpatialCollider() const noexcept;
+    void NotifyStaticSpatialColliderStateChanged() const noexcept;
 
     [[nodiscard]] bool IsActive() const noexcept { return m_Active; }
 
@@ -487,7 +511,9 @@ public:
             if constexpr (std::is_same_v<CleanT, Rigidbody2D> ||
                           std::is_same_v<CleanT, Tilemap> ||
                           Detail::IsComponentWithBase<CleanT, Collider2D>()) {
-                NotifyPhysicsComponentRemoved();
+                NotifyPhysicsComponentRemoved(
+                    std::is_same_v<CleanT, Tilemap>,
+                    std::is_same_v<CleanT, Rigidbody2D>);
             }
 
             if (m_ComponentIterationDepth > 0) {
@@ -505,7 +531,7 @@ private:
     friend class Scene;
 
     void NotifyPhysicsComponentAdded();
-    void NotifyPhysicsComponentRemoved();
+    void NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool removedIsRigidbody);
 
     Scene* m_Scene{ nullptr };
     Transform* m_Transform{nullptr};

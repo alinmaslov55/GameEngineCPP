@@ -1029,16 +1029,45 @@ void PhysicsWorld2D::UpdateCollidersAndGravity(float deltaTime) {
         m_StaticCollidersDirty = true;
     }
 
+    if (!m_StaticCollidersDirty) {
+        for (const auto& entry : m_StaticColliders) {
+            if (!entry.transform || !entry.collider ||
+                entry.transform->GetParent() != entry.cachedParent ||
+                entry.transform->position != entry.cachedPosition ||
+                entry.transform->scale != entry.cachedScale ||
+                entry.collider->size != entry.cachedSize ||
+                entry.collider->offset != entry.cachedOffset ||
+                (entry.transform->GetParent() && entry.transform->GetWorldPosition() != entry.cachedWorldPosition)) {
+                m_StaticCollidersDirty = true;
+                break;
+            }
+        }
+    }
+
     if (m_StaticCollidersDirty) {
         m_StaticColliders.clear();
         m_StaticGrid.clear();
 
         for (auto& gameObject : m_Scene->GetGameObjects()) {
+            if (!gameObject->IsActiveInHierarchy()) {
+                continue;
+            }
             if (auto* collider = gameObject->GetComponent<BoxCollider2D>()) {
                 auto* rb = gameObject->GetComponent<Rigidbody2D>();
                 const bool isDynamic = rb && (rb->Type == Rigidbody2D::BodyType::Dynamic);
                 if (!isDynamic) {
-                    m_StaticColliders.push_back({ gameObject.get(), gameObject->GetTransform(), collider });
+                    auto* tr = gameObject->GetTransform();
+                    m_StaticColliders.push_back({
+                        gameObject.get(),
+                        tr,
+                        collider,
+                        tr ? tr->GetParent() : nullptr,
+                        tr ? tr->position : glm::vec3(0.0f),
+                        tr ? tr->scale : glm::vec3(1.0f),
+                        collider->size,
+                        collider->offset,
+                        (tr && tr->GetParent()) ? tr->GetWorldPosition() : (tr ? tr->position : glm::vec3(0.0f))
+                    });
                 }
             }
         }

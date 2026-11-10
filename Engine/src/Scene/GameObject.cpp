@@ -6,19 +6,58 @@
 
 namespace Engine {
 
-void GameObject::NotifyPhysicsComponentAdded() {
-    if (m_Scene && m_Scene->IsRuntimeRunning()) {
-        m_Scene->RegisterRuntimeBody(this);
-        m_Scene->MarkPhysicsDirty(this);
+bool GameObject::HasDynamicRigidbody() const noexcept {
+    if (!HasComponent<Rigidbody2D>()) {
+        return false;
+    }
+    const auto* rb = GetComponent<Rigidbody2D>();
+    return rb && rb->Type == Rigidbody2D::BodyType::Dynamic;
+}
+
+bool GameObject::HasStaticSpatialCollider() const noexcept {
+    if (HasComponent<Tilemap>()) {
+        return true;
+    }
+    if (!HasComponent<Collider2D>()) {
+        return false;
+    }
+    return !HasDynamicRigidbody();
+}
+
+void GameObject::NotifyStaticSpatialColliderStateChanged() const noexcept {
+    if (m_Scene && IsAlive() && HasStaticSpatialCollider()) {
+        m_Scene->InvalidateSpatialGrid();
     }
 }
 
-void GameObject::NotifyPhysicsComponentRemoved() {
-    if (m_Scene && m_Scene->IsRuntimeRunning()) {
+void GameObject::NotifyPhysicsComponentAdded() {
+    if (!m_Scene) {
+        return;
+    }
+    if (m_Scene->IsRuntimeRunning()) {
+        m_Scene->RegisterRuntimeBody(this);
+        m_Scene->MarkPhysicsDirty(this);
+    }
+    NotifyStaticSpatialColliderStateChanged();
+}
+
+void GameObject::NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool removedIsRigidbody) {
+    if (!m_Scene) {
+        return;
+    }
+    if (m_Scene->IsRuntimeRunning()) {
         if (HasComponent<Rigidbody2D>() || HasComponent<Collider2D>() || HasComponent<Tilemap>()) {
             m_Scene->MarkPhysicsDirty(this);
         } else {
             m_Scene->UnregisterRuntimeBody(this);
+        }
+    }
+    if (IsAlive()) {
+        const bool affectsStaticGrid = removedIsTilemap ||
+            (removedIsRigidbody ? (HasComponent<Collider2D>() && !HasDynamicRigidbody())
+                                : !HasDynamicRigidbody());
+        if (affectsStaticGrid) {
+            m_Scene->InvalidateSpatialGrid();
         }
     }
 }

@@ -5,29 +5,36 @@
 
 namespace Engine {
 
-void EntityPoolManager::PropagatePoolAcquire(GameObject* root) {
+EntityPoolManager::EntityPoolManager(Scene* scene)
+    : m_Scene(scene) {
+    m_TempChildrenScratch.reserve(64);
+}
+
+void EntityPoolManager::PropagatePoolTree(GameObject* root, bool isAcquire) {
     if (!root) return;
-    root->OnPoolAcquire();
+    if (isAcquire) {
+        root->OnPoolAcquire();
+    } else {
+        root->OnPoolRelease();
+    }
     if (auto* transform = root->GetTransform()) {
-        transform->SnapshotPrevious();
-        for (auto* child : transform->GetChildren()) {
-            if (child && child->GetGameObject()) {
-                PropagatePoolAcquire(child->GetGameObject());
-            }
+        if (isAcquire) {
+            transform->SnapshotPrevious();
         }
+        transform->ForEachChildBuffered(m_TempChildrenScratch, [this, isAcquire](Transform* child) {
+            if (auto* childGo = child->GetGameObject()) {
+                PropagatePoolTree(childGo, isAcquire);
+            }
+        });
     }
 }
 
+void EntityPoolManager::PropagatePoolAcquire(GameObject* root) {
+    PropagatePoolTree(root, true);
+}
+
 void EntityPoolManager::PropagatePoolRelease(GameObject* root) {
-    if (!root) return;
-    root->OnPoolRelease();
-    if (auto* transform = root->GetTransform()) {
-        for (auto* child : transform->GetChildren()) {
-            if (child && child->GetGameObject()) {
-                PropagatePoolRelease(child->GetGameObject());
-            }
-        }
-    }
+    PropagatePoolTree(root, false);
 }
 
 void EntityPoolManager::PrewarmPool(const std::string& poolKey, const Prefab& prefab, uint32_t count) {

@@ -733,4 +733,37 @@ TEST(DeferredLifecycleTest, FixedUpdateSpawnAndDestroyAcross30Frames) {
     scene.OnRuntimeStop();
 }
 
+TEST(DeferredLifecycleTest, CascadingDestroyReusesTempChildrenScratch) {
+    Engine::Scene scene("ScratchReuseDestroyScene");
+
+    auto* root = scene.CreateGameObject("Root");
+    std::vector<Engine::GameObject*> allNodes{ root };
+    for (int i = 0; i < 4; ++i) {
+        auto* child = scene.CreateGameObject("Child_" + std::to_string(i));
+        child->GetTransform()->SetParent(root->GetTransform(), false);
+        allNodes.push_back(child);
+
+        for (int j = 0; j < 3; ++j) {
+            auto* grandchild = scene.CreateGameObject("Grandchild_" + std::to_string(i) + "_" + std::to_string(j));
+            grandchild->GetTransform()->SetParent(child->GetTransform(), false);
+            allNodes.push_back(grandchild);
+        }
+    }
+
+    const size_t capBefore = scene.GetTempChildrenScratchCapacity();
+    EXPECT_GE(capBefore, 64u);
+
+    scene.DestroyGameObject(root);
+
+    // Scratch capacity must remain unchanged (zero per-node std::vector allocations)
+    EXPECT_EQ(scene.GetTempChildrenScratchCapacity(), capBefore);
+    for (auto* node : allNodes) {
+        EXPECT_TRUE(node->IsPendingDestroy());
+    }
+
+    scene.FlushEntityLifecycleQueues();
+    EXPECT_EQ(scene.GetGameObjects().size(), 0u);
+    EXPECT_EQ(scene.GetTempChildrenScratchCapacity(), capBefore);
+}
+
 } // namespace

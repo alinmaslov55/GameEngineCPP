@@ -36,14 +36,18 @@ public:
 
     void Translate(const glm::vec3& translation) {
         position += translation;
+        m_LastPosition = position;
         SetDirty();
+        NotifySpatialTransformChanged();
         ENGINE_CORE_TRACE("Transform::Translate by ({:.4f}, {:.4f}, {:.4f}) -> position: ({:.4f}, {:.4f}, {:.4f})",
                           translation.x, translation.y, translation.z, position.x, position.y, position.z);
     }
 
     void Rotate(const glm::vec3& eulerAngles) {
         rotation += eulerAngles;
+        m_LastRotation = rotation;
         SetDirty();
+        NotifySpatialTransformChanged();
         ENGINE_CORE_TRACE("Transform::Rotate by ({:.4f}, {:.4f}, {:.4f}) -> rotation: ({:.4f}, {:.4f}, {:.4f})",
                           eulerAngles.x, eulerAngles.y, eulerAngles.z, rotation.x, rotation.y, rotation.z);
     }
@@ -53,6 +57,29 @@ public:
     [[nodiscard]] Transform* GetParent() const noexcept { return m_Parent; }
     [[nodiscard]] const std::vector<Transform*>& GetChildren() const noexcept { return m_Children; }
     [[nodiscard]] bool IsDescendantOf(const Transform* ancestor) const noexcept;
+
+    /// @brief Iterates direct children using a caller-owned scratch buffer (stack-sliced by base index)
+    /// so recursive traversals never allocate per node and remain safe if callbacks mutate m_Children.
+    template<typename Fn>
+    void ForEachChildBuffered(std::vector<Transform*>& scratch, Fn&& fn) const {
+        if (m_Children.empty()) {
+            return;
+        }
+        const size_t baseIdx = scratch.size();
+        struct ScratchRestoreGuard {
+            std::vector<Transform*>& vec;
+            size_t base;
+            ~ScratchRestoreGuard() noexcept { vec.resize(base); }
+        } restoreGuard{ scratch, baseIdx };
+
+        scratch.insert(scratch.end(), m_Children.begin(), m_Children.end());
+        const size_t endIdx = scratch.size();
+        for (size_t i = baseIdx; i < endIdx; ++i) {
+            if (Transform* child = scratch[i]) {
+                fn(child);
+            }
+        }
+    }
 
     // Matrices and world coordinate queries
     [[nodiscard]] glm::mat4 GetLocalMatrix() const noexcept;
@@ -74,6 +101,7 @@ public:
 
 private:
     void UpdateDirtyFromAncestors() const noexcept;
+    void NotifySpatialTransformChanged() const noexcept;
 
     Transform* m_Parent = nullptr;
     std::vector<Transform*> m_Children;

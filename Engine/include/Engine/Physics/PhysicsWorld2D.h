@@ -125,6 +125,12 @@ private:
         GameObject* gameObject = nullptr;
         Transform* transform = nullptr;
         BoxCollider2D* collider = nullptr;
+        Transform* cachedParent = nullptr;
+        glm::vec3 cachedPosition{ 0.0f };
+        glm::vec3 cachedScale{ 1.0f };
+        glm::vec2 cachedSize{ 0.0f };
+        glm::vec2 cachedOffset{ 0.0f };
+        glm::vec3 cachedWorldPosition{ 0.0f };
     };
 
     struct ShapePairKey {

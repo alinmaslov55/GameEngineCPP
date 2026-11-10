@@ -11,12 +11,13 @@ namespace Engine {
 
 class Scene;
 class Prefab;
+class Transform;
 
 /// @brief Dedicated object pool manager for high-frequency GameObject prewarming,
 /// acquisition, and release with deep subtree lifecycle reset propagation and O(1) tracking.
 class EntityPoolManager {
 public:
-    explicit EntityPoolManager(Scene* scene) noexcept : m_Scene(scene) {}
+    explicit EntityPoolManager(Scene* scene);
     ~EntityPoolManager() = default;
 
     EntityPoolManager(const EntityPoolManager&) = delete;
@@ -33,11 +34,14 @@ public:
 
     [[nodiscard]] size_t GetPoolFreeCount(const std::string& poolKey) const noexcept;
     [[nodiscard]] size_t GetPoolTotalCount(const std::string& poolKey) const noexcept;
+    [[nodiscard]] size_t GetTempChildrenScratchCapacity() const noexcept { return m_TempChildrenScratch.capacity(); }
     void ClearPool(const std::string& poolKey);
     void ClearAllPools();
     void OnGameObjectDestroyed(GameObject* instance);
 
 private:
+    void PropagatePoolTree(GameObject* root, bool isAcquire);
+
     struct EntityPool {
         std::vector<GameObject*> freeList;
         std::vector<GameObject*> allInstances;
@@ -45,6 +49,7 @@ private:
 
     Scene* m_Scene{ nullptr };
     std::unordered_map<std::string, EntityPool> m_Pools;
+    std::vector<Transform*> m_TempChildrenScratch;
 };
 
 } // namespace Engine

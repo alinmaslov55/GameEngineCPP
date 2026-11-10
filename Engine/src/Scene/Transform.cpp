@@ -1,4 +1,5 @@
 #include "Engine/Scene/Transform.h"
+#include "Engine/Scene/GameObject.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glm/gtc/constants.hpp>
@@ -75,6 +76,17 @@ void Transform::SetDirty() const noexcept {
     }
 }
 
+void Transform::NotifySpatialTransformChanged() const noexcept {
+    if (auto* go = GetGameObject()) {
+        go->NotifyStaticSpatialColliderStateChanged();
+    }
+    for (const auto* child : m_Children) {
+        if (child) {
+            child->NotifySpatialTransformChanged();
+        }
+    }
+}
+
 bool Transform::SetParent(Transform* newParent, bool keepWorldTransform) {
     if (newParent == m_Parent) {
         return true;
@@ -114,6 +126,7 @@ bool Transform::SetParent(Transform* newParent, bool keepWorldTransform) {
     m_LastRotation = rotation;
     m_LastScale = scale;
     SetDirty();
+    NotifySpatialTransformChanged();
     return true;
 }
 
@@ -171,6 +184,7 @@ void Transform::SetWorldPosition(const glm::vec3& worldPos) noexcept {
     }
     m_LastPosition = position;
     SetDirty();
+    NotifySpatialTransformChanged();
 }
 
 glm::vec3 Transform::GetWorldRotation() const noexcept {
@@ -191,6 +205,7 @@ void Transform::SetWorldRotation(const glm::vec3& worldRot) noexcept {
     }
     m_LastRotation = rotation;
     SetDirty();
+    NotifySpatialTransformChanged();
 }
 
 glm::vec3 Transform::GetWorldScale() const noexcept {

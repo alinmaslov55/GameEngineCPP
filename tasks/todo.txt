@@ -152,7 +152,7 @@ ENGINE REFACTORING, PERFORMANCE & CONCURRENCY ROADMAP (ECS 01-05 & PHY 01-05)
 
 [P3] CODE HYGIENE, THREAD AFFINITY & SERIALIZATION POLISH
 --------------------------------------------------------------------------------
-[ ] 15. Fix Scene::FlushEntityLifecycleQueues() Static-Dirty Heuristic & Pooling Vector Reuse
+[x] 15. Fix Scene::FlushEntityLifecycleQueues() Static-Dirty Heuristic & Pooling Vector Reuse
     - Files: Engine/src/Scene/Scene.cpp (lines 1105-1161, 159-188)
     - Details:
       * In `FlushEntityLifecycleQueues()`, spawn checks blindly set `m_StaticCollidersDirty = true` for every non-physics entity; refine to set dirty only when a static `Collider2D`/`Tilemap` spawns or moves.

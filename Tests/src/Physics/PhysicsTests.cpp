@@ -362,5 +362,168 @@ TEST(SpatialGrid2DTest, GridInvalidationAndDynamicRebuild) {
     EXPECT_FALSE(scene.IsSpatialGridDirty());
 }
 
+TEST(SpatialGrid2DTest, NonPhysicsAndDynamicEntitiesNeverDirtyStaticGrid) {
+    class VisualDummyComponent : public Engine::Component {};
+
+    Engine::Scene scene("StaticDirtyHeuristicScene");
+
+    // Seed an initial static wall and settle the grid
+    auto* wall = scene.CreateGameObject("Wall");
+    wall->GetTransform()->position = { 2.0f, 0.0f, 2.0f };
+    wall->AddComponent<Engine::BoxCollider2D>();
+
+    scene.Update(0.016f);
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+    EXPECT_EQ(scene.GetStaticColliderCount(), 1u);
+
+    // 1. Direct non-physics spawn & component attachment keep grid clean
+    auto* visual = scene.CreateGameObject("VisualProp");
+    visual->AddComponent<VisualDummyComponent>();
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    // 2. Direct dynamic physics entity spawn keeps static grid clean
+    auto* dynActor = scene.CreateGameObject("DynamicActor");
+    auto* dynRb = dynActor->AddComponent<Engine::Rigidbody2D>();
+    dynRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    dynActor->AddComponent<Engine::BoxCollider2D>();
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    // 3. Deferred spawns & destroys inside iteration for visual + dynamic entities keep grid clean
+    Engine::GameObject* deferredVisual = nullptr;
+    Engine::GameObject* deferredDyn = nullptr;
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+
+        deferredVisual = scene.CreateGameObject("DeferredVisual");
+        deferredVisual->AddComponent<VisualDummyComponent>();
+
+        // Even adding BoxCollider2D before Dynamic Rigidbody2D must stay clean once committed at flush
+        deferredDyn = scene.CreateGameObject("DeferredDynamic");
+        deferredDyn->AddComponent<Engine::BoxCollider2D>();
+        auto* dRb = deferredDyn->AddComponent<Engine::Rigidbody2D>();
+        dRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+
+        scene.DestroyGameObject(visual);
+        scene.DestroyGameObject(dynActor);
+        EXPECT_FALSE(scene.IsSpatialGridDirty());
+    }
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+        scene.DestroyGameObject(deferredVisual);
+        scene.DestroyGameObject(deferredDyn);
+    }
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    // 4. Deferred static collider spawn marks dirty ONLY after FlushEntityLifecycleQueues commits it
+    Engine::GameObject* deferredWall = nullptr;
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+        deferredWall = scene.CreateGameObject("DeferredWall");
+        deferredWall->GetTransform()->position = { 8.0f, 0.0f, 8.0f };
+        deferredWall->AddComponent<Engine::BoxCollider2D>();
+        EXPECT_FALSE(scene.IsSpatialGridDirty());
+    }
+    EXPECT_TRUE(scene.IsSpatialGridDirty());
+
+    scene.Update(0.016f);
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+    EXPECT_EQ(scene.GetStaticColliderCount(), 2u);
+
+    // 5. Same-frame spawn + destroy of a static collider never enters grid -> keeps grid clean
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+        auto* transientWall = scene.CreateGameObject("TransientWall");
+        transientWall->AddComponent<Engine::BoxCollider2D>();
+        scene.DestroyGameObject(transientWall);
+    }
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    // 6. Destroying an alive static wall or spawning a Tilemap invalidates the grid
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+        scene.DestroyGameObject(deferredWall);
+    }
+    EXPECT_TRUE(scene.IsSpatialGridDirty());
+
+    scene.Update(0.016f);
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+    EXPECT_EQ(scene.GetStaticColliderCount(), 1u);
+
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+        auto* mapObj = scene.CreateGameObject("DeferredMap");
+        mapObj->AddComponent<Engine::Tilemap>(4u, 4u);
+    }
+    EXPECT_TRUE(scene.IsSpatialGridDirty());
+}
+
+TEST(SpatialGrid2DTest, StaticColliderAndTilemapMovementInvalidatesGrid) {
+    class VisualDummyComponent : public Engine::Component {};
+
+    Engine::Scene scene("StaticMovementInvalidationScene");
+
+    auto* wall = scene.CreateGameObject("StaticWall");
+    wall->GetTransform()->position = { 2.0f, 0.0f, 2.0f };
+    auto* wallCol = wall->AddComponent<Engine::BoxCollider2D>();
+    wallCol->size = { 1.0f, 1.0f };
+
+    auto* mapObj = scene.CreateGameObject("Map");
+    mapObj->AddComponent<Engine::Tilemap>(4u, 4u);
+
+    auto* visual = scene.CreateGameObject("Visual");
+    visual->AddComponent<VisualDummyComponent>();
+
+    auto* dyn = scene.CreateGameObject("DynamicMover");
+    auto* dynRb = dyn->AddComponent<Engine::Rigidbody2D>();
+    dynRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    dynRb->UseGravityY = false;
+    auto* dynCol = dyn->AddComponent<Engine::BoxCollider2D>();
+    dynCol->size = { 1.0f, 1.0f };
+
+    scene.Update(0.016f);
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    // Moving visual or dynamic entities must never invalidate the static spatial grid
+    visual->GetTransform()->Translate({ 5.0f, 0.0f, 0.0f });
+    dyn->GetTransform()->SetWorldPosition({ -4.0f, 0.0f, -4.0f });
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    // Explicit transform movement on static BoxCollider2D marks dirty immediately
+    wall->GetTransform()->Translate({ 2.0f, 0.0f, 0.0f });
+    EXPECT_TRUE(scene.IsSpatialGridDirty());
+
+    scene.Update(0.016f);
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    // Explicit transform movement on Tilemap marks dirty immediately
+    mapObj->GetTransform()->SetWorldPosition({ 10.0f, 0.0f, 10.0f });
+    EXPECT_TRUE(scene.IsSpatialGridDirty());
+
+    scene.Update(0.016f);
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    // Ancestor movement propagates dirty to static collider descendants
+    auto* parentGo = scene.CreateGameObject("WallParent");
+    wall->GetTransform()->SetParent(parentGo->GetTransform(), false);
+    scene.Update(0.016f);
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    parentGo->GetTransform()->Translate({ 1.0f, 0.0f, 0.0f });
+    EXPECT_TRUE(scene.IsSpatialGridDirty());
+
+    // Unparent and verify direct public field mutation (.position = ...) rebuilds grid in Update()
+    wall->GetTransform()->SetParent(nullptr, false);
+    scene.Update(0.016f);
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+
+    wall->GetTransform()->position = { 20.0f, 0.0f, 20.0f };
+    dyn->GetTransform()->position = { 19.4f, 0.0f, 20.0f };
+    scene.Update(0.016f);
+    EXPECT_FALSE(scene.IsSpatialGridDirty());
+    EXPECT_LE(dyn->GetTransform()->position.x, 19.0001f);
+}
+
 } // namespace
 

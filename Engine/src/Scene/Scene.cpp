@@ -7,9 +7,6 @@
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/SceneSerializer.h"
 #include "Engine/Scene/Component.h"
-#include "Engine/Physics/PhysicsComponents.h"
-#include "Engine/Scene/TerrainComponent.h"
-#include "Engine/Scene/Tilemap.h"
 #include "Engine/Utils/Logger.h"
 
 #include <algorithm>
@@ -26,6 +23,7 @@ Scene::Scene(const std::string& name)
       m_PhysicsWorld(std::make_unique<PhysicsWorld2D>(this)),
       m_PoolManager(std::make_unique<EntityPoolManager>(this)),
       m_Renderer(std::make_unique<SceneRenderer>()) {
+    m_TempChildrenScratch.reserve(64);
     ENGINE_CORE_INFO("Scene created: '{}'", m_Name);
 }
 
@@ -73,7 +71,6 @@ GameObject* Scene::CreateGameObject(const std::string& name) {
     } else {
         rawPtr->m_LifecycleState = EntityLifecycle::Alive;
         m_GameObjects.push_back(std::move(gameObject));
-        if (m_PhysicsWorld) m_PhysicsWorld->InvalidateSpatialGrid();
     }
     return rawPtr;
 }
@@ -91,7 +88,6 @@ GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& na
     } else {
         rawPtr->m_LifecycleState = EntityLifecycle::Alive;
         m_GameObjects.push_back(std::move(gameObject));
-        if (m_PhysicsWorld) m_PhysicsWorld->InvalidateSpatialGrid();
     }
     return rawPtr;
 }
@@ -122,14 +118,13 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
         m_PoolManager->OnGameObjectDestroyed(gameObject);
     }
 
-    // Recursively cascade destruction to all child GameObjects in hierarchy
+    // Recursively cascade destruction to all child GameObjects in hierarchy without per-node copies
     if (auto* transform = gameObject->GetTransform()) {
-        auto children = transform->GetChildren(); // Copy to avoid mutation while queueing
-        for (auto* child : children) {
-            if (child && child->GetGameObject()) {
-                DestroyGameObject(child->GetGameObject());
+        transform->ForEachChildBuffered(m_TempChildrenScratch, [this](Transform* child) {
+            if (auto* childGo = child->GetGameObject()) {
+                DestroyGameObject(childGo);
             }
-        }
+        });
     }
 }
 
@@ -167,6 +162,8 @@ void Scene::FlushEntityLifecycleQueues() {
             auto pendingSpawns = std::move(m_PendingSpawnQueue);
             m_PendingSpawnQueue.clear();
 
+            bool staticColliderSpawned = false;
+
             for (auto& pending : pendingSpawns) {
                 if (!pending) continue;
 
@@ -175,12 +172,6 @@ void Scene::FlushEntityLifecycleQueues() {
 
                     if (m_PhysicsWorld && m_PhysicsWorld->IsRuntimeRunning()) {
                         m_PhysicsWorld->UnregisterRuntimeBody(pending.get());
-                    }
-
-                    if (pending->GetComponent<BoxCollider2D>() || pending->GetComponent<CircleCollider2D>() ||
-                        pending->GetComponent<CapsuleCollider2D>() || pending->GetComponent<Tilemap>() ||
-                        pending->GetComponent<TerrainComponent>()) {
-                        if (m_PhysicsWorld) m_PhysicsWorld->InvalidateSpatialGrid();
                     }
 
                     for (size_t i = 0; i < pending->m_Components.size(); ++i) {
@@ -196,9 +187,15 @@ void Scene::FlushEntityLifecycleQueues() {
                     if (m_PhysicsWorld && m_PhysicsWorld->IsRuntimeRunning()) {
                         m_PhysicsWorld->RegisterRuntimeBody(pending.get());
                     }
+                    if (pending->HasStaticSpatialCollider()) {
+                        staticColliderSpawned = true;
+                    }
                     m_GameObjects.push_back(std::move(pending));
-                    if (m_PhysicsWorld) m_PhysicsWorld->InvalidateSpatialGrid();
                 }
+            }
+
+            if (staticColliderSpawned && m_PhysicsWorld) {
+                m_PhysicsWorld->InvalidateSpatialGrid();
             }
         }
 
@@ -207,7 +204,7 @@ void Scene::FlushEntityLifecycleQueues() {
             auto pendingDestroys = std::move(m_PendingDestroyQueue);
             m_PendingDestroyQueue.clear();
 
-            bool colliderDestroyed = false;
+            bool staticColliderDestroyed = false;
 
             for (auto* go : pendingDestroys) {
                 if (!go) continue;
@@ -218,10 +215,8 @@ void Scene::FlushEntityLifecycleQueues() {
                     m_PhysicsWorld->UnregisterRuntimeBody(go);
                 }
 
-                if (go->GetComponent<BoxCollider2D>() || go->GetComponent<CircleCollider2D>() ||
-                    go->GetComponent<CapsuleCollider2D>() || go->GetComponent<Tilemap>() ||
-                    go->GetComponent<TerrainComponent>()) {
-                    colliderDestroyed = true;
+                if (go->HasStaticSpatialCollider()) {
+                    staticColliderDestroyed = true;
                 }
 
                 // Invoke OnDestroy() on all components
@@ -238,7 +233,7 @@ void Scene::FlushEntityLifecycleQueues() {
                 return ptr->IsDestroyed();
             });
 
-            if (colliderDestroyed && m_PhysicsWorld) {
+            if (staticColliderDestroyed && m_PhysicsWorld) {
                 m_PhysicsWorld->InvalidateSpatialGrid();
             }
         }
