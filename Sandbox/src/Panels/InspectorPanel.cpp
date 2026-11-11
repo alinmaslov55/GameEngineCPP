@@ -431,6 +431,11 @@ void InspectorPanel::DrawPointLight(Engine::PointLightComponent& pointLight, Eng
     if (ImGui::Combo("Priority", &priorityIdx, priorityNames, IM_ARRAYSIZE(priorityNames))) {
         pointLight.Priority = static_cast<Engine::LightPriority>(priorityIdx);
     }
+    const char* semanticNames[] = { "Safe Lifeline", "Neutral / Shrine", "Deceptive Hazard" };
+    int semanticIdx = std::clamp(static_cast<int>(pointLight.Semantic), 0, 2);
+    if (ImGui::Combo("Semantic", &semanticIdx, semanticNames, IM_ARRAYSIZE(semanticNames))) {
+        pointLight.Semantic = static_cast<Engine::LightSemantic>(semanticIdx);
+    }
     ImGui::Checkbox("Cast Shadows", &pointLight.CastShadows);
     if (pointLight.CastShadows) {
         ImGui::SliderFloat("Shadow Softness", &pointLight.ShadowSoftness, 0.25f, 4.0f, "%.2f");

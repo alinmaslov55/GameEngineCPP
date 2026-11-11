@@ -3,6 +3,9 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsLayer.h"
 #include "Engine/Renderer/SceneLighting.h"
 #include "Engine/Renderer/SceneRenderer.h"
 #include "Engine/Renderer/Renderer.h"
@@ -282,6 +285,164 @@ TEST(TorchShadowMapTest, FourQuadrantFrustumCoverageAndRadialBillboardTangents) 
     const glm::vec3 fallbackRight = Engine::TorchShadowMap::ComputeRadialBillboardRightXZ(torchPos, torchPos);
     EXPECT_NEAR(glm::length(fallbackRight), 1.0f, 1e-5f);
     EXPECT_NEAR(fallbackRight.y, 0.0f, 1e-6f);
+}
+
+TEST(IlluminationQueryTest, SmoothstepAttenuationMatchesShaderFormula) {
+    constexpr float kRadius = 6.0f;
+    constexpr float kFalloff = 1.8f;
+
+    // 1. Center yields 1.0 regardless of falloff
+    EXPECT_FLOAT_EQ(Engine::PointLightComponent::EvaluateSmoothstepAttenuation(0.0f, kRadius, kFalloff), 1.0f);
+
+    // 2. Exact Batch2D.glsl / TerrainSplatmap.glsl midpoint (x = 0.5 -> s = 0.5 -> pow(0.5, 1.8))
+    const float expectedHalf = std::pow(0.5f, kFalloff);
+    EXPECT_NEAR(Engine::PointLightComponent::EvaluateSmoothstepAttenuation(3.0f, kRadius, kFalloff), expectedHalf, 1e-5f);
+
+    // 3. Exact 2D XZ vector wrapper
+    EXPECT_NEAR(Engine::PointLightComponent::EvaluateAttenuationXZ({ 1.0f, -2.0f }, { 4.0f, -2.0f }, kRadius, kFalloff),
+                expectedHalf, 1e-5f);
+
+    // 4. Edge and outside radius clamp cleanly to 0.0
+    EXPECT_FLOAT_EQ(Engine::PointLightComponent::EvaluateSmoothstepAttenuation(kRadius, kRadius, kFalloff), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::PointLightComponent::EvaluateSmoothstepAttenuation(kRadius + 1.5f, kRadius, kFalloff), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::PointLightComponent::EvaluateSmoothstepAttenuation(0.0f, 0.0f, kFalloff), 0.0f);
+
+    // 5. Shader clamps minimum falloff at 0.25f and radius at 0.05f
+    const float attenLowFalloff = Engine::PointLightComponent::EvaluateSmoothstepAttenuation(0.025f, 0.02f, 0.05f);
+    const float expectedClamped = std::pow(0.5f, 0.25f);
+    EXPECT_NEAR(attenLowFalloff, expectedClamped, 1e-5f);
+}
+
+TEST(IlluminationQueryTest, SafeLifelineSearingRimAndDeceptiveHazardQueries) {
+    Engine::Scene scene("UmbralLightQuerySpecTest");
+
+    auto* torch = scene.CreateGameObject("HeroTorch");
+    torch->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* torchPl = torch->AddComponent<Engine::PointLightComponent>();
+    torchPl->Semantic = Engine::LightSemantic::SafeLifeline;
+    torchPl->Priority = Engine::LightPriority::Critical_HeroTorch;
+    torchPl->Radius = 5.0f;
+    torchPl->Intensity = 1.75f;
+    torchPl->Falloff = 1.8f;
+
+    auto* wisp = scene.CreateGameObject("WillOTheWisp");
+    wisp->GetTransform()->position = { 12.0f, 0.0f, 0.0f };
+    auto* wispPl = wisp->AddComponent<Engine::PointLightComponent>();
+    wispPl->Semantic = Engine::LightSemantic::DeceptiveHazard;
+    wispPl->Priority = Engine::LightPriority::Normal_World;
+    wispPl->Radius = 4.0f;
+    wispPl->Intensity = 1.6f;
+
+    // 1. Inside safe torch circle at (3, 0): safe light is true, outside searing rim
+    const Engine::IlluminationSample insideSample = scene.EvaluateIlluminationAtXZ({ 3.0f, 0.0f });
+    EXPECT_TRUE(insideSample.IsInSafeLight());
+    EXPECT_FALSE(insideSample.IsInSearingRim());
+    EXPECT_NEAR(insideSample.PrimaryTorchNormalizedDist, 0.60f, 1e-5f);
+    EXPECT_EQ(insideSample.DominantSafeSource, torch);
+    EXPECT_FLOAT_EQ(insideSample.HazardIntensity, 0.0f);
+
+    // 2. Searing Light outer rim at (4.5, 0): 4.5 / 5.0 = 0.90 in [0.82, 1.02]
+    const Engine::IlluminationSample rimSample = scene.EvaluateIlluminationAtXZ({ 4.5f, 0.0f });
+    EXPECT_TRUE(rimSample.IsInSearingRim());
+    EXPECT_NEAR(rimSample.PrimaryTorchNormalizedDist, 0.90f, 1e-5f);
+    EXPECT_EQ(rimSample.DominantSafeSource, torch);
+    EXPECT_FLOAT_EQ(rimSample.HazardIntensity, 0.0f);
+
+    // 3. Standing inside DeceptiveHazard Wisp glow at (12, 0): unsafe + HazardIntensity > 0
+    const Engine::IlluminationSample wispSample = scene.EvaluateIlluminationAtXZ({ 12.0f, 0.0f });
+    EXPECT_FALSE(wispSample.IsInSafeLight());
+    EXPECT_FALSE(wispSample.IsInSearingRim());
+    EXPECT_GT(wispSample.HazardIntensity, 1.5f);
+    EXPECT_FLOAT_EQ(wispSample.SafeIntensity, 0.0f);
+    EXPECT_EQ(wispSample.DominantSafeSource, nullptr);
+}
+
+TEST(IlluminationQueryTest, DominantSourcePriorityPrecedenceOcclusionAndHierarchy) {
+    Engine::Scene scene("IlluminationAdvancedTest");
+
+    // Empty scene defaults
+    const Engine::IlluminationSample emptySample = scene.EvaluateIlluminationAtXZ({ 0.0f, 0.0f });
+    EXPECT_FALSE(emptySample.IsInSafeLight());
+    EXPECT_FALSE(emptySample.IsInSearingRim());
+    EXPECT_FLOAT_EQ(emptySample.PrimaryTorchNormalizedDist, 999.0f);
+    EXPECT_EQ(emptySample.DominantSafeSource, nullptr);
+
+    // NeutralShrine never grants safety
+    auto* shrine = scene.CreateGameObject("NeutralShrine");
+    shrine->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* shrinePl = shrine->AddComponent<Engine::PointLightComponent>();
+    EXPECT_EQ(shrinePl->Semantic, Engine::LightSemantic::NeutralShrine);
+    shrinePl->Radius = 6.0f;
+    shrinePl->Intensity = 2.0f;
+
+    const Engine::IlluminationSample shrineOnly = scene.EvaluateIlluminationAtXZ({ 0.0f, 0.0f });
+    EXPECT_FALSE(shrineOnly.IsInSafeLight());
+    EXPECT_GT(shrineOnly.NeutralIntensity, 1.99f);
+    EXPECT_EQ(shrineOnly.DominantSafeSource, nullptr);
+    EXPECT_FLOAT_EQ(shrineOnly.PrimaryTorchNormalizedDist, 999.0f);
+
+    // Non-hero SafeLifeline fallback drives PrimaryTorchNormalizedDist when Critical_HeroTorch is absent
+    auto* brazier = scene.CreateGameObject("IgnitedBrazier");
+    brazier->GetTransform()->position = { 10.0f, 0.0f, 0.0f };
+    auto* brazierCol = brazier->AddComponent<Engine::BoxCollider2D>();
+    brazierCol->CategoryBits = Engine::PhysicsLayer::Environment;
+    brazierCol->size = { 0.6f, 0.6f };
+    auto* brazierPl = brazier->AddComponent<Engine::PointLightComponent>();
+    brazierPl->Semantic = Engine::LightSemantic::SafeLifeline;
+    brazierPl->Priority = Engine::LightPriority::High_Tactical;
+    brazierPl->Radius = 5.0f;
+    brazierPl->Intensity = 2.0f;
+
+    const Engine::IlluminationSample brazierRim = scene.EvaluateIlluminationAtXZ({ 14.5f, 0.0f });
+    EXPECT_TRUE(brazierRim.IsInSearingRim());
+    EXPECT_EQ(brazierRim.DominantSafeSource, brazier);
+
+    // Parented Critical_HeroTorch resolves via Transform world position & supersedes brazier for normalized rim
+    auto* carrier = scene.CreateGameObject("TorchCarrier");
+    carrier->GetTransform()->position = { 20.0f, 0.0f, 0.0f };
+    auto* heroTorch = scene.CreateGameObject("ChildTorch");
+    heroTorch->GetTransform()->position = { 2.0f, 0.0f, 0.0f }; // World X = 22.0
+    heroTorch->GetTransform()->SetParent(carrier->GetTransform(), false);
+    auto* heroPl = heroTorch->AddComponent<Engine::PointLightComponent>();
+    heroPl->Semantic = Engine::LightSemantic::SafeLifeline;
+    heroPl->Priority = Engine::LightPriority::Critical_HeroTorch;
+    heroPl->Radius = 4.0f;
+    heroPl->Intensity = 2.5f;
+
+    const Engine::IlluminationSample heroOverlap = scene.EvaluateIlluminationAtXZ({ 18.4f, 0.0f });
+    EXPECT_NEAR(heroOverlap.PrimaryTorchNormalizedDist, 3.6f / 4.0f, 1e-4f);
+    EXPECT_TRUE(heroOverlap.IsInSearingRim());
+    EXPECT_EQ(heroOverlap.DominantSafeSource, heroTorch);
+
+    // Additive overlapping SafeLifeline sources + DominantSafeSource tie/winner selection
+    const Engine::IlluminationSample overlapCenter = scene.EvaluateIlluminationAtXZ({ 13.0f, 0.0f });
+    EXPECT_EQ(overlapCenter.DominantSafeSource, brazier);
+
+    // Inactive & extinguished lights contribute nothing
+    heroTorch->SetActive(false);
+    const Engine::IlluminationSample afterDeactivate = scene.EvaluateIlluminationAtXZ({ 22.0f, 0.0f });
+    EXPECT_FALSE(afterDeactivate.IsInSafeLight());
+    EXPECT_EQ(afterDeactivate.DominantSafeSource, nullptr);
+
+    // Optional LGT-01 / PHY-05 line-of-light occlusion blocks brazier behind an Environment stone wall
+    // (while brazier's own Environment BoxCollider2D does not self-occlude unblocked side)
+    auto* wall = scene.CreateGameObject("StoneWall");
+    wall->GetTransform()->position = { 12.0f, 0.0f, 0.0f };
+    auto* wallCol = wall->AddComponent<Engine::BoxCollider2D>();
+    wallCol->CategoryBits = Engine::PhysicsLayer::Environment;
+    wallCol->size = { 0.8f, 6.0f };
+
+    Engine::IlluminationQueryOptions lineOfLightOpts;
+    lineOfLightOpts.CheckLineOfLight = true;
+
+    const Engine::IlluminationSample unoccludedSide = scene.EvaluateIlluminationDetailedXZ({ 8.5f, 0.0f }, lineOfLightOpts);
+    EXPECT_TRUE(unoccludedSide.IsInSafeLight());
+    EXPECT_EQ(unoccludedSide.DominantSafeSource, brazier);
+
+    const Engine::IlluminationSample occludedSide = scene.EvaluateIlluminationDetailedXZ({ 13.5f, 0.0f }, lineOfLightOpts);
+    EXPECT_FALSE(occludedSide.IsInSafeLight());
+    EXPECT_FLOAT_EQ(occludedSide.SafeIntensity, 0.0f);
+    EXPECT_EQ(occludedSide.DominantSafeSource, nullptr);
 }
 
 } // namespace

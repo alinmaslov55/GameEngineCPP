@@ -91,6 +91,7 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     heroPointLight->Falloff = 1.65f;
     heroPointLight->HeightOffset = 0.95f;
     heroPointLight->Priority = Engine::LightPriority::Critical_HeroTorch;
+    heroPointLight->Semantic = Engine::LightSemantic::SafeLifeline;
     heroPointLight->CastShadows = true;
     heroPointLight->ShadowSoftness = 1.85f;
     heroPointLight->ShadowBias = 0.0031f;
@@ -228,6 +229,7 @@ TEST(SceneSerializerTest, SerializeAndDeserializeRoundTripPreservesSceneAndCompo
     EXPECT_NEAR(clonedPointLight->Falloff, 1.65f, 1e-5f);
     EXPECT_NEAR(clonedPointLight->HeightOffset, 0.95f, 1e-5f);
     EXPECT_EQ(clonedPointLight->Priority, Engine::LightPriority::Critical_HeroTorch);
+    EXPECT_EQ(clonedPointLight->Semantic, Engine::LightSemantic::SafeLifeline);
     EXPECT_TRUE(clonedPointLight->CastShadows);
     EXPECT_NEAR(clonedPointLight->ShadowSoftness, 1.85f, 1e-5f);
     EXPECT_NEAR(clonedPointLight->ShadowBias, 0.0031f, 1e-5f);
@@ -522,6 +524,52 @@ TEST(SceneSerializerTest, SandboxScenesLoadAndSimulateFeatureScenarios) {
         EXPECT_TRUE(villageVaultActive);
         villageScene->OnRuntimeStop();
     }
+}
+
+TEST(SceneSerializerTest, PointLightSemanticRoundTripAndDefaultFallback) {
+    auto srcScene = std::make_shared<Engine::Scene>("SemanticTestScene");
+    auto* wisp = srcScene->CreateGameObjectWithUUID(70707ULL, "WispLure");
+    auto* wispLight = wisp->AddComponent<Engine::PointLightComponent>();
+    wispLight->Semantic = Engine::LightSemantic::DeceptiveHazard;
+    wispLight->Radius = 4.25f;
+    wispLight->Intensity = 1.4f;
+
+    const std::string savedJson = Engine::SceneSerializer(srcScene).SerializeToString();
+    ASSERT_FALSE(savedJson.empty());
+
+    auto loadedScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(loadedScene).DeserializeFromString(savedJson));
+    auto* loadedWisp = loadedScene->FindGameObjectByUUID(70707ULL);
+    ASSERT_NE(loadedWisp, nullptr);
+    auto* loadedLight = loadedWisp->GetComponent<Engine::PointLightComponent>();
+    ASSERT_NE(loadedLight, nullptr);
+    EXPECT_EQ(loadedLight->Semantic, Engine::LightSemantic::DeceptiveHazard);
+
+    // Legacy scene payload omitting "Semantic" must default to NeutralShrine
+    const std::string legacyJson = R"({
+        "SceneName": "LegacyPointLight",
+        "GameObjects": [
+            {
+                "UUID": 80808,
+                "Name": "OldBrazier",
+                "Components": {
+                    "PointLight": {
+                        "Color": [1.0, 0.5, 0.2],
+                        "Intensity": 1.5,
+                        "Radius": 5.0,
+                        "Falloff": 1.8
+                    }
+                }
+            }
+        ]
+    })";
+    auto legacyScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(legacyScene).DeserializeFromString(legacyJson));
+    auto* legacyGo = legacyScene->FindGameObjectByUUID(80808ULL);
+    ASSERT_NE(legacyGo, nullptr);
+    auto* legacyPl = legacyGo->GetComponent<Engine::PointLightComponent>();
+    ASSERT_NE(legacyPl, nullptr);
+    EXPECT_EQ(legacyPl->Semantic, Engine::LightSemantic::NeutralShrine);
 }
 
 } // namespace

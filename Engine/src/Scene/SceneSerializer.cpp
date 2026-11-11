@@ -305,6 +305,7 @@ void SerializePointLight(const GameObject* go, json& compsJson) {
         {"Falloff", pointLight->Falloff},
         {"HeightOffset", pointLight->HeightOffset},
         {"Priority", static_cast<int>(pointLight->Priority)},
+        {"Semantic", static_cast<int>(pointLight->Semantic)},
         {"CastShadows", pointLight->CastShadows},
         {"ShadowSoftness", pointLight->ShadowSoftness},
         {"ShadowBias", pointLight->ShadowBias},
@@ -820,6 +821,10 @@ void DeserializePointLight(GameObject* go, const json& plJson, const std::string
                                    static_cast<int>(LightPriority::Low_VFX),
                                    static_cast<int>(LightPriority::Critical_HeroTorch));
     pointLight->Priority = static_cast<LightPriority>(rawPrio);
+    const int rawSemantic = std::clamp(plJson.value("Semantic", static_cast<int>(LightSemantic::NeutralShrine)),
+                                       static_cast<int>(LightSemantic::SafeLifeline),
+                                       static_cast<int>(LightSemantic::DeceptiveHazard));
+    pointLight->Semantic = static_cast<LightSemantic>(rawSemantic);
     pointLight->CastShadows = plJson.value("CastShadows", false);
     pointLight->ShadowSoftness = plJson.value("ShadowSoftness", 1.6f);
     pointLight->ShadowBias = plJson.value("ShadowBias", 0.0025f);

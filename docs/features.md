@@ -599,7 +599,7 @@ flowchart TD
 ---
 
 #### `LGT-01` — Omnidirectional Point-Light Torch Shadow Casting
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `LGT-02` | Unlocks: `TER-03`, `RND-01`
 - **Current Gap:** `ShadowMap` only renders a single orthographic directional light (`u_ShadowMap` on texture unit `15` in `Batch2D.glsl` and unit `5` in `TerrainSplatmap.glsl`). Point lights cast zero shadows, violating the core visual & gameplay identity where the player's mobile torch casts creeping 360° shadows behind trees, rocks, and Wendigos (as seen in `Gemini_Generated_Image_sthr0tsthr0tsthr.jpg`).
 - **Architectural Design (2.5D Dual-Hemisphere / 1D-Array Polar Shadow Map for OpenGL 4.1):**
@@ -645,7 +645,7 @@ flowchart TD
 ---
 
 #### `LGT-03` — CPU Illumination & Umbral Visibility Query API
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `LGT-02` | Unlocks: `AIX-02`, `UIX-04`
 - **Current Gap:** Gameplay code cannot query whether the player or an enemy is standing in safe light, on the *Searing Light* rim, or lured into a false Will-o'-the-Wisp glow.
 - **Proposed C++ Specification:**
@@ -1466,8 +1466,8 @@ Without these 15 features, the core physics + torch shadow + surface interaction
 | **`PHY-05`** | `DONE` | **Lean:** `OverlapCircleXZ` and `OverlapArcXZ` for melee weapon cleave cones and ground-slam shockwaves. *(Defer raycasts & Chronos stasis rune).* |
 | **`INP-01`** | `DONE` | **Lean:** `WasKeyPressedThisFrame` / `WasMouseButtonPressedThisFrame` edge states. *(Defer JSON rebinding until Beta).* |
 | **`INP-02`** | `DONE` | **Lean:** Mouse ray to `Y = 0` ground plane intersection for 360° directional swing & dash aiming. *(Defer gamepad rumble).* |
-| **`LGT-01`** | `TODO` | **Full:** Omnidirectional 2.5D Torch Shadow Map. The signature visual and tactical hook: trees and pillars must cast real-time radial shadows from the Hero's torch. |
-| **`LGT-03`** | `TODO` | **Full:** CPU `GetIlluminationAt(posXZ)` & `IsWithinTorchSafeRadius(posXZ)` to drive darkness vulnerability, searing-rim burn ticks, and monster light reactions. |
+| **`LGT-01`** | `DONE` | **Full:** Omnidirectional 2.5D Torch Shadow Map. The signature visual and tactical hook: trees and pillars must cast real-time radial shadows from the Hero's torch. |
+| **`LGT-03`** | `DONE` | **Full:** CPU `GetIlluminationAt(posXZ)` & `IsWithinTorchSafeRadius(posXZ)` to drive darkness vulnerability, searing-rim burn ticks, and monster light reactions. |
 | **`TER-04`** | `TODO` | **Single-Arena Mode:** Run the CPU splatmap sampler (`Grass`, `Ash`, `Tar`, `Chalk`) and `0.5m` Tar/Firewall cellular grid directly on the **existing single `TerrainComponent`**—validating surface friction and fire propagation *without* waiting for `TER-01..03`! |
 | **`CAM-02`** | `TODO` | **Full:** Damped top-down camera follow, aim look-ahead, and Perlin trauma screen shake (`AddTrauma`) to sell heavy weapon impacts. |
 | **`AUD-02`** | `TODO` | **Lean WAV Mixer:** Multi-voice polyphonic `.wav` playback with `±10%` random pitch variation so overlapping melee hits and crate shatters don't cut each other off. |

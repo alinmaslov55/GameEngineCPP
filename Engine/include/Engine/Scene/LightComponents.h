@@ -89,6 +89,12 @@ enum class LightPriority : uint8_t {
     Critical_HeroTorch = 3 // Player's Lifeline Torch (always slot 0 when CastShadows = true)
 };
 
+enum class LightSemantic : uint8_t {
+    SafeLifeline = 0,   // Hero Torch, Flare Peg, Ignited Dead Brazier (prevents Umbral death)
+    NeutralShrine = 1,  // Faint Shrine ambiance (visible, not lethal-safe unless specified)
+    DeceptiveHazard = 2 // Will-o'-the-Wisp false campfire lure!
+};
+
 class PointLightComponent final : public Component {
 public:
     glm::vec3 Color = { 1.0f, 0.62f, 0.24f };
@@ -98,6 +104,7 @@ public:
     float HeightOffset = 0.85f; // Elevates light source above Y=0 entity anchor
 
     LightPriority Priority = LightPriority::Normal_World;
+    LightSemantic Semantic = LightSemantic::NeutralShrine;
     bool CastShadows = false;
     float ShadowSoftness = 1.6f;
     float ShadowBias = 0.0025f;
@@ -105,6 +112,31 @@ public:
     bool Flicker = true;
     float FlickerSpeed = 7.5f;
     float FlickerAmount = 0.14f;
+
+    /// @brief Computes smoothstep radial attenuation matching Batch2D.glsl / TerrainSplatmap.glsl.
+    [[nodiscard]] static float EvaluateSmoothstepAttenuation(float distance, float radius, float falloff) noexcept {
+        if (radius <= 0.0f) {
+            return 0.0f;
+        }
+        const float safeRadius = std::max(0.05f, radius);
+        if (distance >= safeRadius) {
+            return 0.0f;
+        }
+        const float safeDist = std::max(0.0f, distance);
+        const float x = std::clamp(1.0f - (safeDist / safeRadius), 0.0f, 1.0f);
+        const float smooth = x * x * (3.0f - 2.0f * x);
+        const float safeFalloff = std::max(0.25f, falloff);
+        return std::pow(smooth, safeFalloff);
+    }
+
+    /// @brief Evaluates 2D XZ smoothstep attenuation from a light origin to an XZ sample point.
+    [[nodiscard]] static float EvaluateAttenuationXZ(glm::vec2 lightXZ,
+                                                     glm::vec2 queryXZ,
+                                                     float radius,
+                                                     float falloff) noexcept {
+        const glm::vec2 delta = queryXZ - lightXZ;
+        return EvaluateSmoothstepAttenuation(std::sqrt(glm::dot(delta, delta)), radius, falloff);
+    }
 
     float EvaluateEffectiveIntensity(float timeSeconds, uint32_t phaseSeed = 0u) const {
         const float base = std::max(0.0f, Intensity);

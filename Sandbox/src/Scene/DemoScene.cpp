@@ -150,6 +150,7 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     heroTorch->Falloff = 1.7f;
     heroTorch->HeightOffset = 0.90f;
     heroTorch->Priority = Engine::LightPriority::Critical_HeroTorch;
+    heroTorch->Semantic = Engine::LightSemantic::SafeLifeline;
     heroTorch->CastShadows = true;
     heroTorch->ShadowSoftness = 1.6f;
     heroTorch->ShadowBias = 0.0025f;
@@ -190,6 +191,7 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     shrineLight->Radius = 3.2f;
     shrineLight->Falloff = 1.9f;
     shrineLight->HeightOffset = 1.1f;
+    shrineLight->Semantic = Engine::LightSemantic::NeutralShrine;
     shrineLight->Flicker = true;
     shrineLight->FlickerSpeed = 4.2f;
     shrineLight->FlickerAmount = 0.12f;
@@ -220,6 +222,8 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
         bLight->Radius = 4.8f;
         bLight->Falloff = 1.75f;
         bLight->HeightOffset = 0.95f;
+        bLight->Priority = Engine::LightPriority::High_Tactical;
+        bLight->Semantic = Engine::LightSemantic::SafeLifeline;
         bLight->Flicker = true;
         bLight->FlickerSpeed = 8.2f;
         bLight->FlickerAmount = 0.18f;
