@@ -583,6 +583,15 @@ TEST(SceneSerializerTest, TerrainChunkManagerAndModifiedChunksRoundTrip) {
     mgr->SetEdgeDarkening(0.24f);
     mgr->SetLayerTilingScale(2u, 0.77f);
 
+    Engine::WorldGenConfig wg;
+    wg.Enabled = true;
+    wg.SpawnSceneEntities = false;
+    wg.Seed = 424242ULL;
+    wg.OriginSafeRadius = 7.25f;
+    wg.PoiApronRadius = 4.0f;
+    wg.PoiSuperCellChunks = 3;
+    mgr->ConfigureProceduralWorld(wg);
+
     mgr->UpdateStreaming({ 16.0f, 0.0f, 16.0f });
     mgr->FlushPendingGenerations();
     mgr->PaintWorldBrush(16.0f, 16.0f, /*layerIndex=*/2u, /*radiusWorld=*/2.5f, /*falloff=*/0.6f, /*strength=*/1.0f);
@@ -610,6 +619,14 @@ TEST(SceneSerializerTest, TerrainChunkManagerAndModifiedChunksRoundTrip) {
     EXPECT_NEAR(loadedMgr->GetBlendSharpness(), 0.72f, 1e-5f);
     EXPECT_NEAR(loadedMgr->GetEdgeDarkening(), 0.24f, 1e-5f);
     EXPECT_NEAR(loadedMgr->GetLayer(2u).TilingScale, 0.77f, 1e-5f);
+
+    const auto& loadedWg = loadedMgr->GetWorldGenConfig();
+    EXPECT_TRUE(loadedWg.Enabled);
+    EXPECT_FALSE(loadedWg.SpawnSceneEntities);
+    EXPECT_EQ(loadedWg.Seed, 424242ULL);
+    EXPECT_NEAR(loadedWg.OriginSafeRadius, 7.25f, 1e-5f);
+    EXPECT_NEAR(loadedWg.PoiApronRadius, 4.0f, 1e-5f);
+    EXPECT_EQ(loadedWg.PoiSuperCellChunks, 3);
 
     const auto* loaded00 = loadedMgr->GetChunk({ 0, 0 });
     const auto* loaded11 = loadedMgr->GetChunk({ 1, 1 });

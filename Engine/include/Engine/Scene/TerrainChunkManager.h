@@ -4,6 +4,7 @@
 #include "Engine/Core/JobSystem.h"
 #include "Engine/Scene/Component.h"
 #include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Scene/WorldBiomeGenerator.h"
 
 #include <array>
 #include <atomic>
@@ -16,6 +17,8 @@
 #include <vector>
 
 namespace Engine {
+
+class Prefab;
 
 struct ChunkCoord {
     int32_t cx = 0;
@@ -51,12 +54,17 @@ struct TerrainChunk {
     uint32_t SplatResolution = 65;
 
     std::vector<uint8_t> SplatData;
+    std::vector<BiomeType> BiomeMap;
+    std::vector<PropSpawnDesc> Props;
+    std::vector<POISpawnDesc> POIs;
+    std::vector<uint64_t> SpawnedEntityUUIDs;
     std::shared_ptr<Texture> GpuSplatTexture;
     std::vector<uint8_t> UploadScratch;
 
     bool GpuDirty = false;
     bool InUploadQueue = false;
     bool UserModified = false;
+    bool EntitiesSpawned = false;
     uint32_t DirtyMinX = 0;
     uint32_t DirtyMinY = 0;
     uint32_t DirtyMaxX = 0;
@@ -138,6 +146,15 @@ public:
     // Inject/create a modified chunk directly (used by deserialization & tests)
     TerrainChunk& EnsureEditableChunk(ChunkCoord coord);
 
+    // Procedural Biome Generation & Prop/POI Scattering (TER-02)
+    void ConfigureProceduralWorld(const WorldGenConfig& config);
+    void RegenerateWorld();
+    [[nodiscard]] const WorldGenConfig& GetWorldGenConfig() const noexcept { return m_WorldGenConfig; }
+    [[nodiscard]] WorldGenConfig& GetWorldGenConfigMutable() noexcept { return m_WorldGenConfig; }
+    [[nodiscard]] const WorldBiomeGenerator* GetBiomeGenerator() const noexcept { return m_BiomeGenerator.get(); }
+    [[nodiscard]] BiomeSample SampleBiomeAtXZ(float worldX, float worldZ) const noexcept;
+    void RegisterPropPrefab(ProceduralPropKind kind, const std::shared_ptr<Prefab>& prefab);
+
     // Material & blending appearance shared across all streamed chunks
     float GetBlendSharpness() const noexcept { return m_BlendSharpness; }
     void SetBlendSharpness(float sharpness) noexcept;
@@ -164,6 +181,9 @@ private:
         uint32_t Resolution = DefaultSplatResolution;
         float ChunkSize = 16.0f;
         std::vector<uint8_t> SplatData;
+        std::vector<BiomeType> BiomeMap;
+        std::vector<PropSpawnDesc> Props;
+        std::vector<POISpawnDesc> POIs;
     };
 
     struct AsyncChunkChannel {
@@ -177,6 +197,9 @@ private:
     void SynchronizeSharedBorders(TerrainChunk& chunk) noexcept;
     void EnqueueGpuUpload(ChunkCoord coord, TerrainChunk& chunk);
     void DemoteAndEvictChunks(ChunkCoord centerChunk);
+    void SpawnChunkEntities(TerrainChunk& chunk);
+    void ReleaseChunkEntities(TerrainChunk& chunk);
+    const std::shared_ptr<Prefab>& GetOrCreatePropPrefab(ProceduralPropKind kind);
     void ShutdownAsyncWorkers() noexcept;
 
 private:
@@ -184,6 +207,10 @@ private:
     std::deque<ChunkCoord> m_GpuUploadRing;
     std::vector<JobHandle> m_InFlightJobs;
     std::shared_ptr<AsyncChunkChannel> m_AsyncChannel;
+
+    WorldGenConfig m_WorldGenConfig{};
+    std::shared_ptr<const WorldBiomeGenerator> m_BiomeGenerator;
+    std::array<std::shared_ptr<Prefab>, 9> m_PropPrefabs{};
 
     std::array<TerrainLayer, TerrainComponent::MaxLayers> m_Layers{};
     float m_BlendSharpness = 0.68f;

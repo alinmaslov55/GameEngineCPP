@@ -829,6 +829,28 @@ void InspectorPanel::DrawTerrainChunkManager(Engine::TerrainChunkManager& chunkM
         chunkMgr.SetEdgeDarkening(darkening);
     }
 
+    ImGui::Separator();
+    ImGui::Text("Procedural Biome World (TER-02)");
+    auto& wg = chunkMgr.GetWorldGenConfigMutable();
+    bool regenRequested = false;
+    regenRequested |= ImGui::Checkbox("Enable Procedural World", &wg.Enabled);
+    if (wg.Enabled) {
+        ImGui::Checkbox("Spawn Pooled Props & POIs", &wg.SpawnSceneEntities);
+        int seedInt = static_cast<int>(wg.Seed & 0x7FFFFFFFULL);
+        if (ImGui::InputInt("World Seed", &seedInt)) {
+            wg.Seed = static_cast<uint64_t>(std::max(0, seedInt));
+            regenRequested = true;
+        }
+        regenRequested |= ImGui::SliderFloat("Origin Safe Radius", &wg.OriginSafeRadius, 2.0f, 16.0f, "%.1f m");
+        regenRequested |= ImGui::SliderFloat("POI Apron Radius", &wg.PoiApronRadius, 1.5f, 8.0f, "%.1f m");
+        if (ImGui::Button("Regenerate Procedural World")) {
+            regenRequested = true;
+        }
+    }
+    if (regenRequested) {
+        chunkMgr.ConfigureProceduralWorld(wg);
+    }
+
     DrawTerrainLayerSlots(chunkMgr);
 }
 

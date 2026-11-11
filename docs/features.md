@@ -712,7 +712,7 @@ flowchart TD
 ---
 
 #### `TER-02` — Seeded Perlin Biome Generator & Prop/POI Scatterer
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W3`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W3`
 - **Dependencies:** Hard: `TER-01`, `ECS-04` | Unlocks: Procedural roguelite runs
 - **Proposed C++ Specification:**
   ```cpp

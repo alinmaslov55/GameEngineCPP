@@ -1,12 +1,145 @@
 #include "Engine/Scene/TerrainChunkManager.h"
+#include "Engine/Core/ResourceManager.h"
+#include "Engine/Physics/PhysicsLayer.h"
+#include "Engine/Scene/EntityTag.h"
+#include "Engine/Scene/GameObject.h"
+#include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/Prefab.h"
+#include "Engine/Scene/Scene.h"
+#include "Engine/Scene/Transform.h"
+#include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Utils/Logger.h"
 
+#include <nlohmann/json.hpp>
 #include <algorithm>
 #include <cmath>
 #include <cstring>
+#include <filesystem>
 #include <utility>
 
 namespace Engine {
+
+namespace {
+
+struct PropTemplateSpec {
+    const char* PoolKey;
+    const char* EntityName;
+    EntityTag Tag;
+    uint32_t Layer;
+    const char* TexturePath;
+    glm::vec3 BaseScale;
+    glm::vec4 Color;
+    float WindSway;
+    float Emissive;
+    bool CastShadows;
+    bool HasCollider;
+    glm::vec2 ColliderSize;
+    uint64_t ColliderCategory;
+    bool HasLight;
+    float LightRadius;
+    float LightIntensity;
+    glm::vec3 LightColor;
+};
+
+static const PropTemplateSpec kPropSpecs[9] = {
+    // 0: ConiferPine
+    { "proc_conifer_pine", "Procedural Pine", EntityTag::HarvestableTree, EntityLayer::Environment,
+      "assets/diorama/pine_tree.png", { 2.0f, 2.75f, 1.0f }, { 1.0f, 1.0f, 1.0f, 1.0f },
+      0.38f, 0.0f, true, true, { 0.55f, 0.45f }, PhysicsLayer::Environment, false, 0.0f, 0.0f, {} },
+    // 1: BerryShrub
+    { "proc_berry_shrub", "Procedural Shrub", EntityTag::Foliage, EntityLayer::Default,
+      "assets/diorama/berry_bush.png", { 1.05f, 0.95f, 1.0f }, { 1.0f, 1.0f, 1.0f, 1.0f },
+      0.68f, 0.0f, true, false, {}, 0ULL, false, 0.0f, 0.0f, {} },
+    // 2: TallGrassCluster
+    { "proc_tall_grass", "Procedural Grass", EntityTag::Foliage, EntityLayer::Default,
+      "assets/diorama/tall_grass_tuft.png", { 0.68f, 0.76f, 1.0f }, { 1.0f, 1.0f, 1.0f, 1.0f },
+      0.90f, 0.0f, false, false, {}, 0ULL, false, 0.0f, 0.0f, {} },
+    // 3: DeadSnag
+    { "proc_dead_snag", "Dead Snag", EntityTag::HarvestableTree, EntityLayer::Environment,
+      "assets/diorama/pine_tree.png", { 1.45f, 2.15f, 1.0f }, { 0.44f, 0.36f, 0.34f, 1.0f },
+      0.12f, 0.0f, true, true, { 0.48f, 0.40f }, PhysicsLayer::Environment, false, 0.0f, 0.0f, {} },
+    // 4: BogBubbleEmitter
+    { "proc_bog_bubble", "Bog Bubble", EntityTag::Untagged, EntityLayer::Default,
+      "", { 0.65f, 0.65f, 1.0f }, { 0.38f, 0.78f, 0.36f, 0.85f },
+      0.20f, 0.35f, false, false, {}, 0ULL, false, 0.0f, 0.0f, {} },
+    // 5: BrokenFence
+    { "proc_broken_fence", "Broken Fence", EntityTag::DestructibleProp, EntityLayer::LowObstacle,
+      "assets/diorama/cult_banner.png", { 1.05f, 0.85f, 1.0f }, { 0.72f, 0.64f, 0.56f, 1.0f },
+      0.0f, 0.0f, true, true, { 0.95f, 0.35f }, PhysicsLayer::LowObstacle, false, 0.0f, 0.0f, {} },
+    // 6: BonePile
+    { "proc_bone_pile", "Bone Pile", EntityTag::Untagged, EntityLayer::Default,
+      "", { 0.70f, 0.48f, 1.0f }, { 0.88f, 0.86f, 0.80f, 1.0f },
+      0.0f, 0.0f, false, false, {}, 0ULL, false, 0.0f, 0.0f, {} },
+    // 7: POI_DeadBrazier (dormant until ignited)
+    { "proc_poi_dead_brazier", "Dead Brazier POI", EntityTag::SafeZoneBrazier, EntityLayer::Environment,
+      "assets/diorama/ritual_brazier.png", { 0.95f, 1.35f, 1.0f }, { 0.72f, 0.72f, 0.76f, 1.0f },
+      0.0f, 0.05f, true, true, { 0.55f, 0.45f }, PhysicsLayer::Environment, true, 1.8f, 0.25f, { 0.85f, 0.35f, 0.16f } },
+    // 8: POI_UmbralShrine
+    { "proc_poi_umbral_shrine", "Umbral Shrine POI", EntityTag::Shrine, EntityLayer::Environment,
+      "assets/diorama/cult_shrine.png", { 1.75f, 2.35f, 1.0f }, { 1.0f, 1.0f, 1.0f, 1.0f },
+      0.0f, 0.28f, true, true, { 1.15f, 0.65f }, PhysicsLayer::Environment, true, 3.2f, 0.95f, { 0.95f, 0.22f, 0.18f } }
+};
+
+std::shared_ptr<Prefab> BuildBuiltinPropPrefab(ProceduralPropKind kind) {
+    const auto& spec = kPropSpecs[static_cast<size_t>(kind)];
+
+    nlohmann::json spriteJson = {
+        { "Color", { spec.Color.r, spec.Color.g, spec.Color.b, spec.Color.a } },
+        { "AlphaCutoff", 0.18f },
+        { "CastShadows", spec.CastShadows },
+        { "ReceiveLighting", true },
+        { "Emissive", spec.Emissive },
+        { "WindSwayWeight", spec.WindSway }
+    };
+    if (spec.TexturePath && spec.TexturePath[0] != '\0') {
+        std::error_code ec;
+        const std::string resolved = ResourceManager::ResolvePath(spec.TexturePath);
+        if (std::filesystem::exists(resolved, ec)) {
+            spriteJson["TexturePath"] = spec.TexturePath;
+        }
+    }
+
+    nlohmann::json compsJson = {
+        { "Transform", {
+            { "Position", { 0.0f, 0.0f, 0.0f } },
+            { "Rotation", { 0.0f, 0.0f, 0.0f } },
+            { "Scale", { spec.BaseScale.x, spec.BaseScale.y, spec.BaseScale.z } }
+        } },
+        { "SpriteRenderer", std::move(spriteJson) }
+    };
+
+    if (spec.HasCollider) {
+        compsJson["BoxCollider2D"] = {
+            { "Size", { spec.ColliderSize.x, spec.ColliderSize.y } },
+            { "CategoryBits", spec.ColliderCategory },
+            { "MaskBits", PhysicsLayer::All }
+        };
+    }
+
+    if (spec.HasLight) {
+        compsJson["PointLight"] = {
+            { "Color", { spec.LightColor.r, spec.LightColor.g, spec.LightColor.b } },
+            { "Intensity", spec.LightIntensity },
+            { "Radius", spec.LightRadius },
+            { "Falloff", 1.9f },
+            { "HeightOffset", 1.0f },
+            { "Semantic", static_cast<int>(LightSemantic::NeutralShrine) }
+        };
+    }
+
+    nlohmann::json entityJson = {
+        { "UUID", 1 },
+        { "Name", spec.EntityName },
+        { "Tag", EntityTagToString(spec.Tag) },
+        { "LayerMask", spec.Layer },
+        { "ParentUUID", 0 },
+        { "Components", std::move(compsJson) }
+    };
+
+    return std::make_shared<Prefab>(std::move(entityJson));
+}
+
+} // namespace
 
 glm::vec3 TerrainChunk::GetWorldOrigin(float groundY) const noexcept {
     return {
@@ -82,7 +215,8 @@ const std::shared_ptr<Texture>& TerrainChunk::SyncGpuSplatTexture() {
 }
 
 TerrainChunkManager::TerrainChunkManager()
-    : m_AsyncChannel(std::make_shared<AsyncChunkChannel>()) {}
+    : m_AsyncChannel(std::make_shared<AsyncChunkChannel>()),
+      m_BiomeGenerator(std::make_shared<const WorldBiomeGenerator>(m_WorldGenConfig)) {}
 
 TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
                                          uint32_t splatResolution,
@@ -92,7 +226,8 @@ TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
       SplatResolution(std::clamp(splatResolution, 5u, 513u)),
       ActiveRadiusChunks(std::max(0, activeRadiusChunks)),
       CacheRetentionRadius(std::max(ActiveRadiusChunks, cacheRetentionRadius)),
-      m_AsyncChannel(std::make_shared<AsyncChunkChannel>()) {}
+      m_AsyncChannel(std::make_shared<AsyncChunkChannel>()),
+      m_BiomeGenerator(std::make_shared<const WorldBiomeGenerator>(m_WorldGenConfig)) {}
 
 TerrainChunkManager::~TerrainChunkManager() {
     ShutdownAsyncWorkers();
@@ -100,6 +235,10 @@ TerrainChunkManager::~TerrainChunkManager() {
 
 void TerrainChunkManager::OnDestroy() {
     ShutdownAsyncWorkers();
+    for (auto& [coord, chunk] : m_Chunks) {
+        (void)coord;
+        ReleaseChunkEntities(chunk);
+    }
 }
 
 void TerrainChunkManager::ShutdownAsyncWorkers() noexcept {
@@ -144,18 +283,9 @@ void TerrainChunkManager::DispatchChunkGeneration(ChunkCoord coord) {
     placeholder.LastAccessFrame = m_FrameCounter;
 
     auto channel = m_AsyncChannel;
-    JobHandle handle = JobSystem::Dispatch([channel, coord, res, chunkSize]() {
+    auto biomeGen = (m_WorldGenConfig.Enabled && m_BiomeGenerator) ? m_BiomeGenerator : nullptr;
+    JobHandle handle = JobSystem::Dispatch([channel, biomeGen, coord, res, chunkSize]() {
         if (!channel || channel->ShuttingDown.load(std::memory_order_acquire)) {
-            return;
-        }
-
-        const size_t texelCount = static_cast<size_t>(res) * static_cast<size_t>(res);
-        std::vector<uint8_t> splat(texelCount * 4u, 0u);
-        for (size_t i = 0; i < splat.size(); i += 4u) {
-            splat[i + 0] = 255u;
-        }
-
-        if (channel->ShuttingDown.load(std::memory_order_acquire)) {
             return;
         }
 
@@ -163,7 +293,29 @@ void TerrainChunkManager::DispatchChunkGeneration(ChunkCoord coord) {
         payload.Coord = coord;
         payload.Resolution = res;
         payload.ChunkSize = chunkSize;
-        payload.SplatData = std::move(splat);
+
+        if (biomeGen) {
+            biomeGen->GenerateChunkData(
+                coord.cx,
+                coord.cz,
+                chunkSize,
+                res,
+                payload.SplatData,
+                payload.BiomeMap,
+                payload.Props,
+                payload.POIs
+            );
+        } else {
+            const size_t texelCount = static_cast<size_t>(res) * static_cast<size_t>(res);
+            payload.SplatData.assign(texelCount * 4u, 0u);
+            for (size_t i = 0; i < payload.SplatData.size(); i += 4u) {
+                payload.SplatData[i + 0] = 255u;
+            }
+        }
+
+        if (channel->ShuttingDown.load(std::memory_order_acquire)) {
+            return;
+        }
 
         std::lock_guard<std::mutex> lock(channel->QueueMutex);
         if (!channel->ShuttingDown.load(std::memory_order_relaxed)) {
@@ -206,11 +358,16 @@ void TerrainChunkManager::DrainReadyPayloads() {
         chunk.ChunkSizeMeters = payload.ChunkSize;
         chunk.SplatResolution = payload.Resolution;
         chunk.SplatData = std::move(payload.SplatData);
+        chunk.BiomeMap = std::move(payload.BiomeMap);
+        chunk.Props = std::move(payload.Props);
+        chunk.POIs = std::move(payload.POIs);
+
         const int32_t dist = std::max(
             std::abs(payload.Coord.cx - m_LastViewerChunk.cx),
             std::abs(payload.Coord.cz - m_LastViewerChunk.cz)
         );
         if (dist > retentionRadius) {
+            ReleaseChunkEntities(chunk);
             m_Chunks.erase(it);
             continue;
         }
@@ -224,9 +381,11 @@ void TerrainChunkManager::DrainReadyPayloads() {
         if (dist <= activeRadius) {
             chunk.State = ChunkLoadState::ReadyForGpuUpload;
             EnqueueGpuUpload(payload.Coord, chunk);
+            SpawnChunkEntities(chunk);
         } else {
             chunk.GpuSplatTexture.reset();
             chunk.State = ChunkLoadState::CachedInRam;
+            ReleaseChunkEntities(chunk);
         }
     }
 }
@@ -303,6 +462,7 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
             chunk.GpuSplatTexture.reset();
             chunk.State = ChunkLoadState::CachedInRam;
             chunk.InUploadQueue = false;
+            ReleaseChunkEntities(chunk);
         }
     }
 
@@ -315,7 +475,8 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
             return a.second->LastAccessFrame < b.second->LastAccessFrame;
         });
 
-        for (const auto& [coord, _] : evictCandidates) {
+        for (const auto& [coord, chunkPtr] : evictCandidates) {
+            ReleaseChunkEntities(*chunkPtr);
             m_Chunks.erase(coord);
         }
     }
@@ -368,6 +529,7 @@ void TerrainChunkManager::UpdateStreaming(const glm::vec3& viewerWorldPos) {
                     existing.State = ChunkLoadState::ReadyForGpuUpload;
                     existing.MarkDirtyRect(0u, 0u, existing.SplatResolution - 1u, existing.SplatResolution - 1u, false);
                     EnqueueGpuUpload(coord, existing);
+                    SpawnChunkEntities(existing);
                 }
             } else {
                 missingCoords.push_back(coord);
@@ -593,6 +755,111 @@ size_t TerrainChunkManager::GetCachedChunkCount() const noexcept {
         }
     }
     return count;
+}
+
+void TerrainChunkManager::ConfigureProceduralWorld(const WorldGenConfig& config) {
+    m_WorldGenConfig = config;
+    m_WorldGenConfig.OriginSafeRadius = std::max(0.5f, m_WorldGenConfig.OriginSafeRadius);
+    m_WorldGenConfig.PoiApronRadius = std::max(0.5f, m_WorldGenConfig.PoiApronRadius);
+    m_WorldGenConfig.PoiSuperCellChunks = std::max(1, m_WorldGenConfig.PoiSuperCellChunks);
+    RegenerateWorld();
+}
+
+void TerrainChunkManager::RegenerateWorld() {
+    ShutdownAsyncWorkers();
+    for (auto& [coord, chunk] : m_Chunks) {
+        (void)coord;
+        ReleaseChunkEntities(chunk);
+    }
+    m_Chunks.clear();
+    m_GpuUploadRing.clear();
+    m_AsyncChannel = std::make_shared<AsyncChunkChannel>();
+    m_BiomeGenerator = std::make_shared<const WorldBiomeGenerator>(m_WorldGenConfig);
+}
+
+BiomeSample TerrainChunkManager::SampleBiomeAtXZ(float worldX, float worldZ) const noexcept {
+    if (m_BiomeGenerator) {
+        return m_BiomeGenerator->EvaluateBiomeAtXZ(worldX, worldZ, ChunkSizeMeters);
+    }
+    return BiomeSample{};
+}
+
+void TerrainChunkManager::RegisterPropPrefab(ProceduralPropKind kind, const std::shared_ptr<Prefab>& prefab) {
+    const size_t idx = static_cast<size_t>(kind);
+    if (idx < m_PropPrefabs.size()) {
+        m_PropPrefabs[idx] = prefab;
+    }
+}
+
+const std::shared_ptr<Prefab>& TerrainChunkManager::GetOrCreatePropPrefab(ProceduralPropKind kind) {
+    const size_t idx = std::min(static_cast<size_t>(kind), m_PropPrefabs.size() - 1u);
+    if (!m_PropPrefabs[idx]) {
+        m_PropPrefabs[idx] = BuildBuiltinPropPrefab(static_cast<ProceduralPropKind>(idx));
+    }
+    return m_PropPrefabs[idx];
+}
+
+void TerrainChunkManager::SpawnChunkEntities(TerrainChunk& chunk) {
+    if (chunk.EntitiesSpawned || !m_WorldGenConfig.Enabled || !m_WorldGenConfig.SpawnSceneEntities) {
+        return;
+    }
+    GameObject* owner = GetGameObject();
+    Scene* scene = owner ? owner->GetScene() : nullptr;
+    if (!scene) {
+        return;
+    }
+
+    auto acquireProp = [&](ProceduralPropKind kind,
+                           const glm::vec3& pos,
+                           float scaleMult,
+                           float windPhase) {
+        const size_t idx = static_cast<size_t>(kind);
+        if (idx >= m_PropPrefabs.size()) {
+            return;
+        }
+        const auto& prefab = GetOrCreatePropPrefab(kind);
+        if (!prefab || !prefab->IsValid()) {
+            return;
+        }
+        const auto& spec = kPropSpecs[idx];
+        GameObject* spawned = scene->AcquirePooled(spec.PoolKey, *prefab, pos);
+        if (!spawned) {
+            return;
+        }
+        if (auto* t = spawned->GetTransform()) {
+            t->scale = spec.BaseScale * scaleMult;
+            t->SnapshotPrevious();
+        }
+        if (auto* sprite = spawned->GetComponent<SpriteRenderer>()) {
+            sprite->SetWindPhaseOffset(windPhase);
+        }
+        chunk.SpawnedEntityUUIDs.push_back(spawned->GetUUID());
+    };
+
+    for (const auto& prop : chunk.Props) {
+        acquireProp(prop.Kind, prop.WorldPosition, prop.ScaleMultiplier, prop.WindPhaseOffset);
+    }
+    for (const auto& poi : chunk.POIs) {
+        acquireProp(poi.Kind, poi.WorldPosition, 1.0f, 0.0f);
+    }
+    chunk.EntitiesSpawned = true;
+}
+
+void TerrainChunkManager::ReleaseChunkEntities(TerrainChunk& chunk) {
+    if (!chunk.EntitiesSpawned) {
+        return;
+    }
+    GameObject* owner = GetGameObject();
+    Scene* scene = owner ? owner->GetScene() : nullptr;
+    if (scene) {
+        for (uint64_t uuid : chunk.SpawnedEntityUUIDs) {
+            if (GameObject* go = scene->FindGameObjectByUUID(uuid)) {
+                scene->ReleaseToPool(go);
+            }
+        }
+    }
+    chunk.SpawnedEntityUUIDs.clear();
+    chunk.EntitiesSpawned = false;
 }
 
 } // namespace Engine

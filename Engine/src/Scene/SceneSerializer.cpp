@@ -267,6 +267,15 @@ void SerializeTerrainChunkManager(const GameObject* go, json& compsJson) {
     tcmJson["AutoStreamWithCamera"] = mgr->AutoStreamWithCamera;
     tcmJson["BlendSharpness"] = mgr->GetBlendSharpness();
     tcmJson["EdgeDarkening"] = mgr->GetEdgeDarkening();
+    const auto& wg = mgr->GetWorldGenConfig();
+    tcmJson["WorldGen"] = {
+        {"Enabled", wg.Enabled},
+        {"SpawnSceneEntities", wg.SpawnSceneEntities},
+        {"Seed", wg.Seed},
+        {"OriginSafeRadius", wg.OriginSafeRadius},
+        {"PoiApronRadius", wg.PoiApronRadius},
+        {"PoiSuperCellChunks", wg.PoiSuperCellChunks}
+    };
 
     json layersJson = json::array();
     for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
@@ -831,6 +840,18 @@ void DeserializeTerrainChunkManager(GameObject* go, const json& tcmJson, const s
     mgr->AutoStreamWithCamera = tcmJson.value("AutoStreamWithCamera", true);
     mgr->SetBlendSharpness(tcmJson.value("BlendSharpness", 0.68f));
     mgr->SetEdgeDarkening(tcmJson.value("EdgeDarkening", 0.16f));
+
+    if (tcmJson.contains("WorldGen") && tcmJson["WorldGen"].is_object()) {
+        const auto& wgJson = tcmJson["WorldGen"];
+        WorldGenConfig wgConfig;
+        wgConfig.Enabled = wgJson.value("Enabled", false);
+        wgConfig.SpawnSceneEntities = wgJson.value("SpawnSceneEntities", true);
+        wgConfig.Seed = wgJson.value("Seed", 42ULL);
+        wgConfig.OriginSafeRadius = wgJson.value("OriginSafeRadius", 6.5f);
+        wgConfig.PoiApronRadius = wgJson.value("PoiApronRadius", 3.5f);
+        wgConfig.PoiSuperCellChunks = wgJson.value("PoiSuperCellChunks", 3);
+        mgr->ConfigureProceduralWorld(wgConfig);
+    }
 
     if (tcmJson.contains("Layers") && tcmJson["Layers"].is_array()) {
         const auto& layersArr = tcmJson["Layers"];
