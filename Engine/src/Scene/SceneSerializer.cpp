@@ -4,6 +4,7 @@
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Scene/TerrainChunkManager.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/CameraComponent.h"
@@ -251,6 +252,52 @@ void SerializeTerrain(const GameObject* go, json& compsJson) {
     }
     terrainJson["Layers"] = std::move(layersJson);
     compsJson["Terrain"] = std::move(terrainJson);
+}
+
+void SerializeTerrainChunkManager(const GameObject* go, json& compsJson) {
+    auto* mgr = go->GetComponent<TerrainChunkManager>();
+    if (!mgr) return;
+
+    json tcmJson;
+    tcmJson["ChunkSizeMeters"] = mgr->ChunkSizeMeters;
+    tcmJson["SplatResolution"] = mgr->SplatResolution;
+    tcmJson["ActiveRadiusChunks"] = mgr->ActiveRadiusChunks;
+    tcmJson["CacheRetentionRadius"] = mgr->CacheRetentionRadius;
+    tcmJson["MaxGpuUploadsPerFrame"] = mgr->MaxGpuUploadsPerFrame;
+    tcmJson["AutoStreamWithCamera"] = mgr->AutoStreamWithCamera;
+    tcmJson["BlendSharpness"] = mgr->GetBlendSharpness();
+    tcmJson["EdgeDarkening"] = mgr->GetEdgeDarkening();
+
+    json layersJson = json::array();
+    for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+        const auto& layer = mgr->GetLayer(i);
+        json layerJson = {
+            {"TilingScale", layer.TilingScale}
+        };
+        if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
+            layerJson["TexturePath"] = ResourceManager::ToRelativePath(layer.LayerTexture->GetFilepath());
+        }
+        layersJson.push_back(std::move(layerJson));
+    }
+    tcmJson["Layers"] = std::move(layersJson);
+
+    json modChunksJson = json::array();
+    for (const auto& [coord, chunk] : mgr->GetChunks()) {
+        if (!chunk.UserModified || chunk.SplatData.empty()) {
+            continue;
+        }
+        modChunksJson.push_back({
+            {"cx", coord.cx},
+            {"cz", coord.cz},
+            {"Resolution", chunk.SplatResolution},
+            {"SplatDataBase64", TerrainComponent::EncodeRGBABase64(chunk.SplatData)}
+        });
+    }
+    if (!modChunksJson.empty()) {
+        tcmJson["ModifiedChunks"] = std::move(modChunksJson);
+    }
+
+    compsJson["TerrainChunkManager"] = std::move(tcmJson);
 }
 
 void SerializeParticleSystem(const GameObject* go, json& compsJson) {
@@ -602,6 +649,7 @@ static const ComponentSerializerFn s_ComponentSerializers[] = {
     SerializeSpriteRenderer,
     SerializeTilemap,
     SerializeTerrain,
+    SerializeTerrainChunkManager,
     SerializeParticleSystem,
     SerializeDirectionalLight,
     SerializePointLight,
@@ -768,6 +816,55 @@ void DeserializeTerrain(GameObject* go, const json& trJson, const std::string& n
     }
     ENGINE_CORE_DEBUG("SceneSerializer: Restored TerrainComponent on '{}' ({:.1f}x{:.1f}m, Splatmap={}x{})",
                       name, width, depth, splatW, splatH);
+}
+
+void DeserializeTerrainChunkManager(GameObject* go, const json& tcmJson, const std::string& name) {
+    if (!tcmJson.is_object()) return;
+
+    const float chunkSize = tcmJson.value("ChunkSizeMeters", 16.0f);
+    const uint32_t splatRes = tcmJson.value("SplatResolution", 65u);
+    const int32_t activeRadius = tcmJson.value("ActiveRadiusChunks", 3);
+    const int32_t retentionRadius = tcmJson.value("CacheRetentionRadius", 6);
+
+    auto* mgr = go->AddComponent<TerrainChunkManager>(chunkSize, splatRes, activeRadius, retentionRadius);
+    mgr->MaxGpuUploadsPerFrame = std::max(1u, tcmJson.value("MaxGpuUploadsPerFrame", 2u));
+    mgr->AutoStreamWithCamera = tcmJson.value("AutoStreamWithCamera", true);
+    mgr->SetBlendSharpness(tcmJson.value("BlendSharpness", 0.68f));
+    mgr->SetEdgeDarkening(tcmJson.value("EdgeDarkening", 0.16f));
+
+    if (tcmJson.contains("Layers") && tcmJson["Layers"].is_array()) {
+        const auto& layersArr = tcmJson["Layers"];
+        for (uint32_t i = 0; i < TerrainComponent::MaxLayers && i < layersArr.size(); ++i) {
+            const auto& lJson = layersArr[i];
+            mgr->SetLayerTilingScale(i, lJson.value("TilingScale", 0.45f));
+            if (lJson.contains("TexturePath") && lJson["TexturePath"].is_string()) {
+                const std::string texPath = lJson["TexturePath"].get<std::string>();
+                if (!texPath.empty()) {
+                    mgr->SetLayerTexture(i, ResourceManager::Load<Texture>(texPath));
+                }
+            }
+        }
+    }
+
+    if (tcmJson.contains("ModifiedChunks") && tcmJson["ModifiedChunks"].is_array()) {
+        for (const auto& mcJson : tcmJson["ModifiedChunks"]) {
+            if (!mcJson.is_object()) continue;
+            const int32_t cx = mcJson.value("cx", 0);
+            const int32_t cz = mcJson.value("cz", 0);
+            const uint32_t cRes = std::clamp(mcJson.value("Resolution", mgr->SplatResolution), 5u, 513u);
+            if (!mcJson.contains("SplatDataBase64") || !mcJson["SplatDataBase64"].is_string()) {
+                continue;
+            }
+            TerrainChunk& chunk = mgr->EnsureEditableChunk({ cx, cz });
+            chunk.SplatResolution = cRes;
+            if (TerrainComponent::DecodeRGBABase64(mcJson["SplatDataBase64"].get<std::string>(), cRes, cRes, chunk.SplatData)) {
+                chunk.MarkDirtyRect(0u, 0u, cRes - 1u, cRes - 1u, true);
+            }
+        }
+    }
+
+    ENGINE_CORE_DEBUG("SceneSerializer: Restored TerrainChunkManager on '{}' (ChunkSize={:.1f}m, Splat={}x{}, ActiveRadius={})",
+                      name, mgr->ChunkSizeMeters, mgr->SplatResolution, mgr->SplatResolution, mgr->ActiveRadiusChunks);
 }
 
 void DeserializeParticleSystem(GameObject* go, const json& psJson, const std::string&) {
@@ -1107,9 +1204,10 @@ struct ComponentDeserializerEntry {
 static const ComponentDeserializerEntry s_ComponentDeserializers[] = {
     { "Transform",        DeserializeTransform },
     { "SpriteRenderer",   DeserializeSpriteRenderer },
-    { "Tilemap",          DeserializeTilemap },
-    { "Terrain",          DeserializeTerrain },
-    { "ParticleSystem",   DeserializeParticleSystem },
+    { "Tilemap",              DeserializeTilemap },
+    { "Terrain",              DeserializeTerrain },
+    { "TerrainChunkManager",  DeserializeTerrainChunkManager },
+    { "ParticleSystem",       DeserializeParticleSystem },
     { "DirectionalLight", DeserializeDirectionalLight },
     { "PointLight",       DeserializePointLight },
     { "PostProcess",      DeserializePostProcess },

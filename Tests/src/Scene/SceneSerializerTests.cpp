@@ -5,6 +5,7 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Scene/TerrainChunkManager.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/LightComponents.h"
 #include "Engine/Scene/PostProcessComponent.h"
@@ -570,6 +571,53 @@ TEST(SceneSerializerTest, PointLightSemanticRoundTripAndDefaultFallback) {
     auto* legacyPl = legacyGo->GetComponent<Engine::PointLightComponent>();
     ASSERT_NE(legacyPl, nullptr);
     EXPECT_EQ(legacyPl->Semantic, Engine::LightSemantic::NeutralShrine);
+}
+
+TEST(SceneSerializerTest, TerrainChunkManagerAndModifiedChunksRoundTrip) {
+    auto srcScene = std::make_shared<Engine::Scene>("ChunkedTerrainSaveScene");
+    auto* worldGo = srcScene->CreateGameObjectWithUUID(90909ULL, "InfiniteGround");
+    auto* mgr = worldGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 65u, 2, 4);
+    mgr->MaxGpuUploadsPerFrame = 3;
+    mgr->AutoStreamWithCamera = false;
+    mgr->SetBlendSharpness(0.72f);
+    mgr->SetEdgeDarkening(0.24f);
+    mgr->SetLayerTilingScale(2u, 0.77f);
+
+    mgr->UpdateStreaming({ 16.0f, 0.0f, 16.0f });
+    mgr->FlushPendingGenerations();
+    mgr->PaintWorldBrush(16.0f, 16.0f, /*layerIndex=*/2u, /*radiusWorld=*/2.5f, /*falloff=*/0.6f, /*strength=*/1.0f);
+
+    const auto* src00 = mgr->GetChunk({ 0, 0 });
+    ASSERT_NE(src00, nullptr);
+    const glm::u8vec4 expectedCorner = src00->GetSplatTexel(64u, 64u);
+    EXPECT_GT(expectedCorner.b, 200u);
+
+    const std::string savedJson = Engine::SceneSerializer(srcScene).SerializeToString();
+    ASSERT_FALSE(savedJson.empty());
+
+    auto loadedScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(loadedScene).DeserializeFromString(savedJson));
+    auto* loadedGo = loadedScene->FindGameObjectByUUID(90909ULL);
+    ASSERT_NE(loadedGo, nullptr);
+    auto* loadedMgr = loadedGo->GetComponent<Engine::TerrainChunkManager>();
+    ASSERT_NE(loadedMgr, nullptr);
+    EXPECT_FLOAT_EQ(loadedMgr->ChunkSizeMeters, 16.0f);
+    EXPECT_EQ(loadedMgr->SplatResolution, 65u);
+    EXPECT_EQ(loadedMgr->ActiveRadiusChunks, 2);
+    EXPECT_EQ(loadedMgr->CacheRetentionRadius, 4);
+    EXPECT_EQ(loadedMgr->MaxGpuUploadsPerFrame, 3u);
+    EXPECT_FALSE(loadedMgr->AutoStreamWithCamera);
+    EXPECT_NEAR(loadedMgr->GetBlendSharpness(), 0.72f, 1e-5f);
+    EXPECT_NEAR(loadedMgr->GetEdgeDarkening(), 0.24f, 1e-5f);
+    EXPECT_NEAR(loadedMgr->GetLayer(2u).TilingScale, 0.77f, 1e-5f);
+
+    const auto* loaded00 = loadedMgr->GetChunk({ 0, 0 });
+    const auto* loaded11 = loadedMgr->GetChunk({ 1, 1 });
+    ASSERT_NE(loaded00, nullptr);
+    ASSERT_NE(loaded11, nullptr);
+    EXPECT_TRUE(loaded00->UserModified);
+    EXPECT_EQ(loaded00->GetSplatTexel(64u, 64u), expectedCorner);
+    EXPECT_EQ(loaded11->GetSplatTexel(0u, 0u), expectedCorner);
 }
 
 } // namespace

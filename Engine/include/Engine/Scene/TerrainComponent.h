@@ -92,9 +92,46 @@ public:
     // Lazily allocates and updates the OpenGL RGBA8 splatmap texture when rendered
     const std::shared_ptr<Texture>& SyncGpuSplatTexture();
 
+    // Shared CPU splatmap utilities (reused by TerrainChunkManager for zero-duplication border stitching)
+    [[nodiscard]] static glm::u8vec4 NormalizeWeights(float r, float g, float b, float a);
+    [[nodiscard]] static std::string EncodeRGBABase64(const std::vector<uint8_t>& rgbaData);
+    [[nodiscard]] static bool DecodeRGBABase64(const std::string& base64Data,
+                                               uint32_t width,
+                                               uint32_t height,
+                                               std::vector<uint8_t>& outRgbaData);
+    [[nodiscard]] static bool PaintSplatBufferXZ(std::vector<uint8_t>& splatData,
+                                                 uint32_t splatWidth,
+                                                 uint32_t splatHeight,
+                                                 int32_t chunkX,
+                                                 int32_t chunkZ,
+                                                 float originX,
+                                                 float originZ,
+                                                 float worldWidth,
+                                                 float worldDepth,
+                                                 bool nodeAligned,
+                                                 float brushWorldX,
+                                                 float brushWorldZ,
+                                                 uint32_t layerIndex,
+                                                 float radiusWorld,
+                                                 float falloff,
+                                                 float strength,
+                                                 uint32_t& outDirtyMinX,
+                                                 uint32_t& outDirtyMinZ,
+                                                 uint32_t& outDirtyMaxX,
+                                                 uint32_t& outDirtyMaxZ);
+    static const std::shared_ptr<Texture>& SyncRgbaGpuTexture(std::shared_ptr<Texture>& gpuTex,
+                                                              std::vector<uint8_t>& uploadScratch,
+                                                              const std::vector<uint8_t>& splatData,
+                                                              uint32_t splatWidth,
+                                                              uint32_t splatHeight,
+                                                              bool& inOutGpuDirty,
+                                                              uint32_t dirtyMinX,
+                                                              uint32_t dirtyMinY,
+                                                              uint32_t dirtyMaxX,
+                                                              uint32_t dirtyMaxY);
+
 private:
     void MarkDirtyRect(uint32_t minX, uint32_t minY, uint32_t maxX, uint32_t maxY, bool unsavedEdit);
-    static glm::u8vec4 NormalizeWeights(float r, float g, float b, float a);
 
 private:
     float m_Width = 14.0f;

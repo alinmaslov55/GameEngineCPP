@@ -1,6 +1,7 @@
 #include "Panels/TilePalettePanel.h"
 
 #include <Engine/Scene/Tilemap.h>
+#include <Engine/Scene/TerrainChunkManager.h>
 #include <Engine/Utils/Logger.h>
 
 #include <imgui.h>
@@ -15,14 +16,16 @@ void TilePalettePanel::SetBrushRadius(float radius) {
 
 Engine::GameObject* TilePalettePanel::ResolveTargetTerrainEntity(const std::shared_ptr<Engine::Scene>& activeScene,
                                                                  Engine::GameObject* selectedEntity) {
-    if (selectedEntity && selectedEntity->GetComponent<Engine::TerrainComponent>()) {
+    if (selectedEntity && (selectedEntity->GetComponent<Engine::TerrainComponent>() ||
+                           selectedEntity->GetComponent<Engine::TerrainChunkManager>())) {
         return selectedEntity;
     }
     if (!activeScene) {
         return nullptr;
     }
     for (const auto& go : activeScene->GetGameObjects()) {
-        if (go->GetComponent<Engine::TerrainComponent>()) {
+        if (go->GetComponent<Engine::TerrainChunkManager>() ||
+            go->GetComponent<Engine::TerrainComponent>()) {
             return go.get();
         }
     }
@@ -40,7 +43,8 @@ void TilePalettePanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activ
     if (selectedEntity != m_LastObservedSelection) {
         m_LastObservedSelection = selectedEntity;
         if (selectedEntity) {
-            if (selectedEntity->GetComponent<Engine::TerrainComponent>()) {
+            if (selectedEntity->GetComponent<Engine::TerrainComponent>() ||
+                selectedEntity->GetComponent<Engine::TerrainChunkManager>()) {
                 m_PaintMode = GroundPaintMode::TerrainSplat;
             } else if (selectedEntity->GetComponent<Engine::Tilemap>()) {
                 m_PaintMode = GroundPaintMode::TileGrid;
@@ -78,17 +82,27 @@ void TilePalettePanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activ
 
     if (m_PaintMode == GroundPaintMode::TerrainSplat) {
         Engine::GameObject* terrainEntity = ResolveTargetTerrainEntity(activeScene, selectedEntity);
-        Engine::TerrainComponent* terrain = terrainEntity
+        Engine::TerrainChunkManager* chunkMgr = terrainEntity
+            ? terrainEntity->GetComponent<Engine::TerrainChunkManager>()
+            : nullptr;
+        Engine::TerrainComponent* terrain = (!chunkMgr && terrainEntity)
             ? terrainEntity->GetComponent<Engine::TerrainComponent>()
             : nullptr;
 
-        if (!terrain) {
-            ImGui::TextDisabled("No TerrainComponent in scene.");
+        if (!terrain && !chunkMgr) {
+            ImGui::TextDisabled("No TerrainComponent or TerrainChunkManager in scene.");
         } else {
-            ImGui::TextDisabled("Target: %s (%ux%u splat)",
-                                terrainEntity->GetName().c_str(),
-                                terrain->GetSplatWidth(),
-                                terrain->GetSplatHeight());
+            if (chunkMgr) {
+                ImGui::TextDisabled("Target: %s (Infinite %ux%u stitched chunks)",
+                                    terrainEntity->GetName().c_str(),
+                                    chunkMgr->SplatResolution,
+                                    chunkMgr->SplatResolution);
+            } else {
+                ImGui::TextDisabled("Target: %s (%ux%u splat)",
+                                    terrainEntity->GetName().c_str(),
+                                    terrain->GetSplatWidth(),
+                                    terrain->GetSplatHeight());
+            }
 
             const char* layerNames[Engine::TerrainComponent::MaxLayers] = {
                 "0: Meadow Grass (R)",
@@ -104,7 +118,9 @@ void TilePalettePanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activ
                     ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.26f, 0.58f, 0.36f, 1.0f));
                 }
 
-                const auto& layerTex = terrain->GetLayer(i).LayerTexture;
+                const auto& layerTex = chunkMgr
+                    ? chunkMgr->GetLayer(i).LayerTexture
+                    : terrain->GetLayer(i).LayerTexture;
                 if (layerTex && layerTex->GetRendererID() != 0) {
                     ImGui::Image(reinterpret_cast<void*>(static_cast<uintptr_t>(layerTex->GetRendererID())),
                                  ImVec2(24.0f, 24.0f),
@@ -129,7 +145,7 @@ void TilePalettePanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activ
             ImGui::SliderFloat("Falloff", &m_BrushFalloff, 0.05f, 1.0f, "%.2f");
             ImGui::SliderFloat("Strength", &m_BrushStrength, 0.05f, 1.0f, "%.2f");
 
-            if (ImGui::Button("Fill All With Selected Layer", ImVec2(210.0f, 24.0f))) {
+            if (terrain && ImGui::Button("Fill All With Selected Layer", ImVec2(210.0f, 24.0f))) {
                 terrain->FillLayer(m_SelectedSplatLayer);
                 ENGINE_INFO("Terrain Brush: Filled '{}' with layer {}", terrainEntity->GetName(), m_SelectedSplatLayer);
             }

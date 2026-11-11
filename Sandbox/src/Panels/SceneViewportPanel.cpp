@@ -8,6 +8,7 @@
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/FoliageWindComponents.h>
 #include <Engine/Scene/TerrainComponent.h>
+#include <Engine/Scene/TerrainChunkManager.h>
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Utils/Logger.h>
@@ -284,13 +285,14 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
 
             if (isEditMode && palettePanel.GetPaintMode() == GroundPaintMode::TerrainSplat) {
                 if (Engine::GameObject* terrainEntity = TilePalettePanel::ResolveTargetTerrainEntity(activeScene, selectedEntity)) {
-                    auto* terrain = terrainEntity->GetComponent<Engine::TerrainComponent>();
+                    auto* chunkMgr = terrainEntity->GetComponent<Engine::TerrainChunkManager>();
+                    auto* terrain = !chunkMgr ? terrainEntity->GetComponent<Engine::TerrainComponent>() : nullptr;
                     auto* trTransform = terrainEntity->GetTransform();
                     const glm::vec3 origin = trTransform ? trTransform->position : glm::vec3(0.0f);
                     const glm::vec3 scale  = trTransform ? trTransform->scale    : glm::vec3(1.0f);
 
                     glm::vec3 hitWorldPos{ 0.0f };
-                    if (terrain && viewCamera.RaycastGroundPlane(ndc, origin.y, hitWorldPos)) {
+                    if ((chunkMgr || terrain) && viewCamera.RaycastGroundPlane(ndc, origin.y, hitWorldPos)) {
                         const glm::vec2 hitXZ = { hitWorldPos.x, hitWorldPos.z };
                         Engine::TerrainRenderer::SetBrushPreview(
                             true,
@@ -301,31 +303,53 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                         showSplatRing = true;
 
                         if (ImGui::IsMouseClicked(ImGuiMouseButton_Left)) {
-                            terrain->PaintWorldBrush(
-                                hitXZ.x,
-                                hitXZ.y,
-                                origin,
-                                scale,
-                                palettePanel.GetSelectedSplatLayer(),
-                                palettePanel.GetBrushRadius(),
-                                palettePanel.GetBrushFalloff(),
-                                palettePanel.GetBrushStrength()
-                            );
-                            m_HasActiveSplatStroke = true;
-                            m_LastSplatStrokeXZ = hitXZ;
-                        } else if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_HasActiveSplatStroke) {
-                            const float stepThreshold = std::max(0.08f, palettePanel.GetBrushRadius() * 0.18f);
-                            if (glm::length(hitXZ - m_LastSplatStrokeXZ) >= stepThreshold) {
-                                terrain->PaintWorldSegment(
-                                    m_LastSplatStrokeXZ,
-                                    hitXZ,
+                            if (chunkMgr) {
+                                chunkMgr->PaintWorldBrush(
+                                    hitXZ.x,
+                                    hitXZ.y,
+                                    palettePanel.GetSelectedSplatLayer(),
+                                    palettePanel.GetBrushRadius(),
+                                    palettePanel.GetBrushFalloff(),
+                                    palettePanel.GetBrushStrength()
+                                );
+                            } else {
+                                terrain->PaintWorldBrush(
+                                    hitXZ.x,
+                                    hitXZ.y,
                                     origin,
                                     scale,
                                     palettePanel.GetSelectedSplatLayer(),
                                     palettePanel.GetBrushRadius(),
                                     palettePanel.GetBrushFalloff(),
-                                    palettePanel.GetBrushStrength() * 0.80f
+                                    palettePanel.GetBrushStrength()
                                 );
+                            }
+                            m_HasActiveSplatStroke = true;
+                            m_LastSplatStrokeXZ = hitXZ;
+                        } else if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && m_HasActiveSplatStroke) {
+                            const float stepThreshold = std::max(0.08f, palettePanel.GetBrushRadius() * 0.18f);
+                            if (glm::length(hitXZ - m_LastSplatStrokeXZ) >= stepThreshold) {
+                                if (chunkMgr) {
+                                    chunkMgr->PaintWorldSegment(
+                                        m_LastSplatStrokeXZ,
+                                        hitXZ,
+                                        palettePanel.GetSelectedSplatLayer(),
+                                        palettePanel.GetBrushRadius(),
+                                        palettePanel.GetBrushFalloff(),
+                                        palettePanel.GetBrushStrength() * 0.80f
+                                    );
+                                } else {
+                                    terrain->PaintWorldSegment(
+                                        m_LastSplatStrokeXZ,
+                                        hitXZ,
+                                        origin,
+                                        scale,
+                                        palettePanel.GetSelectedSplatLayer(),
+                                        palettePanel.GetBrushRadius(),
+                                        palettePanel.GetBrushFalloff(),
+                                        palettePanel.GetBrushStrength() * 0.80f
+                                    );
+                                }
                                 m_LastSplatStrokeXZ = hitXZ;
                             }
                         }

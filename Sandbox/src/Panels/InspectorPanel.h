@@ -17,6 +17,7 @@ class CircleCollider2D;
 class CapsuleCollider2D;
 class CameraComponent;
 class TerrainComponent;
+class TerrainChunkManager;
 class Tilemap;
 } // namespace Engine
 
@@ -42,6 +43,7 @@ private:
     static void DrawCapsuleCollider2D(Engine::CapsuleCollider2D& capsuleCollider, Engine::GameObject* entity);
     static void DrawCamera(Engine::CameraComponent& camComp, Engine::GameObject* entity);
     static void DrawTerrain(Engine::TerrainComponent& terrain, Engine::GameObject* entity);
+    static void DrawTerrainChunkManager(Engine::TerrainChunkManager& chunkMgr, Engine::GameObject* entity);
     static void DrawTilemap(Engine::Tilemap& tilemapComp, Engine::GameObject* entity);
     static void DrawAddComponentMenu(Engine::GameObject* entity);
 };

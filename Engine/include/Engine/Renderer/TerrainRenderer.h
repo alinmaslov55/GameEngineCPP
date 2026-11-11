@@ -4,6 +4,7 @@
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Renderer/SceneLighting.h"
 #include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Scene/TerrainChunkManager.h"
 
 #include <glm/glm.hpp>
 
@@ -25,6 +26,11 @@ public:
                               const glm::vec3& scale,
                               const PerspectiveCamera& camera,
                               const SceneLightingData* lighting = nullptr);
+
+    static void RenderChunkManager(TerrainChunkManager& chunkManager,
+                                   float groundY,
+                                   const PerspectiveCamera& camera,
+                                   const SceneLightingData* lighting = nullptr);
 };
 
 } // namespace Engine

@@ -22,6 +22,7 @@ class PostProcessComponent;
 class WindComponent;
 class SpriteRenderer;
 class TerrainComponent;
+class TerrainChunkManager;
 class Tilemap;
 class ParticleSystem;
 class UIPanel;
@@ -98,6 +99,7 @@ private:
     std::vector<PointLightCandidate> m_PointLightScratch;
     std::vector<std::pair<GameObject*, glm::vec3>> m_FoliageScratch;
     std::vector<std::pair<TerrainComponent*, Transform*>> m_TerrainScratch;
+    std::vector<std::pair<TerrainChunkManager*, Transform*>> m_TerrainChunkScratch;
     std::vector<std::pair<Tilemap*, Transform*>> m_TilemapRenderScratch;
     std::vector<std::pair<SpriteRenderer*, Transform*>> m_FlatDecalScratch;
     std::vector<ParticleSystem*> m_ParticleScratch;

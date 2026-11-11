@@ -214,40 +214,59 @@ void TerrainComponent::SetSplatTexel(uint32_t px, uint32_t pz, const glm::u8vec4
     MarkDirtyRect(px, pz, px, pz, true);
 }
 
-void TerrainComponent::PaintWorldBrush(float worldX,
-                                       float worldZ,
-                                       const glm::vec3& terrainOrigin,
-                                       const glm::vec3& terrainScale,
-                                       uint32_t layerIndex,
-                                       float radiusWorld,
-                                       float falloff,
-                                       float strength) {
-    if (layerIndex >= MaxLayers || radiusWorld <= 0.0f || strength <= 0.0f) {
-        return;
+bool TerrainComponent::PaintSplatBufferXZ(std::vector<uint8_t>& splatData,
+                                            uint32_t splatWidth,
+                                            uint32_t splatHeight,
+                                            int32_t chunkX,
+                                            int32_t chunkZ,
+                                            float originX,
+                                            float originZ,
+                                            float worldWidth,
+                                            float worldDepth,
+                                            bool nodeAligned,
+                                            float brushWorldX,
+                                            float brushWorldZ,
+                                            uint32_t layerIndex,
+                                            float radiusWorld,
+                                            float falloff,
+                                            float strength,
+                                            uint32_t& outDirtyMinX,
+                                            uint32_t& outDirtyMinZ,
+                                            uint32_t& outDirtyMaxX,
+                                            uint32_t& outDirtyMaxZ) {
+    if (layerIndex >= MaxLayers || radiusWorld <= 0.0f || strength <= 0.0f ||
+        splatWidth < 2u || splatHeight < 2u ||
+        splatData.size() < static_cast<size_t>(splatWidth) * static_cast<size_t>(splatHeight) * 4u) {
+        return false;
     }
 
-    const float totalWidth = std::max(0.001f, m_Width * std::abs(terrainScale.x));
-    const float totalDepth = std::max(0.001f, m_Depth * std::abs(terrainScale.z));
+    const float totalWidth = std::max(0.001f, worldWidth);
+    const float totalDepth = std::max(0.001f, worldDepth);
+    const float chunkOriginX = nodeAligned ? (originX + static_cast<float>(chunkX) * totalWidth) : originX;
+    const float chunkOriginZ = nodeAligned ? (originZ + static_cast<float>(chunkZ) * totalDepth) : originZ;
 
-    const float minBrushX = worldX - radiusWorld;
-    const float maxBrushX = worldX + radiusWorld;
-    const float minBrushZ = worldZ - radiusWorld;
-    const float maxBrushZ = worldZ + radiusWorld;
+    const float minBrushX = brushWorldX - radiusWorld;
+    const float maxBrushX = brushWorldX + radiusWorld;
+    const float minBrushZ = brushWorldZ - radiusWorld;
+    const float maxBrushZ = brushWorldZ + radiusWorld;
 
-    if (maxBrushX < terrainOrigin.x || minBrushX > terrainOrigin.x + totalWidth ||
-        maxBrushZ < terrainOrigin.z || minBrushZ > terrainOrigin.z + totalDepth) {
-        return;
+    if (maxBrushX < chunkOriginX || minBrushX > chunkOriginX + totalWidth ||
+        maxBrushZ < chunkOriginZ || minBrushZ > chunkOriginZ + totalDepth) {
+        return false;
     }
 
-    const float uMin = std::clamp((minBrushX - terrainOrigin.x) / totalWidth, 0.0f, 1.0f);
-    const float uMax = std::clamp((maxBrushX - terrainOrigin.x) / totalWidth, 0.0f, 1.0f);
-    const float vMin = std::clamp((minBrushZ - terrainOrigin.z) / totalDepth, 0.0f, 1.0f);
-    const float vMax = std::clamp((maxBrushZ - terrainOrigin.z) / totalDepth, 0.0f, 1.0f);
+    const uint32_t spanX = nodeAligned ? (splatWidth - 1u) : splatWidth;
+    const uint32_t spanZ = nodeAligned ? (splatHeight - 1u) : splatHeight;
 
-    const uint32_t pxMin = static_cast<uint32_t>(std::floor(uMin * static_cast<float>(m_SplatWidth)));
-    const uint32_t pxMax = std::min(m_SplatWidth - 1u, static_cast<uint32_t>(std::ceil(uMax * static_cast<float>(m_SplatWidth))));
-    const uint32_t pzMin = static_cast<uint32_t>(std::floor(vMin * static_cast<float>(m_SplatHeight)));
-    const uint32_t pzMax = std::min(m_SplatHeight - 1u, static_cast<uint32_t>(std::ceil(vMax * static_cast<float>(m_SplatHeight))));
+    const float uMin = std::clamp((minBrushX - chunkOriginX) / totalWidth, 0.0f, 1.0f);
+    const float uMax = std::clamp((maxBrushX - chunkOriginX) / totalWidth, 0.0f, 1.0f);
+    const float vMin = std::clamp((minBrushZ - chunkOriginZ) / totalDepth, 0.0f, 1.0f);
+    const float vMax = std::clamp((maxBrushZ - chunkOriginZ) / totalDepth, 0.0f, 1.0f);
+
+    const uint32_t pxMin = static_cast<uint32_t>(std::floor(uMin * static_cast<float>(spanX)));
+    const uint32_t pxMax = std::min(splatWidth - 1u, static_cast<uint32_t>(std::ceil(uMax * static_cast<float>(spanX))));
+    const uint32_t pzMin = static_cast<uint32_t>(std::floor(vMin * static_cast<float>(spanZ)));
+    const uint32_t pzMax = std::min(splatHeight - 1u, static_cast<uint32_t>(std::ceil(vMax * static_cast<float>(spanZ))));
 
     const float clampedFalloff = std::clamp(falloff, 0.0f, 1.0f);
     const float innerStart = std::clamp(1.0f - clampedFalloff, 0.0f, 0.999f);
@@ -256,14 +275,26 @@ void TerrainComponent::PaintWorldBrush(float worldX,
     float target[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
     target[layerIndex] = 255.0f;
 
+    const float cellSizeX = totalWidth / static_cast<float>(spanX);
+    const float cellSizeZ = totalDepth / static_cast<float>(spanZ);
+
     bool anyModified = false;
+    uint32_t modMinX = pxMax;
+    uint32_t modMinZ = pzMax;
+    uint32_t modMaxX = pxMin;
+    uint32_t modMaxZ = pzMin;
+
     for (uint32_t pz = pzMin; pz <= pzMax; ++pz) {
-        const float texelZ = terrainOrigin.z + ((static_cast<float>(pz) + 0.5f) / static_cast<float>(m_SplatHeight)) * totalDepth;
-        const float dz = texelZ - worldZ;
+        const float texelZ = nodeAligned
+            ? (originZ + static_cast<float>(static_cast<int64_t>(chunkZ) * static_cast<int64_t>(spanZ) + static_cast<int64_t>(pz)) * cellSizeZ)
+            : (originZ + ((static_cast<float>(pz) + 0.5f) / static_cast<float>(splatHeight)) * totalDepth);
+        const float dz = texelZ - brushWorldZ;
 
         for (uint32_t px = pxMin; px <= pxMax; ++px) {
-            const float texelX = terrainOrigin.x + ((static_cast<float>(px) + 0.5f) / static_cast<float>(m_SplatWidth)) * totalWidth;
-            const float dx = texelX - worldX;
+            const float texelX = nodeAligned
+                ? (originX + static_cast<float>(static_cast<int64_t>(chunkX) * static_cast<int64_t>(spanX) + static_cast<int64_t>(px)) * cellSizeX)
+                : (originX + ((static_cast<float>(px) + 0.5f) / static_cast<float>(splatWidth)) * totalWidth);
+            const float dx = texelX - brushWorldX;
             const float dist = std::sqrt(dx * dx + dz * dz);
             if (dist > radiusWorld) {
                 continue;
@@ -281,23 +312,67 @@ void TerrainComponent::PaintWorldBrush(float worldX,
                 continue;
             }
 
-            const size_t idx = (static_cast<size_t>(pz) * m_SplatWidth + px) * 4u;
-            const float blendedR = static_cast<float>(m_SplatData[idx + 0]) * (1.0f - blendAlpha) + target[0] * blendAlpha;
-            const float blendedG = static_cast<float>(m_SplatData[idx + 1]) * (1.0f - blendAlpha) + target[1] * blendAlpha;
-            const float blendedB = static_cast<float>(m_SplatData[idx + 2]) * (1.0f - blendAlpha) + target[2] * blendAlpha;
-            const float blendedA = static_cast<float>(m_SplatData[idx + 3]) * (1.0f - blendAlpha) + target[3] * blendAlpha;
+            const size_t idx = (static_cast<size_t>(pz) * splatWidth + px) * 4u;
+            const float blendedR = static_cast<float>(splatData[idx + 0]) * (1.0f - blendAlpha) + target[0] * blendAlpha;
+            const float blendedG = static_cast<float>(splatData[idx + 1]) * (1.0f - blendAlpha) + target[1] * blendAlpha;
+            const float blendedB = static_cast<float>(splatData[idx + 2]) * (1.0f - blendAlpha) + target[2] * blendAlpha;
+            const float blendedA = static_cast<float>(splatData[idx + 3]) * (1.0f - blendAlpha) + target[3] * blendAlpha;
 
             const glm::u8vec4 norm = NormalizeWeights(blendedR, blendedG, blendedB, blendedA);
-            m_SplatData[idx + 0] = norm.r;
-            m_SplatData[idx + 1] = norm.g;
-            m_SplatData[idx + 2] = norm.b;
-            m_SplatData[idx + 3] = norm.a;
+            splatData[idx + 0] = norm.r;
+            splatData[idx + 1] = norm.g;
+            splatData[idx + 2] = norm.b;
+            splatData[idx + 3] = norm.a;
+
             anyModified = true;
+            modMinX = std::min(modMinX, px);
+            modMinZ = std::min(modMinZ, pz);
+            modMaxX = std::max(modMaxX, px);
+            modMaxZ = std::max(modMaxZ, pz);
         }
     }
 
     if (anyModified) {
-        MarkDirtyRect(pxMin, pzMin, pxMax, pzMax, true);
+        outDirtyMinX = modMinX;
+        outDirtyMinZ = modMinZ;
+        outDirtyMaxX = modMaxX;
+        outDirtyMaxZ = modMaxZ;
+    }
+    return anyModified;
+}
+
+void TerrainComponent::PaintWorldBrush(float worldX,
+                                       float worldZ,
+                                       const glm::vec3& terrainOrigin,
+                                       const glm::vec3& terrainScale,
+                                       uint32_t layerIndex,
+                                       float radiusWorld,
+                                       float falloff,
+                                       float strength) {
+    uint32_t minX = 0, minZ = 0, maxX = 0, maxZ = 0;
+    const float totalWidth = std::max(0.001f, m_Width * std::abs(terrainScale.x));
+    const float totalDepth = std::max(0.001f, m_Depth * std::abs(terrainScale.z));
+    if (PaintSplatBufferXZ(m_SplatData,
+                           m_SplatWidth,
+                           m_SplatHeight,
+                           0,
+                           0,
+                           terrainOrigin.x,
+                           terrainOrigin.z,
+                           totalWidth,
+                           totalDepth,
+                           /*nodeAligned=*/false,
+                           worldX,
+                           worldZ,
+                           layerIndex,
+                           radiusWorld,
+                           falloff,
+                           strength,
+                           minX,
+                           minZ,
+                           maxX,
+                           maxZ)) {
+        MarkDirtyRect(minX, minZ, maxX, maxZ, true);
     }
 }
 
@@ -426,15 +501,15 @@ bool TerrainComponent::LoadSplatmapFromPNG(const std::string& resolvedFilepath) 
     return true;
 }
 
-std::string TerrainComponent::EncodeSplatBase64() const {
+std::string TerrainComponent::EncodeRGBABase64(const std::vector<uint8_t>& rgbaData) {
     std::string out;
-    out.reserve(((m_SplatData.size() + 2u) / 3u) * 4u);
+    out.reserve(((rgbaData.size() + 2u) / 3u) * 4u);
 
     size_t i = 0;
-    while (i + 2u < m_SplatData.size()) {
-        const uint32_t triple = (static_cast<uint32_t>(m_SplatData[i]) << 16u) |
-                                (static_cast<uint32_t>(m_SplatData[i + 1u]) << 8u) |
-                                static_cast<uint32_t>(m_SplatData[i + 2u]);
+    while (i + 2u < rgbaData.size()) {
+        const uint32_t triple = (static_cast<uint32_t>(rgbaData[i]) << 16u) |
+                                (static_cast<uint32_t>(rgbaData[i + 1u]) << 8u) |
+                                static_cast<uint32_t>(rgbaData[i + 2u]);
         out.push_back(kBase64Alphabet[(triple >> 18u) & 0x3Fu]);
         out.push_back(kBase64Alphabet[(triple >> 12u) & 0x3Fu]);
         out.push_back(kBase64Alphabet[(triple >> 6u) & 0x3Fu]);
@@ -442,16 +517,16 @@ std::string TerrainComponent::EncodeSplatBase64() const {
         i += 3u;
     }
 
-    const size_t rem = m_SplatData.size() - i;
+    const size_t rem = rgbaData.size() - i;
     if (rem == 1u) {
-        const uint32_t triple = static_cast<uint32_t>(m_SplatData[i]) << 16u;
+        const uint32_t triple = static_cast<uint32_t>(rgbaData[i]) << 16u;
         out.push_back(kBase64Alphabet[(triple >> 18u) & 0x3Fu]);
         out.push_back(kBase64Alphabet[(triple >> 12u) & 0x3Fu]);
         out.push_back('=');
         out.push_back('=');
     } else if (rem == 2u) {
-        const uint32_t triple = (static_cast<uint32_t>(m_SplatData[i]) << 16u) |
-                                (static_cast<uint32_t>(m_SplatData[i + 1u]) << 8u);
+        const uint32_t triple = (static_cast<uint32_t>(rgbaData[i]) << 16u) |
+                                (static_cast<uint32_t>(rgbaData[i + 1u]) << 8u);
         out.push_back(kBase64Alphabet[(triple >> 18u) & 0x3Fu]);
         out.push_back(kBase64Alphabet[(triple >> 12u) & 0x3Fu]);
         out.push_back(kBase64Alphabet[(triple >> 6u) & 0x3Fu]);
@@ -461,7 +536,10 @@ std::string TerrainComponent::EncodeSplatBase64() const {
     return out;
 }
 
-bool TerrainComponent::DecodeSplatBase64(const std::string& base64Data, uint32_t width, uint32_t height) {
+bool TerrainComponent::DecodeRGBABase64(const std::string& base64Data,
+                                        uint32_t width,
+                                        uint32_t height,
+                                        std::vector<uint8_t>& outRgbaData) {
     if (width == 0 || height == 0 || base64Data.empty()) {
         return false;
     }
@@ -490,8 +568,22 @@ bool TerrainComponent::DecodeSplatBase64(const std::string& base64Data, uint32_t
     }
 
     if (decoded.size() != expectedBytes) {
-        ENGINE_CORE_ERROR("TerrainComponent::DecodeSplatBase64 byte size mismatch (got {}, expected {})",
+        ENGINE_CORE_ERROR("TerrainComponent::DecodeRGBABase64 byte size mismatch (got {}, expected {})",
                           decoded.size(), expectedBytes);
+        return false;
+    }
+
+    outRgbaData = std::move(decoded);
+    return true;
+}
+
+std::string TerrainComponent::EncodeSplatBase64() const {
+    return EncodeRGBABase64(m_SplatData);
+}
+
+bool TerrainComponent::DecodeSplatBase64(const std::string& base64Data, uint32_t width, uint32_t height) {
+    std::vector<uint8_t> decoded;
+    if (!DecodeRGBABase64(base64Data, width, height, decoded)) {
         return false;
     }
 
@@ -505,45 +597,72 @@ bool TerrainComponent::DecodeSplatBase64(const std::string& base64Data, uint32_t
     return true;
 }
 
-const std::shared_ptr<Texture>& TerrainComponent::SyncGpuSplatTexture() {
-    if (!m_GpuSplatTexture ||
-        m_GpuSplatTexture->GetWidth() != static_cast<int>(m_SplatWidth) ||
-        m_GpuSplatTexture->GetHeight() != static_cast<int>(m_SplatHeight)) {
-        m_GpuSplatTexture = std::make_shared<Texture>(
-            m_SplatWidth,
-            m_SplatHeight,
-            m_SplatData.data(),
+const std::shared_ptr<Texture>& TerrainComponent::SyncRgbaGpuTexture(std::shared_ptr<Texture>& gpuTex,
+                                                                       std::vector<uint8_t>& uploadScratch,
+                                                                       const std::vector<uint8_t>& splatData,
+                                                                       uint32_t splatWidth,
+                                                                       uint32_t splatHeight,
+                                                                       bool& inOutGpuDirty,
+                                                                       uint32_t dirtyMinX,
+                                                                       uint32_t dirtyMinY,
+                                                                       uint32_t dirtyMaxX,
+                                                                       uint32_t dirtyMaxY) {
+    if (splatWidth == 0 || splatHeight == 0 ||
+        splatData.size() < static_cast<size_t>(splatWidth) * static_cast<size_t>(splatHeight) * 4u) {
+        return gpuTex;
+    }
+
+    if (!gpuTex ||
+        gpuTex->GetWidth() != static_cast<int>(splatWidth) ||
+        gpuTex->GetHeight() != static_cast<int>(splatHeight)) {
+        gpuTex = std::make_shared<Texture>(
+            splatWidth,
+            splatHeight,
+            splatData.data(),
             /*linearFilter=*/true,
             /*repeatWrap=*/false
         );
-        m_GpuDirty = false;
-        return m_GpuSplatTexture;
+        inOutGpuDirty = false;
+        return gpuTex;
     }
 
-    if (m_GpuDirty) {
-        const uint32_t minX = std::min(m_DirtyMinX, m_SplatWidth - 1u);
-        const uint32_t minY = std::min(m_DirtyMinY, m_SplatHeight - 1u);
-        const uint32_t maxX = std::min(std::max(minX, m_DirtyMaxX), m_SplatWidth - 1u);
-        const uint32_t maxY = std::min(std::max(minY, m_DirtyMaxY), m_SplatHeight - 1u);
+    if (inOutGpuDirty) {
+        const uint32_t minX = std::min(dirtyMinX, splatWidth - 1u);
+        const uint32_t minY = std::min(dirtyMinY, splatHeight - 1u);
+        const uint32_t maxX = std::min(std::max(minX, dirtyMaxX), splatWidth - 1u);
+        const uint32_t maxY = std::min(std::max(minY, dirtyMaxY), splatHeight - 1u);
 
         const uint32_t subW = maxX - minX + 1u;
         const uint32_t subH = maxY - minY + 1u;
 
-        if (subW == m_SplatWidth && subH == m_SplatHeight) {
-            m_GpuSplatTexture->SetData(m_SplatData.data(), static_cast<uint32_t>(m_SplatData.size()));
+        if (subW == splatWidth && subH == splatHeight) {
+            gpuTex->SetData(splatData.data(), static_cast<uint32_t>(splatData.size()));
         } else {
-            m_UploadScratch.resize(static_cast<size_t>(subW) * static_cast<size_t>(subH) * 4u);
+            uploadScratch.resize(static_cast<size_t>(subW) * static_cast<size_t>(subH) * 4u);
             for (uint32_t row = 0; row < subH; ++row) {
-                const size_t srcOffset = (static_cast<size_t>(minY + row) * m_SplatWidth + minX) * 4u;
+                const size_t srcOffset = (static_cast<size_t>(minY + row) * splatWidth + minX) * 4u;
                 const size_t dstOffset = static_cast<size_t>(row) * subW * 4u;
-                std::memcpy(&m_UploadScratch[dstOffset], &m_SplatData[srcOffset], static_cast<size_t>(subW) * 4u);
+                std::memcpy(&uploadScratch[dstOffset], &splatData[srcOffset], static_cast<size_t>(subW) * 4u);
             }
-            m_GpuSplatTexture->SetSubData(minX, minY, subW, subH, m_UploadScratch.data());
+            gpuTex->SetSubData(minX, minY, subW, subH, uploadScratch.data());
         }
-        m_GpuDirty = false;
+        inOutGpuDirty = false;
     }
 
-    return m_GpuSplatTexture;
+    return gpuTex;
+}
+
+const std::shared_ptr<Texture>& TerrainComponent::SyncGpuSplatTexture() {
+    return SyncRgbaGpuTexture(m_GpuSplatTexture,
+                              m_UploadScratch,
+                              m_SplatData,
+                              m_SplatWidth,
+                              m_SplatHeight,
+                              m_GpuDirty,
+                              m_DirtyMinX,
+                              m_DirtyMinY,
+                              m_DirtyMaxX,
+                              m_DirtyMaxY);
 }
 
 } // namespace Engine

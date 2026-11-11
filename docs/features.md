@@ -681,7 +681,7 @@ flowchart TD
 ---
 
 #### `TER-01` — Infinite Chunked Terrain Streaming & Border Stitching
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `ECS-01` | Unlocks: `TER-02`, `TER-03`, `TER-04`, `UIX-04`
 - **Current Gap:** `TerrainComponent` renders one finite rectangle (`14m x 14m`). Moving beyond `[0..14]` exposes empty void.
 - **Proposed C++ Specification:**

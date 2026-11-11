@@ -10,6 +10,7 @@
 #include <Engine/Scene/LightComponents.h>
 #include <Engine/Scene/PostProcessComponent.h>
 #include <Engine/Scene/TerrainComponent.h>
+#include <Engine/Scene/TerrainChunkManager.h>
 #include <Engine/Scene/Tilemap.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Scene/EntityTag.h>
@@ -175,6 +176,9 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         });
         DrawComponent<Engine::TerrainComponent>("Terrain (Splatmap)", selectedEntity, [&](Engine::TerrainComponent& c) {
             DrawTerrain(c, selectedEntity);
+        });
+        DrawComponent<Engine::TerrainChunkManager>("Terrain Chunk Manager (Infinite)", selectedEntity, [&](Engine::TerrainChunkManager& c) {
+            DrawTerrainChunkManager(c, selectedEntity);
         });
         DrawComponent<Engine::Tilemap>("Tilemap", selectedEntity, [&](Engine::Tilemap& c) {
             DrawTilemap(c, selectedEntity);
@@ -720,6 +724,51 @@ void InspectorPanel::DrawCamera(Engine::CameraComponent& camComp, Engine::GameOb
     }
 }
 
+namespace {
+
+template<typename TerrainOwnerT>
+void DrawTerrainLayerSlots(TerrainOwnerT& owner) {
+    ImGui::Separator();
+    const char* layerLabels[Engine::TerrainComponent::MaxLayers] = {
+        "Layer 0 (R - Grass)",
+        "Layer 1 (G - Dirt)",
+        "Layer 2 (B - Cobble)",
+        "Layer 3 (A - Soil)"
+    };
+    for (uint32_t i = 0; i < Engine::TerrainComponent::MaxLayers; ++i) {
+        ImGui::PushID(static_cast<int>(i));
+        ImGui::Text("%s", layerLabels[i]);
+
+        auto& layer = owner.GetLayer(i);
+        std::string texName = "Default Color";
+        if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
+            texName = std::filesystem::path(layer.LayerTexture->GetFilepath()).filename().string();
+        }
+
+        ImGui::Button(texName.c_str(), ImVec2(145.0f, 0.0f));
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
+                const std::string filepath(static_cast<const char*>(payload->Data));
+                if (filepath.find(".png") != std::string::npos || filepath.find(".jpg") != std::string::npos) {
+                    owner.SetLayerTexture(i, Engine::ResourceManager::Load<Engine::Texture>(filepath));
+                    ENGINE_INFO("Inspector: Assigned terrain layer {} texture '{}'", i, filepath);
+                }
+            }
+            ImGui::EndDragDropTarget();
+        }
+
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(85.0f);
+        float tiling = layer.TilingScale;
+        if (ImGui::DragFloat("Tiling", &tiling, 0.01f, 0.05f, 10.0f, "%.2f")) {
+            owner.SetLayerTilingScale(i, tiling);
+        }
+        ImGui::PopID();
+    }
+}
+
+} // namespace
+
 void InspectorPanel::DrawTerrain(Engine::TerrainComponent& terrain, Engine::GameObject* entity) {
     (void)entity;
     float dims[2] = { terrain.GetWidth(), terrain.GetDepth() };
@@ -751,43 +800,36 @@ void InspectorPanel::DrawTerrain(Engine::TerrainComponent& terrain, Engine::Game
         terrain.SetEdgeDarkening(darkening);
     }
 
-    ImGui::Separator();
-    const char* layerLabels[Engine::TerrainComponent::MaxLayers] = {
-        "Layer 0 (R - Grass)",
-        "Layer 1 (G - Dirt)",
-        "Layer 2 (B - Cobble)",
-        "Layer 3 (A - Soil)"
-    };
-    for (uint32_t i = 0; i < Engine::TerrainComponent::MaxLayers; ++i) {
-        ImGui::PushID(static_cast<int>(i));
-        ImGui::Text("%s", layerLabels[i]);
+    DrawTerrainLayerSlots(terrain);
+}
 
-        auto& layer = terrain.GetLayer(i);
-        std::string texName = "Default Color";
-        if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
-            texName = std::filesystem::path(layer.LayerTexture->GetFilepath()).filename().string();
-        }
-
-        ImGui::Button(texName.c_str(), ImVec2(145.0f, 0.0f));
-        if (ImGui::BeginDragDropTarget()) {
-            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("CONTENT_BROWSER_ITEM")) {
-                const std::string filepath(static_cast<const char*>(payload->Data));
-                if (filepath.find(".png") != std::string::npos || filepath.find(".jpg") != std::string::npos) {
-                    terrain.SetLayerTexture(i, Engine::ResourceManager::Load<Engine::Texture>(filepath));
-                    ENGINE_INFO("Inspector: Assigned terrain layer {} texture '{}'", i, filepath);
-                }
-            }
-            ImGui::EndDragDropTarget();
-        }
-
-        ImGui::SameLine();
-        ImGui::SetNextItemWidth(85.0f);
-        float tiling = layer.TilingScale;
-        if (ImGui::DragFloat("Tiling", &tiling, 0.01f, 0.05f, 10.0f, "%.2f")) {
-            terrain.SetLayerTilingScale(i, tiling);
-        }
-        ImGui::PopID();
+void InspectorPanel::DrawTerrainChunkManager(Engine::TerrainChunkManager& chunkMgr, Engine::GameObject* entity) {
+    (void)entity;
+    ImGui::DragFloat("Chunk Size (m)", &chunkMgr.ChunkSizeMeters, 0.5f, 4.0f, 64.0f, "%.1f m");
+    ImGui::SliderInt("Active Radius (Chunks)", &chunkMgr.ActiveRadiusChunks, 1, 6);
+    chunkMgr.CacheRetentionRadius = std::max(chunkMgr.ActiveRadiusChunks, chunkMgr.CacheRetentionRadius);
+    ImGui::SliderInt("Cache Retention Radius", &chunkMgr.CacheRetentionRadius, chunkMgr.ActiveRadiusChunks, 12);
+    int uploadsPerFrame = static_cast<int>(chunkMgr.MaxGpuUploadsPerFrame);
+    if (ImGui::SliderInt("Max GPU Uploads / Frame", &uploadsPerFrame, 1, 8)) {
+        chunkMgr.MaxGpuUploadsPerFrame = static_cast<uint32_t>(uploadsPerFrame);
     }
+    ImGui::Checkbox("Auto-Stream With Camera", &chunkMgr.AutoStreamWithCamera);
+    ImGui::Text("Splat Resolution: %u x %u (C0 stitched)", chunkMgr.SplatResolution, chunkMgr.SplatResolution);
+    ImGui::TextDisabled("Active: %zu | RAM Cache: %zu | Upload Queue: %zu",
+                        chunkMgr.GetActiveChunkCount(),
+                        chunkMgr.GetCachedChunkCount(),
+                        chunkMgr.GetPendingUploadCount());
+
+    float sharpness = chunkMgr.GetBlendSharpness();
+    if (ImGui::SliderFloat("Blend Sharpness", &sharpness, 0.0f, 1.0f, "%.2f")) {
+        chunkMgr.SetBlendSharpness(sharpness);
+    }
+    float darkening = chunkMgr.GetEdgeDarkening();
+    if (ImGui::SliderFloat("Edge Ink Border", &darkening, 0.0f, 0.45f, "%.2f")) {
+        chunkMgr.SetEdgeDarkening(darkening);
+    }
+
+    DrawTerrainLayerSlots(chunkMgr);
 }
 
 void InspectorPanel::DrawTilemap(Engine::Tilemap& tilemapComp, Engine::GameObject* entity) {
@@ -807,6 +849,7 @@ void InspectorPanel::DrawAddComponentMenu(Engine::GameObject* entity) {
     if (ImGui::BeginPopup("AddComponentPopup")) {
         DrawAddComponentEntry<Engine::SpriteRenderer>("Sprite Renderer", entity);
         DrawAddComponentEntry<Engine::TerrainComponent>("Terrain (Splatmap)", entity);
+        DrawAddComponentEntry<Engine::TerrainChunkManager>("Terrain Chunk Manager (Infinite)", entity);
         DrawAddComponentEntry<Engine::DirectionalLightComponent>("Directional Light", entity);
         DrawAddComponentEntry<Engine::PointLightComponent>("Point Light", entity);
         DrawAddComponentEntry<Engine::PostProcessComponent>("Post Process Volume", entity);

@@ -15,6 +15,7 @@
 #include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Scene/TerrainChunkManager.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/UI/UIPanel.h"
@@ -112,6 +113,7 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     static const auto kRigidbodyMask = Detail::GetComponentTypeMask<Rigidbody2D>();
     static const auto kPointLightMask = Detail::GetComponentTypeMask<PointLightComponent>();
     static const auto kTerrainMask = Detail::GetComponentTypeMask<TerrainComponent>();
+    static const auto kTerrainChunkMask = Detail::GetComponentTypeMask<TerrainChunkManager>();
     static const auto kTilemapMask = Detail::GetComponentTypeMask<Tilemap>();
     static const auto kSpriteMask = Detail::GetComponentTypeMask<SpriteRenderer>();
     static const auto kSquashStretchMask = Detail::GetComponentTypeMask<SquashStretchComponent>();
@@ -152,6 +154,7 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     m_FoliageScratch.clear();
     m_FoliageScratch.reserve(8);
     m_TerrainScratch.clear();
+    m_TerrainChunkScratch.clear();
     m_TilemapRenderScratch.clear();
     m_FlatDecalScratch.clear();
     m_ParticleScratch.clear();
@@ -320,6 +323,15 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
         if (mask & kTerrainMask) {
             if (auto* terrain = gameObject->GetComponent<TerrainComponent>()) {
                 m_TerrainScratch.emplace_back(terrain, gameObject->GetTransform());
+            }
+        }
+
+        if (mask & kTerrainChunkMask) {
+            if (auto* chunkMgr = gameObject->GetComponent<TerrainChunkManager>()) {
+                if (chunkMgr->AutoStreamWithCamera) {
+                    chunkMgr->UpdateStreaming(camFocal);
+                }
+                m_TerrainChunkScratch.emplace_back(chunkMgr, gameObject->GetTransform());
             }
         }
 
@@ -567,13 +579,18 @@ void SceneRenderer::RenderPassGroundPlane(SceneRenderContext& ctx) {
     Renderer::SetDepthTest(true);
     Renderer::SetDepthMask(true);
 
-    // 1A. Continuous 4-Layer Splatmap Terrain (Base Ground at Y = origin.y)
+    // 1A. Continuous 4-Layer Splatmap Terrain (Finite & Infinite Chunked Managers)
     bool hasSplatTerrain = false;
     Renderer::SetPolygonOffset(true, 1.0f, 1.0f);
     for (const auto& [terrain, transform] : m_TerrainScratch) {
         const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
         const glm::vec3 scale  = transform ? transform->scale    : glm::vec3(1.0f);
         TerrainRenderer::RenderTerrain(*terrain, origin, scale, *ctx.activeCam, &ctx.lighting);
+        hasSplatTerrain = true;
+    }
+    for (const auto& [chunkMgr, transform] : m_TerrainChunkScratch) {
+        const float groundY = transform ? transform->position.y : 0.0f;
+        TerrainRenderer::RenderChunkManager(*chunkMgr, groundY, *ctx.activeCam, &ctx.lighting);
         hasSplatTerrain = true;
     }
 
