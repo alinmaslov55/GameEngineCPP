@@ -621,7 +621,7 @@ flowchart TD
 ---
 
 #### `LGT-02` — Expanded Priority-Sorted Point Light Pipeline
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `LGT-01`, `LGT-03`, `EDT-02`
 - **Current Gap:** `SceneLightingData::MaxPointLights = 8` (`SceneLighting.h:17`), collected in raw `m_GameObjects` order without priority sorting—if 8 Wisps/Pegs precede the Hero in `m_GameObjects`, the Hero's Torch light is dropped!
 - **Proposed C++ & GLSL Specification:**

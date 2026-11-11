@@ -95,6 +95,7 @@ void TerrainRenderer::Init() {
     s_TerrainData->SplatShader->SetInt("u_Layer2", 3);
     s_TerrainData->SplatShader->SetInt("u_Layer3", 4);
     s_TerrainData->SplatShader->SetInt("u_ShadowMap", 5);
+    s_TerrainData->SplatShader->SetInt("u_TorchShadowMap", 6);
     s_TerrainData->SplatShader->BindUniformBlock("PointLightBlock", SceneLightingData::PointLightUBOBinding);
     s_TerrainData->SplatShader->Unbind();
 
@@ -172,13 +173,19 @@ void TerrainRenderer::RenderTerrain(TerrainComponent& terrain,
     shader.SetFloat("u_BlendSharpness", terrain.GetBlendSharpness());
     shader.SetFloat("u_EdgeDarkening", terrain.GetEdgeDarkening());
 
-    // Bind shadow map or safe white fallback to slot 5
+    // Bind directional shadow map (slot 5) and omnidirectional torch shadow map (slot 6) with safe white fallbacks
     glActiveTexture(GL_TEXTURE5);
     if (lighting && lighting->LightingActive) {
         const uint32_t shadowTex = (lighting->ShadowsEnabled && lighting->ShadowMapTextureID != 0)
             ? lighting->ShadowMapTextureID
             : s_TerrainData->WhiteFallbackDepthTex->GetRendererID();
         glBindTexture(GL_TEXTURE_2D, shadowTex);
+
+        glActiveTexture(GL_TEXTURE6);
+        const uint32_t torchShadowTex = (lighting->TorchShadowsEnabled && lighting->TorchShadowMapTextureID != 0)
+            ? lighting->TorchShadowMapTextureID
+            : s_TerrainData->WhiteFallbackDepthTex->GetRendererID();
+        glBindTexture(GL_TEXTURE_2D, torchShadowTex);
 
         shader.SetInt("u_LightingEnabled", 1);
         shader.SetFloat3("u_SunDirection", lighting->SunDirection);
@@ -193,11 +200,30 @@ void TerrainRenderer::RenderTerrain(TerrainComponent& terrain,
         shader.SetFloat("u_ShadowSoftness", lighting->ShadowSoftness);
         shader.SetFloat("u_ShadowBias", lighting->ShadowBias);
 
+        const bool torchActive = (lighting->TorchShadowsEnabled && lighting->TorchShadowMapTextureID != 0);
+        shader.SetInt("u_TorchShadowsEnabled", torchActive ? 1 : 0);
+        if (torchActive) {
+            shader.SetFloat4("u_TorchShadowPosRadius", lighting->TorchShadowPosRadius);
+            shader.SetFloat2("u_TorchShadowTexelSize", lighting->TorchShadowTexelSize);
+            shader.SetFloat("u_TorchShadowSoftness", lighting->TorchShadowSoftness);
+            shader.SetFloat("u_TorchShadowBias", lighting->TorchShadowBias);
+            static constexpr const char* kTorchMatNames[4] = {
+                "u_TorchLightMatrices[0]", "u_TorchLightMatrices[1]",
+                "u_TorchLightMatrices[2]", "u_TorchLightMatrices[3]"
+            };
+            for (int q = 0; q < 4; ++q) {
+                shader.SetMat4(kTorchMatNames[q], lighting->TorchLightMatrices[static_cast<size_t>(q)]);
+            }
+        }
+
         Renderer::UploadPointLights(lighting);
     } else {
         glBindTexture(GL_TEXTURE_2D, s_TerrainData->WhiteFallbackDepthTex->GetRendererID());
+        glActiveTexture(GL_TEXTURE6);
+        glBindTexture(GL_TEXTURE_2D, s_TerrainData->WhiteFallbackDepthTex->GetRendererID());
         shader.SetInt("u_LightingEnabled", 0);
         shader.SetInt("u_ShadowsEnabled", 0);
+        shader.SetInt("u_TorchShadowsEnabled", 0);
     }
 
     shader.SetInt("u_BrushEnabled", s_TerrainData->BrushPreviewEnabled ? 1 : 0);

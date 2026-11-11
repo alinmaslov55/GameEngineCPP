@@ -7,6 +7,7 @@
 #include "Engine/Renderer/SceneRenderer.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/ShadowMap.h"
+#include "Engine/Renderer/TorchShadowMap.h"
 #include <cmath>
 #include <string>
 
@@ -210,6 +211,77 @@ TEST(SceneLightingPipelineTest, DistanceTieBreakerAndHeadlessUBOAlignment) {
     Engine::Renderer::UploadPointLights(&ctx.lighting);
     Engine::Renderer::UploadPointLights(nullptr);
     SUCCEED();
+}
+
+TEST(TorchShadowMapTest, HeadlessLifecycleAndAtlasConstants) {
+    Engine::TorchShadowMap::Init(512u);
+    EXPECT_FALSE(Engine::TorchShadowMap::IsValid()); // No OpenGL context in headless EngineTests
+    EXPECT_EQ(Engine::TorchShadowMap::GetDepthTextureID(), 0u);
+    EXPECT_EQ(Engine::TorchShadowMap::GetQuadrantResolution(), 512u);
+    EXPECT_EQ(Engine::TorchShadowMap::GetAtlasWidth(), 2048u);
+    EXPECT_EQ(Engine::TorchShadowMap::GetAtlasHeight(), 512u);
+
+    Engine::TorchShadowMap::BeginCapture();
+    Engine::TorchShadowMap::BeginQuadrant(Engine::TorchShadowQuadrant::North);
+    Engine::TorchShadowMap::EndCapture();
+    Engine::TorchShadowMap::Shutdown();
+    SUCCEED();
+}
+
+TEST(TorchShadowMapTest, FourQuadrantFrustumCoverageAndRadialBillboardTangents) {
+    const glm::vec3 torchPos = { 2.0f, 0.85f, -3.0f };
+    const float radius = 12.0f;
+
+    const auto matrices = Engine::TorchShadowMap::ComputeAllQuadrantMatrices(torchPos, radius);
+    const std::array<Engine::Frustum, 4> frustums = {
+        Engine::Frustum::FromViewProjection(matrices[0]), // North (-Z)
+        Engine::Frustum::FromViewProjection(matrices[1]), // East  (+X)
+        Engine::Frustum::FromViewProjection(matrices[2]), // South (+Z)
+        Engine::Frustum::FromViewProjection(matrices[3])  // West  (-X)
+    };
+
+    const struct CardinalCase {
+        glm::vec3 offset;
+        size_t expectedQuadIdx;
+        size_t oppositeQuadIdx;
+    } kCardinals[4] = {
+        { {  0.0f, 0.0f, -5.0f }, 0u, 2u }, // North
+        { {  5.0f, 0.0f,  0.0f }, 1u, 3u }, // East
+        { {  0.0f, 0.0f,  5.0f }, 2u, 0u }, // South
+        { { -5.0f, 0.0f,  0.0f }, 3u, 1u }  // West
+    };
+
+    for (const auto& c : kCardinals) {
+        const glm::vec3 standeeAnchor = { torchPos.x + c.offset.x, 0.0f, torchPos.z + c.offset.z };
+        const glm::vec3 boundsCenter = standeeAnchor + glm::vec3(0.0f, 1.0f, 0.0f);
+
+        // 1. 4-Quadrant frustum contains standee in expected quadrant and culls in opposite quadrant
+        EXPECT_TRUE(frustums[c.expectedQuadIdx].IntersectsSphere(boundsCenter, 0.25f));
+        EXPECT_FALSE(frustums[c.oppositeQuadIdx].IntersectsSphere(boundsCenter, 0.25f));
+
+        // 2. Radial billboard tangent math produces full-width perpendicular XZ vector
+        const glm::vec3 rightXZ = Engine::TorchShadowMap::ComputeRadialBillboardRightXZ(standeeAnchor, torchPos);
+        const glm::vec3 toStandeeXZ = { standeeAnchor.x - torchPos.x, 0.0f, standeeAnchor.z - torchPos.z };
+        EXPECT_NEAR(glm::length(rightXZ), 1.0f, 1e-5f);
+        EXPECT_NEAR(rightXZ.y, 0.0f, 1e-6f);
+        EXPECT_NEAR(glm::dot(rightXZ, toStandeeXZ), 0.0f, 1e-5f);
+    }
+
+    // 3. Diagonal / arbitrary positions remain orthogonal and normalized across 360 degrees
+    for (float deg = 0.0f; deg < 360.0f; deg += 22.5f) {
+        const float rad = glm::radians(deg);
+        const glm::vec3 pos = { torchPos.x + std::cos(rad) * 4.5f, 0.0f, torchPos.z + std::sin(rad) * 4.5f };
+        const glm::vec3 rightXZ = Engine::TorchShadowMap::ComputeRadialBillboardRightXZ(pos, torchPos);
+        const glm::vec3 toStandeeXZ = { pos.x - torchPos.x, 0.0f, pos.z - torchPos.z };
+        EXPECT_NEAR(glm::length(rightXZ), 1.0f, 1e-5f);
+        EXPECT_NEAR(rightXZ.y, 0.0f, 1e-6f);
+        EXPECT_NEAR(glm::dot(rightXZ, toStandeeXZ), 0.0f, 1e-5f);
+    }
+
+    // 4. Degenerate overlap with torch position falls back cleanly without NaN
+    const glm::vec3 fallbackRight = Engine::TorchShadowMap::ComputeRadialBillboardRightXZ(torchPos, torchPos);
+    EXPECT_NEAR(glm::length(fallbackRight), 1.0f, 1e-5f);
+    EXPECT_NEAR(fallbackRight.y, 0.0f, 1e-6f);
 }
 
 } // namespace

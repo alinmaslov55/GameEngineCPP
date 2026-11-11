@@ -35,13 +35,24 @@ struct SceneLightingData {
     glm::vec3 AmbientColor = { 1.0f, 1.0f, 1.0f };
     float AmbientIntensity = 1.0f;
 
-    // Shadow Map Parameters
+    // Directional Shadow Map Parameters
     bool ShadowsEnabled = false;
     uint32_t ShadowMapTextureID = 0;
     float ShadowMapTexelSize = 1.0f / 2048.0f;
     float ShadowSoftness = 1.35f;
     float ShadowBias = 0.0018f;
     glm::mat4 LightSpaceMatrix{ 1.0f };
+
+    // Omnidirectional Point-Light Torch Shadow Map Parameters
+    bool TorchShadowsEnabled = false;
+    uint32_t TorchShadowMapTextureID = 0;
+    glm::vec4 TorchShadowPosRadius{ 0.0f, 0.85f, 0.0f, 4.5f };
+    glm::vec2 TorchShadowTexelSize{ 1.0f / 2048.0f, 1.0f / 512.0f };
+    float TorchShadowSoftness = 1.6f;
+    float TorchShadowBias = 0.0025f;
+    std::array<glm::mat4, 4> TorchLightMatrices{
+        glm::mat4(1.0f), glm::mat4(1.0f), glm::mat4(1.0f), glm::mat4(1.0f)
+    };
 
     // Dynamic 3D Point Lights
     uint32_t PointLightCount = 0;

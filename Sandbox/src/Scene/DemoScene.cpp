@@ -143,6 +143,20 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     playerSprite->SetBillboardMode(Engine::SpriteRenderer::BillboardMode::ViewPlane);
     playerSprite->SetAlphaCutoff(0.18f);
 
+    auto* heroTorch = player->AddComponent<Engine::PointLightComponent>();
+    heroTorch->Color = { 1.0f, 0.58f, 0.22f };
+    heroTorch->Intensity = 2.15f;
+    heroTorch->Radius = 7.5f;
+    heroTorch->Falloff = 1.7f;
+    heroTorch->HeightOffset = 0.90f;
+    heroTorch->Priority = Engine::LightPriority::Critical_HeroTorch;
+    heroTorch->CastShadows = true;
+    heroTorch->ShadowSoftness = 1.6f;
+    heroTorch->ShadowBias = 0.0025f;
+    heroTorch->Flicker = true;
+    heroTorch->FlickerSpeed = 8.5f;
+    heroTorch->FlickerAmount = 0.14f;
+
     player->AddComponent<Engine::ParticleSystem>(500);
 
     auto* playerRb = player->AddComponent<Engine::Rigidbody2D>();

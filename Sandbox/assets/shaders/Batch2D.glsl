@@ -64,8 +64,9 @@ in float v_ShadowOffset;
 
 out vec4 color;
 
-uniform sampler2D u_Textures[15];
+uniform sampler2D u_Textures[13];
 uniform sampler2D u_ShadowMap;
+uniform sampler2D u_TorchShadowMap;
 
 uniform int u_LightingEnabled;
 uniform vec3 u_SunDirection;
@@ -79,6 +80,13 @@ uniform mat4 u_LightSpaceMatrix;
 uniform float u_ShadowTexelSize;
 uniform float u_ShadowSoftness;
 uniform float u_ShadowBias;
+
+uniform int u_TorchShadowsEnabled;
+uniform vec4 u_TorchShadowPosRadius;
+uniform mat4 u_TorchLightMatrices[4];
+uniform vec2 u_TorchShadowTexelSize;
+uniform float u_TorchShadowSoftness;
+uniform float u_TorchShadowBias;
 
 struct PointLightStd140 {
     vec4 PosRadius;      // xyz = world pos, w = radius
@@ -126,7 +134,7 @@ float computeShadowVisibility(vec3 worldPos, float receiverOffset) {
     return litSum / 9.0;
 }
 
-vec3 evaluatePointLights(vec3 worldPos) {
+vec3 evaluatePointLights(vec3 worldPos, float receiverOffset) {
     vec3 accum = vec3(0.0);
     int count = clamp(u_PointLightHeader.x, 0, 32);
     for (int i = 0; i < count; ++i) {
@@ -139,8 +147,68 @@ vec3 evaluatePointLights(vec3 worldPos) {
             float x = clamp(1.0 - (dist / radius), 0.0, 1.0);
             float falloff = max(u_PointLights[i].Params.x, 0.25);
             float atten = pow(x * x * (3.0 - 2.0 * x), falloff);
+            float torchVis = 1.0;
+            if (i == 0 && u_TorchShadowsEnabled == 1 && u_PointLightHeader.y == 1) {
+                vec3 toFrag = worldPos - u_TorchShadowPosRadius.xyz;
+                float horizDist = length(toFrag.xz);
+                if (horizDist >= 0.45) {
+                    vec3 samplePos = worldPos;
+                    if (receiverOffset > 0.001) {
+                        vec2 dirToTorchXZ = normalize(-toFrag.xz);
+                        float nudge = min(receiverOffset * 0.5, horizDist * 0.35);
+                        samplePos.x += dirToTorchXZ.x * nudge;
+                        samplePos.z += dirToTorchXZ.y * nudge;
+                    }
+                    vec3 toSample = samplePos - u_TorchShadowPosRadius.xyz;
+                    int quad = 0;
+                    if (abs(toSample.x) > abs(toSample.z)) {
+                        quad = (toSample.x >= 0.0) ? 1 : 3;
+                    } else {
+                        quad = (toSample.z >= 0.0) ? 2 : 0;
+                    }
+                    vec4 lightClip = u_TorchLightMatrices[quad] * vec4(samplePos, 1.0);
+                    if (lightClip.w > 1e-5) {
+                        vec3 projCoords = (lightClip.xyz / lightClip.w) * 0.5 + 0.5;
+                        if (projCoords.z <= 1.0 && projCoords.x >= 0.0 && projCoords.x <= 1.0 &&
+                            projCoords.y >= 0.0 && projCoords.y <= 1.0) {
+                            const vec2 poissonDisk[9] = vec2[9](
+                                vec2( 0.000,  0.000),
+                                vec2(-0.707, -0.707),
+                                vec2( 0.707, -0.707),
+                                vec2(-0.707,  0.707),
+                                vec2( 0.707,  0.707),
+                                vec2(-1.000,  0.000),
+                                vec2( 1.000,  0.000),
+                                vec2( 0.000, -1.000),
+                                vec2( 0.000,  1.000)
+                            );
+                            float distRatio = clamp(horizDist / max(u_TorchShadowPosRadius.w, 1.0), 0.0, 1.0);
+                            float softnessScale = mix(0.65, 2.6, distRatio) * max(u_TorchShadowSoftness, 0.25);
+                            vec2 radiusUV = u_TorchShadowTexelSize * softnessScale;
+                            float halfTexelU = u_TorchShadowTexelSize.x * 0.5;
+                            float halfTexelV = u_TorchShadowTexelSize.y * 0.5;
+                            float quadMinU = float(quad) * 0.25 + halfTexelU;
+                            float quadMaxU = float(quad + 1) * 0.25 - halfTexelU;
+                            float baseU = float(quad) * 0.25 + projCoords.x * 0.25;
+                            float baseV = projCoords.y;
+                            float bias = max(0.00015, u_TorchShadowBias * (1.0 - projCoords.z));
+                            float currentDepth = projCoords.z - bias;
+                            float litSum = 0.0;
+                            for (int s = 0; s < 9; ++s) {
+                                vec2 tapUV = vec2(
+                                    clamp(baseU + poissonDisk[s].x * radiusUV.x, quadMinU, quadMaxU),
+                                    clamp(baseV + poissonDisk[s].y * radiusUV.y, halfTexelV, 1.0 - halfTexelV)
+                                );
+                                float closestDepth = texture(u_TorchShadowMap, tapUV).r;
+                                litSum += (currentDepth <= closestDepth) ? 1.0 : 0.0;
+                            }
+                            torchVis = litSum / 9.0;
+                        }
+                    }
+                }
+            }
             vec4 colInt = u_PointLights[i].ColorIntensity;
-            accum += colInt.rgb * (colInt.a * atten);
+            accum += colInt.rgb * (colInt.a * atten * torchVis);
         }
     }
     return accum;
@@ -162,8 +230,6 @@ void main() {
         case 10: texSample = texture(u_Textures[10], v_TexCoord); break;
         case 11: texSample = texture(u_Textures[11], v_TexCoord); break;
         case 12: texSample = texture(u_Textures[12], v_TexCoord); break;
-        case 13: texSample = texture(u_Textures[13], v_TexCoord); break;
-        case 14: texSample = texture(u_Textures[14], v_TexCoord); break;
     }
     vec4 texColor = v_Color * texSample;
     if (v_AlphaCutoff > 0.0 && texColor.a < v_AlphaCutoff) {
@@ -175,7 +241,7 @@ void main() {
         float shadowVis = computeShadowVisibility(v_WorldPos, v_ShadowOffset);
         vec3 sunAndAmbient = u_AmbientColor * u_AmbientIntensity +
                              u_SunColor * (u_SunIntensity * shadowVis);
-        vec3 pointGlow = evaluatePointLights(v_WorldPos);
+        vec3 pointGlow = evaluatePointLights(v_WorldPos, v_ShadowOffset);
         finalRGB = texColor.rgb * (sunAndAmbient + pointGlow + vec3(v_Emissive));
     }
     color = vec4(finalRGB, texColor.a);

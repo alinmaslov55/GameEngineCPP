@@ -56,7 +56,7 @@
             "Name": "Sun Light",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13884281845407163030
+            "UUID": 10477568086971496661
         },
         {
             "Components": {
@@ -119,7 +119,7 @@
             "Name": "Post Process Volume",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 14339785598313676570
+            "UUID": 2348268958083212116
         },
         {
             "Components": {
@@ -157,7 +157,7 @@
             "Name": "Wind Zone",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 321543907199017844
+            "UUID": 14667283567439669475
         },
         {
             "Components": {
@@ -210,7 +210,7 @@
             "Name": "Terrain",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 12158046922195702461
+            "UUID": 6493572206546512147
         },
         {
             "Components": {
@@ -496,7 +496,7 @@
             "Name": "Map",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 16491211977321820876
+            "UUID": 12393930284226771768
         },
         {
             "Components": {
@@ -560,6 +560,24 @@
                             0.3499999940395355
                         ]
                     }
+                },
+                "PointLight": {
+                    "CastShadows": true,
+                    "Color": [
+                        1.0,
+                        0.5799999833106995,
+                        0.2199999988079071
+                    ],
+                    "Falloff": 1.7000000476837158,
+                    "Flicker": true,
+                    "FlickerAmount": 0.14000000059604645,
+                    "FlickerSpeed": 8.5,
+                    "HeightOffset": 0.8999999761581421,
+                    "Intensity": 2.1500000953674316,
+                    "Priority": 3,
+                    "Radius": 7.5,
+                    "ShadowBias": 0.0024999999441206455,
+                    "ShadowSoftness": 1.600000023841858
                 },
                 "Rigidbody2D": {
                     "AirborneClearanceHeight": 0.75,
@@ -634,7 +652,7 @@
             "Name": "Player",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 18206323755682572492
+            "UUID": 2422339206405760852
         },
         {
             "Components": {
@@ -713,7 +731,7 @@
             "Name": "Cult Shrine",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 10836375229412421819
+            "UUID": 15575030238822617970
         },
         {
             "Components": {
@@ -831,7 +849,7 @@
             "Name": "Ritual Brazier 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 11752697853078797396
+            "UUID": 1560890835064950765
         },
         {
             "Components": {
@@ -949,7 +967,7 @@
             "Name": "Ritual Brazier 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13152307708334147972
+            "UUID": 15800843289183595570
         },
         {
             "Components": {
@@ -1010,7 +1028,7 @@
             "Name": "Pine Tree 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8099133989577698730
+            "UUID": 12458817358839255683
         },
         {
             "Components": {
@@ -1071,7 +1089,7 @@
             "Name": "Pine Tree 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 16615852220578155904
+            "UUID": 1024312002576318099
         },
         {
             "Components": {
@@ -1132,7 +1150,7 @@
             "Name": "Pine Tree 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17162313683828432168
+            "UUID": 9718361374914750336
         },
         {
             "Components": {
@@ -1193,7 +1211,7 @@
             "Name": "Pine Tree 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1659367202303040454
+            "UUID": 3970450080401991488
         },
         {
             "Components": {
@@ -1254,7 +1272,7 @@
             "Name": "Pine Tree 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 12353754876512158305
+            "UUID": 11946844415011894180
         },
         {
             "Components": {
@@ -1315,7 +1333,7 @@
             "Name": "Pine Tree 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3092217116198279124
+            "UUID": 6526482289109899706
         },
         {
             "Components": {
@@ -1376,7 +1394,7 @@
             "Name": "Pine Tree 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 7974903859518028525
+            "UUID": 5570277870208457780
         },
         {
             "Components": {
@@ -1437,7 +1455,7 @@
             "Name": "Pine Tree 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 6656840135797738779
+            "UUID": 7076690768604661364
         },
         {
             "Components": {
@@ -1498,7 +1516,7 @@
             "Name": "Pine Tree 9",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13685688180276430034
+            "UUID": 16740746286578140030
         },
         {
             "Components": {
@@ -1540,7 +1558,7 @@
             "Name": "Berry Bush 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13359001818159956235
+            "UUID": 17474100011515823906
         },
         {
             "Components": {
@@ -1582,7 +1600,7 @@
             "Name": "Berry Bush 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17352842961302833004
+            "UUID": 7810156349376798434
         },
         {
             "Components": {
@@ -1624,7 +1642,7 @@
             "Name": "Berry Bush 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17327221555241895535
+            "UUID": 17568984788250565036
         },
         {
             "Components": {
@@ -1666,7 +1684,7 @@
             "Name": "Berry Bush 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 4014200692507857551
+            "UUID": 9593954281100115738
         },
         {
             "Components": {
@@ -1708,7 +1726,7 @@
             "Name": "Berry Bush 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 6418933603771348259
+            "UUID": 15300556522588358933
         },
         {
             "Components": {
@@ -1750,7 +1768,7 @@
             "Name": "Berry Bush 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8752497432648910802
+            "UUID": 16268168336176587671
         },
         {
             "Components": {
@@ -1792,7 +1810,7 @@
             "Name": "Berry Bush 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17919873574864752418
+            "UUID": 16506847842229173545
         },
         {
             "Components": {
@@ -1834,7 +1852,7 @@
             "Name": "Berry Bush 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17323845528277033832
+            "UUID": 12242167624407129860
         },
         {
             "Components": {
@@ -1908,7 +1926,7 @@
             "Name": "Cult Banner 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 10261741398085576673
+            "UUID": 9634349646800837789
         },
         {
             "Components": {
@@ -1982,7 +2000,7 @@
             "Name": "Cult Banner 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 10482903150670375732
+            "UUID": 8078768998224264334
         },
         {
             "Components": {
@@ -2024,7 +2042,7 @@
             "Name": "Tall Grass 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 14134935608850142941
+            "UUID": 5981674322926381416
         },
         {
             "Components": {
@@ -2066,7 +2084,7 @@
             "Name": "Tall Grass 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 15928705493253705042
+            "UUID": 14907936233812312293
         },
         {
             "Components": {
@@ -2108,7 +2126,7 @@
             "Name": "Tall Grass 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 2118111978112051900
+            "UUID": 1684756739717870693
         },
         {
             "Components": {
@@ -2150,7 +2168,7 @@
             "Name": "Tall Grass 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1802183951556417678
+            "UUID": 9809524051021838861
         },
         {
             "Components": {
@@ -2192,7 +2210,7 @@
             "Name": "Tall Grass 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 15440709887402000356
+            "UUID": 4191122902323961853
         },
         {
             "Components": {
@@ -2234,7 +2252,7 @@
             "Name": "Tall Grass 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 4389538277169632242
+            "UUID": 3930567427744153476
         },
         {
             "Components": {
@@ -2276,7 +2294,7 @@
             "Name": "Tall Grass 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8254808231654038152
+            "UUID": 15886867450098291035
         },
         {
             "Components": {
@@ -2318,7 +2336,7 @@
             "Name": "Tall Grass 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 15682974371203485849
+            "UUID": 11038185685892517000
         },
         {
             "Components": {
@@ -2360,7 +2378,7 @@
             "Name": "Tall Grass 9",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 18288625180283831194
+            "UUID": 18311728251563399406
         },
         {
             "Components": {
@@ -2402,7 +2420,7 @@
             "Name": "Tall Grass 10",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8340551083275129726
+            "UUID": 3590161665587710232
         },
         {
             "Components": {
@@ -2552,7 +2570,7 @@
             "Name": "HUD",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 12661787624875872420
+            "UUID": 3576198455316481963
         }
     ],
     "OrthographicSize": 5.0,

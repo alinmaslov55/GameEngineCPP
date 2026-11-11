@@ -3,6 +3,7 @@
 #include "Engine/Renderer/Shader.h"
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/SpriteRenderer.h"
+#include "Engine/Renderer/TorchShadowMap.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Core/JobSystem.h"
 #include "Engine/Core/ResourceManager.h"
@@ -60,8 +61,9 @@ struct Renderer2DStorage {
     static constexpr uint32_t MaxIndices = MaxQuads * 6;
     static constexpr uint32_t RingBufferMultiplier = 3;
     static constexpr uint32_t TotalVertices = MaxVertices * RingBufferMultiplier;
-    static constexpr uint32_t MaxTextureSlots = 15; // Slots 0..14 = batched color textures; Slot 15 = ShadowMap
-    static constexpr uint32_t ShadowMapTextureSlot = 15;
+    static constexpr uint32_t MaxTextureSlots = 13; // Slots 0..12 = batched color textures; 13 = ShadowMap; 14 = TorchShadowMap; 15 = reserved (DissolveNoise)
+    static constexpr uint32_t ShadowMapTextureSlot = 13;
+    static constexpr uint32_t TorchShadowMapTextureSlot = 14;
 
     std::shared_ptr<VertexArray> QuadVertexArray;
     std::shared_ptr<VertexBuffer> QuadVertexBuffer;
@@ -79,6 +81,7 @@ struct Renderer2DStorage {
     glm::vec4 QuadVertexPositions[4]{};
     float DefaultAlphaCutoff = 0.0f;
     uint32_t BoundShadowTextureID = 0;
+    uint32_t BoundTorchShadowTextureID = 0;
     std::vector<float> PreassignedTexIndices;
 
     Renderer2D::Statistics Stats;
@@ -160,10 +163,12 @@ void Renderer2D::Init() {
     s_Data->TextureShader->Bind();
     s_Data->TextureShader->SetIntArray("u_Textures", samplers, Renderer2DStorage::MaxTextureSlots);
     s_Data->TextureShader->SetInt("u_ShadowMap", static_cast<int>(Renderer2DStorage::ShadowMapTextureSlot));
+    s_Data->TextureShader->SetInt("u_TorchShadowMap", static_cast<int>(Renderer2DStorage::TorchShadowMapTextureSlot));
     s_Data->TextureShader->BindUniformBlock("PointLightBlock", SceneLightingData::PointLightUBOBinding);
 
     s_Data->TextureSlots[0] = s_Data->WhiteTexture;
     s_Data->BoundShadowTextureID = s_Data->WhiteTexture;
+    s_Data->BoundTorchShadowTextureID = s_Data->WhiteTexture;
 
     s_Data->QuadVertexPositions[0] = { -0.5f, -0.5f, 0.0f, 1.0f };
     s_Data->QuadVertexPositions[1] = {  0.5f, -0.5f, 0.0f, 1.0f };
@@ -187,6 +192,9 @@ void Renderer2D::ApplyLightingUniforms(const SceneLightingData* lighting) {
         s_Data->BoundShadowTextureID = (lighting->ShadowsEnabled && lighting->ShadowMapTextureID != 0)
             ? lighting->ShadowMapTextureID
             : s_Data->WhiteTexture;
+        s_Data->BoundTorchShadowTextureID = (lighting->TorchShadowsEnabled && lighting->TorchShadowMapTextureID != 0)
+            ? lighting->TorchShadowMapTextureID
+            : s_Data->WhiteTexture;
 
         shader.SetInt("u_LightingEnabled", 1);
         shader.SetFloat3("u_SunDirection", lighting->SunDirection);
@@ -201,15 +209,35 @@ void Renderer2D::ApplyLightingUniforms(const SceneLightingData* lighting) {
         shader.SetFloat("u_ShadowSoftness", lighting->ShadowSoftness);
         shader.SetFloat("u_ShadowBias", lighting->ShadowBias);
 
+        const bool torchActive = (lighting->TorchShadowsEnabled && lighting->TorchShadowMapTextureID != 0);
+        shader.SetInt("u_TorchShadowsEnabled", torchActive ? 1 : 0);
+        if (torchActive) {
+            shader.SetFloat4("u_TorchShadowPosRadius", lighting->TorchShadowPosRadius);
+            shader.SetFloat2("u_TorchShadowTexelSize", lighting->TorchShadowTexelSize);
+            shader.SetFloat("u_TorchShadowSoftness", lighting->TorchShadowSoftness);
+            shader.SetFloat("u_TorchShadowBias", lighting->TorchShadowBias);
+            static constexpr const char* kTorchMatNames[4] = {
+                "u_TorchLightMatrices[0]", "u_TorchLightMatrices[1]",
+                "u_TorchLightMatrices[2]", "u_TorchLightMatrices[3]"
+            };
+            for (int q = 0; q < 4; ++q) {
+                shader.SetMat4(kTorchMatNames[q], lighting->TorchLightMatrices[static_cast<size_t>(q)]);
+            }
+        }
+
         Renderer::UploadPointLights(lighting);
     } else {
-        // Bind WhiteTexture to slot 15 immediately so ShadowMap is never still bound during Pass 0 FBO writes
+        // Bind WhiteTexture to slots 13 & 14 immediately so ShadowMap / TorchShadowMap are never still bound during FBO writes
         s_Data->BoundShadowTextureID = s_Data->WhiteTexture;
+        s_Data->BoundTorchShadowTextureID = s_Data->WhiteTexture;
         glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::ShadowMapTextureSlot);
+        glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
+        glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::TorchShadowMapTextureSlot);
         glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
 
         shader.SetInt("u_LightingEnabled", 0);
         shader.SetInt("u_ShadowsEnabled", 0);
+        shader.SetInt("u_TorchShadowsEnabled", 0);
     }
 }
 
@@ -355,6 +383,8 @@ void Renderer2D::Flush() {
 
     glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::ShadowMapTextureSlot);
     glBindTexture(GL_TEXTURE_2D, s_Data->BoundShadowTextureID);
+    glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::TorchShadowMapTextureSlot);
+    glBindTexture(GL_TEXTURE_2D, s_Data->BoundTorchShadowTextureID);
 
     s_Data->TextureShader->Bind();
     s_Data->QuadVertexArray->Bind();
@@ -628,14 +658,20 @@ void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,
     }
 }
 
-void Renderer2D::DrawStandeesParallel(
+namespace {
+
+void SubmitStandeesInternal(
+    Renderer2DStorage& data,
     std::span<const StandeeRenderCommand> commands,
     const glm::vec3& camRight,
     const glm::vec3& camUp,
     const glm::vec3& camRightXZ,
-    bool isShadowPass)
+    bool isShadowPass,
+    bool isTorchShadowPass,
+    const glm::vec3& torchWorldPos,
+    std::span<const glm::vec2> defaultTexCoords)
 {
-    if (commands.empty() || !s_Data) {
+    if (commands.empty()) {
         return;
     }
 
@@ -647,7 +683,7 @@ void Renderer2D::DrawStandeesParallel(
         size_t batchEnd = cmdIndex;
 
         while (batchEnd < totalCmds) {
-            if ((s_Data->QuadIndexCount / 6) >= Renderer2DStorage::MaxQuads) {
+            if ((data.QuadIndexCount / 6) >= Renderer2DStorage::MaxQuads) {
                 break;
             }
 
@@ -666,43 +702,46 @@ void Renderer2D::DrawStandeesParallel(
 
             float texSlot = 0.0f;
             if (texID != 0) {
-                for (uint32_t s = 1; s < s_Data->TextureSlotIndex; ++s) {
-                    if (s_Data->TextureSlots[s] == texID) {
+                for (uint32_t s = 1; s < data.TextureSlotIndex; ++s) {
+                    if (data.TextureSlots[s] == texID) {
                         texSlot = static_cast<float>(s);
                         break;
                     }
                 }
                 if (texSlot == 0.0f) {
-                    if (s_Data->TextureSlotIndex >= Renderer2DStorage::MaxTextureSlots) {
+                    if (data.TextureSlotIndex >= Renderer2DStorage::MaxTextureSlots) {
                         break;
                     }
-                    texSlot = static_cast<float>(s_Data->TextureSlotIndex);
-                    s_Data->TextureSlots[s_Data->TextureSlotIndex++] = texID;
+                    texSlot = static_cast<float>(data.TextureSlotIndex);
+                    data.TextureSlots[data.TextureSlotIndex++] = texID;
                 }
             }
 
-            s_Data->PreassignedTexIndices[batchEnd - batchStart] = texSlot;
+            data.PreassignedTexIndices[batchEnd - batchStart] = texSlot;
             ++batchEnd;
 
-            if ((s_Data->QuadIndexCount / 6) + (batchEnd - batchStart) >= Renderer2DStorage::MaxQuads) {
+            if ((data.QuadIndexCount / 6) + (batchEnd - batchStart) >= Renderer2DStorage::MaxQuads) {
                 break;
             }
         }
 
         const uint32_t batchCount = static_cast<uint32_t>(batchEnd - batchStart);
         if (batchCount == 0) {
-            NextBatch();
+            Renderer2D::Flush();
+            data.QuadIndexCount = 0;
+            data.QuadVertexBufferPtr = data.QuadVertexBufferBase.get();
+            data.TextureSlotIndex = 1;
             continue;
         }
 
-        QuadVertex* batchBase = s_Data->QuadVertexBufferPtr;
-        s_Data->QuadVertexBufferPtr += batchCount * 4;
-        s_Data->QuadIndexCount += batchCount * 6;
-        s_Data->Stats.QuadCount += batchCount;
+        QuadVertex* batchBase = data.QuadVertexBufferPtr;
+        data.QuadVertexBufferPtr += batchCount * 4;
+        data.QuadIndexCount += batchCount * 6;
+        data.Stats.QuadCount += batchCount;
 
-        const float defaultAlphaCutoff = s_Data->DefaultAlphaCutoff;
-        const glm::vec4* quadLocalPositions = s_Data->QuadVertexPositions;
-        const float* texSlots = s_Data->PreassignedTexIndices.data();
+        const float defaultAlphaCutoff = data.DefaultAlphaCutoff;
+        const glm::vec4* quadLocalPositions = data.QuadVertexPositions;
+        const float* texSlots = data.PreassignedTexIndices.data();
 
         JobSystem::ParallelFor(static_cast<size_t>(batchCount), [=](size_t i) {
             const auto& cmd = commands[batchStart + i];
@@ -715,7 +754,10 @@ void Renderer2D::DrawStandeesParallel(
                 billboardMode == SpriteRenderer::BillboardMode::CylindricalY) {
                 glm::vec3 rAxis = camRight;
                 glm::vec3 uAxis = camUp;
-                if (isShadowPass) {
+                if (isTorchShadowPass) {
+                    rAxis = TorchShadowMap::ComputeRadialBillboardRightXZ(cmd.worldPosition, torchWorldPos);
+                    uAxis = glm::vec3(0.0f, 1.0f, 0.0f);
+                } else if (isShadowPass) {
                     rAxis = camRight;
                     uAxis = glm::vec3(0.0f, 1.0f, 0.0f);
                 } else if (billboardMode == SpriteRenderer::BillboardMode::CylindricalY) {
@@ -737,7 +779,7 @@ void Renderer2D::DrawStandeesParallel(
                 }
             }
 
-            const glm::vec2* uv = kDefaultTexCoords;
+            const glm::vec2* uv = defaultTexCoords.data();
             glm::vec2 subUV[4];
             if (sprite) {
                 if (const auto& subTexture = sprite->GetSubTexture()) {
@@ -751,7 +793,7 @@ void Renderer2D::DrawStandeesParallel(
                 }
             }
 
-            const float proxBend = isShadowPass ? cmd.shadowProximityBend : cmd.camProximityBend;
+            const float proxBend = (isShadowPass || isTorchShadowPass) ? cmd.shadowProximityBend : cmd.camProximityBend;
             const glm::vec3 wind[4] = {
                 { 0.0f,           cmd.spatialPhase, 0.0f     },
                 { 0.0f,           cmd.spatialPhase, 0.0f     },
@@ -759,11 +801,12 @@ void Renderer2D::DrawStandeesParallel(
                 { cmd.windWeight, cmd.spatialPhase, proxBend }
             };
 
+            const bool shadowMode = isShadowPass || isTorchShadowPass;
             const float cutoff = (cmd.alphaCutoff < 0.0f) ? defaultAlphaCutoff : cmd.alphaCutoff;
-            const float resolvedCutoff = isShadowPass ? std::max(0.05f, cutoff) : cutoff;
-            const float emissive = isShadowPass ? -1.0f : cmd.emissive;
-            const float shadowOffset = isShadowPass ? 0.0f : cmd.receiverOffset;
-            const glm::vec4 tint = isShadowPass ? glm::vec4(1.0f) : cmd.color;
+            const float resolvedCutoff = shadowMode ? std::max(0.05f, cutoff) : cutoff;
+            const float emissive = shadowMode ? -1.0f : cmd.emissive;
+            const float shadowOffset = shadowMode ? 0.0f : cmd.receiverOffset;
+            const glm::vec4 tint = shadowMode ? glm::vec4(1.0f) : cmd.color;
             const float texIdx = texSlots[i];
             const bool isBillboard = (billboardMode == SpriteRenderer::BillboardMode::ViewPlane ||
                                       billboardMode == SpriteRenderer::BillboardMode::CylindricalY);
@@ -783,9 +826,41 @@ void Renderer2D::DrawStandeesParallel(
         cmdIndex = batchEnd;
 
         if (cmdIndex < totalCmds) {
-            NextBatch();
+            Renderer2D::Flush();
+            data.QuadIndexCount = 0;
+            data.QuadVertexBufferPtr = data.QuadVertexBufferBase.get();
+            data.TextureSlotIndex = 1;
         }
     }
+}
+
+} // namespace
+
+void Renderer2D::DrawStandeesParallel(
+    std::span<const StandeeRenderCommand> commands,
+    const glm::vec3& camRight,
+    const glm::vec3& camUp,
+    const glm::vec3& camRightXZ,
+    bool isShadowPass)
+{
+    if (!s_Data) {
+        return;
+    }
+    SubmitStandeesInternal(*s_Data, commands, camRight, camUp, camRightXZ,
+                           isShadowPass, /*isTorchShadowPass=*/false, glm::vec3(0.0f), kDefaultTexCoords);
+}
+
+void Renderer2D::DrawStandeesTorchShadowParallel(
+    std::span<const StandeeRenderCommand> commands,
+    const glm::vec3& torchWorldPos)
+{
+    if (!s_Data) {
+        return;
+    }
+    const glm::vec3 worldUp{ 0.0f, 1.0f, 0.0f };
+    const glm::vec3 fallbackRight{ 1.0f, 0.0f, 0.0f };
+    SubmitStandeesInternal(*s_Data, commands, fallbackRight, worldUp, fallbackRight,
+                           /*isShadowPass=*/true, /*isTorchShadowPass=*/true, torchWorldPos, kDefaultTexCoords);
 }
 
 void Renderer2D::DrawParticlesParallel(

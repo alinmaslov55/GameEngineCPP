@@ -78,6 +78,7 @@ private:
     };
 
     void RenderPassShadowMap(SceneRenderContext& ctx);
+    void RenderPassTorchShadowMap(SceneRenderContext& ctx);
     void RenderPassGroundPlane(SceneRenderContext& ctx);
     void RenderPassCutoutStandees(SceneRenderContext& ctx);
     void RenderPassParticles(SceneRenderContext& ctx);
@@ -92,6 +93,8 @@ private:
     // Hot-path scratch buffers to prevent per-frame dynamic heap allocations
     std::vector<StandeeRenderCommand> m_StandeeCommands;
     std::vector<StandeeRenderCommand> m_ShadowStandeeCommands;
+    std::vector<StandeeRenderCommand> m_TorchShadowStandeeCommands;
+    std::vector<StandeeRenderCommand> m_TorchQuadrantScratch;
     std::vector<PointLightCandidate> m_PointLightScratch;
     std::vector<std::pair<GameObject*, glm::vec3>> m_FoliageScratch;
     std::vector<std::pair<TerrainComponent*, Transform*>> m_TerrainScratch;

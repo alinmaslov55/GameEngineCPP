@@ -114,10 +114,10 @@ void ShadowMap::BeginCapture() {
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_ShadowData->SavedFBO);
     glGetIntegerv(GL_VIEWPORT, s_ShadowData->SavedViewport);
 
-    // Ensure the shadow depth texture is unbound from shader sampler units (slots 5 & 15) before FBO write
+    // Ensure the shadow depth texture is unbound from shader sampler units (slots 5 & 13) before FBO write
     glActiveTexture(GL_TEXTURE5);
     glBindTexture(GL_TEXTURE_2D, 0);
-    glActiveTexture(GL_TEXTURE15);
+    glActiveTexture(GL_TEXTURE13);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);
 

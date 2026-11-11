@@ -73,6 +73,7 @@ TEST(ParallelRenderTest, NullSafetyHeadlessGracefulReturn) {
     cmd.size = { 1.0f, 1.0f };
 
     Engine::Renderer2D::DrawStandeesParallel({ &cmd, 1 }, camera.GetRight(), camera.GetUp(), camera.GetRightXZ(), false);
+    Engine::Renderer2D::DrawStandeesTorchShadowParallel({ &cmd, 1 }, { 0.0f, 0.85f, 0.0f });
 
     Engine::ParticleSystem::Particle p;
     Engine::Renderer2D::DrawParticlesParallel(&p, 1, camera.GetRight(), camera.GetUp(), 0.0f);

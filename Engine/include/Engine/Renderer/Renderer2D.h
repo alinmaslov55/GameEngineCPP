@@ -140,6 +140,9 @@ public:
                                      const glm::vec3& camRightXZ,
                                      bool isShadowPass);
 
+    static void DrawStandeesTorchShadowParallel(std::span<const StandeeRenderCommand> commands,
+                                                const glm::vec3& torchWorldPos);
+
     static void DrawParticlesParallel(const ParticleSystem::Particle* particles,
                                       uint32_t count,
                                       const glm::vec3& camRight,

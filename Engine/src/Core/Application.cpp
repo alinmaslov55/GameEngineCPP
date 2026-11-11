@@ -7,6 +7,7 @@
 #include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Renderer/PostProcessor.h"
 #include "Engine/Renderer/ShadowMap.h"
+#include "Engine/Renderer/TorchShadowMap.h"
 #include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Scene/SceneManager.h"
@@ -55,6 +56,7 @@ void Application::Initialize() {
     Renderer2D::Init();
     TerrainRenderer::Init();
     ShadowMap::Init(2048);
+    TorchShadowMap::Init(512);
     PostProcessor::Init();
 
 #ifdef ENGINE_BUILD_EDITOR
@@ -200,6 +202,7 @@ void Application::Shutdown() {
 #endif
 
     PostProcessor::Shutdown();
+    TorchShadowMap::Shutdown();
     ShadowMap::Shutdown();
     TerrainRenderer::Shutdown();
     Renderer2D::Shutdown();
