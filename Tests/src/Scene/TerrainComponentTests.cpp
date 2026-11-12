@@ -5,6 +5,7 @@
 #include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/Scene.h"
+#include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Core/JobSystem.h"
 #include "Engine/Renderer/Texture2DArray.h"
 #include <array>
@@ -688,6 +689,149 @@ TEST(TerrainArraySplatTest, BiomeSampleMapsSanctuaryCobbleToFifthLayerChannel) {
     }
     EXPECT_EQ(sum, 255);
     EXPECT_GT(w8[4], 160u); // SanctuaryCobble lands natively in Layer 4 (Cobblestone)!
+}
+
+TEST(TerrainSurfaceSamplerTest, SurfacePropertiesAcrossPureBiomesAndBilinearBlend) {
+    Engine::TerrainComponent terrain(16.0f, 16.0f, 128u, 128u);
+
+    // 1. Pure Chalk (Layer 3)
+    terrain.FillLayer(3u);
+    Engine::SurfaceSample chalkSample = terrain.SampleSurfaceAtXZ(8.0f, 8.0f);
+    EXPECT_EQ(chalkSample.DominantBiome, Engine::BiomeType::ChalkHighlands);
+    EXPECT_NEAR(chalkSample.LinearDamping, 1.1f, 1e-4f);
+    EXPECT_NEAR(chalkSample.MaxSpeedMultiplier, 0.95f, 1e-4f);
+    EXPECT_NEAR(chalkSample.Flammability, 0.0f, 1e-4f);
+    EXPECT_FALSE(chalkSample.IsBurning);
+
+    // 2. Pure Tar (Layer 2)
+    terrain.FillLayer(2u);
+    Engine::SurfaceSample tarSample = terrain.SampleSurfaceAtXZ(8.0f, 8.0f);
+    EXPECT_EQ(tarSample.DominantBiome, Engine::BiomeType::TarBogs);
+    EXPECT_NEAR(tarSample.LinearDamping, 9.0f, 1e-4f);
+    EXPECT_NEAR(tarSample.MaxSpeedMultiplier, 0.70f, 1e-4f);
+    EXPECT_NEAR(tarSample.Flammability, 1.0f, 1e-4f);
+    EXPECT_FALSE(tarSample.IsBurning);
+
+    // 3. Pure Cobblestone (Layer 4)
+    terrain.FillLayer(4u);
+    Engine::SurfaceSample cobbleSample = terrain.SampleSurfaceAtXZ(8.0f, 8.0f);
+    EXPECT_EQ(cobbleSample.DominantBiome, Engine::BiomeType::SanctuaryCobble);
+    EXPECT_NEAR(cobbleSample.LinearDamping, 4.8f, 1e-4f);
+    EXPECT_NEAR(cobbleSample.MaxSpeedMultiplier, 1.08f, 1e-4f);
+    EXPECT_NEAR(cobbleSample.Flammability, 0.0f, 1e-4f);
+
+    // 4. Pure Grass (Layer 0)
+    terrain.FillLayer(0u);
+    Engine::SurfaceSample grassSample = terrain.SampleSurfaceAtXZ(8.0f, 8.0f);
+    EXPECT_EQ(grassSample.DominantBiome, Engine::BiomeType::BlackwoodThickets);
+    EXPECT_NEAR(grassSample.LinearDamping, 5.5f, 1e-4f);
+    EXPECT_NEAR(grassSample.MaxSpeedMultiplier, 0.92f, 1e-4f);
+
+    // 5. 50% Chalk (Layer 3) + 50% Ash (Layer 1) -> blended linear damping ~ (1.1 + 4.5) / 2 = 2.8f
+    terrain.FillLayer(1u); // Ash Barrens (4.5f)
+    terrain.PaintWorldBrush(8.0f, 8.0f, glm::vec3(0.0f), glm::vec3(1.0f), 3u /*Chalk*/, 4.0f, 0.5f, 0.5f);
+    Engine::SurfaceSample blendedSample = terrain.SampleSurfaceAtXZ(8.0f, 8.0f);
+    EXPECT_GT(blendedSample.LinearDamping, 1.1f);
+    EXPECT_LT(blendedSample.LinearDamping, 4.5f);
+}
+
+TEST(TerrainSurfaceSamplerTest, Rigidbody2DUseTerrainFrictionAdaptsLinearDamping) {
+    auto scene = std::make_shared<Engine::Scene>("FrictionScene");
+    auto* terrainGo = scene->CreateGameObject("Terrain");
+    auto* terrain = terrainGo->AddComponent<Engine::TerrainComponent>(16.0f, 16.0f, 64u, 64u);
+    terrain->FillLayer(3u); // Chalk Highlands (Damping = 1.1f)
+
+    auto* rbGo = scene->CreateGameObject("Hero");
+    rbGo->GetTransform()->position = { 8.0f, 0.0f, 8.0f };
+    auto* rb = rbGo->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->UseTerrainFriction = true;
+    rb->LinearDamping = 4.5f;
+
+    scene->OnRuntimeStart();
+    scene->UpdateRuntime(1.0f / 60.0f);
+
+    // Damping should have dynamically adapted to Chalk (1.1f)
+    EXPECT_NEAR(rb->GetLinearDamping(), 1.1f, 0.05f);
+
+    // Paint Tar under the entity (Damping = 9.0f)
+    terrain->FillLayer(2u);
+    scene->UpdateRuntime(1.0f / 60.0f);
+    EXPECT_NEAR(rb->GetLinearDamping(), 9.0f, 0.05f);
+
+    // Launch into the air: airborne entity must not apply ground friction
+    rb->LaunchVertical(5.0f);
+    terrain->FillLayer(3u); // Change ground to Chalk
+    scene->UpdateRuntime(1.0f / 60.0f);
+    // Entity is airborne (Y > 0), so it does not update to ground chalk damping
+    EXPECT_GT(rbGo->GetTransform()->position.y, 0.01f);
+    EXPECT_NEAR(rb->GetLinearDamping(), 9.0f, 0.05f);
+
+    scene->OnRuntimeStop();
+}
+
+TEST(TerrainFireGridTest, PropagatesAlongTarStripAcrossChunksAndScorches) {
+    auto scene = std::make_shared<Engine::Scene>("FireScene");
+    auto* tcmGo = scene->CreateGameObject("ChunkManager");
+    auto* mgr = tcmGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 65u, 1, 2);
+
+    // Stream chunks (0,0) [0..16] and (1,0) [16..32]
+    mgr->UpdateStreaming({ 8.0f, 0.0f, 8.0f });
+    mgr->FlushPendingGenerations();
+
+    auto* c00 = mgr->GetChunk({ 0, 0 });
+    auto* c10 = mgr->GetChunk({ 1, 0 });
+    ASSERT_NE(c00, nullptr);
+    ASSERT_NE(c10, nullptr);
+
+    // Initialize both chunks with Ash Barrens (Layer 1, non-flammable)
+    for (size_t i = 0; i < c00->SplatData.size(); i += 4u) {
+        c00->SplatData[i + 0] = 0u;
+        c00->SplatData[i + 1] = 255u;
+        c00->SplatData[i + 2] = 0u;
+        c00->SplatData[i + 3] = 0u;
+    }
+    for (size_t i = 0; i < c10->SplatData.size(); i += 4u) {
+        c10->SplatData[i + 0] = 0u;
+        c10->SplatData[i + 1] = 255u;
+        c10->SplatData[i + 2] = 0u;
+        c10->SplatData[i + 3] = 0u;
+    }
+
+    // Paint a 10m line of Tar (Layer 2) from (11, 8) to (21, 8) across the x=16.0 chunk boundary
+    mgr->PaintWorldSegment({ 11.0f, 8.0f }, { 21.0f, 8.0f }, /*layerIndex=*/2u, /*radiusWorld=*/1.2f, /*falloff=*/0.4f, /*strength=*/1.0f);
+
+    // Assert flammability along the tar strip is high, and off-strip is 0
+    EXPECT_GT(mgr->SampleSurfaceAtXZ(11.0f, 8.0f).Flammability, 0.35f);
+    EXPECT_GT(mgr->SampleSurfaceAtXZ(16.0f, 8.0f).Flammability, 0.35f);
+    EXPECT_GT(mgr->SampleSurfaceAtXZ(21.0f, 8.0f).Flammability, 0.35f);
+    EXPECT_LT(mgr->SampleSurfaceAtXZ(14.0f, 5.0f).Flammability, 0.05f);
+
+    // Ignite at (11, 8)
+    mgr->IgniteAtXZ({ 11.0f, 8.0f }, 0.6f);
+    EXPECT_TRUE(mgr->IsBurningAtXZ(11.0f, 8.0f));
+    EXPECT_FALSE(mgr->IsBurningAtXZ(16.0f, 8.0f)); // Not yet reached
+
+    // Step 2.0s (20 ticks of 0.10s)
+    for (int i = 0; i < 20; ++i) {
+        mgr->UpdateFire(0.10f);
+    }
+
+    // Fire should have crossed the chunk boundary at x = 16.0m!
+    EXPECT_TRUE(mgr->IsBurningAtXZ(16.0f, 8.0f));
+    // Off-strip cells must not have caught fire
+    EXPECT_FALSE(mgr->IsBurningAtXZ(14.0f, 5.0f));
+
+    // Step an additional 3.0s (total elapsed 5.0s > 4.5s max burn duration)
+    for (int i = 0; i < 30; ++i) {
+        mgr->UpdateFire(0.10f);
+    }
+
+    // Origin cell at (11, 8) should have burned out, decayed to Scorched Ash (Layer 5)
+    EXPECT_FALSE(mgr->IsBurningAtXZ(11.0f, 8.0f));
+    const auto scorchedSample = mgr->SampleSurfaceAtXZ(11.0f, 8.0f);
+    // Flammability has dropped below ignition threshold due to Scorched Ash replacement
+    EXPECT_LT(scorchedSample.Flammability, 0.35f);
 }
 
 } // namespace

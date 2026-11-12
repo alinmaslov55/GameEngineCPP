@@ -477,6 +477,7 @@ void SerializeRigidbody2D(const GameObject* go, json& compsJson) {
         {"BodyType", static_cast<int>(rb2d->Type)},
         {"FixedRotation", rb2d->FixedRotation},
         {"LinearDamping", rb2d->LinearDamping},
+        {"UseTerrainFriction", rb2d->UseTerrainFriction},
         {"AngularDamping", rb2d->AngularDamping},
         {"GravityScaleY", rb2d->GravityScaleY},
         {"MassMultiplier", rb2d->MassMultiplier},
@@ -1068,6 +1069,7 @@ void DeserializeRigidbody2D(GameObject* go, const json& rbJson, const std::strin
     rb2d->Type = static_cast<Rigidbody2D::BodyType>(rbJson.value("BodyType", 1));
     rb2d->FixedRotation = rbJson.value("FixedRotation", true);
     rb2d->LinearDamping = rbJson.value("LinearDamping", 4.5f);
+    rb2d->UseTerrainFriction = rbJson.value("UseTerrainFriction", false);
     rb2d->AngularDamping = rbJson.value("AngularDamping", 6.0f);
     rb2d->GravityScaleY = rbJson.value("GravityScaleY", 1.0f);
     rb2d->MassMultiplier = rbJson.value("MassMultiplier", 1.0f);

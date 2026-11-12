@@ -479,6 +479,80 @@ void TerrainComponent::PaintWorldSegment(const glm::vec2& startXZ,
     }
 }
 
+SurfaceSample TerrainComponent::SampleSurfaceAtXZ(float worldX,
+                                                  float worldZ,
+                                                  const glm::vec3& terrainOrigin,
+                                                  const glm::vec3& terrainScale) const noexcept {
+    SurfaceSample sample{};
+    if (m_SplatData.empty() || m_SplatWidth < 2u || m_SplatHeight < 2u) {
+        return sample;
+    }
+
+    const float totalWidth = std::max(0.001f, m_Width * std::abs(terrainScale.x));
+    const float totalDepth = std::max(0.001f, m_Depth * std::abs(terrainScale.z));
+
+    const float relX = worldX - terrainOrigin.x;
+    const float relZ = worldZ - terrainOrigin.z;
+
+    const float u = std::clamp(relX / totalWidth, 0.0f, 1.0f);
+    const float v = std::clamp(relZ / totalDepth, 0.0f, 1.0f);
+
+    const float fx = std::clamp(u * static_cast<float>(m_SplatWidth) - 0.5f, 0.0f, static_cast<float>(m_SplatWidth - 1u));
+    const float fz = std::clamp(v * static_cast<float>(m_SplatHeight) - 0.5f, 0.0f, static_cast<float>(m_SplatHeight - 1u));
+
+    const auto x0 = static_cast<uint32_t>(std::floor(fx));
+    const auto z0 = static_cast<uint32_t>(std::floor(fz));
+    const uint32_t x1 = std::min(x0 + 1u, m_SplatWidth - 1u);
+    const uint32_t z1 = std::min(z0 + 1u, m_SplatHeight - 1u);
+
+    const float tx = fx - static_cast<float>(x0);
+    const float tz = fz - static_cast<float>(z0);
+
+    const auto w00 = GetSplatTexel8(x0, z0);
+    const auto w10 = GetSplatTexel8(x1, z0);
+    const auto w01 = GetSplatTexel8(x0, z1);
+    const auto w11 = GetSplatTexel8(x1, z1);
+
+    std::array<float, MaxLayers> blendedWeights{};
+    float sumWeights = 0.0f;
+    for (size_t i = 0; i < MaxLayers; ++i) {
+        const float top = std::lerp(static_cast<float>(w00[i]), static_cast<float>(w10[i]), tx);
+        const float bot = std::lerp(static_cast<float>(w01[i]), static_cast<float>(w11[i]), tx);
+        const float val = std::lerp(top, bot, tz);
+        blendedWeights[i] = val;
+        sumWeights += val;
+    }
+
+    if (sumWeights <= 1e-4f) {
+        blendedWeights[1] = 1.0f; // Default Ash Barrens
+        sumWeights = 1.0f;
+    }
+
+    float invSum = 1.0f / sumWeights;
+    float maxWeight = -1.0f;
+    uint32_t dominantLayer = 1u;
+    float weightedDamping = 0.0f;
+    float weightedSpeed = 0.0f;
+
+    for (size_t i = 0; i < MaxLayers; ++i) {
+        const float normW = blendedWeights[i] * invSum;
+        if (normW > maxWeight) {
+            maxWeight = normW;
+            dominantLayer = static_cast<uint32_t>(i);
+        }
+        weightedDamping += normW * SurfacePhysics::LayerDamping[i];
+        weightedSpeed += normW * SurfacePhysics::LayerSpeedMultiplier[i];
+    }
+
+    sample.DominantBiome = SurfacePhysics::LayerToBiome(dominantLayer);
+    sample.LinearDamping = weightedDamping;
+    sample.MaxSpeedMultiplier = weightedSpeed;
+    sample.Flammability = std::clamp(blendedWeights[2] * invSum, 0.0f, 1.0f);
+    sample.IsBurning = false;
+
+    return sample;
+}
+
 bool TerrainComponent::SaveSplatmapToPNG(const std::string& resolvedFilepath) {
     if (resolvedFilepath.empty() || m_SplatData.empty()) {
         return false;

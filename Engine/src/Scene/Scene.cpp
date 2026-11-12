@@ -9,6 +9,8 @@
 #include "Engine/Scene/LightComponents.h"
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Scene/TerrainChunkManager.h"
+#include "Engine/Scene/TerrainComponent.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Utils/Logger.h"
 
@@ -710,6 +712,65 @@ const Scene::Box2DTask* Scene::GetBox2DTaskSlots() const noexcept {
 
 size_t Scene::GetBox2DTaskSlotCount() const noexcept {
     return m_PhysicsWorld ? m_PhysicsWorld->GetBox2DTaskSlotCount() : 0;
+}
+
+SurfaceSample Scene::SampleSurfaceAtXZ(float worldX, float worldZ) const noexcept {
+    for (const auto& go : m_GameObjects) {
+        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
+        if (const auto* tcm = go->GetComponent<TerrainChunkManager>()) {
+            return tcm->SampleSurfaceAtXZ(worldX, worldZ);
+        }
+    }
+    for (const auto& go : m_GameObjects) {
+        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
+        if (const auto* tc = go->GetComponent<TerrainComponent>()) {
+            const Transform* t = go->GetTransform();
+            const glm::vec3 origin = t ? t->GetWorldPosition() : glm::vec3(0.0f);
+            const glm::vec3 scale = t ? t->scale : glm::vec3(1.0f);
+            return tc->SampleSurfaceAtXZ(worldX, worldZ, origin, scale);
+        }
+    }
+    return SurfaceSample{};
+}
+
+void Scene::PaintMaterialWorld(const glm::vec2& centerXZ, uint32_t layerIdx, float radius, float strength) {
+    for (const auto& go : m_GameObjects) {
+        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
+        if (auto* tcm = go->GetComponent<TerrainChunkManager>()) {
+            tcm->PaintMaterialWorld(centerXZ, layerIdx, radius, strength);
+            return;
+        }
+    }
+    for (const auto& go : m_GameObjects) {
+        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
+        if (auto* tc = go->GetComponent<TerrainComponent>()) {
+            const Transform* t = go->GetTransform();
+            const glm::vec3 origin = t ? t->GetWorldPosition() : glm::vec3(0.0f);
+            const glm::vec3 scale = t ? t->scale : glm::vec3(1.0f);
+            tc->PaintMaterialWorld(centerXZ, layerIdx, radius, strength, origin, scale);
+            return;
+        }
+    }
+}
+
+void Scene::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
+    for (const auto& go : m_GameObjects) {
+        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
+        if (auto* tcm = go->GetComponent<TerrainChunkManager>()) {
+            tcm->IgniteAtXZ(centerXZ, radius);
+            return;
+        }
+    }
+}
+
+void Scene::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
+    for (const auto& go : m_GameObjects) {
+        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
+        if (auto* tcm = go->GetComponent<TerrainChunkManager>()) {
+            tcm->ExtinguishAtXZ(centerXZ, radius);
+            return;
+        }
+    }
 }
 
 } // namespace Engine

@@ -60,12 +60,20 @@ public:
     }
 
     void FixedUpdate(float fixedDt) override {
+        (void)fixedDt;
         auto* rb = GetGameObject()->GetComponent<Engine::Rigidbody2D>();
         if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid()) {
             glm::vec3 movement = GetMovementInput();
             const bool isMoving = (movement.x * movement.x + movement.z * movement.z) > 1e-5f;
             if (isMoving) {
-                rb->SetVelocityXZ(movement.x * moveSpeed, movement.z * moveSpeed);
+                float effectiveSpeed = moveSpeed;
+                if (auto* scene = GetGameObject()->GetScene()) {
+                    if (auto* transform = GetGameObject()->GetTransform()) {
+                        const auto sample = scene->SampleSurfaceAtXZ(transform->position.x, transform->position.z);
+                        effectiveSpeed *= sample.MaxSpeedMultiplier;
+                    }
+                }
+                rb->SetVelocityXZ(movement.x * effectiveSpeed, movement.z * effectiveSpeed);
             } else {
                 rb->SetVelocityXZ(0.0f, 0.0f);
             }

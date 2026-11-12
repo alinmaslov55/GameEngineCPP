@@ -674,5 +674,26 @@ TEST(SceneSerializerTest, EightLayerTerrainAndSecondaryWeightsRoundTrip) {
     EXPECT_EQ(loadedTerrain->GetSplatTexel8(8u, 8u), expectedCobbleCenter);
 }
 
+TEST(SceneSerializerTest, UseTerrainFrictionRoundTrip) {
+    auto srcScene = std::make_shared<Engine::Scene>("FrictionRoundTrip");
+    auto* go = srcScene->CreateGameObjectWithUUID(88888ULL, "HeroWithFriction");
+    auto* rb = go->AddComponent<Engine::Rigidbody2D>();
+    rb->UseTerrainFriction = true;
+    rb->LinearDamping = 3.2f;
+
+    const std::string savedJson = Engine::SceneSerializer(srcScene).SerializeToString();
+    ASSERT_FALSE(savedJson.empty());
+
+    auto loadedScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(loadedScene).DeserializeFromString(savedJson));
+    auto* loadedGo = loadedScene->FindGameObjectByUUID(88888ULL);
+    ASSERT_NE(loadedGo, nullptr);
+    auto* loadedRb = loadedGo->GetComponent<Engine::Rigidbody2D>();
+    ASSERT_NE(loadedRb, nullptr);
+
+    EXPECT_TRUE(loadedRb->UseTerrainFriction);
+    EXPECT_NEAR(loadedRb->LinearDamping, 3.2f, 1e-4f);
+}
+
 } // namespace
 

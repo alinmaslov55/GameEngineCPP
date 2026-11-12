@@ -606,6 +606,7 @@ void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObje
     if (ImGui::Checkbox("Fixed Rotation (Lock Yaw)", &rb2d.FixedRotation)) {
         if (entity && entity->GetScene()) entity->GetScene()->MarkPhysicsDirty(entity);
     }
+    ImGui::Checkbox("Use Terrain Friction", &rb2d.UseTerrainFriction);
     if (ImGui::DragFloat("Linear Damping", &rb2d.LinearDamping, 0.1f, 0.0f, 50.0f, "%.2f")) {
         rb2d.SetLinearDampingRuntime(rb2d.LinearDamping);
     }
@@ -861,6 +862,17 @@ void InspectorPanel::DrawTerrainChunkManager(Engine::TerrainChunkManager& chunkM
     }
     if (regenRequested) {
         chunkMgr.ConfigureProceduralWorld(wg);
+    }
+
+    ImGui::Separator();
+    ImGui::Text("Tar & Fire Cellular Automaton");
+    ImGui::Text("Active Fire Cells: %zu", chunkMgr.GetFireGrid().GetActiveFireCount());
+    if (ImGui::Button("Ignite at Origin (r=2.5m)")) {
+        chunkMgr.IgniteAtXZ(glm::vec2(0.0f, 0.0f), 2.5f);
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Extinguish All")) {
+        chunkMgr.GetFireGrid().Clear();
     }
 
     DrawTerrainLayerSlots(chunkMgr);

@@ -2,6 +2,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/Scene.h"
+#include "Engine/Scene/SurfaceSample.h"
 #include <box2d/box2d.h>
 #include <algorithm>
 
@@ -385,6 +386,23 @@ void Rigidbody2D::OnPoolRelease() {
     m_StasisCachedAngularVelocity = 0.0f;
     m_StasisCachedVerticalVelocity = 0.0f;
     m_AirbornePassThroughActive = false;
+}
+
+void Rigidbody2D::FixedUpdate(float fixedDeltaTime) {
+    (void)fixedDeltaTime;
+    if (!UseTerrainFriction || Type != BodyType::Dynamic || !RuntimeBody.IsValid() || !IsGrounded()) {
+        return;
+    }
+    auto* go = GetGameObject();
+    if (!go) return;
+    auto* scene = go->GetScene();
+    if (!scene) return;
+    auto* transform = go->GetTransform();
+    if (!transform) return;
+
+    const glm::vec3 worldPos = transform->GetWorldPosition();
+    const SurfaceSample sample = scene->SampleSurfaceAtXZ(worldPos.x, worldPos.z);
+    SetLinearDampingRuntime(sample.LinearDamping);
 }
 
 // ============================================================================

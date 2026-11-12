@@ -5,6 +5,8 @@
 #include "Engine/Scene/Component.h"
 #include "Engine/Scene/TerrainComponent.h"
 #include "Engine/Scene/WorldBiomeGenerator.h"
+#include "Engine/Scene/SurfaceSample.h"
+#include "Engine/Scene/TerrainFireGrid.h"
 
 #include <array>
 #include <atomic>
@@ -120,6 +122,7 @@ public:
     TerrainChunkManager& operator=(TerrainChunkManager&&) = delete;
 
     void OnDestroy() override;
+    void Update(float deltaTime) override;
 
     // Streaming lifecycle
     void UpdateStreaming(const glm::vec3& viewerWorldPos);
@@ -149,6 +152,22 @@ public:
                            float radiusWorld,
                            float falloff = 0.65f,
                            float strength = 1.0f);
+
+    void PaintMaterialWorld(const glm::vec2& centerXZ,
+                            uint32_t layerIdx,
+                            float radius,
+                            float strength = 1.0f) {
+        PaintWorldBrush(centerXZ.x, centerXZ.y, layerIdx, radius, 0.65f, strength);
+    }
+
+    // CPU Surface Sampler & Tar/Fire Simulation (TER-04)
+    [[nodiscard]] SurfaceSample SampleSurfaceAtXZ(float worldX, float worldZ) const noexcept;
+    void IgniteAtXZ(const glm::vec2& centerXZ, float radius);
+    void ExtinguishAtXZ(const glm::vec2& centerXZ, float radius);
+    [[nodiscard]] bool IsBurningAtXZ(float worldX, float worldZ) const noexcept;
+    void UpdateFire(float dt);
+    [[nodiscard]] const TerrainFireGrid& GetFireGrid() const noexcept { return m_FireGrid; }
+    [[nodiscard]] TerrainFireGrid& GetFireGrid() noexcept { return m_FireGrid; }
 
     // Inject/create a modified chunk directly (used by deserialization & tests)
     TerrainChunk& EnsureEditableChunk(ChunkCoord coord);
@@ -213,11 +232,16 @@ private:
     const std::shared_ptr<Prefab>& GetOrCreatePropPrefab(ProceduralPropKind kind);
     void ShutdownAsyncWorkers() noexcept;
 
+    void InitFireGrid();
+    uint64_t SpawnFirewallEntity(const glm::vec2& centerXZ);
+    void ReleaseFirewallEntity(uint64_t uuid);
+
 private:
     std::unordered_map<ChunkCoord, TerrainChunk, ChunkCoordHash> m_Chunks;
     std::deque<ChunkCoord> m_GpuUploadRing;
     std::vector<JobHandle> m_InFlightJobs;
     std::shared_ptr<AsyncChunkChannel> m_AsyncChannel;
+    TerrainFireGrid m_FireGrid;
 
     WorldGenConfig m_WorldGenConfig{};
     std::shared_ptr<const WorldBiomeGenerator> m_BiomeGenerator;

@@ -3,6 +3,7 @@
 
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/EntityTag.h"
+#include "Engine/Scene/SurfaceSample.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Core/ThreadAffinity.h"
 
@@ -152,6 +153,12 @@ public:
     [[nodiscard]] IlluminationSample EvaluateIlluminationAtXZ(glm::vec2 worldXZ) const noexcept;
     [[nodiscard]] IlluminationSample EvaluateIlluminationDetailedXZ(glm::vec2 worldXZ,
                                                                     const IlluminationQueryOptions& options) const noexcept;
+
+    // CPU Surface & Fire Simulation Queries
+    [[nodiscard]] SurfaceSample SampleSurfaceAtXZ(float worldX, float worldZ) const noexcept;
+    void PaintMaterialWorld(const glm::vec2& centerXZ, uint32_t layerIdx, float radius, float strength = 1.0f);
+    void IgniteAtXZ(const glm::vec2& centerXZ, float radius);
+    void ExtinguishAtXZ(const glm::vec2& centerXZ, float radius);
 
     // Facade: Camera & Viewport (delegates to SceneRenderer)
     [[nodiscard]] PerspectiveCamera& GetCamera() noexcept;

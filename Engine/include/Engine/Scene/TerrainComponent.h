@@ -3,6 +3,7 @@
 
 #include "Engine/Scene/Component.h"
 #include "Engine/Renderer/Texture.h"
+#include "Engine/Scene/SurfaceSample.h"
 
 #include <array>
 #include <cstdint>
@@ -85,6 +86,21 @@ public:
                          float radiusWorld,
                          float falloff = 0.65f,
                          float strength = 1.0f);
+
+    void PaintMaterialWorld(const glm::vec2& centerXZ,
+                            uint32_t layerIdx,
+                            float radius,
+                            float strength = 1.0f,
+                            const glm::vec3& terrainOrigin = glm::vec3(0.0f),
+                            const glm::vec3& terrainScale = glm::vec3(1.0f)) {
+        PaintWorldBrush(centerXZ.x, centerXZ.y, terrainOrigin, terrainScale, layerIdx, radius, 0.65f, strength);
+    }
+
+    // CPU surface query API
+    [[nodiscard]] SurfaceSample SampleSurfaceAtXZ(float worldX,
+                                                  float worldZ,
+                                                  const glm::vec3& terrainOrigin = glm::vec3(0.0f),
+                                                  const glm::vec3& terrainScale = glm::vec3(1.0f)) const noexcept;
 
     // Paints a continuous capsule stroke between two 3D world XZ points
     void PaintWorldSegment(const glm::vec2& startXZ,

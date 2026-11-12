@@ -204,7 +204,7 @@ flowchart TD
 | **`TER-01`** | Infinite Chunked Terrain Streaming & Stitching | `TODO` | **P0** | W1 | `ECS-01` | `JobSystem` | `TER-02`, `TER-03`, `TER-04`, `UIX-04` |
 | **`TER-02`** | Seeded Perlin Biome Generator & Prop/POI Scatter | `TODO` | **P1** | W3 | `TER-01`, `ECS-04` | `SAV-01` (biome tables) | Procedural world & POI generation |
 | **`TER-03`** | Array Height/Normal Splatmap & 5th Cobble Layer | `DONE` | **P1** | W2 | `TER-01`, `LGT-01` | `RND-02` (anisotropy) | `TER-04` |
-| **`TER-04`** | CPU Surface Sampler & Systemic Tar/Fire Grid | `TODO` | **P1** | W3 | `TER-01`, `TER-03`, `PHY-02` | `VFX-01`, `AUD-02` | `VFX-02`, Tar Siphon, Chalk slide, Footsteps |
+| **`TER-04`** | CPU Surface Sampler & Systemic Tar/Fire Grid | `DONE` | **P1** | W3 | `TER-01`, `TER-03`, `PHY-02` | `VFX-01`, `AUD-02` | `VFX-02`, Tar Siphon, Chalk slide, Footsteps |
 | **`RND-01`** | Cutout Combat Shader FX (Dissolve, Flash, Outline)| `TODO` | **P1** | W2 | `LGT-01` | `LGT-03` (Shadow Sight) | Death ash dissolve, hit-stun flash, Revenants |
 | **`RND-02`** | Sprite Atlas Metadata Loader & Anisotropic Filter | `TODO` | **P1** | W0 | *None (Root)* | `ResourceManager` | `ANI-01`, `VFX-01`, `RND-03` |
 | **`RND-03`** | GPU Compressed Texture Pipeline (BC7 / KTX2) | `TODO` | **P2** | W2 | `RND-02` | `ANI-03` | 4K Master ~218 MB VRAM target |
@@ -1468,7 +1468,7 @@ Without these 15 features, the core physics + torch shadow + surface interaction
 | **`INP-02`** | `DONE` | **Lean:** Mouse ray to `Y = 0` ground plane intersection for 360° directional swing & dash aiming. *(Defer gamepad rumble).* |
 | **`LGT-01`** | `DONE` | **Full:** Omnidirectional 2.5D Torch Shadow Map. The signature visual and tactical hook: trees and pillars must cast real-time radial shadows from the Hero's torch. |
 | **`LGT-03`** | `DONE` | **Full:** CPU `GetIlluminationAt(posXZ)` & `IsWithinTorchSafeRadius(posXZ)` to drive darkness vulnerability, searing-rim burn ticks, and monster light reactions. |
-| **`TER-04`** | `TODO` | **Single-Arena Mode:** Run the CPU splatmap sampler (`Grass`, `Ash`, `Tar`, `Chalk`) and `0.5m` Tar/Firewall cellular grid directly on the **existing single `TerrainComponent`**—validating surface friction and fire propagation *without* waiting for `TER-01..03`! |
+| **`TER-04`** | `DONE` | **Full:** Run the CPU surface sampler (`Grass`, `Ash`, `Tar`, `Chalk`, `Cobble`, `Scorched`) and `0.5m` 10 Hz Tar/Firewall cellular automaton grid with spread delay, decay to Scorched Ash, dynamic linear damping on Rigidbody2D, and pooled firewall entities across both finite TerrainComponent and infinite TerrainChunkManager. |
 | **`CAM-02`** | `TODO` | **Full:** Damped top-down camera follow, aim look-ahead, and Perlin trauma screen shake (`AddTrauma`) to sell heavy weapon impacts. |
 | **`AUD-02`** | `TODO` | **Lean WAV Mixer:** Multi-voice polyphonic `.wav` playback with `±10%` random pitch variation so overlapping melee hits and crate shatters don't cut each other off. |
 

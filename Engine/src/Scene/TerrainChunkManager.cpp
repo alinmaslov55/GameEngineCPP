@@ -7,6 +7,7 @@
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Utils/Logger.h"
 
@@ -269,6 +270,7 @@ TerrainChunkManager::TerrainChunkManager()
     for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
         m_Layers[i].Glossiness = TerrainComponent::DefaultLayerGlossiness(i);
     }
+    InitFireGrid();
 }
 
 TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
@@ -284,18 +286,26 @@ TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
     for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
         m_Layers[i].Glossiness = TerrainComponent::DefaultLayerGlossiness(i);
     }
+    InitFireGrid();
 }
 
 TerrainChunkManager::~TerrainChunkManager() {
     ShutdownAsyncWorkers();
+    m_FireGrid.ConfigureCallbacks(nullptr, nullptr, nullptr, nullptr);
 }
 
 void TerrainChunkManager::OnDestroy() {
     ShutdownAsyncWorkers();
+    m_FireGrid.ConfigureCallbacks(nullptr, nullptr, nullptr, nullptr);
+    m_FireGrid.Clear();
     for (auto& [coord, chunk] : m_Chunks) {
         (void)coord;
         ReleaseChunkEntities(chunk);
     }
+}
+
+void TerrainChunkManager::Update(float deltaTime) {
+    UpdateFire(deltaTime);
 }
 
 void TerrainChunkManager::ShutdownAsyncWorkers() noexcept {
@@ -544,6 +554,12 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
 
         for (const auto& [coord, chunkPtr] : evictCandidates) {
             ReleaseChunkEntities(*chunkPtr);
+            const float halfChunk = ChunkSizeMeters * 0.5f;
+            const glm::vec2 center{
+                (static_cast<float>(coord.cx) + 0.5f) * ChunkSizeMeters,
+                (static_cast<float>(coord.cz) + 0.5f) * ChunkSizeMeters
+            };
+            m_FireGrid.ExtinguishAtXZ(center, halfChunk * 1.45f);
             m_Chunks.erase(coord);
         }
     }
@@ -950,6 +966,169 @@ void TerrainChunkManager::ReleaseChunkEntities(TerrainChunk& chunk) {
     }
     chunk.SpawnedEntityUUIDs.clear();
     chunk.EntitiesSpawned = false;
+}
+
+void TerrainChunkManager::InitFireGrid() {
+    m_FireGrid.ConfigureCallbacks(
+        [this](float wx, float wz) -> float {
+            return SampleSurfaceAtXZ(wx, wz).Flammability;
+        },
+        [this](const glm::vec2& centerXZ, float radius, float strength) {
+            PaintMaterialWorld(centerXZ, 5u /*Scorched Ash*/, radius, strength);
+        },
+        [this](const glm::vec2& centerXZ) -> uint64_t {
+            return SpawnFirewallEntity(centerXZ);
+        },
+        [this](uint64_t uuid) {
+            ReleaseFirewallEntity(uuid);
+        }
+    );
+}
+
+uint64_t TerrainChunkManager::SpawnFirewallEntity(const glm::vec2& centerXZ) {
+    GameObject* owner = GetGameObject();
+    Scene* scene = owner ? owner->GetScene() : nullptr;
+    if (!scene || !m_WorldGenConfig.SpawnSceneEntities) {
+        return 0;
+    }
+
+    GameObject* firewall = scene->CreateGameObject("TarFirewall");
+    if (!firewall) {
+        return 0;
+    }
+
+    if (auto* t = firewall->GetTransform()) {
+        t->position = glm::vec3(centerXZ.x, 0.45f, centerXZ.y);
+        t->SnapshotPrevious();
+    }
+
+    auto* light = firewall->AddComponent<PointLightComponent>();
+    if (light) {
+        light->Color = glm::vec3(1.0f, 0.48f, 0.12f);
+        light->Intensity = 1.6f;
+        light->Radius = 2.4f;
+        light->Falloff = 1.2f;
+        light->FlickerSpeed = 14.0f;
+        light->FlickerAmount = 0.30f;
+        light->Semantic = LightSemantic::SafeLifeline;
+    }
+
+    auto* collider = firewall->AddComponent<CircleCollider2D>();
+    if (collider) {
+        collider->Radius = 0.35f;
+        collider->IsSensor = true;
+        collider->CategoryBits = PhysicsLayer::EnemyHitbox;
+        collider->MaskBits = PhysicsLayer::Player | PhysicsLayer::Enemy;
+    }
+
+    return firewall->GetUUID();
+}
+
+void TerrainChunkManager::ReleaseFirewallEntity(uint64_t uuid) {
+    if (uuid == 0) return;
+    GameObject* owner = GetGameObject();
+    Scene* scene = owner ? owner->GetScene() : nullptr;
+    if (scene) {
+        if (GameObject* go = scene->FindGameObjectByUUID(uuid)) {
+            scene->DestroyGameObject(go);
+        }
+    }
+}
+
+SurfaceSample TerrainChunkManager::SampleSurfaceAtXZ(float worldX, float worldZ) const noexcept {
+    SurfaceSample sample{};
+    const ChunkCoord coord = WorldToChunk(worldX, worldZ);
+    const TerrainChunk* chunk = GetChunk(coord);
+
+    std::array<float, TerrainComponent::MaxLayers> blendedWeights{};
+    float sumWeights = 0.0f;
+
+    if (chunk && chunk->IsResident() && !chunk->SplatData.empty() && chunk->SplatResolution >= 2u) {
+        const float chunkOriginX = static_cast<float>(coord.cx) * ChunkSizeMeters;
+        const float chunkOriginZ = static_cast<float>(coord.cz) * ChunkSizeMeters;
+        const float relX = worldX - chunkOriginX;
+        const float relZ = worldZ - chunkOriginZ;
+
+        const float u = std::clamp(relX / ChunkSizeMeters, 0.0f, 1.0f);
+        const float v = std::clamp(relZ / ChunkSizeMeters, 0.0f, 1.0f);
+
+        const uint32_t span = chunk->SplatResolution - 1u;
+        const float fx = u * static_cast<float>(span);
+        const float fz = v * static_cast<float>(span);
+
+        const auto x0 = static_cast<uint32_t>(std::floor(fx));
+        const auto z0 = static_cast<uint32_t>(std::floor(fz));
+        const uint32_t x1 = std::min(x0 + 1u, chunk->SplatResolution - 1u);
+        const uint32_t z1 = std::min(z0 + 1u, chunk->SplatResolution - 1u);
+
+        const float tx = fx - static_cast<float>(x0);
+        const float tz = fz - static_cast<float>(z0);
+
+        const auto w00 = chunk->GetSplatTexel8(x0, z0);
+        const auto w10 = chunk->GetSplatTexel8(x1, z0);
+        const auto w01 = chunk->GetSplatTexel8(x0, z1);
+        const auto w11 = chunk->GetSplatTexel8(x1, z1);
+
+        for (size_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+            const float top = std::lerp(static_cast<float>(w00[i]), static_cast<float>(w10[i]), tx);
+            const float bot = std::lerp(static_cast<float>(w01[i]), static_cast<float>(w11[i]), tx);
+            const float val = std::lerp(top, bot, tz);
+            blendedWeights[i] = val;
+            sumWeights += val;
+        }
+    } else {
+        const BiomeSample bs = SampleBiomeAtXZ(worldX, worldZ);
+        const auto w8 = bs.ToSplat8();
+        for (size_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+            blendedWeights[i] = static_cast<float>(w8[i]);
+            sumWeights += blendedWeights[i];
+        }
+    }
+
+    if (sumWeights <= 1e-4f) {
+        blendedWeights[1] = 1.0f;
+        sumWeights = 1.0f;
+    }
+
+    const float invSum = 1.0f / sumWeights;
+    float maxWeight = -1.0f;
+    uint32_t dominantLayer = 1u;
+    float weightedDamping = 0.0f;
+    float weightedSpeed = 0.0f;
+
+    for (size_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+        const float normW = blendedWeights[i] * invSum;
+        if (normW > maxWeight) {
+            maxWeight = normW;
+            dominantLayer = static_cast<uint32_t>(i);
+        }
+        weightedDamping += normW * SurfacePhysics::LayerDamping[i];
+        weightedSpeed += normW * SurfacePhysics::LayerSpeedMultiplier[i];
+    }
+
+    sample.DominantBiome = SurfacePhysics::LayerToBiome(dominantLayer);
+    sample.LinearDamping = weightedDamping;
+    sample.MaxSpeedMultiplier = weightedSpeed;
+    sample.Flammability = std::clamp(blendedWeights[2] * invSum, 0.0f, 1.0f);
+    sample.IsBurning = m_FireGrid.IsBurningAtXZ(worldX, worldZ);
+
+    return sample;
+}
+
+void TerrainChunkManager::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
+    m_FireGrid.IgniteAtXZ(centerXZ, radius);
+}
+
+void TerrainChunkManager::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
+    m_FireGrid.ExtinguishAtXZ(centerXZ, radius);
+}
+
+bool TerrainChunkManager::IsBurningAtXZ(float worldX, float worldZ) const noexcept {
+    return m_FireGrid.IsBurningAtXZ(worldX, worldZ);
+}
+
+void TerrainChunkManager::UpdateFire(float dt) {
+    m_FireGrid.Update(dt);
 }
 
 } // namespace Engine

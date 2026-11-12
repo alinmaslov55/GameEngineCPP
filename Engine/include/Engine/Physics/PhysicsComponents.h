@@ -22,6 +22,7 @@ public:
     BodyType Type = BodyType::Dynamic;
     bool FixedRotation = true;    // Default: true for top-down standees
     float LinearDamping = 4.5f;   // Top-down ground stopping friction
+    bool UseTerrainFriction = false; // When true, updates LinearDamping dynamically from ground surface (TER-04)
     float AngularDamping = 6.0f;  // Top-down rotational stopping friction
     float GravityScaleY = 1.0f;   // Multiplier for vertical 2.5D gravity
     float MassMultiplier = 1.0f;  // Scaled by physical roots ("Anvil", "Iron Bone")
@@ -98,6 +99,7 @@ public:
     void OnDestroy() override;
     void OnPoolAcquire() override;
     void OnPoolRelease() override;
+    void FixedUpdate(float fixedDeltaTime) override;
 
     // Backward-compatible aliases for PHY-01
     void SetLinearVelocityXZ(const glm::vec2& velocityXZ) noexcept { SetVelocityXZ(velocityXZ); }
