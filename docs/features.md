@@ -214,7 +214,7 @@ flowchart TD
 | **`VFX-01`** | Textured, Flipbook-Animated & Oriented Particles | `TODO` | **P0** | W1 | `RND-02` | `TER-04` (firewall) | Torch flame, shockwaves, bouncing splinters |
 | **`VFX-02`** | Ring-Buffered Ground Decal Pool | `TODO` | **P1** | W4 | `TER-04` | `RND-02` | Blood/ichor splatters & scorched craters |
 | **`CAM-01`** | Adaptive Hor+ (Landscape) & Vert+ (Portrait) FOV | `DONE` | **P1** | W0 | *None (Root)* | `PostProcessor` | `CAM-02`, `INP-02`, `EDT-01` |
-| **`CAM-02`** | Damped Brawler Camera Rig & Perlin Trauma Shake | `TODO` | **P0** | W1 | `CAM-01`, `ECS-02` | `INP-02` (look-ahead) | Maul/Jiangshi/Wendigo impact feel |
+| **`CAM-02`** | Damped Brawler Camera Rig & Perlin Trauma Shake | `DONE` | **P0** | W1 | `CAM-01`, `ECS-02` | `INP-02` (look-ahead) | Maul/Jiangshi/Wendigo impact feel |
 | **`UIX-01`** | Resolution-Independent Canvas, Anchors & Safe Area| `TODO` | **P0** | W0 | *None (Root)* | `CAM-01` | `UIX-02`, `UIX-03`, `EDT-01` |
 | **`UIX-02`** | 9-Slice Frames, Clipped Bars & Radial Gauges | `TODO` | **P1** | W1 | `UIX-01` | `INP-01` (gamepad nav) | `UIX-04`, HUD HP/Torch/Rune widgets |
 | **`UIX-03`** | BMFont (`.fnt`) Loader & Styled Text Layout | `TODO` | **P1** | W1 | `UIX-01` | `CAM-01` (world prompts) | Gothic HUD counters, Shrine upgrade cards |
@@ -1031,7 +1031,7 @@ flowchart TD
 ---
 
 #### `CAM-02` — Damped Brawler Camera Rig & Perlin Trauma Shake
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `CAM-01`, `ECS-02` | Unlocks: Heavy kinetic impact feel
 - **Proposed C++ Specification (on `CameraComponent`):**
   ```cpp
@@ -1469,7 +1469,7 @@ Without these 15 features, the core physics + torch shadow + surface interaction
 | **`LGT-01`** | `DONE` | **Full:** Omnidirectional 2.5D Torch Shadow Map. The signature visual and tactical hook: trees and pillars must cast real-time radial shadows from the Hero's torch. |
 | **`LGT-03`** | `DONE` | **Full:** CPU `GetIlluminationAt(posXZ)` & `IsWithinTorchSafeRadius(posXZ)` to drive darkness vulnerability, searing-rim burn ticks, and monster light reactions. |
 | **`TER-04`** | `DONE` | **Full:** Run the CPU surface sampler (`Grass`, `Ash`, `Tar`, `Chalk`, `Cobble`, `Scorched`) and `0.5m` 10 Hz Tar/Firewall cellular automaton grid with spread delay, decay to Scorched Ash, dynamic linear damping on Rigidbody2D, and pooled firewall entities across both finite TerrainComponent and infinite TerrainChunkManager. |
-| **`CAM-02`** | `TODO` | **Full:** Damped top-down camera follow, aim look-ahead, and Perlin trauma screen shake (`AddTrauma`) to sell heavy weapon impacts. |
+| **`CAM-02`** | `DONE` | **Full:** Damped top-down camera follow, aim look-ahead, and Perlin trauma screen shake (`AddTrauma`) to sell heavy weapon impacts. |
 | **`AUD-02`** | `TODO` | **Lean WAV Mixer:** Multi-voice polyphonic `.wav` playback with `±10%` random pitch variation so overlapping melee hits and crate shatters don't cut each other off. |
 
 ---

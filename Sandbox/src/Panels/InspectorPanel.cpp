@@ -720,8 +720,45 @@ void InspectorPanel::DrawCamera(Engine::CameraComponent& camComp, Engine::GameOb
     changed |= ImGui::SliderFloat("Pitch (deg)", &camComp.Pitch, 15.0f, 80.0f, "%.1f");
     changed |= ImGui::DragFloat("Yaw (deg)", &camComp.Yaw, 0.5f, -360.0f, 360.0f);
     ImGui::Checkbox("Fixed Aspect Ratio", &camComp.FixedAspectRatio);
+
+    if (ImGui::TreeNodeEx("Brawler Rig & Follow", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Smooth Follow", &camComp.SmoothFollow);
+        ImGui::SliderFloat("Follow Smooth Time", &camComp.FollowSmoothTime, 0.01f, 1.0f, "%.2f s");
+        ImGui::SliderFloat("Aim Look-Ahead", &camComp.AimLookAheadDistance, 0.0f, 5.0f, "%.2f m");
+        ImGui::SliderFloat("Aim Smooth Time", &camComp.AimLookAheadSmoothTime, 0.01f, 1.0f, "%.2f s");
+        ImGui::SliderFloat("Dynamic Zoom Out", &camComp.DynamicZoomOutMax, 0.0f, 10.0f, "%.2f m");
+        ImGui::SliderFloat("Zoom Smooth Time", &camComp.DynamicZoomSmoothTime, 0.01f, 1.0f, "%.2f s");
+        ImGui::TreePop();
+    }
+
+    if (ImGui::TreeNodeEx("Trauma & Screen Shake", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::SliderFloat("Trauma Decay", &camComp.TraumaDecay, 0.1f, 5.0f, "%.2f /s");
+        ImGui::SliderFloat("Max Shake Amplitude", &camComp.MaxShakeAmplitude, 0.05f, 3.0f, "%.2f m");
+        ImGui::SliderFloat("Shake Frequency", &camComp.ShakeFrequency, 5.0f, 60.0f, "%.1f Hz");
+        ImGui::SliderFloat("Kick Decay Rate", &camComp.KickDecayRate, 1.0f, 20.0f, "%.1f");
+
+        const float traumaVal = camComp.GetTrauma();
+        char traumaBuf[32];
+        snprintf(traumaBuf, sizeof(traumaBuf), "Trauma: %.2f", traumaVal);
+        ImGui::ProgressBar(traumaVal, ImVec2(-1.0f, 0.0f), traumaBuf);
+
+        if (ImGui::Button("Add Light Trauma (0.3)")) {
+            camComp.AddTrauma(0.3f);
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Add Heavy Slam (0.8 + Kick)")) {
+            camComp.AddTrauma(0.8f, glm::vec2(0.4f, -0.25f));
+        }
+        if (ImGui::Button("Reset Camera To Target")) {
+            if (entity && entity->GetTransform()) {
+                camComp.ResetToTarget(entity->GetTransform()->GetWorldPosition());
+            }
+        }
+        ImGui::TreePop();
+    }
+
     if (changed) {
-        camComp.SyncFromTransform(entity->GetTransform());
+        camComp.SyncFromTransform(entity ? entity->GetTransform() : nullptr);
     }
 }
 

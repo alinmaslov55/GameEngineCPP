@@ -337,5 +337,134 @@ TEST(FrustumCullingTest, ShadowOrthographicFrustumAndGroundPlaneVisibleAABB) {
     }
 }
 
+TEST(CameraComponentTest, TraumaDecayUnderHitStop) {
+    Engine::CameraComponent camComp;
+    camComp.ResetToTarget({ 0.0f, 0.0f, 0.0f });
+
+    camComp.TraumaDecay = 1.4f;
+    camComp.KickDecayRate = 8.0f;
+    camComp.AddTrauma(0.8f, glm::vec2(0.5f, -0.3f));
+
+    EXPECT_FLOAT_EQ(camComp.GetTrauma(), 0.8f);
+
+    // Simulate hit-stop time dilation (effective timescale = 0.02, unscaled dt = 0.016s)
+    const float unscaledDt = 0.016f;
+    const float scaledDt = unscaledDt * 0.02f; // 50x slowdown in game world
+
+    // Total duration ~1.5 seconds of unscaled real time (94 frames at 60fps)
+    for (int frame = 0; frame < 94; ++frame) {
+        camComp.UpdateRig(scaledDt, unscaledDt, { 0.0f, 0.0f, 0.0f });
+    }
+
+    // After 1.5s unscaled decay at 1.4/s, 0.8 initial trauma and kick must have completely decayed to 0
+    EXPECT_NEAR(camComp.GetTrauma(), 0.0f, 1e-4f);
+    EXPECT_NEAR(camComp.GetShakeOffsetXZ().x, 0.0f, 1e-4f);
+    EXPECT_NEAR(camComp.GetShakeOffsetXZ().y, 0.0f, 1e-4f);
+}
+
+TEST(CameraComponentTest, SmoothFollowCriticallyDampedTracking) {
+    Engine::CameraComponent camComp;
+    camComp.FollowSmoothTime = 0.11f;
+    camComp.ResetToTarget({ 0.0f, 0.0f, 0.0f });
+
+    const glm::vec3 targetPos = { 10.0f, 0.0f, 0.0f };
+    const float dt = 0.016f;
+
+    float prevX = 0.0f;
+    for (int frame = 0; frame < 40; ++frame) { // ~0.64s (~6x smooth time)
+        camComp.UpdateRig(dt, dt, targetPos);
+        const float currX = camComp.GetSmoothedFocalPoint().x;
+
+        // Monotonic progression without backward oscillation
+        EXPECT_GE(currX, prevX);
+        // Zero overshoot past target
+        EXPECT_LE(currX, 10.0f);
+        prevX = currX;
+    }
+
+    // Must be within 1% of target position after 0.64s
+    EXPECT_GT(camComp.GetSmoothedFocalPoint().x, 9.90f);
+}
+
+TEST(CameraComponentTest, AimLookAheadShift) {
+    Engine::CameraComponent camComp;
+    camComp.AimLookAheadDistance = 2.0f;
+    camComp.AimLookAheadSmoothTime = 0.10f;
+    camComp.ResetToTarget({ 0.0f, 0.0f, 0.0f });
+
+    // Aim toward +X
+    camComp.SetAimDirectionXZ({ 1.0f, 0.0f });
+
+    const float dt = 0.016f;
+    for (int frame = 0; frame < 35; ++frame) { // ~0.56s
+        camComp.UpdateRig(dt, dt, { 0.0f, 0.0f, 0.0f });
+    }
+
+    EXPECT_NEAR(camComp.GetSmoothedAimOffset().x, 2.0f, 0.05f);
+    EXPECT_NEAR(camComp.GetSmoothedAimOffset().y, 0.0f, 1e-4f);
+    EXPECT_NEAR(camComp.GetLogicalTargetPoint().x, 2.0f, 0.05f);
+}
+
+TEST(CameraComponentTest, NonDestructiveTransformPositionInvariance) {
+    Engine::CameraComponent camComp;
+    Engine::Transform transform;
+    transform.position = { 5.0f, 1.2f, -3.4f };
+    transform.prevPosition = transform.position;
+    transform.rotation = { 10.0f, 20.0f, 0.0f };
+
+    const glm::vec3 originalPos = transform.position;
+    const glm::vec3 originalRot = transform.rotation;
+
+    camComp.ResetToTarget(transform.position);
+    camComp.AddTrauma(1.0f, glm::vec2(1.0f, -0.8f));
+
+    for (int frame = 0; frame < 30; ++frame) {
+        camComp.UpdateRig(0.016f, 0.016f, transform.GetWorldPosition());
+
+        // Transform must NEVER be mutated by camera rig or trauma shake!
+        EXPECT_EQ(transform.position, originalPos);
+        EXPECT_EQ(transform.prevPosition, originalPos);
+        EXPECT_EQ(transform.rotation, originalRot);
+    }
+}
+
+TEST(CameraComponentTest, DynamicZoomExpansion) {
+    Engine::CameraComponent camComp;
+    camComp.Distance = 14.0f;
+    camComp.DynamicZoomOutMax = 3.0f;
+    camComp.DynamicZoomSmoothTime = 0.12f;
+    camComp.ResetToTarget({ 0.0f, 0.0f, 0.0f });
+
+    camComp.SetDynamicZoomFactor(1.0f);
+    const float dt = 0.016f;
+
+    for (int frame = 0; frame < 40; ++frame) { // ~0.64s
+        camComp.UpdateRig(dt, dt, { 0.0f, 0.0f, 0.0f });
+    }
+
+    EXPECT_NEAR(camComp.GetCurrentDistance(), 17.0f, 0.05f);
+    EXPECT_NEAR(camComp.Camera.GetDistance(), 17.0f, 0.05f);
+
+    // Zoom back in
+    camComp.SetDynamicZoomFactor(0.0f);
+    for (int frame = 0; frame < 40; ++frame) {
+        camComp.UpdateRig(dt, dt, { 0.0f, 0.0f, 0.0f });
+    }
+
+    EXPECT_NEAR(camComp.GetCurrentDistance(), 14.0f, 0.05f);
+    EXPECT_NEAR(camComp.Camera.GetDistance(), 14.0f, 0.05f);
+}
+
+TEST(CameraComponentTest, Perlin1DContinuityAndBounds) {
+    for (float t = -10.0f; t <= 10.0f; t += 0.05f) {
+        const float val = Engine::CameraComponent::PerlinNoise1D(t);
+        EXPECT_LE(std::abs(val), 1.25f);
+
+        const float valNext = Engine::CameraComponent::PerlinNoise1D(t + 0.01f);
+        // C1 continuous: delta across 0.01 step must be small
+        EXPECT_LE(std::abs(valNext - val), 0.15f);
+    }
+}
+
 } // namespace
 

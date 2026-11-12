@@ -562,7 +562,17 @@ void SerializeCameraComponent(const GameObject* go, json& compsJson) {
         {"Distance", cameraComp->Distance},
         {"Pitch", cameraComp->Pitch},
         {"Yaw", cameraComp->Yaw},
-        {"FixedAspectRatio", cameraComp->FixedAspectRatio}
+        {"FixedAspectRatio", cameraComp->FixedAspectRatio},
+        {"SmoothFollow", cameraComp->SmoothFollow},
+        {"FollowSmoothTime", cameraComp->FollowSmoothTime},
+        {"AimLookAheadDistance", cameraComp->AimLookAheadDistance},
+        {"AimLookAheadSmoothTime", cameraComp->AimLookAheadSmoothTime},
+        {"DynamicZoomOutMax", cameraComp->DynamicZoomOutMax},
+        {"DynamicZoomSmoothTime", cameraComp->DynamicZoomSmoothTime},
+        {"TraumaDecay", cameraComp->TraumaDecay},
+        {"MaxShakeAmplitude", cameraComp->MaxShakeAmplitude},
+        {"ShakeFrequency", cameraComp->ShakeFrequency},
+        {"KickDecayRate", cameraComp->KickDecayRate}
     };
 }
 
@@ -1146,6 +1156,16 @@ void DeserializeCameraComponent(GameObject* go, const json& camJson, const std::
     camComp->Pitch = camJson.value("Pitch", 40.0f);
     camComp->Yaw = camJson.value("Yaw", 0.0f);
     camComp->FixedAspectRatio = camJson.value("FixedAspectRatio", false);
+    camComp->SmoothFollow = camJson.value("SmoothFollow", true);
+    camComp->FollowSmoothTime = camJson.value("FollowSmoothTime", 0.11f);
+    camComp->AimLookAheadDistance = camJson.value("AimLookAheadDistance", 1.15f);
+    camComp->AimLookAheadSmoothTime = camJson.value("AimLookAheadSmoothTime", 0.18f);
+    camComp->DynamicZoomOutMax = camJson.value("DynamicZoomOutMax", 1.8f);
+    camComp->DynamicZoomSmoothTime = camJson.value("DynamicZoomSmoothTime", 0.25f);
+    camComp->TraumaDecay = camJson.value("TraumaDecay", 1.4f);
+    camComp->MaxShakeAmplitude = camJson.value("MaxShakeAmplitude", 0.65f);
+    camComp->ShakeFrequency = camJson.value("ShakeFrequency", 28.0f);
+    camComp->KickDecayRate = camJson.value("KickDecayRate", 8.0f);
     camComp->SetViewportSize(1280, 720);
     camComp->SyncFromTransform(go->GetTransform());
 }
