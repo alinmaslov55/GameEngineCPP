@@ -105,10 +105,14 @@ void TilePalettePanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activ
             }
 
             const char* layerNames[Engine::TerrainComponent::MaxLayers] = {
-                "0: Meadow Grass (R)",
-                "1: Dirt Path (G)",
-                "2: Mossy Cobble (B)",
-                "3: Tilled Soil (A)"
+                "0: Grass (Blackwood Thickets)",
+                "1: Ash (Ash Barrens)",
+                "2: Tar (Tar Bogs)",
+                "3: Chalk (Chalk Highlands)",
+                "4: Cobble (Sanctuary Cobble)",
+                "5: Scorched Ash",
+                "6: Spare Layer 1",
+                "7: Spare Layer 2"
             };
 
             for (uint32_t i = 0; i < Engine::TerrainComponent::MaxLayers; ++i) {

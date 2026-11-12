@@ -15,12 +15,27 @@ namespace Engine {
 
 struct TerrainLayer {
     std::shared_ptr<Texture> LayerTexture = nullptr;
+    std::string HeightMapPath;
+    std::string NormalMapPath;
     float TilingScale = 0.45f; // UV repeats per world meter
+    float Glossiness = 0.15f;  // Specular glossiness [0..1] packed into NormalRoughnessArray.a
 };
 
 class TerrainComponent final : public Component {
 public:
-    static constexpr uint32_t MaxLayers = 4;
+    static constexpr uint32_t MaxLayers = 8;
+
+    [[nodiscard]] static constexpr float DefaultLayerGlossiness(uint32_t layerIndex) noexcept {
+        switch (layerIndex) {
+            case 0: return 0.12f; // Grass (Blackwood Thickets)
+            case 1: return 0.08f; // Ash (Ash Barrens)
+            case 2: return 0.85f; // Tar (Tar Bogs - oily torch sheen)
+            case 3: return 0.22f; // Chalk (Chalk Highlands)
+            case 4: return 0.35f; // Cobblestone (Sanctuary Cobble)
+            case 5: return 0.06f; // Scorched Ash (TER-04 reserve)
+            default: return 0.15f;
+        }
+    }
 
     TerrainComponent(float width = 14.0f,
                      float depth = 14.0f,
@@ -45,15 +60,21 @@ public:
     void SetEdgeDarkening(float darkening);
 
     void SetLayerTexture(uint32_t layerIndex, const std::shared_ptr<Texture>& texture);
+    void SetLayerHeightMapPath(uint32_t layerIndex, const std::string& path);
+    void SetLayerNormalMapPath(uint32_t layerIndex, const std::string& path);
     void SetLayerTilingScale(uint32_t layerIndex, float tilingScale);
+    void SetLayerGlossiness(uint32_t layerIndex, float glossiness);
     const TerrainLayer& GetLayer(uint32_t layerIndex) const;
     TerrainLayer& GetLayer(uint32_t layerIndex);
     const std::array<TerrainLayer, MaxLayers>& GetLayers() const { return m_Layers; }
 
-    // Splatmap CPU manipulation (headless-safe; R+G+B+A == 255 invariant)
+    // Splatmap CPU manipulation (headless-safe; sum of all 8 weights == 255 invariant)
     void FillLayer(uint32_t layerIndex);
     glm::u8vec4 GetSplatTexel(uint32_t px, uint32_t pz) const;
+    glm::u8vec4 GetSplatTexel1(uint32_t px, uint32_t pz) const;
+    std::array<uint8_t, MaxLayers> GetSplatTexel8(uint32_t px, uint32_t pz) const;
     void SetSplatTexel(uint32_t px, uint32_t pz, const glm::u8vec4& weights);
+    void SetSplatTexel8(uint32_t px, uint32_t pz, const std::array<uint8_t, MaxLayers>& weights);
 
     // Radial smoothstep brush painting in 3D world XZ coordinates
     void PaintWorldBrush(float worldX,
@@ -76,6 +97,7 @@ public:
                            float strength = 1.0f);
 
     const std::vector<uint8_t>& GetSplatData() const { return m_SplatData; }
+    const std::vector<uint8_t>& GetSplatData1() const { return m_SplatData1; }
 
     const std::string& GetSplatmapPath() const { return m_SplatmapPath; }
     void SetSplatmapPath(const std::string& path) { m_SplatmapPath = path; }
@@ -88,18 +110,25 @@ public:
 
     std::string EncodeSplatBase64() const;
     bool DecodeSplatBase64(const std::string& base64Data, uint32_t width, uint32_t height);
+    std::string EncodeSplat1Base64() const;
+    bool DecodeSplat1Base64(const std::string& base64Data, uint32_t width, uint32_t height);
 
-    // Lazily allocates and updates the OpenGL RGBA8 splatmap texture when rendered
+    // Lazily allocates and updates the OpenGL RGBA8 splatmap textures when rendered
     const std::shared_ptr<Texture>& SyncGpuSplatTexture();
+    std::pair<std::shared_ptr<Texture>, std::shared_ptr<Texture>> SyncGpuSplatTextures();
 
     // Shared CPU splatmap utilities (reused by TerrainChunkManager for zero-duplication border stitching)
+    [[nodiscard]] static std::array<uint8_t, MaxLayers> NormalizeWeights8(
+        const std::array<float, MaxLayers>& weights,
+        uint32_t priorityChannel = 0);
     [[nodiscard]] static glm::u8vec4 NormalizeWeights(float r, float g, float b, float a);
     [[nodiscard]] static std::string EncodeRGBABase64(const std::vector<uint8_t>& rgbaData);
     [[nodiscard]] static bool DecodeRGBABase64(const std::string& base64Data,
                                                uint32_t width,
                                                uint32_t height,
                                                std::vector<uint8_t>& outRgbaData);
-    [[nodiscard]] static bool PaintSplatBufferXZ(std::vector<uint8_t>& splatData,
+    [[nodiscard]] static bool PaintSplatBufferXZ(std::vector<uint8_t>& splatData0,
+                                                 std::vector<uint8_t>& splatData1,
                                                  uint32_t splatWidth,
                                                  uint32_t splatHeight,
                                                  int32_t chunkX,
@@ -144,10 +173,12 @@ private:
 
     std::array<TerrainLayer, MaxLayers> m_Layers{};
     std::vector<uint8_t> m_SplatData;
+    std::vector<uint8_t> m_SplatData1;
     std::string m_SplatmapPath;
 
     // GPU upload state (lazy so headless tests never require an OpenGL context)
     std::shared_ptr<Texture> m_GpuSplatTexture = nullptr;
+    std::shared_ptr<Texture> m_GpuSplatTexture1 = nullptr;
     std::vector<uint8_t> m_UploadScratch;
     bool m_GpuDirty = true;
     uint32_t m_DirtyMinX = 0;

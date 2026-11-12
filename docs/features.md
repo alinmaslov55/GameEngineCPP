@@ -203,7 +203,7 @@ flowchart TD
 | **`LGT-03`** | CPU Illumination & Umbral Visibility Query API | `TODO` | **P0** | W1 | `LGT-02` | `LGT-01` (line-of-light) | `AIX-02`, `UIX-04`, Torch survival rules |
 | **`TER-01`** | Infinite Chunked Terrain Streaming & Stitching | `TODO` | **P0** | W1 | `ECS-01` | `JobSystem` | `TER-02`, `TER-03`, `TER-04`, `UIX-04` |
 | **`TER-02`** | Seeded Perlin Biome Generator & Prop/POI Scatter | `TODO` | **P1** | W3 | `TER-01`, `ECS-04` | `SAV-01` (biome tables) | Procedural world & POI generation |
-| **`TER-03`** | Array Height/Normal Splatmap & 5th Cobble Layer | `TODO` | **P1** | W2 | `TER-01`, `LGT-01` | `RND-02` (anisotropy) | `TER-04` |
+| **`TER-03`** | Array Height/Normal Splatmap & 5th Cobble Layer | `DONE` | **P1** | W2 | `TER-01`, `LGT-01` | `RND-02` (anisotropy) | `TER-04` |
 | **`TER-04`** | CPU Surface Sampler & Systemic Tar/Fire Grid | `TODO` | **P1** | W3 | `TER-01`, `TER-03`, `PHY-02` | `VFX-01`, `AUD-02` | `VFX-02`, Tar Siphon, Chalk slide, Footsteps |
 | **`RND-01`** | Cutout Combat Shader FX (Dissolve, Flash, Outline)| `TODO` | **P1** | W2 | `LGT-01` | `LGT-03` (Shadow Sight) | Death ash dissolve, hit-stun flash, Revenants |
 | **`RND-02`** | Sprite Atlas Metadata Loader & Anisotropic Filter | `TODO` | **P1** | W0 | *None (Root)* | `ResourceManager` | `ANI-01`, `VFX-01`, `RND-03` |
@@ -745,7 +745,7 @@ flowchart TD
 ---
 
 #### `TER-03` — Array Height/Normal Splatmap Shader & 5th Cobblestone Layer
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `TER-01`, `LGT-01` | Unlocks: `TER-04`
 - **Current Gap:** `TerrainComponent` supports at most `4` diffuse-only `GL_TEXTURE_2D` layers (`TerrainComponent.h:23`), cannot blend the **5th Cobblestone Path** material alongside the 4 biomes, and ignores `_h.png` height maps and `_n.png` normal maps (`asset_directory_resolution_guide.md` Section 4).
 - **Proposed OpenGL 4.1 `GL_TEXTURE_2D_ARRAY` Architecture:**

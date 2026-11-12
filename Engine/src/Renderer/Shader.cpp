@@ -243,6 +243,10 @@ int Shader::GetUniformLocation(std::string_view name) const {
 
     std::string nameStr(name);
     int location = glGetUniformLocation(m_RendererID, nameStr.c_str());
+    if (location == -1 && !name.ends_with(']')) {
+        std::string arrayName = nameStr + "[0]";
+        location = glGetUniformLocation(m_RendererID, arrayName.c_str());
+    }
     if (location == -1) {
         ENGINE_CORE_WARN("Shader ID {}: Uniform '{}' not found or unused", m_RendererID, name);
     }

@@ -54,11 +54,13 @@ struct TerrainChunk {
     uint32_t SplatResolution = 65;
 
     std::vector<uint8_t> SplatData;
+    std::vector<uint8_t> SplatData1;
     std::vector<BiomeType> BiomeMap;
     std::vector<PropSpawnDesc> Props;
     std::vector<POISpawnDesc> POIs;
     std::vector<uint64_t> SpawnedEntityUUIDs;
     std::shared_ptr<Texture> GpuSplatTexture;
+    std::shared_ptr<Texture> GpuSplatTexture1;
     std::vector<uint8_t> UploadScratch;
 
     bool GpuDirty = false;
@@ -73,11 +75,16 @@ struct TerrainChunk {
 
     [[nodiscard]] glm::vec3 GetWorldOrigin(float groundY = 0.0f) const noexcept;
     [[nodiscard]] glm::u8vec4 GetSplatTexel(uint32_t px, uint32_t pz) const noexcept;
+    [[nodiscard]] glm::u8vec4 GetSplatTexel1(uint32_t px, uint32_t pz) const noexcept;
+    [[nodiscard]] std::array<uint8_t, TerrainComponent::MaxLayers> GetSplatTexel8(uint32_t px, uint32_t pz) const noexcept;
     void SetSplatTexel(uint32_t px, uint32_t pz, const glm::u8vec4& weights) noexcept;
+    void SetSplatTexel8(uint32_t px, uint32_t pz, const std::array<uint8_t, TerrainComponent::MaxLayers>& weights) noexcept;
     void MarkDirtyRect(uint32_t minX, uint32_t minY, uint32_t maxX, uint32_t maxY, bool markModified) noexcept;
     const std::shared_ptr<Texture>& SyncGpuSplatTexture();
+    std::pair<std::shared_ptr<Texture>, std::shared_ptr<Texture>> SyncGpuSplatTextures();
 
     [[nodiscard]] const std::vector<uint8_t>& GetSplatData() const noexcept { return SplatData; }
+    [[nodiscard]] const std::vector<uint8_t>& GetSplatData1() const noexcept { return SplatData1; }
     [[nodiscard]] bool IsResident() const noexcept {
         return State == ChunkLoadState::ReadyForGpuUpload || State == ChunkLoadState::Resident;
     }
@@ -161,7 +168,10 @@ public:
     float GetEdgeDarkening() const noexcept { return m_EdgeDarkening; }
     void SetEdgeDarkening(float darkening) noexcept;
     void SetLayerTexture(uint32_t layerIndex, const std::shared_ptr<Texture>& texture);
+    void SetLayerHeightMapPath(uint32_t layerIndex, const std::string& path);
+    void SetLayerNormalMapPath(uint32_t layerIndex, const std::string& path);
     void SetLayerTilingScale(uint32_t layerIndex, float tilingScale) noexcept;
+    void SetLayerGlossiness(uint32_t layerIndex, float glossiness) noexcept;
     const TerrainLayer& GetLayer(uint32_t layerIndex) const noexcept;
     TerrainLayer& GetLayer(uint32_t layerIndex) noexcept;
     const std::array<TerrainLayer, TerrainComponent::MaxLayers>& GetLayers() const noexcept { return m_Layers; }
@@ -181,6 +191,7 @@ private:
         uint32_t Resolution = DefaultSplatResolution;
         float ChunkSize = 16.0f;
         std::vector<uint8_t> SplatData;
+        std::vector<uint8_t> SplatData1;
         std::vector<BiomeType> BiomeMap;
         std::vector<PropSpawnDesc> Props;
         std::vector<POISpawnDesc> POIs;

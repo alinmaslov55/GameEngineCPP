@@ -637,5 +637,42 @@ TEST(SceneSerializerTest, TerrainChunkManagerAndModifiedChunksRoundTrip) {
     EXPECT_EQ(loaded11->GetSplatTexel(0u, 0u), expectedCorner);
 }
 
+TEST(SceneSerializerTest, EightLayerTerrainAndSecondaryWeightsRoundTrip) {
+    auto srcScene = std::make_shared<Engine::Scene>("EightLayerScene");
+    auto* go = srcScene->CreateGameObjectWithUUID(77777ULL, "Terr8");
+    auto* terrain = go->AddComponent<Engine::TerrainComponent>(16.0f, 16.0f, 16u, 16u);
+
+    terrain->SetLayerTilingScale(2u, 0.62f);
+    terrain->SetLayerGlossiness(2u, 0.85f);
+    terrain->SetLayerHeightMapPath(4u, "assets/diorama/terrain/cobble/tex_cobble_h.png");
+    terrain->SetLayerNormalMapPath(4u, "assets/diorama/terrain/cobble/tex_cobble_n.png");
+    terrain->SetLayerTilingScale(4u, 1.25f);
+    terrain->SetLayerGlossiness(4u, 0.35f);
+    terrain->SetLayerGlossiness(5u, 0.06f);
+
+    terrain->PaintWorldBrush(8.0f, 8.0f, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 4u, 3.0f, 0.6f, 1.0f);
+    terrain->PaintWorldBrush(2.0f, 2.0f, { 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f, 1.0f }, 5u, 2.0f, 0.6f, 0.9f);
+    const auto expectedCobbleCenter = terrain->GetSplatTexel8(8u, 8u);
+    EXPECT_GT(expectedCobbleCenter[4], 200u);
+
+    const std::string savedJson = Engine::SceneSerializer(srcScene).SerializeToString();
+    ASSERT_FALSE(savedJson.empty());
+
+    auto loadedScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(loadedScene).DeserializeFromString(savedJson));
+    auto* loadedGo = loadedScene->FindGameObjectByUUID(77777ULL);
+    ASSERT_NE(loadedGo, nullptr);
+    auto* loadedTerrain = loadedGo->GetComponent<Engine::TerrainComponent>();
+    ASSERT_NE(loadedTerrain, nullptr);
+
+    EXPECT_NEAR(loadedTerrain->GetLayer(2u).Glossiness, 0.85f, 1e-4f);
+    EXPECT_NEAR(loadedTerrain->GetLayer(4u).TilingScale, 1.25f, 1e-4f);
+    EXPECT_NEAR(loadedTerrain->GetLayer(4u).Glossiness, 0.35f, 1e-4f);
+    EXPECT_EQ(loadedTerrain->GetLayer(4u).HeightMapPath, "assets/diorama/terrain/cobble/tex_cobble_h.png");
+    EXPECT_EQ(loadedTerrain->GetLayer(4u).NormalMapPath, "assets/diorama/terrain/cobble/tex_cobble_n.png");
+    EXPECT_NEAR(loadedTerrain->GetLayer(5u).Glossiness, 0.06f, 1e-4f);
+    EXPECT_EQ(loadedTerrain->GetSplatTexel8(8u, 8u), expectedCobbleCenter);
+}
+
 } // namespace
 

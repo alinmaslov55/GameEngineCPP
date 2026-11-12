@@ -82,15 +82,23 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
 
     terrain->SetLayerTexture(0, Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/grass_seamless.png"));
     terrain->SetLayerTilingScale(0, 0.42f);
+    terrain->SetLayerGlossiness(0, 0.12f);
 
     terrain->SetLayerTexture(1, Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/dirt_seamless.png"));
     terrain->SetLayerTilingScale(1, 0.45f);
+    terrain->SetLayerGlossiness(1, 0.08f);
 
     terrain->SetLayerTexture(2, Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/cobble_seamless.png"));
     terrain->SetLayerTilingScale(2, 0.48f);
+    terrain->SetLayerGlossiness(2, 0.35f);
 
     terrain->SetLayerTexture(3, Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/soil_seamless.png"));
     terrain->SetLayerTilingScale(3, 0.50f);
+    terrain->SetLayerGlossiness(3, 0.15f);
+
+    terrain->SetLayerTexture(4, Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/cobble_seamless.png"));
+    terrain->SetLayerTilingScale(4, 0.48f);
+    terrain->SetLayerGlossiness(4, 0.35f);
 
     // Base fill: Lush Meadow Grass (Layer 0)
     terrain->FillLayer(0);

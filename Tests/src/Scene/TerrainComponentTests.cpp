@@ -6,8 +6,11 @@
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Core/JobSystem.h"
+#include "Engine/Renderer/Texture2DArray.h"
+#include <array>
 #include <cmath>
 #include <filesystem>
+#include <fstream>
 #include <vector>
 
 namespace {
@@ -488,6 +491,203 @@ TEST(BiomeAndScatterTest, PooledEntityStreamingLifecycleAndSafeHarvestDestroy) {
         scene.GetPoolManager().GetPoolFreeCount("proc_poi_umbral_shrine");
     EXPECT_GT(totalFreePooled, 0u);
     SUCCEED();
+}
+
+TEST(TerrainArraySplatTest, EightLayerNormalizationAndCrossChunkCobblestoneStitching) {
+    // 1. Direct NormalizeWeights8 exact invariant tests across arbitrary distributions
+    const std::array<std::array<float, 8>, 4> samples = {{
+        { 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f, 1.0f },
+        { 0.0f, 0.0f, 0.0f, 0.0f, 0.72f, 0.28f, 0.0f, 0.0f },
+        { 0.13f, 0.07f, 0.19f, 0.03f, 0.31f, 0.11f, 0.09f, 0.07f },
+        { 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f }
+    }};
+    for (uint32_t sIdx = 0; sIdx < samples.size(); ++sIdx) {
+        const auto norm = Engine::TerrainComponent::NormalizeWeights8(samples[sIdx], sIdx % 8u);
+        int sum = 0;
+        for (uint8_t v : norm) {
+            sum += static_cast<int>(v);
+        }
+        EXPECT_EQ(sum, 255);
+    }
+
+    // 2. Finite TerrainComponent: Paint overlapping layers 0..7 including 5th Cobblestone (4) & Scorched (5)
+    Engine::TerrainComponent terrain(16.0f, 16.0f, 32u, 32u);
+    const glm::vec3 origin{ 0.0f, 0.0f, 0.0f };
+    const glm::vec3 scale{ 1.0f, 1.0f, 1.0f };
+
+    terrain.PaintWorldBrush(4.0f, 4.0f, origin, scale, /*layerIndex=*/2u, 3.0f, 0.7f, 0.9f);
+    terrain.PaintWorldBrush(8.0f, 8.0f, origin, scale, /*layerIndex=*/4u, 3.5f, 0.6f, 1.0f);
+    terrain.PaintWorldBrush(11.0f, 11.0f, origin, scale, /*layerIndex=*/5u, 2.5f, 0.6f, 0.85f);
+    terrain.PaintWorldBrush(13.0f, 3.0f, origin, scale, /*layerIndex=*/7u, 2.0f, 0.6f, 0.75f);
+
+    const auto cobbleCenter = terrain.GetSplatTexel8(16u, 16u);
+    EXPECT_GT(cobbleCenter[4], 200u);
+
+    for (uint32_t pz = 0; pz < terrain.GetSplatHeight(); ++pz) {
+        for (uint32_t px = 0; px < terrain.GetSplatWidth(); ++px) {
+            const auto w8 = terrain.GetSplatTexel8(px, pz);
+            int sum = 0;
+            for (uint8_t v : w8) {
+                sum += static_cast<int>(v);
+            }
+            ASSERT_EQ(sum, 255) << "Unnormalized 8-layer texel at (" << px << ", " << pz << ")";
+        }
+    }
+
+    // 3. Infinite TerrainChunkManager: painting Layer 4 (Cobblestone) across shared corner (16, 16)
+    Engine::Scene scene("Chunk8LayerPaint");
+    auto* go = scene.CreateGameObject("ChunkTerrain");
+    auto* mgr = go->AddComponent<Engine::TerrainChunkManager>(16.0f, 65u, 1, 2);
+    mgr->UpdateStreaming({ 8.0f, 0.0f, 8.0f });
+    mgr->FlushPendingGenerations();
+
+    mgr->PaintWorldBrush(16.0f, 16.0f, /*layerIndex=*/4u, /*radiusWorld=*/3.0f, /*falloff=*/0.65f, /*strength=*/1.0f);
+
+    const auto* c00 = mgr->GetChunk({ 0, 0 });
+    const auto* c10 = mgr->GetChunk({ 1, 0 });
+    const auto* c01 = mgr->GetChunk({ 0, 1 });
+    const auto* c11 = mgr->GetChunk({ 1, 1 });
+    ASSERT_NE(c00, nullptr);
+    ASSERT_NE(c10, nullptr);
+    ASSERT_NE(c01, nullptr);
+    ASSERT_NE(c11, nullptr);
+
+    EXPECT_GT(c00->GetSplatTexel1(64u, 64u).r, 200u);
+    for (uint32_t i = 0; i < 65u; ++i) {
+        EXPECT_EQ(c00->GetSplatTexel1(64u, i), c10->GetSplatTexel1(0u, i));
+        EXPECT_EQ(c00->GetSplatTexel1(i, 64u), c01->GetSplatTexel1(i, 0u));
+    }
+    EXPECT_EQ(c00->GetSplatTexel8(64u, 64u), c11->GetSplatTexel8(0u, 0u));
+}
+
+TEST(TerrainArraySplatTest, CpuChannelPackersCompanionResolutionAndHeadlessArray) {
+    // 1. RGB (2x2) + Height (4x4 resampled to 4x4) -> RGBA8
+    const uint8_t rgbDiffuse[2 * 2 * 3] = {
+        10,  20,  30,   40,  50,  60,
+        70,  80,  90,  100, 110, 120
+    };
+    const uint8_t heightMap[4 * 4] = {
+        12,  12,  84,  84,
+        12,  12,  84,  84,
+        150, 150, 240, 240,
+        150, 150, 240, 240
+    };
+
+    std::vector<uint8_t> packedAH;
+    ASSERT_TRUE(Engine::Texture2DArray::PackAlbedoHeightRGBA8(
+        rgbDiffuse, 3, 2u, 2u,
+        heightMap, 1, 4u, 4u,
+        4u, 4u,
+        packedAH
+    ));
+    ASSERT_EQ(packedAH.size(), 4u * 4u * 4u);
+    // Corners match exact RGB diffuse and packed height in Alpha
+    EXPECT_EQ(packedAH[0], 10u);
+    EXPECT_EQ(packedAH[1], 20u);
+    EXPECT_EQ(packedAH[2], 30u);
+    EXPECT_EQ(packedAH[3], 12u);
+    const size_t lastIdx = (4u * 4u - 1u) * 4u;
+    EXPECT_EQ(packedAH[lastIdx + 0], 100u);
+    EXPECT_EQ(packedAH[lastIdx + 1], 110u);
+    EXPECT_EQ(packedAH[lastIdx + 2], 120u);
+    EXPECT_EQ(packedAH[lastIdx + 3], 240u);
+
+    // Without height map, fallbackHeight < 0 synthesizes luminance into A
+    std::vector<uint8_t> packedAutoLum;
+    ASSERT_TRUE(Engine::Texture2DArray::PackAlbedoHeightRGBA8(
+        rgbDiffuse, 3, 2u, 2u,
+        nullptr, 0, 0u, 0u,
+        2u, 2u,
+        packedAutoLum
+    ));
+    ASSERT_EQ(packedAutoLum.size(), 2u * 2u * 4u);
+    const uint8_t expectedLum0 = static_cast<uint8_t>(std::lround(0.299f * 10.0f + 0.587f * 20.0f + 0.114f * 30.0f));
+    EXPECT_EQ(packedAutoLum[3], expectedLum0);
+
+    // 2. Normal + Glossiness packer (null normal -> flat (128,128,255), Tar gloss=0.85 -> 217)
+    std::vector<uint8_t> packedTarNR;
+    ASSERT_TRUE(Engine::Texture2DArray::PackNormalGlossRGBA8(
+        nullptr, 0, 0u, 0u,
+        /*defaultGlossiness=*/0.85f,
+        nullptr, 0, 0u, 0u,
+        4u, 4u,
+        packedTarNR
+    ));
+    ASSERT_EQ(packedTarNR.size(), 4u * 4u * 4u);
+    EXPECT_EQ(packedTarNR[0], 128u);
+    EXPECT_EQ(packedTarNR[1], 128u);
+    EXPECT_EQ(packedTarNR[2], 255u);
+    EXPECT_EQ(packedTarNR[3], 217u);
+
+    // Custom non-unit normal normalizes cleanly & preserves matte glossiness (Ash = 0.08 -> 20)
+    const uint8_t tiltedNormal[3] = { 200u, 128u, 200u };
+    std::vector<uint8_t> packedAshNR;
+    ASSERT_TRUE(Engine::Texture2DArray::PackNormalGlossRGBA8(
+        tiltedNormal, 3, 1u, 1u,
+        /*defaultGlossiness=*/0.08f,
+        nullptr, 0, 0u, 0u,
+        2u, 2u,
+        packedAshNR
+    ));
+    ASSERT_EQ(packedAshNR.size(), 2u * 2u * 4u);
+    EXPECT_GT(packedAshNR[0], 128u);
+    EXPECT_EQ(packedAshNR[3], 20u);
+
+    // 3. Companion _d / _h / _n path resolution and end-to-end PNG file packing
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "ter03_companion_test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+    const std::filesystem::path diffPath = tempDir / "tex_cobble_d.png";
+    const std::filesystem::path heightPath = tempDir / "tex_cobble_h.png";
+    const std::filesystem::path normPath = tempDir / "tex_cobble_n.png";
+
+    Engine::TerrainComponent pngGen(4.0f, 4.0f, 8u, 8u);
+    ASSERT_TRUE(pngGen.SaveSplatmapToPNG(diffPath.string()));
+    ASSERT_TRUE(pngGen.SaveSplatmapToPNG(heightPath.string()));
+    ASSERT_TRUE(pngGen.SaveSplatmapToPNG(normPath.string()));
+
+    const auto resolved = Engine::Texture2DArray::ResolveTerrainMapCompanions(diffPath.string());
+    EXPECT_EQ(std::filesystem::path(resolved.DiffusePath).filename().string(), "tex_cobble_d.png");
+    EXPECT_EQ(std::filesystem::path(resolved.HeightPath).filename().string(), "tex_cobble_h.png");
+    EXPECT_EQ(std::filesystem::path(resolved.NormalPath).filename().string(), "tex_cobble_n.png");
+
+    std::vector<uint8_t> fileSliceAH;
+    std::vector<uint8_t> fileSliceNR;
+    ASSERT_TRUE(Engine::Texture2DArray::BuildAlbedoHeightSliceFromFiles(
+        resolved.DiffusePath, resolved.HeightPath, 16u, 16u, { 100, 100, 100, 255 }, fileSliceAH));
+    ASSERT_TRUE(Engine::Texture2DArray::BuildNormalGlossSliceFromFiles(
+        resolved.NormalPath, 0.35f, 16u, 16u, fileSliceNR));
+    EXPECT_EQ(fileSliceAH.size(), 16u * 16u * 4u);
+    EXPECT_EQ(fileSliceNR.size(), 16u * 16u * 4u);
+
+    // 4. Headless Texture2DArray construction & upload safety (no GL context)
+    Engine::Texture2DArray headlessArray(16u, 16u, 8u, true, true);
+    EXPECT_EQ(headlessArray.GetWidth(), 16u);
+    EXPECT_EQ(headlessArray.GetHeight(), 16u);
+    EXPECT_EQ(headlessArray.GetLayers(), 8u);
+    headlessArray.SetLayerData(4u, fileSliceAH.data());
+    EXPECT_TRUE(headlessArray.HasUploadedLayer(4u));
+
+    std::filesystem::remove_all(tempDir, ec);
+}
+
+TEST(TerrainArraySplatTest, BiomeSampleMapsSanctuaryCobbleToFifthLayerChannel) {
+    Engine::WorldGenConfig cfg;
+    cfg.Enabled = true;
+    cfg.SpawnSceneEntities = false;
+    cfg.Seed = 42ULL;
+
+    Engine::WorldBiomeGenerator gen(cfg);
+    const Engine::BiomeSample originSample = gen.EvaluateBiomeAtXZ(0.0f, 0.0f, 16.0f);
+    EXPECT_EQ(originSample.DominantBiome, Engine::BiomeType::SanctuaryCobble);
+
+    const std::array<uint8_t, 8> w8 = originSample.ToSplat8();
+    int sum = 0;
+    for (uint8_t v : w8) {
+        sum += static_cast<int>(v);
+    }
+    EXPECT_EQ(sum, 255);
+    EXPECT_GT(w8[4], 160u); // SanctuaryCobble lands natively in Layer 4 (Cobblestone)!
 }
 
 } // namespace

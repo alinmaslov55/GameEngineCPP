@@ -237,14 +237,26 @@ void SerializeTerrain(const GameObject* go, json& compsJson) {
     }
     if (terrain->HasUnsavedMemoryEdits() || terrain->GetSplatmapPath().empty()) {
         terrainJson["SplatDataBase64"] = terrain->EncodeSplatBase64();
+        const bool hasSecondaryWeights = std::any_of(
+            terrain->GetSplatData1().begin(), terrain->GetSplatData1().end(), [](uint8_t b) { return b != 0u; });
+        if (hasSecondaryWeights) {
+            terrainJson["SplatData1Base64"] = terrain->EncodeSplat1Base64();
+        }
     }
 
     json layersJson = json::array();
     for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
         const auto& layer = terrain->GetLayer(i);
         json layerJson = {
-            {"TilingScale", layer.TilingScale}
+            {"TilingScale", layer.TilingScale},
+            {"Glossiness", layer.Glossiness}
         };
+        if (!layer.HeightMapPath.empty()) {
+            layerJson["HeightMapPath"] = ResourceManager::ToRelativePath(layer.HeightMapPath);
+        }
+        if (!layer.NormalMapPath.empty()) {
+            layerJson["NormalMapPath"] = ResourceManager::ToRelativePath(layer.NormalMapPath);
+        }
         if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
             layerJson["TexturePath"] = ResourceManager::ToRelativePath(layer.LayerTexture->GetFilepath());
         }
@@ -281,8 +293,15 @@ void SerializeTerrainChunkManager(const GameObject* go, json& compsJson) {
     for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
         const auto& layer = mgr->GetLayer(i);
         json layerJson = {
-            {"TilingScale", layer.TilingScale}
+            {"TilingScale", layer.TilingScale},
+            {"Glossiness", layer.Glossiness}
         };
+        if (!layer.HeightMapPath.empty()) {
+            layerJson["HeightMapPath"] = ResourceManager::ToRelativePath(layer.HeightMapPath);
+        }
+        if (!layer.NormalMapPath.empty()) {
+            layerJson["NormalMapPath"] = ResourceManager::ToRelativePath(layer.NormalMapPath);
+        }
         if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
             layerJson["TexturePath"] = ResourceManager::ToRelativePath(layer.LayerTexture->GetFilepath());
         }
@@ -295,12 +314,18 @@ void SerializeTerrainChunkManager(const GameObject* go, json& compsJson) {
         if (!chunk.UserModified || chunk.SplatData.empty()) {
             continue;
         }
-        modChunksJson.push_back({
+        json chunkJson = {
             {"cx", coord.cx},
             {"cz", coord.cz},
             {"Resolution", chunk.SplatResolution},
             {"SplatDataBase64", TerrainComponent::EncodeRGBABase64(chunk.SplatData)}
-        });
+        };
+        const bool hasSecondaryWeights = std::any_of(
+            chunk.SplatData1.begin(), chunk.SplatData1.end(), [](uint8_t b) { return b != 0u; });
+        if (hasSecondaryWeights && chunk.SplatData1.size() == chunk.SplatData.size()) {
+            chunkJson["SplatData1Base64"] = TerrainComponent::EncodeRGBABase64(chunk.SplatData1);
+        }
+        modChunksJson.push_back(std::move(chunkJson));
     }
     if (!modChunksJson.empty()) {
         tcmJson["ModifiedChunks"] = std::move(modChunksJson);
@@ -805,6 +830,9 @@ void DeserializeTerrain(GameObject* go, const json& trJson, const std::string& n
         loadedFromBase64 = terrain->DecodeSplatBase64(
             trJson["SplatDataBase64"].get<std::string>(), splatW, splatH
         );
+        if (loadedFromBase64 && trJson.contains("SplatData1Base64") && trJson["SplatData1Base64"].is_string()) {
+            terrain->DecodeSplat1Base64(trJson["SplatData1Base64"].get<std::string>(), splatW, splatH);
+        }
     }
     if (!loadedFromBase64 && !splatPath.empty()) {
         terrain->LoadSplatmapFromPNG(ResourceManager::ResolvePath(splatPath));
@@ -815,6 +843,13 @@ void DeserializeTerrain(GameObject* go, const json& trJson, const std::string& n
         for (uint32_t i = 0; i < TerrainComponent::MaxLayers && i < layersArr.size(); ++i) {
             const auto& lJson = layersArr[i];
             terrain->SetLayerTilingScale(i, lJson.value("TilingScale", 0.45f));
+            terrain->SetLayerGlossiness(i, lJson.value("Glossiness", TerrainComponent::DefaultLayerGlossiness(i)));
+            if (lJson.contains("HeightMapPath") && lJson["HeightMapPath"].is_string()) {
+                terrain->SetLayerHeightMapPath(i, lJson["HeightMapPath"].get<std::string>());
+            }
+            if (lJson.contains("NormalMapPath") && lJson["NormalMapPath"].is_string()) {
+                terrain->SetLayerNormalMapPath(i, lJson["NormalMapPath"].get<std::string>());
+            }
             if (lJson.contains("TexturePath") && lJson["TexturePath"].is_string()) {
                 const std::string texPath = lJson["TexturePath"].get<std::string>();
                 if (!texPath.empty()) {
@@ -858,6 +893,13 @@ void DeserializeTerrainChunkManager(GameObject* go, const json& tcmJson, const s
         for (uint32_t i = 0; i < TerrainComponent::MaxLayers && i < layersArr.size(); ++i) {
             const auto& lJson = layersArr[i];
             mgr->SetLayerTilingScale(i, lJson.value("TilingScale", 0.45f));
+            mgr->SetLayerGlossiness(i, lJson.value("Glossiness", TerrainComponent::DefaultLayerGlossiness(i)));
+            if (lJson.contains("HeightMapPath") && lJson["HeightMapPath"].is_string()) {
+                mgr->SetLayerHeightMapPath(i, lJson["HeightMapPath"].get<std::string>());
+            }
+            if (lJson.contains("NormalMapPath") && lJson["NormalMapPath"].is_string()) {
+                mgr->SetLayerNormalMapPath(i, lJson["NormalMapPath"].get<std::string>());
+            }
             if (lJson.contains("TexturePath") && lJson["TexturePath"].is_string()) {
                 const std::string texPath = lJson["TexturePath"].get<std::string>();
                 if (!texPath.empty()) {
@@ -879,6 +921,11 @@ void DeserializeTerrainChunkManager(GameObject* go, const json& tcmJson, const s
             TerrainChunk& chunk = mgr->EnsureEditableChunk({ cx, cz });
             chunk.SplatResolution = cRes;
             if (TerrainComponent::DecodeRGBABase64(mcJson["SplatDataBase64"].get<std::string>(), cRes, cRes, chunk.SplatData)) {
+                if (mcJson.contains("SplatData1Base64") && mcJson["SplatData1Base64"].is_string()) {
+                    if (!TerrainComponent::DecodeRGBABase64(mcJson["SplatData1Base64"].get<std::string>(), cRes, cRes, chunk.SplatData1)) {
+                        ENGINE_CORE_WARN("SceneSerializer: Invalid SplatData1Base64 on chunk ({}, {})", cx, cz);
+                    }
+                }
                 chunk.MarkDirtyRect(0u, 0u, cRes - 1u, cRes - 1u, true);
             }
         }

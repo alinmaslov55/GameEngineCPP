@@ -45,9 +45,10 @@ public:
     void SetFloat4(std::string_view name, const glm::vec4& value) const;
     void SetMat4(std::string_view name, const glm::mat4& matrix) const;
     void BindUniformBlock(std::string_view blockName, uint32_t bindingPoint) const;
+    [[nodiscard]] int GetUniformLocation(std::string_view name) const;
+    [[nodiscard]] bool HasUniform(std::string_view name) const { return GetUniformLocation(name) != -1; }
 
 private:
-    [[nodiscard]] int GetUniformLocation(std::string_view name) const;
     void ApplyUniformBlockBindings() const;
     std::string ReadFile(const std::string& filepath);
     std::unordered_map<uint32_t, std::string> PreProcess(const std::string& source);

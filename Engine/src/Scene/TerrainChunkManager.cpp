@@ -162,21 +162,49 @@ glm::u8vec4 TerrainChunk::GetSplatTexel(uint32_t px, uint32_t pz) const noexcept
     };
 }
 
+glm::u8vec4 TerrainChunk::GetSplatTexel1(uint32_t px, uint32_t pz) const noexcept {
+    if (px >= SplatResolution || pz >= SplatResolution || SplatData1.empty()) {
+        return { 0, 0, 0, 0 };
+    }
+    const size_t idx = (static_cast<size_t>(pz) * SplatResolution + px) * 4u;
+    return {
+        SplatData1[idx + 0],
+        SplatData1[idx + 1],
+        SplatData1[idx + 2],
+        SplatData1[idx + 3]
+    };
+}
+
+std::array<uint8_t, TerrainComponent::MaxLayers> TerrainChunk::GetSplatTexel8(uint32_t px, uint32_t pz) const noexcept {
+    const glm::u8vec4 w0 = GetSplatTexel(px, pz);
+    const glm::u8vec4 w1 = GetSplatTexel1(px, pz);
+    return { w0.r, w0.g, w0.b, w0.a, w1.r, w1.g, w1.b, w1.a };
+}
+
 void TerrainChunk::SetSplatTexel(uint32_t px, uint32_t pz, const glm::u8vec4& weights) noexcept {
-    if (px >= SplatResolution || pz >= SplatResolution || SplatData.empty()) {
+    SetSplatTexel8(px, pz, { weights.r, weights.g, weights.b, weights.a, 0u, 0u, 0u, 0u });
+}
+
+void TerrainChunk::SetSplatTexel8(uint32_t px, uint32_t pz, const std::array<uint8_t, TerrainComponent::MaxLayers>& weights) noexcept {
+    if (px >= SplatResolution || pz >= SplatResolution) {
         return;
     }
-    const glm::u8vec4 norm = TerrainComponent::NormalizeWeights(
-        static_cast<float>(weights.r),
-        static_cast<float>(weights.g),
-        static_cast<float>(weights.b),
-        static_cast<float>(weights.a)
-    );
+    std::array<float, TerrainComponent::MaxLayers> fw{};
+    for (uint32_t c = 0; c < TerrainComponent::MaxLayers; ++c) {
+        fw[c] = static_cast<float>(weights[c]);
+    }
+    const std::array<uint8_t, TerrainComponent::MaxLayers> norm = TerrainComponent::NormalizeWeights8(fw, 0u);
+    if (SplatData.size() < static_cast<size_t>(SplatResolution) * SplatResolution * 4u) {
+        SplatData.assign(static_cast<size_t>(SplatResolution) * SplatResolution * 4u, 0u);
+    }
+    if (SplatData1.size() < static_cast<size_t>(SplatResolution) * SplatResolution * 4u) {
+        SplatData1.assign(static_cast<size_t>(SplatResolution) * SplatResolution * 4u, 0u);
+    }
     const size_t idx = (static_cast<size_t>(pz) * SplatResolution + px) * 4u;
-    SplatData[idx + 0] = norm.r;
-    SplatData[idx + 1] = norm.g;
-    SplatData[idx + 2] = norm.b;
-    SplatData[idx + 3] = norm.a;
+    for (uint32_t c = 0; c < 4u; ++c) {
+        SplatData[idx + c] = norm[c];
+        SplatData1[idx + c] = norm[c + 4u];
+    }
     MarkDirtyRect(px, pz, px, pz, true);
 }
 
@@ -200,23 +228,48 @@ void TerrainChunk::MarkDirtyRect(uint32_t minX, uint32_t minY, uint32_t maxX, ui
 }
 
 const std::shared_ptr<Texture>& TerrainChunk::SyncGpuSplatTexture() {
-    return TerrainComponent::SyncRgbaGpuTexture(
+    bool dirty0 = GpuDirty;
+    bool dirty1 = GpuDirty;
+    TerrainComponent::SyncRgbaGpuTexture(
         GpuSplatTexture,
         UploadScratch,
         SplatData,
         SplatResolution,
         SplatResolution,
-        GpuDirty,
+        dirty0,
         DirtyMinX,
         DirtyMinY,
         DirtyMaxX,
         DirtyMaxY
     );
+    TerrainComponent::SyncRgbaGpuTexture(
+        GpuSplatTexture1,
+        UploadScratch,
+        SplatData1,
+        SplatResolution,
+        SplatResolution,
+        dirty1,
+        DirtyMinX,
+        DirtyMinY,
+        DirtyMaxX,
+        DirtyMaxY
+    );
+    GpuDirty = dirty0 || dirty1;
+    return GpuSplatTexture;
+}
+
+std::pair<std::shared_ptr<Texture>, std::shared_ptr<Texture>> TerrainChunk::SyncGpuSplatTextures() {
+    SyncGpuSplatTexture();
+    return { GpuSplatTexture, GpuSplatTexture1 };
 }
 
 TerrainChunkManager::TerrainChunkManager()
     : m_AsyncChannel(std::make_shared<AsyncChunkChannel>()),
-      m_BiomeGenerator(std::make_shared<const WorldBiomeGenerator>(m_WorldGenConfig)) {}
+      m_BiomeGenerator(std::make_shared<const WorldBiomeGenerator>(m_WorldGenConfig)) {
+    for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+        m_Layers[i].Glossiness = TerrainComponent::DefaultLayerGlossiness(i);
+    }
+}
 
 TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
                                          uint32_t splatResolution,
@@ -227,7 +280,11 @@ TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
       ActiveRadiusChunks(std::max(0, activeRadiusChunks)),
       CacheRetentionRadius(std::max(ActiveRadiusChunks, cacheRetentionRadius)),
       m_AsyncChannel(std::make_shared<AsyncChunkChannel>()),
-      m_BiomeGenerator(std::make_shared<const WorldBiomeGenerator>(m_WorldGenConfig)) {}
+      m_BiomeGenerator(std::make_shared<const WorldBiomeGenerator>(m_WorldGenConfig)) {
+    for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+        m_Layers[i].Glossiness = TerrainComponent::DefaultLayerGlossiness(i);
+    }
+}
 
 TerrainChunkManager::~TerrainChunkManager() {
     ShutdownAsyncWorkers();
@@ -301,6 +358,7 @@ void TerrainChunkManager::DispatchChunkGeneration(ChunkCoord coord) {
                 chunkSize,
                 res,
                 payload.SplatData,
+                payload.SplatData1,
                 payload.BiomeMap,
                 payload.Props,
                 payload.POIs
@@ -308,6 +366,7 @@ void TerrainChunkManager::DispatchChunkGeneration(ChunkCoord coord) {
         } else {
             const size_t texelCount = static_cast<size_t>(res) * static_cast<size_t>(res);
             payload.SplatData.assign(texelCount * 4u, 0u);
+            payload.SplatData1.assign(texelCount * 4u, 0u);
             for (size_t i = 0; i < payload.SplatData.size(); i += 4u) {
                 payload.SplatData[i + 0] = 255u;
             }
@@ -358,6 +417,7 @@ void TerrainChunkManager::DrainReadyPayloads() {
         chunk.ChunkSizeMeters = payload.ChunkSize;
         chunk.SplatResolution = payload.Resolution;
         chunk.SplatData = std::move(payload.SplatData);
+        chunk.SplatData1 = std::move(payload.SplatData1);
         chunk.BiomeMap = std::move(payload.BiomeMap);
         chunk.Props = std::move(payload.Props);
         chunk.POIs = std::move(payload.POIs);
@@ -384,6 +444,7 @@ void TerrainChunkManager::DrainReadyPayloads() {
             SpawnChunkEntities(chunk);
         } else {
             chunk.GpuSplatTexture.reset();
+            chunk.GpuSplatTexture1.reset();
             chunk.State = ChunkLoadState::CachedInRam;
             ReleaseChunkEntities(chunk);
         }
@@ -419,6 +480,8 @@ void TerrainChunkManager::SynchronizeSharedBorders(TerrainChunk& chunk) noexcept
             const uint32_t dstZ0 = (dz > 0) ? last : 0u;
             const uint32_t srcZ0 = (dz < 0) ? last : 0u;
 
+            const bool copySecondary = (chunk.SplatData1.size() == chunk.SplatData.size() &&
+                                        neighbor->SplatData1.size() == neighbor->SplatData.size());
             for (uint32_t oz = 0; oz < zCount; ++oz) {
                 const uint32_t dstZ = dstZ0 + oz;
                 const uint32_t srcZ = srcZ0 + oz;
@@ -428,6 +491,9 @@ void TerrainChunkManager::SynchronizeSharedBorders(TerrainChunk& chunk) noexcept
                     const size_t dstIdx = (static_cast<size_t>(dstZ) * R + dstX) * 4u;
                     const size_t srcIdx = (static_cast<size_t>(srcZ) * R + srcX) * 4u;
                     std::memcpy(&chunk.SplatData[dstIdx], &neighbor->SplatData[srcIdx], 4u);
+                    if (copySecondary) {
+                        std::memcpy(&chunk.SplatData1[dstIdx], &neighbor->SplatData1[srcIdx], 4u);
+                    }
                 }
             }
         }
@@ -460,6 +526,7 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
             evictCandidates.emplace_back(coord, &chunk);
         } else if (dist > activeRadius && chunk.State != ChunkLoadState::CachedInRam) {
             chunk.GpuSplatTexture.reset();
+            chunk.GpuSplatTexture1.reset();
             chunk.State = ChunkLoadState::CachedInRam;
             chunk.InUploadQueue = false;
             ReleaseChunkEntities(chunk);
@@ -606,7 +673,9 @@ TerrainChunk& TerrainChunkManager::EnsureEditableChunk(ChunkCoord coord) {
         if (existing.SplatData.empty()) {
             existing.ChunkSizeMeters = std::max(1.0f, ChunkSizeMeters);
             existing.SplatResolution = std::clamp(SplatResolution, 5u, 513u);
-            existing.SplatData.assign(static_cast<size_t>(existing.SplatResolution) * existing.SplatResolution * 4u, 0u);
+            const size_t byteCount = static_cast<size_t>(existing.SplatResolution) * existing.SplatResolution * 4u;
+            existing.SplatData.assign(byteCount, 0u);
+            existing.SplatData1.assign(byteCount, 0u);
             for (size_t i = 0; i < existing.SplatData.size(); i += 4u) {
                 existing.SplatData[i + 0] = 255u;
             }
@@ -625,7 +694,9 @@ TerrainChunk& TerrainChunkManager::EnsureEditableChunk(ChunkCoord coord) {
     created.ChunkSizeMeters = std::max(1.0f, ChunkSizeMeters);
     created.SplatResolution = res;
     created.LastAccessFrame = m_FrameCounter;
-    created.SplatData.assign(static_cast<size_t>(res) * res * 4u, 0u);
+    const size_t byteCount = static_cast<size_t>(res) * res * 4u;
+    created.SplatData.assign(byteCount, 0u);
+    created.SplatData1.assign(byteCount, 0u);
     for (size_t i = 0; i < created.SplatData.size(); i += 4u) {
         created.SplatData[i + 0] = 255u;
     }
@@ -658,6 +729,7 @@ void TerrainChunkManager::PaintWorldBrush(float worldX,
             uint32_t dMinX = 0, dMinZ = 0, dMaxX = 0, dMaxZ = 0;
             if (TerrainComponent::PaintSplatBufferXZ(
                     chunk->SplatData,
+                    chunk->SplatData1,
                     chunk->SplatResolution,
                     chunk->SplatResolution,
                     cx,
@@ -679,7 +751,7 @@ void TerrainChunkManager::PaintWorldBrush(float worldX,
                     dMaxZ)) {
                 chunk->MarkDirtyRect(dMinX, dMinZ, dMaxX, dMaxZ, true);
                 chunk->LastAccessFrame = m_FrameCounter;
-                if (chunk->IsResident() && !chunk->HasGpuTexture()) {
+                if (chunk->IsResident() && (!chunk->HasGpuTexture() || chunk->GpuSplatTexture1 == nullptr)) {
                     EnqueueGpuUpload({ cx, cz }, *chunk);
                 }
             }
@@ -722,11 +794,29 @@ void TerrainChunkManager::SetLayerTexture(uint32_t layerIndex, const std::shared
     m_Layers[layerIndex].LayerTexture = texture;
 }
 
+void TerrainChunkManager::SetLayerHeightMapPath(uint32_t layerIndex, const std::string& path) {
+    if (layerIndex < TerrainComponent::MaxLayers) {
+        m_Layers[layerIndex].HeightMapPath = path;
+    }
+}
+
+void TerrainChunkManager::SetLayerNormalMapPath(uint32_t layerIndex, const std::string& path) {
+    if (layerIndex < TerrainComponent::MaxLayers) {
+        m_Layers[layerIndex].NormalMapPath = path;
+    }
+}
+
 void TerrainChunkManager::SetLayerTilingScale(uint32_t layerIndex, float tilingScale) noexcept {
     if (layerIndex >= TerrainComponent::MaxLayers) {
         return;
     }
     m_Layers[layerIndex].TilingScale = std::clamp(tilingScale, 0.02f, 20.0f);
+}
+
+void TerrainChunkManager::SetLayerGlossiness(uint32_t layerIndex, float glossiness) noexcept {
+    if (layerIndex < TerrainComponent::MaxLayers) {
+        m_Layers[layerIndex].Glossiness = std::clamp(glossiness, 0.0f, 1.0f);
+    }
 }
 
 const TerrainLayer& TerrainChunkManager::GetLayer(uint32_t layerIndex) const noexcept {

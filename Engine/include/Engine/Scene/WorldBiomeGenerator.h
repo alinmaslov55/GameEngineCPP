@@ -50,6 +50,7 @@ struct BiomeSample {
     float Elevation = 0.0f;
 
     [[nodiscard]] glm::u8vec4 ToSplatRGBA8() const noexcept;
+    [[nodiscard]] std::array<uint8_t, 8> ToSplat8() const noexcept;
 };
 
 struct PropSpawnDesc {
@@ -127,6 +128,7 @@ public:
                            float chunkSizeMeters,
                            uint32_t splatResolution,
                            std::vector<uint8_t>& outSplatRGBA,
+                           std::vector<uint8_t>& outSplatRGBA1,
                            std::vector<BiomeType>& outBiomeMap,
                            std::vector<PropSpawnDesc>& outProps,
                            std::vector<POISpawnDesc>& outPOIs) const;

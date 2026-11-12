@@ -3,6 +3,7 @@
 #include "Engine/Renderer/Renderer.h"
 #include "Engine/Renderer/Shader.h"
 #include "Engine/Renderer/Texture.h"
+#include "Engine/Renderer/Texture2DArray.h"
 #include "Engine/Renderer/VertexArray.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Utils/Logger.h"
@@ -14,6 +15,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <vector>
 
 namespace Engine {
 
@@ -24,14 +26,30 @@ struct TerrainVertex {
     glm::vec2 SplatUV;
 };
 
+static const std::array<glm::u8vec4, TerrainComponent::MaxLayers> kFallbackLayerColors = {{
+    glm::u8vec4( 62,  98,  66, 255), // 0: Grass
+    glm::u8vec4(112, 104,  98, 255), // 1: Ash
+    glm::u8vec4( 34,  28,  42, 255), // 2: Tar
+    glm::u8vec4(186, 184, 174, 255), // 3: Chalk
+    glm::u8vec4(108, 114, 122, 255), // 4: Cobblestone
+    glm::u8vec4( 46,  42,  40, 255), // 5: Scorched Ash
+    glm::u8vec4( 72,  48,  38, 255), // 6: Spare 1
+    glm::u8vec4( 90,  86,  78, 255)  // 7: Spare 2
+}};
+
 struct TerrainRendererStorage {
     std::shared_ptr<VertexArray> GroundVAO;
     std::shared_ptr<VertexBuffer> GroundVBO;
     std::shared_ptr<IndexBuffer> GroundIB;
     std::unordered_map<uint32_t, std::shared_ptr<VertexArray>> StitchedVAOs;
     std::shared_ptr<Shader> SplatShader;
-    std::array<std::shared_ptr<Texture>, TerrainComponent::MaxLayers> FallbackLayerTextures;
-    std::shared_ptr<Texture> FallbackSplatTex;
+
+    std::shared_ptr<Texture2DArray> AlbedoHeightArray;
+    std::shared_ptr<Texture2DArray> NormalRoughnessArray;
+    std::array<std::string, TerrainComponent::MaxLayers> CachedLayerSignatures{};
+
+    std::shared_ptr<Texture> FallbackSplatTex0;
+    std::shared_ptr<Texture> FallbackSplatTex1;
     std::shared_ptr<Texture> WhiteFallbackDepthTex;
 
     bool BrushPreviewEnabled = false;
@@ -41,6 +59,70 @@ struct TerrainRendererStorage {
 };
 
 std::unique_ptr<TerrainRendererStorage> s_TerrainData = nullptr;
+
+std::string MakeRawLayerSignature(const TerrainLayer& layer, uint32_t layerIndex) {
+    const std::string diffusePath = layer.LayerTexture ? layer.LayerTexture->GetFilepath() : "";
+    const uint32_t texId = layer.LayerTexture ? layer.LayerTexture->GetRendererID() : 0u;
+    const bool loaded = layer.LayerTexture ? layer.LayerTexture->IsLoaded() : false;
+    const int glossQ = static_cast<int>(std::lround(std::clamp(layer.Glossiness, 0.0f, 1.0f) * 1000.0f));
+    return std::to_string(layerIndex) + "|" + std::to_string(texId) + "|" + (loaded ? "1" : "0") + "|" +
+           diffusePath + "|" + layer.HeightMapPath + "|" + layer.NormalMapPath + "|" + std::to_string(glossQ);
+}
+
+void SyncLayerTextureArrays(const std::array<TerrainLayer, TerrainComponent::MaxLayers>& layers) {
+    if (!s_TerrainData || !s_TerrainData->AlbedoHeightArray || !s_TerrainData->NormalRoughnessArray) {
+        return;
+    }
+
+    const uint32_t arrayW = s_TerrainData->AlbedoHeightArray->GetWidth();
+    const uint32_t arrayH = s_TerrainData->AlbedoHeightArray->GetHeight();
+    bool anySliceUpdated = false;
+    std::vector<uint8_t> albedoHeightScratch;
+    std::vector<uint8_t> normalGlossScratch;
+
+    for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+        const auto& layer = layers[i];
+        const std::string rawSig = MakeRawLayerSignature(layer, i);
+        if (rawSig == s_TerrainData->CachedLayerSignatures[i]) {
+            continue;
+        }
+        s_TerrainData->CachedLayerSignatures[i] = rawSig;
+
+        const std::string diffusePath = layer.LayerTexture ? layer.LayerTexture->GetFilepath() : "";
+        const ResolvedTerrainMaps resolved = Texture2DArray::ResolveTerrainMapCompanions(
+            diffusePath,
+            layer.HeightMapPath,
+            layer.NormalMapPath
+        );
+
+        const std::string& effectiveDiffuse = !resolved.DiffusePath.empty() ? resolved.DiffusePath : diffusePath;
+        if (Texture2DArray::BuildAlbedoHeightSliceFromFiles(
+                effectiveDiffuse,
+                resolved.HeightPath,
+                arrayW,
+                arrayH,
+                kFallbackLayerColors[i],
+                albedoHeightScratch)) {
+            s_TerrainData->AlbedoHeightArray->SetLayerData(i, albedoHeightScratch.data(), /*generateMips=*/false);
+            anySliceUpdated = true;
+        }
+
+        if (Texture2DArray::BuildNormalGlossSliceFromFiles(
+                resolved.NormalPath,
+                layer.Glossiness,
+                arrayW,
+                arrayH,
+                normalGlossScratch)) {
+            s_TerrainData->NormalRoughnessArray->SetLayerData(i, normalGlossScratch.data(), /*generateMips=*/false);
+            anySliceUpdated = true;
+        }
+    }
+
+    if (anySliceUpdated) {
+        s_TerrainData->AlbedoHeightArray->GenerateMipmaps();
+        s_TerrainData->NormalRoughnessArray->GenerateMipmaps();
+    }
+}
 
 std::shared_ptr<VertexArray> GetOrCreateStitchedVAO(uint32_t splatResolution) {
     const uint32_t safeRes = std::clamp(splatResolution, 5u, 513u);
@@ -79,26 +161,22 @@ void BindSplatShaderAndState(const std::array<TerrainLayer, TerrainComponent::Ma
                              float edgeDarkening,
                              const PerspectiveCamera& camera,
                              const SceneLightingData* lighting) {
-    glm::vec4 layerTiling(0.45f);
+    SyncLayerTextureArrays(layers);
+    s_TerrainData->AlbedoHeightArray->Bind(2);
+    s_TerrainData->NormalRoughnessArray->Bind(3);
+
+    std::array<float, TerrainComponent::MaxLayers> layerTiling{};
     for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
-        const auto& layer = layers[i];
-        layerTiling[static_cast<glm::length_t>(i)] = layer.TilingScale;
-        if (layer.LayerTexture && layer.LayerTexture->GetRendererID() != 0) {
-            if (!layer.LayerTexture->IsWrapRepeat()) {
-                layer.LayerTexture->SetWrapRepeat(true);
-            }
-            layer.LayerTexture->Bind(i + 1u);
-        } else {
-            s_TerrainData->FallbackLayerTextures[i]->Bind(i + 1u);
-        }
+        layerTiling[i] = layers[i].TilingScale;
     }
 
     auto& shader = *s_TerrainData->SplatShader;
     shader.Bind();
     shader.SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
-    shader.SetFloat4("u_LayerTiling", layerTiling);
+    shader.SetFloatArray("u_LayerTilingScales", layerTiling.data(), TerrainComponent::MaxLayers);
     shader.SetFloat("u_BlendSharpness", blendSharpness);
     shader.SetFloat("u_EdgeDarkening", edgeDarkening);
+    shader.SetFloat3("u_CameraPos", camera.GetPosition());
 
     glActiveTexture(GL_TEXTURE5);
     if (lighting && lighting->LightingActive) {
@@ -167,7 +245,7 @@ void TerrainRenderer::Init() {
         return;
     }
 
-    ENGINE_CORE_INFO("Initializing TerrainRenderer (4-Layer Splatmap + 2.5D Shadow & PointLight Shader)...");
+    ENGINE_CORE_INFO("Initializing TerrainRenderer (8-Layer Texture2DArray + Height/Normal/Specular Shader)...");
     s_TerrainData = std::make_unique<TerrainRendererStorage>();
 
     // Unit [0, 1] x [0, 1] XZ quad with upward +Y normal
@@ -191,21 +269,28 @@ void TerrainRenderer::Init() {
     s_TerrainData->GroundIB = std::make_shared<IndexBuffer>(indices, 6);
     s_TerrainData->GroundVAO->SetIndexBuffer(s_TerrainData->GroundIB);
 
-    const uint8_t fallbackColors[4][4] = {
-        {  62,  98,  66, 255 },
-        { 126,  92,  68, 255 },
-        { 108, 114, 122, 255 },
-        {  72,  48,  38, 255 }
-    };
-    for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
-        s_TerrainData->FallbackLayerTextures[i] = std::make_shared<Texture>(
-            1u, 1u, fallbackColors[i], /*linearFilter=*/true, /*repeatWrap=*/true
-        );
-    }
+    s_TerrainData->AlbedoHeightArray = std::make_shared<Texture2DArray>(
+        Texture2DArray::DefaultWidth,
+        Texture2DArray::DefaultHeight,
+        TerrainComponent::MaxLayers,
+        /*linearFilter=*/true,
+        /*repeatWrap=*/true
+    );
+    s_TerrainData->NormalRoughnessArray = std::make_shared<Texture2DArray>(
+        Texture2DArray::DefaultWidth,
+        Texture2DArray::DefaultHeight,
+        TerrainComponent::MaxLayers,
+        /*linearFilter=*/true,
+        /*repeatWrap=*/true
+    );
 
-    const uint8_t defaultSplatPixel[4] = { 255, 0, 0, 0 };
-    s_TerrainData->FallbackSplatTex = std::make_shared<Texture>(
-        1u, 1u, defaultSplatPixel, /*linearFilter=*/false, /*repeatWrap=*/false
+    const uint8_t defaultSplatPixel0[4] = { 255, 0, 0, 0 };
+    s_TerrainData->FallbackSplatTex0 = std::make_shared<Texture>(
+        1u, 1u, defaultSplatPixel0, /*linearFilter=*/false, /*repeatWrap=*/false
+    );
+    const uint8_t defaultSplatPixel1[4] = { 0, 0, 0, 0 };
+    s_TerrainData->FallbackSplatTex1 = std::make_shared<Texture>(
+        1u, 1u, defaultSplatPixel1, /*linearFilter=*/false, /*repeatWrap=*/false
     );
 
     const uint8_t whitePixel[4] = { 255, 255, 255, 255 };
@@ -216,11 +301,10 @@ void TerrainRenderer::Init() {
     std::string shaderPath = ResourceManager::ResolvePath("assets/shaders/TerrainSplatmap.glsl");
     s_TerrainData->SplatShader = std::make_shared<Shader>(shaderPath);
     s_TerrainData->SplatShader->Bind();
-    s_TerrainData->SplatShader->SetInt("u_SplatMap", 0);
-    s_TerrainData->SplatShader->SetInt("u_Layer0", 1);
-    s_TerrainData->SplatShader->SetInt("u_Layer1", 2);
-    s_TerrainData->SplatShader->SetInt("u_Layer2", 3);
-    s_TerrainData->SplatShader->SetInt("u_Layer3", 4);
+    s_TerrainData->SplatShader->SetInt("u_SplatWeights0", 0);
+    s_TerrainData->SplatShader->SetInt("u_SplatWeights1", 1);
+    s_TerrainData->SplatShader->SetInt("u_AlbedoHeightArray", 2);
+    s_TerrainData->SplatShader->SetInt("u_NormalRoughnessArray", 3);
     s_TerrainData->SplatShader->SetInt("u_ShadowMap", 5);
     s_TerrainData->SplatShader->SetInt("u_TorchShadowMap", 6);
     s_TerrainData->SplatShader->BindUniformBlock("PointLightBlock", SceneLightingData::PointLightUBOBinding);
@@ -267,8 +351,8 @@ void TerrainRenderer::RenderTerrain(TerrainComponent& terrain,
         return;
     }
 
-    const auto& splatTex = terrain.SyncGpuSplatTexture();
-    if (!splatTex || splatTex->GetRendererID() == 0) {
+    auto [splatTex0, splatTex1] = terrain.SyncGpuSplatTextures();
+    if (!splatTex0 || splatTex0->GetRendererID() == 0) {
         return;
     }
 
@@ -276,7 +360,12 @@ void TerrainRenderer::RenderTerrain(TerrainComponent& terrain,
     const float totalDepth = std::max(0.01f, terrain.GetDepth() * std::abs(scale.z));
 
     BindSplatShaderAndState(terrain.GetLayers(), terrain.GetBlendSharpness(), terrain.GetEdgeDarkening(), camera, lighting);
-    splatTex->Bind(0);
+    splatTex0->Bind(0);
+    if (splatTex1 && splatTex1->GetRendererID() != 0) {
+        splatTex1->Bind(1);
+    } else {
+        s_TerrainData->FallbackSplatTex1->Bind(1);
+    }
 
     auto& shader = *s_TerrainData->SplatShader;
     shader.SetFloat3("u_TerrainOrigin", origin);
@@ -327,15 +416,18 @@ void TerrainRenderer::RenderChunkManager(TerrainChunkManager& chunkManager,
 
         if (chunk.HasGpuTexture() && chunk.GpuDirty) {
             // Sync incremental paint sub-rect immediately for already-resident textures
-            chunk.SyncGpuSplatTexture();
+            chunk.SyncGpuSplatTextures();
         }
 
-        const auto& splatTex = chunk.HasGpuTexture()
+        const auto& splatTex0 = chunk.HasGpuTexture()
             ? chunk.GpuSplatTexture
-            : s_TerrainData->FallbackSplatTex;
-        if (!splatTex || splatTex->GetRendererID() == 0) {
+            : s_TerrainData->FallbackSplatTex0;
+        if (!splatTex0 || splatTex0->GetRendererID() == 0) {
             continue;
         }
+        const auto& splatTex1 = (chunk.GpuSplatTexture1 && chunk.GpuSplatTexture1->GetRendererID() != 0)
+            ? chunk.GpuSplatTexture1
+            : s_TerrainData->FallbackSplatTex1;
 
         if (!activeVao || boundResolution != chunk.SplatResolution) {
             boundResolution = chunk.SplatResolution;
@@ -343,7 +435,8 @@ void TerrainRenderer::RenderChunkManager(TerrainChunkManager& chunkManager,
             activeVao->Bind();
         }
 
-        splatTex->Bind(0);
+        splatTex0->Bind(0);
+        splatTex1->Bind(1);
         shader.SetFloat3("u_TerrainOrigin", origin);
         shader.SetFloat2("u_TerrainSizeXZ", { chunkSize, chunkSize });
         Renderer::DrawIndexed(activeVao, 6);

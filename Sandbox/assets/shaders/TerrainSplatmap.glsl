@@ -30,17 +30,22 @@ layout(location = 0) out vec4 o_Color;
 in vec2 v_SplatUV;
 in vec3 v_WorldPos;
 
-uniform sampler2D u_SplatMap;
-uniform sampler2D u_Layer0;
-uniform sampler2D u_Layer1;
-uniform sampler2D u_Layer2;
-uniform sampler2D u_Layer3;
+// 8-Layer Terrain Splatweight Textures (Slot 0: 0..3, Slot 1: 4..7)
+uniform sampler2D u_SplatWeights0;
+uniform sampler2D u_SplatWeights1;
+
+// GL_TEXTURE_2D_ARRAY Samplers (Slot 2: Diffuse RGB + Height A, Slot 3: Tangent Normal RGB + Glossiness A)
+uniform sampler2DArray u_AlbedoHeightArray;
+uniform sampler2DArray u_NormalRoughnessArray;
+
+// Shadow Maps
 uniform sampler2D u_ShadowMap;
 uniform sampler2D u_TorchShadowMap;
 
-uniform vec4 u_LayerTiling;
+uniform float u_LayerTilingScales[8];
 uniform float u_BlendSharpness;
 uniform float u_EdgeDarkening;
+uniform vec3 u_CameraPos;
 
 // 2.5D Scene Lighting & Cutout Shadow Uniforms
 uniform int u_LightingEnabled;
@@ -136,9 +141,22 @@ float computeShadowVisibility(vec3 worldPos) {
     return litSum / 9.0;
 }
 
-vec3 evaluatePointLights(vec3 worldPos) {
-    vec3 accum = vec3(0.0);
+void evaluatePointLights(vec3 worldPos,
+                         vec3 normalWorld,
+                         vec3 viewDir,
+                         float glossiness,
+                         out vec3 outDiffuse,
+                         out vec3 outSpecular) {
+    outDiffuse = vec3(0.0);
+    outSpecular = vec3(0.0);
+
     int count = clamp(u_PointLightHeader.x, 0, 32);
+    if (count == 0) {
+        return;
+    }
+
+    float shininess = mix(8.0, 96.0, glossiness);
+
     for (int i = 0; i < count; ++i) {
         vec4 posRadius = u_PointLights[i].PosRadius;
         vec3 toLight = posRadius.xyz - worldPos;
@@ -146,10 +164,13 @@ vec3 evaluatePointLights(vec3 worldPos) {
         float radius = max(posRadius.w, 0.05);
         if (distSq < radius * radius) {
             float dist = sqrt(distSq);
+            vec3 lightDir = toLight / max(dist, 1e-4);
+
             float x = clamp(1.0 - (dist / radius), 0.0, 1.0);
             float falloff = max(u_PointLights[i].Params.x, 0.25);
             float atten = pow(x * x * (3.0 - 2.0 * x), falloff);
             float torchVis = 1.0;
+
             if (i == 0 && u_TorchShadowsEnabled == 1 && u_PointLightHeader.y == 1) {
                 vec3 toSample = worldPos - u_TorchShadowPosRadius.xyz;
                 float horizDist = length(toSample.xz);
@@ -201,56 +222,146 @@ vec3 evaluatePointLights(vec3 worldPos) {
                     }
                 }
             }
+
             vec4 colInt = u_PointLights[i].ColorIntensity;
-            accum += colInt.rgb * (colInt.a * atten * torchVis);
+            vec3 lightIntensity = colInt.rgb * (colInt.a * atten * torchVis);
+
+            // Subtle wrapped normal response for the 2.5D ground plane
+            float nDotL = max(dot(normalWorld, lightDir), 0.0);
+            float diffFactor = mix(1.0, nDotL, 0.35);
+            outDiffuse += lightIntensity * diffFactor;
+
+            // Half-vector Blinn-Phong specular highlight for Tar sheen and wet Cobblestone
+            if (glossiness > 0.01) {
+                vec3 halfVec = normalize(lightDir + viewDir);
+                float nDotH = max(dot(normalWorld, halfVec), 0.0);
+                float specFactor = pow(nDotH, shininess) * glossiness;
+                outSpecular += lightIntensity * specFactor;
+            }
         }
     }
-    return accum;
 }
 
 void main() {
     vec2 worldXZ = v_WorldPos.xz;
-    vec4 w = texture(u_SplatMap, v_SplatUV);
-    float wSum = max(w.r + w.g + w.b + w.a, 1e-4);
-    w /= wSum;
 
-    vec3 c0 = texture(u_Layer0, worldXZ * u_LayerTiling.x).rgb;
-    vec3 c1 = texture(u_Layer1, worldXZ * u_LayerTiling.y).rgb;
-    vec3 c2 = texture(u_Layer2, worldXZ * u_LayerTiling.z).rgb;
-    vec3 c3 = texture(u_Layer3, worldXZ * u_LayerTiling.w).rgb;
+    vec4 w0 = texture(u_SplatWeights0, v_SplatUV);
+    vec4 w1 = texture(u_SplatWeights1, v_SplatUV);
 
-    vec4 b = w;
-    if (u_BlendSharpness > 0.001) {
-        float n = organicBreakup(worldXZ);
-        vec3 lumWeights = vec3(0.299, 0.587, 0.114);
+    float rawWeights[8];
+    rawWeights[0] = w0.r; rawWeights[1] = w0.g; rawWeights[2] = w0.b; rawWeights[3] = w0.a;
+    rawWeights[4] = w1.r; rawWeights[5] = w1.g; rawWeights[6] = w1.b; rawWeights[7] = w1.a;
 
-        float h0 = mix(dot(c0, lumWeights), n, 0.42);
-        float h1 = mix(dot(c1, lumWeights), 1.0 - n, 0.42);
-        float h2 = mix(dot(c2, lumWeights), n, 0.28);
-        float h3 = mix(dot(c3, lumWeights), 1.0 - n, 0.38);
-
-        vec4 modRamp = smoothstep(vec4(0.02), vec4(0.28), w);
-        vec4 scores = w + vec4(h0, h1, h2, h3) * (u_BlendSharpness * 0.68) * modRamp;
-
-        float blendDepth = mix(0.90, 0.07, u_BlendSharpness);
-        float maxScore = max(max(scores.x, scores.y), max(scores.z, scores.w)) - blendDepth;
-        b = max(scores - vec4(maxScore), vec4(0.0));
-        b /= max(b.r + b.g + b.b + b.a, 1e-5);
+    float weightSum = 0.0;
+    for (int i = 0; i < 8; ++i) {
+        weightSum += rawWeights[i];
+    }
+    weightSum = max(weightSum, 1e-4);
+    for (int i = 0; i < 8; ++i) {
+        rawWeights[i] /= weightSum;
     }
 
-    vec3 finalColor = c0 * b.r + c1 * b.g + c2 * b.b + c3 * b.a;
+    vec3 layerAlbedos[8];
+    vec3 layerNormals[8];
+    float layerHeights[8];
+    float layerGlosses[8];
 
-    float dominant = max(max(b.r, b.g), max(b.b, b.a));
+    float noiseVal = (u_BlendSharpness > 0.001) ? organicBreakup(worldXZ) : 0.5;
+
+    // Fragment Fast-Path: Skip array texture fetches for inactive layers (< 0.004 weight)
+    for (int i = 0; i < 8; ++i) {
+        if (rawWeights[i] < 0.004) {
+            layerAlbedos[i] = vec3(0.0);
+            layerNormals[i] = vec3(0.0, 1.0, 0.0);
+            layerHeights[i] = 0.5;
+            layerGlosses[i] = 0.0;
+            continue;
+        }
+
+        vec2 uv = worldXZ * u_LayerTilingScales[i];
+        vec4 ah = texture(u_AlbedoHeightArray, vec3(uv, float(i)));
+        vec4 nr = texture(u_NormalRoughnessArray, vec3(uv, float(i)));
+
+        layerAlbedos[i] = ah.rgb;
+        layerHeights[i] = mix(ah.a, (i % 2 == 0) ? noiseVal : (1.0 - noiseVal), 0.28);
+
+        // Decode tangent normal (nx, ny, nz) where nz >= 0
+        vec3 tn = nr.rgb * 2.0 - 1.0;
+        // Map ground plane tangent space to world (X = +U, Z = +V, Y = +Up)
+        layerNormals[i] = normalize(vec3(tn.x, max(tn.z, 0.05), -tn.y));
+        layerGlosses[i] = nr.a;
+    }
+
+    // Height-modulated contrast blend
+    float blendedWeights[8];
+    for (int i = 0; i < 8; ++i) {
+        blendedWeights[i] = rawWeights[i];
+    }
+
+    if (u_BlendSharpness > 0.001) {
+        float scores[8];
+        float maxScore = -100.0;
+        for (int i = 0; i < 8; ++i) {
+            if (rawWeights[i] < 0.004) {
+                scores[i] = -1000.0;
+                continue;
+            }
+            float modRamp = smoothstep(0.02, 0.28, rawWeights[i]);
+            scores[i] = rawWeights[i] + layerHeights[i] * (u_BlendSharpness * 0.68) * modRamp;
+            maxScore = max(maxScore, scores[i]);
+        }
+
+        float blendDepth = mix(0.90, 0.07, u_BlendSharpness);
+        float threshold = maxScore - blendDepth;
+        float bSum = 0.0;
+        for (int i = 0; i < 8; ++i) {
+            blendedWeights[i] = (rawWeights[i] >= 0.004) ? max(scores[i] - threshold, 0.0) : 0.0;
+            bSum += blendedWeights[i];
+        }
+        bSum = max(bSum, 1e-5);
+        for (int i = 0; i < 8; ++i) {
+            blendedWeights[i] /= bSum;
+        }
+    }
+
+    vec3 finalAlbedo = vec3(0.0);
+    vec3 blendedNormal = vec3(0.0);
+    float blendedGloss = 0.0;
+    float dominant = 0.0;
+
+    for (int i = 0; i < 8; ++i) {
+        float bw = blendedWeights[i];
+        if (rawWeights[i] >= 0.004 && bw > 0.0) {
+            finalAlbedo += layerAlbedos[i] * bw;
+            blendedNormal += layerNormals[i] * bw;
+            blendedGloss += layerGlosses[i] * bw;
+            dominant = max(dominant, bw);
+        }
+    }
+
+    float nLen = length(blendedNormal);
+    blendedNormal = (nLen > 1e-4) ? (blendedNormal / nLen) : vec3(0.0, 1.0, 0.0);
+
+    // Edge ink transition darkening
     float transitionMask = smoothstep(0.04, 0.42, 1.0 - dominant);
-    finalColor *= (1.0 - u_EdgeDarkening * transitionMask);
+    finalAlbedo *= (1.0 - u_EdgeDarkening * transitionMask);
 
-    // Apply 2.5D Directional Cutout Shadows + Cool Indigo Shade + Flickering PointLights
+    vec3 finalColor = finalAlbedo;
+
+    // Apply 2.5D Directional Shadows + Cool Indigo Sky Fill + Flickering PointLights & Specular
     if (u_LightingEnabled == 1) {
+        vec3 viewDir = normalize(u_CameraPos - v_WorldPos);
         float shadowVis = computeShadowVisibility(v_WorldPos);
+        vec3 toSun = normalize(-u_SunDirection);
+        float sunSlope = clamp(dot(blendedNormal, toSun) / max(toSun.y, 0.25), 0.45, 1.35);
         vec3 sunAndAmbient = u_AmbientColor * u_AmbientIntensity +
-                             u_SunColor * (u_SunIntensity * shadowVis);
-        vec3 pointGlow = evaluatePointLights(v_WorldPos);
-        finalColor *= (sunAndAmbient + pointGlow);
+                             u_SunColor * (u_SunIntensity * shadowVis * sunSlope);
+
+        vec3 ptDiffuse = vec3(0.0);
+        vec3 ptSpecular = vec3(0.0);
+        evaluatePointLights(v_WorldPos, blendedNormal, viewDir, blendedGloss, ptDiffuse, ptSpecular);
+
+        finalColor = finalColor * (sunAndAmbient + ptDiffuse) + ptSpecular;
     }
 
     // Live 3D ground brush cursor ring stays unlit on top for clear visibility at night
@@ -270,4 +381,3 @@ void main() {
 
     o_Color = vec4(finalColor, 1.0);
 }
-

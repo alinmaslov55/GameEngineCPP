@@ -34,9 +34,14 @@ TerrainComponent::TerrainComponent(float width,
       m_Depth(std::max(depth, 0.5f)),
       m_SplatWidth(std::clamp(splatWidth, 4u, 2048u)),
       m_SplatHeight(std::clamp(splatHeight, 4u, 2048u)) {
-    m_SplatData.resize(static_cast<size_t>(m_SplatWidth) * static_cast<size_t>(m_SplatHeight) * 4u, 0u);
+    for (uint32_t i = 0; i < MaxLayers; ++i) {
+        m_Layers[i].Glossiness = DefaultLayerGlossiness(i);
+    }
+    const size_t bufferBytes = static_cast<size_t>(m_SplatWidth) * static_cast<size_t>(m_SplatHeight) * 4u;
+    m_SplatData.resize(bufferBytes, 0u);
+    m_SplatData1.resize(bufferBytes, 0u);
     FillLayer(0);
-    ENGINE_CORE_DEBUG("TerrainComponent created: Size={:.1f}x{:.1f}m, Splatmap={}x{}",
+    ENGINE_CORE_DEBUG("TerrainComponent created: Size={:.1f}x{:.1f}m, Splatmap={}x{} (8-layer)",
                       m_Width, m_Depth, m_SplatWidth, m_SplatHeight);
 }
 
@@ -55,25 +60,36 @@ void TerrainComponent::ResizeSplatmap(uint32_t newWidth, uint32_t newHeight) {
         return;
     }
 
-    std::vector<uint8_t> resampled(static_cast<size_t>(newWidth) * static_cast<size_t>(newHeight) * 4u, 0u);
-    for (uint32_t nz = 0; nz < newHeight; ++nz) {
-        const float v = (static_cast<float>(nz) + 0.5f) / static_cast<float>(newHeight);
-        const uint32_t sz = std::min(m_SplatHeight - 1u, static_cast<uint32_t>(v * static_cast<float>(m_SplatHeight)));
-        for (uint32_t nx = 0; nx < newWidth; ++nx) {
-            const float u = (static_cast<float>(nx) + 0.5f) / static_cast<float>(newWidth);
-            const uint32_t sx = std::min(m_SplatWidth - 1u, static_cast<uint32_t>(u * static_cast<float>(m_SplatWidth)));
-            const size_t srcIdx = (static_cast<size_t>(sz) * m_SplatWidth + sx) * 4u;
-            const size_t dstIdx = (static_cast<size_t>(nz) * newWidth + nx) * 4u;
-            std::memcpy(&resampled[dstIdx], &m_SplatData[srcIdx], 4u);
+    auto resampleBuffer = [&](const std::vector<uint8_t>& src) {
+        std::vector<uint8_t> out(static_cast<size_t>(newWidth) * static_cast<size_t>(newHeight) * 4u, 0u);
+        if (src.size() < static_cast<size_t>(m_SplatWidth) * static_cast<size_t>(m_SplatHeight) * 4u) {
+            return out;
         }
-    }
+        for (uint32_t nz = 0; nz < newHeight; ++nz) {
+            const float v = (static_cast<float>(nz) + 0.5f) / static_cast<float>(newHeight);
+            const uint32_t sz = std::min(m_SplatHeight - 1u, static_cast<uint32_t>(v * static_cast<float>(m_SplatHeight)));
+            for (uint32_t nx = 0; nx < newWidth; ++nx) {
+                const float u = (static_cast<float>(nx) + 0.5f) / static_cast<float>(newWidth);
+                const uint32_t sx = std::min(m_SplatWidth - 1u, static_cast<uint32_t>(u * static_cast<float>(m_SplatWidth)));
+                const size_t srcIdx = (static_cast<size_t>(sz) * m_SplatWidth + sx) * 4u;
+                const size_t dstIdx = (static_cast<size_t>(nz) * newWidth + nx) * 4u;
+                std::memcpy(&out[dstIdx], &src[srcIdx], 4u);
+            }
+        }
+        return out;
+    };
+
+    std::vector<uint8_t> resampled0 = resampleBuffer(m_SplatData);
+    std::vector<uint8_t> resampled1 = resampleBuffer(m_SplatData1);
 
     ENGINE_CORE_INFO("TerrainComponent: Resized splatmap from {}x{} to {}x{}",
                      m_SplatWidth, m_SplatHeight, newWidth, newHeight);
     m_SplatWidth = newWidth;
     m_SplatHeight = newHeight;
-    m_SplatData = std::move(resampled);
+    m_SplatData = std::move(resampled0);
+    m_SplatData1 = std::move(resampled1);
     m_GpuSplatTexture.reset();
+    m_GpuSplatTexture1.reset();
     MarkDirtyRect(0, 0, m_SplatWidth - 1u, m_SplatHeight - 1u, true);
 }
 
@@ -96,11 +112,29 @@ void TerrainComponent::SetLayerTexture(uint32_t layerIndex, const std::shared_pt
     ENGINE_CORE_DEBUG("TerrainComponent: Set layer {} texture '{}'", layerIndex, texture ? texture->GetFilepath() : "nullptr");
 }
 
+void TerrainComponent::SetLayerHeightMapPath(uint32_t layerIndex, const std::string& path) {
+    if (layerIndex < MaxLayers) {
+        m_Layers[layerIndex].HeightMapPath = path;
+    }
+}
+
+void TerrainComponent::SetLayerNormalMapPath(uint32_t layerIndex, const std::string& path) {
+    if (layerIndex < MaxLayers) {
+        m_Layers[layerIndex].NormalMapPath = path;
+    }
+}
+
 void TerrainComponent::SetLayerTilingScale(uint32_t layerIndex, float tilingScale) {
     if (layerIndex >= MaxLayers) {
         return;
     }
     m_Layers[layerIndex].TilingScale = std::clamp(tilingScale, 0.02f, 20.0f);
+}
+
+void TerrainComponent::SetLayerGlossiness(uint32_t layerIndex, float glossiness) {
+    if (layerIndex < MaxLayers) {
+        m_Layers[layerIndex].Glossiness = std::clamp(glossiness, 0.0f, 1.0f);
+    }
 }
 
 const TerrainLayer& TerrainComponent::GetLayer(uint32_t layerIndex) const {
@@ -111,22 +145,26 @@ TerrainLayer& TerrainComponent::GetLayer(uint32_t layerIndex) {
     return m_Layers[std::min(layerIndex, MaxLayers - 1u)];
 }
 
-glm::u8vec4 TerrainComponent::NormalizeWeights(float r, float g, float b, float a) {
-    std::array<float, 4> vals = {
-        std::max(0.0f, r),
-        std::max(0.0f, g),
-        std::max(0.0f, b),
-        std::max(0.0f, a)
-    };
-    const float sum = vals[0] + vals[1] + vals[2] + vals[3];
-    if (sum <= 1e-5f) {
-        return { 255, 0, 0, 0 };
+std::array<uint8_t, TerrainComponent::MaxLayers> TerrainComponent::NormalizeWeights8(
+    const std::array<float, MaxLayers>& weights,
+    uint32_t priorityChannel) {
+    std::array<float, MaxLayers> vals{};
+    float sum = 0.0f;
+    for (uint32_t i = 0; i < MaxLayers; ++i) {
+        vals[i] = std::max(0.0f, weights[i]);
+        sum += vals[i];
     }
 
-    std::array<int, 4> ints{};
+    std::array<uint8_t, MaxLayers> out{};
+    if (sum <= 1e-5f) {
+        out[0] = 255u;
+        return out;
+    }
+
+    std::array<int, MaxLayers> ints{};
     int intSum = 0;
-    int maxIdx = 0;
-    for (int i = 0; i < 4; ++i) {
+    uint32_t maxIdx = 0;
+    for (uint32_t i = 0; i < MaxLayers; ++i) {
         const float scaled = (vals[i] / sum) * 255.0f;
         ints[i] = std::clamp(static_cast<int>(std::lround(scaled)), 0, 255);
         intSum += ints[i];
@@ -135,16 +173,34 @@ glm::u8vec4 TerrainComponent::NormalizeWeights(float r, float g, float b, float 
         }
     }
 
-    // Absorb any +-1 integer rounding residual into the dominant channel so R+G+B+A == 255
-    const int residual = 255 - intSum;
-    ints[maxIdx] = std::clamp(ints[maxIdx] + residual, 0, 255);
-
-    return {
-        static_cast<uint8_t>(ints[0]),
-        static_cast<uint8_t>(ints[1]),
-        static_cast<uint8_t>(ints[2]),
-        static_cast<uint8_t>(ints[3])
+    int residual = 255 - intSum;
+    const uint32_t anchorIdx = (priorityChannel < MaxLayers && vals[priorityChannel] > 0.0f)
+        ? priorityChannel
+        : maxIdx;
+    auto applyResidual = [&](uint32_t idx) {
+        if (residual == 0) {
+            return;
+        }
+        const int nextVal = std::clamp(ints[idx] + residual, 0, 255);
+        residual -= (nextVal - ints[idx]);
+        ints[idx] = nextVal;
     };
+
+    applyResidual(anchorIdx);
+    applyResidual(maxIdx);
+    for (uint32_t i = 0; i < MaxLayers && residual != 0; ++i) {
+        applyResidual(i);
+    }
+
+    for (uint32_t i = 0; i < MaxLayers; ++i) {
+        out[i] = static_cast<uint8_t>(ints[i]);
+    }
+    return out;
+}
+
+glm::u8vec4 TerrainComponent::NormalizeWeights(float r, float g, float b, float a) {
+    const std::array<uint8_t, MaxLayers> n = NormalizeWeights8({ r, g, b, a, 0.0f, 0.0f, 0.0f, 0.0f }, 0u);
+    return { n[0], n[1], n[2], n[3] };
 }
 
 void TerrainComponent::MarkDirtyRect(uint32_t minX, uint32_t minY, uint32_t maxX, uint32_t maxY, bool unsavedEdit) {
@@ -168,14 +224,13 @@ void TerrainComponent::MarkDirtyRect(uint32_t minX, uint32_t minY, uint32_t maxX
 
 void TerrainComponent::FillLayer(uint32_t layerIndex) {
     const uint32_t clampedLayer = std::min(layerIndex, MaxLayers - 1u);
-    glm::u8vec4 fill(0);
-    fill[static_cast<glm::length_t>(clampedLayer)] = 255;
+    std::fill(m_SplatData.begin(), m_SplatData.end(), static_cast<uint8_t>(0));
+    std::fill(m_SplatData1.begin(), m_SplatData1.end(), static_cast<uint8_t>(0));
 
-    for (size_t idx = 0; idx < m_SplatData.size(); idx += 4u) {
-        m_SplatData[idx + 0] = fill.r;
-        m_SplatData[idx + 1] = fill.g;
-        m_SplatData[idx + 2] = fill.b;
-        m_SplatData[idx + 3] = fill.a;
+    std::vector<uint8_t>& targetBuf = (clampedLayer < 4u) ? m_SplatData : m_SplatData1;
+    const size_t channelOffset = static_cast<size_t>(clampedLayer % 4u);
+    for (size_t idx = 0; idx < targetBuf.size(); idx += 4u) {
+        targetBuf[idx + channelOffset] = 255u;
     }
 
     MarkDirtyRect(0, 0, m_SplatWidth - 1u, m_SplatHeight - 1u, true);
@@ -183,7 +238,7 @@ void TerrainComponent::FillLayer(uint32_t layerIndex) {
 }
 
 glm::u8vec4 TerrainComponent::GetSplatTexel(uint32_t px, uint32_t pz) const {
-    if (px >= m_SplatWidth || pz >= m_SplatHeight) {
+    if (px >= m_SplatWidth || pz >= m_SplatHeight || m_SplatData.empty()) {
         return { 255, 0, 0, 0 };
     }
     const size_t idx = (static_cast<size_t>(pz) * m_SplatWidth + px) * 4u;
@@ -195,26 +250,49 @@ glm::u8vec4 TerrainComponent::GetSplatTexel(uint32_t px, uint32_t pz) const {
     };
 }
 
+glm::u8vec4 TerrainComponent::GetSplatTexel1(uint32_t px, uint32_t pz) const {
+    if (px >= m_SplatWidth || pz >= m_SplatHeight || m_SplatData1.empty()) {
+        return { 0, 0, 0, 0 };
+    }
+    const size_t idx = (static_cast<size_t>(pz) * m_SplatWidth + px) * 4u;
+    return {
+        m_SplatData1[idx + 0],
+        m_SplatData1[idx + 1],
+        m_SplatData1[idx + 2],
+        m_SplatData1[idx + 3]
+    };
+}
+
+std::array<uint8_t, TerrainComponent::MaxLayers> TerrainComponent::GetSplatTexel8(uint32_t px, uint32_t pz) const {
+    const glm::u8vec4 w0 = GetSplatTexel(px, pz);
+    const glm::u8vec4 w1 = GetSplatTexel1(px, pz);
+    return { w0.r, w0.g, w0.b, w0.a, w1.r, w1.g, w1.b, w1.a };
+}
+
 void TerrainComponent::SetSplatTexel(uint32_t px, uint32_t pz, const glm::u8vec4& weights) {
+    SetSplatTexel8(px, pz, { weights.r, weights.g, weights.b, weights.a, 0u, 0u, 0u, 0u });
+}
+
+void TerrainComponent::SetSplatTexel8(uint32_t px, uint32_t pz, const std::array<uint8_t, MaxLayers>& weights) {
     if (px >= m_SplatWidth || pz >= m_SplatHeight) {
         return;
     }
-    const glm::u8vec4 norm = NormalizeWeights(
-        static_cast<float>(weights.r),
-        static_cast<float>(weights.g),
-        static_cast<float>(weights.b),
-        static_cast<float>(weights.a)
-    );
+    std::array<float, MaxLayers> floatWeights{};
+    for (uint32_t c = 0; c < MaxLayers; ++c) {
+        floatWeights[c] = static_cast<float>(weights[c]);
+    }
+    const std::array<uint8_t, MaxLayers> norm = NormalizeWeights8(floatWeights, 0u);
     const size_t idx = (static_cast<size_t>(pz) * m_SplatWidth + px) * 4u;
-    m_SplatData[idx + 0] = norm.r;
-    m_SplatData[idx + 1] = norm.g;
-    m_SplatData[idx + 2] = norm.b;
-    m_SplatData[idx + 3] = norm.a;
+    for (uint32_t c = 0; c < 4u; ++c) {
+        m_SplatData[idx + c] = norm[c];
+        m_SplatData1[idx + c] = norm[c + 4u];
+    }
 
     MarkDirtyRect(px, pz, px, pz, true);
 }
 
-bool TerrainComponent::PaintSplatBufferXZ(std::vector<uint8_t>& splatData,
+bool TerrainComponent::PaintSplatBufferXZ(std::vector<uint8_t>& splatData0,
+                                            std::vector<uint8_t>& splatData1,
                                             uint32_t splatWidth,
                                             uint32_t splatHeight,
                                             int32_t chunkX,
@@ -234,10 +312,14 @@ bool TerrainComponent::PaintSplatBufferXZ(std::vector<uint8_t>& splatData,
                                             uint32_t& outDirtyMinZ,
                                             uint32_t& outDirtyMaxX,
                                             uint32_t& outDirtyMaxZ) {
+    const size_t requiredBytes = static_cast<size_t>(splatWidth) * static_cast<size_t>(splatHeight) * 4u;
     if (layerIndex >= MaxLayers || radiusWorld <= 0.0f || strength <= 0.0f ||
         splatWidth < 2u || splatHeight < 2u ||
-        splatData.size() < static_cast<size_t>(splatWidth) * static_cast<size_t>(splatHeight) * 4u) {
+        splatData0.size() < requiredBytes) {
         return false;
+    }
+    if (splatData1.size() < requiredBytes) {
+        splatData1.assign(requiredBytes, 0u);
     }
 
     const float totalWidth = std::max(0.001f, worldWidth);
@@ -272,7 +354,7 @@ bool TerrainComponent::PaintSplatBufferXZ(std::vector<uint8_t>& splatData,
     const float innerStart = std::clamp(1.0f - clampedFalloff, 0.0f, 0.999f);
     const float clampedStrength = std::clamp(strength, 0.0f, 1.0f);
 
-    float target[4] = { 0.0f, 0.0f, 0.0f, 0.0f };
+    std::array<float, MaxLayers> target{};
     target[layerIndex] = 255.0f;
 
     const float cellSizeX = totalWidth / static_cast<float>(spanX);
@@ -313,16 +395,17 @@ bool TerrainComponent::PaintSplatBufferXZ(std::vector<uint8_t>& splatData,
             }
 
             const size_t idx = (static_cast<size_t>(pz) * splatWidth + px) * 4u;
-            const float blendedR = static_cast<float>(splatData[idx + 0]) * (1.0f - blendAlpha) + target[0] * blendAlpha;
-            const float blendedG = static_cast<float>(splatData[idx + 1]) * (1.0f - blendAlpha) + target[1] * blendAlpha;
-            const float blendedB = static_cast<float>(splatData[idx + 2]) * (1.0f - blendAlpha) + target[2] * blendAlpha;
-            const float blendedA = static_cast<float>(splatData[idx + 3]) * (1.0f - blendAlpha) + target[3] * blendAlpha;
+            std::array<float, MaxLayers> blended{};
+            for (uint32_t c = 0; c < 4u; ++c) {
+                blended[c] = static_cast<float>(splatData0[idx + c]) * (1.0f - blendAlpha) + target[c] * blendAlpha;
+                blended[c + 4u] = static_cast<float>(splatData1[idx + c]) * (1.0f - blendAlpha) + target[c + 4u] * blendAlpha;
+            }
 
-            const glm::u8vec4 norm = NormalizeWeights(blendedR, blendedG, blendedB, blendedA);
-            splatData[idx + 0] = norm.r;
-            splatData[idx + 1] = norm.g;
-            splatData[idx + 2] = norm.b;
-            splatData[idx + 3] = norm.a;
+            const std::array<uint8_t, MaxLayers> norm = NormalizeWeights8(blended, layerIndex);
+            for (uint32_t c = 0; c < 4u; ++c) {
+                splatData0[idx + c] = norm[c];
+                splatData1[idx + c] = norm[c + 4u];
+            }
 
             anyModified = true;
             modMinX = std::min(modMinX, px);
@@ -353,6 +436,7 @@ void TerrainComponent::PaintWorldBrush(float worldX,
     const float totalWidth = std::max(0.001f, m_Width * std::abs(terrainScale.x));
     const float totalDepth = std::max(0.001f, m_Depth * std::abs(terrainScale.z));
     if (PaintSplatBufferXZ(m_SplatData,
+                           m_SplatData1,
                            m_SplatWidth,
                            m_SplatHeight,
                            0,
@@ -431,6 +515,22 @@ bool TerrainComponent::SaveSplatmapToPNG(const std::string& resolvedFilepath) {
         return false;
     }
 
+    // Companion PNG for layers 4..7 (written only when any secondary weight is non-zero)
+    const std::filesystem::path mainPath(resolvedFilepath);
+    const std::filesystem::path secondaryPath = mainPath.parent_path() /
+        (mainPath.stem().string() + "_layers4to7" + mainPath.extension().string());
+    const bool hasSecondaryWeights = std::any_of(m_SplatData1.begin(), m_SplatData1.end(), [](uint8_t b) { return b != 0u; });
+    if (hasSecondaryWeights && m_SplatData1.size() == m_SplatData.size()) {
+        stbi_write_png(secondaryPath.string().c_str(),
+                       static_cast<int>(m_SplatWidth),
+                       static_cast<int>(m_SplatHeight),
+                       4,
+                       m_SplatData1.data(),
+                       strideBytes);
+    } else if (std::filesystem::exists(secondaryPath, ec)) {
+        std::filesystem::remove(secondaryPath, ec);
+    }
+
     m_HasUnsavedMemoryEdits = false;
     ENGINE_CORE_INFO("TerrainComponent: Saved {}x{} splatmap PNG to '{}'", m_SplatWidth, m_SplatHeight, resolvedFilepath);
     return true;
@@ -448,10 +548,10 @@ bool TerrainComponent::LoadSplatmapFromPNG(const std::string& resolvedFilepath) 
     int h = 0;
     int channels = 0;
     unsigned char* pixels = stbi_load(resolvedFilepath.c_str(), &w, &h, &channels, 4);
-    stbi_set_flip_vertically_on_load_thread(1);
-    stbi_set_flip_vertically_on_load(1);
 
     if (!pixels || w <= 0 || h <= 0) {
+        stbi_set_flip_vertically_on_load_thread(1);
+        stbi_set_flip_vertically_on_load(1);
         ENGINE_CORE_ERROR("TerrainComponent: Failed to load splatmap PNG '{}'", resolvedFilepath);
         if (pixels) {
             stbi_image_free(pixels);
@@ -459,10 +559,22 @@ bool TerrainComponent::LoadSplatmapFromPNG(const std::string& resolvedFilepath) 
         return false;
     }
 
+    const std::filesystem::path mainPath(resolvedFilepath);
+    const std::filesystem::path secondaryPath = mainPath.parent_path() /
+        (mainPath.stem().string() + "_layers4to7" + mainPath.extension().string());
+    int w1 = 0, h1 = 0, ch1 = 0;
+    unsigned char* secPixels = stbi_load(secondaryPath.string().c_str(), &w1, &h1, &ch1, 4);
+
+    stbi_set_flip_vertically_on_load_thread(1);
+    stbi_set_flip_vertically_on_load(1);
+
     m_SplatWidth = static_cast<uint32_t>(w);
     m_SplatHeight = static_cast<uint32_t>(h);
     const size_t byteCount = static_cast<size_t>(m_SplatWidth) * static_cast<size_t>(m_SplatHeight) * 4u;
     m_SplatData.resize(byteCount);
+    m_SplatData1.assign(byteCount, 0u);
+
+    const bool useSecondary = (secPixels != nullptr && w1 == w && h1 == h);
 
     for (size_t idx = 0; idx < byteCount; idx += 4u) {
         const int r = pixels[idx + 0];
@@ -470,32 +582,40 @@ bool TerrainComponent::LoadSplatmapFromPNG(const std::string& resolvedFilepath) 
         const int b = pixels[idx + 2];
         const int a = pixels[idx + 3];
 
+        int w3 = a;
         if (a == 255) {
-            const int rgbSum = r + g + b;
-            if (rgbSum <= 255) {
-                m_SplatData[idx + 0] = static_cast<uint8_t>(r);
-                m_SplatData[idx + 1] = static_cast<uint8_t>(g);
-                m_SplatData[idx + 2] = static_cast<uint8_t>(b);
-                m_SplatData[idx + 3] = static_cast<uint8_t>(255 - rgbSum);
-            } else {
-                // Normalize externally painted RGB strokes where R+G+B exceeded 255
-                const glm::u8vec4 norm = NormalizeWeights(static_cast<float>(r), static_cast<float>(g), static_cast<float>(b), 0.0f);
-                m_SplatData[idx + 0] = norm.r;
-                m_SplatData[idx + 1] = norm.g;
-                m_SplatData[idx + 2] = norm.b;
-                m_SplatData[idx + 3] = norm.a;
-            }
-        } else {
-            const glm::u8vec4 norm = NormalizeWeights(static_cast<float>(r), static_cast<float>(g), static_cast<float>(b), static_cast<float>(a));
-            m_SplatData[idx + 0] = norm.r;
-            m_SplatData[idx + 1] = norm.g;
-            m_SplatData[idx + 2] = norm.b;
-            m_SplatData[idx + 3] = norm.a;
+            const int sum4to7 = useSecondary
+                ? (secPixels[idx + 0] + secPixels[idx + 1] + secPixels[idx + 2] + secPixels[idx + 3])
+                : 0;
+            const int remaining = 255 - (r + g + b + sum4to7);
+            w3 = std::max(0, remaining);
+        }
+
+        std::array<float, MaxLayers> weights{};
+        weights[0] = static_cast<float>(r);
+        weights[1] = static_cast<float>(g);
+        weights[2] = static_cast<float>(b);
+        weights[3] = static_cast<float>(w3);
+        if (useSecondary) {
+            weights[4] = static_cast<float>(secPixels[idx + 0]);
+            weights[5] = static_cast<float>(secPixels[idx + 1]);
+            weights[6] = static_cast<float>(secPixels[idx + 2]);
+            weights[7] = static_cast<float>(secPixels[idx + 3]);
+        }
+
+        const std::array<uint8_t, MaxLayers> norm = NormalizeWeights8(weights, 0u);
+        for (uint32_t c = 0; c < 4u; ++c) {
+            m_SplatData[idx + c] = norm[c];
+            m_SplatData1[idx + c] = norm[c + 4u];
         }
     }
     stbi_image_free(pixels);
+    if (secPixels) {
+        stbi_image_free(secPixels);
+    }
 
     m_GpuSplatTexture.reset();
+    m_GpuSplatTexture1.reset();
     MarkDirtyRect(0, 0, m_SplatWidth - 1u, m_SplatHeight - 1u, false);
     m_HasUnsavedMemoryEdits = false;
     return true;
@@ -590,10 +710,30 @@ bool TerrainComponent::DecodeSplatBase64(const std::string& base64Data, uint32_t
     m_SplatWidth = width;
     m_SplatHeight = height;
     m_SplatData = std::move(decoded);
+    m_SplatData1.assign(m_SplatData.size(), 0u);
     m_GpuSplatTexture.reset();
+    m_GpuSplatTexture1.reset();
     MarkDirtyRect(0, 0, m_SplatWidth - 1u, m_SplatHeight - 1u, true);
     ENGINE_CORE_DEBUG("TerrainComponent: Decoded base64 splatmap ({} bytes, {}x{})",
                       m_SplatData.size(), m_SplatWidth, m_SplatHeight);
+    return true;
+}
+
+std::string TerrainComponent::EncodeSplat1Base64() const {
+    return EncodeRGBABase64(m_SplatData1);
+}
+
+bool TerrainComponent::DecodeSplat1Base64(const std::string& base64Data, uint32_t width, uint32_t height) {
+    std::vector<uint8_t> decoded;
+    if (!DecodeRGBABase64(base64Data, width, height, decoded)) {
+        return false;
+    }
+    if (width != m_SplatWidth || height != m_SplatHeight) {
+        return false;
+    }
+    m_SplatData1 = std::move(decoded);
+    m_GpuSplatTexture1.reset();
+    MarkDirtyRect(0, 0, m_SplatWidth - 1u, m_SplatHeight - 1u, true);
     return true;
 }
 
@@ -653,16 +793,35 @@ const std::shared_ptr<Texture>& TerrainComponent::SyncRgbaGpuTexture(std::shared
 }
 
 const std::shared_ptr<Texture>& TerrainComponent::SyncGpuSplatTexture() {
-    return SyncRgbaGpuTexture(m_GpuSplatTexture,
-                              m_UploadScratch,
-                              m_SplatData,
-                              m_SplatWidth,
-                              m_SplatHeight,
-                              m_GpuDirty,
-                              m_DirtyMinX,
-                              m_DirtyMinY,
-                              m_DirtyMaxX,
-                              m_DirtyMaxY);
+    bool dirty0 = m_GpuDirty;
+    bool dirty1 = m_GpuDirty;
+    SyncRgbaGpuTexture(m_GpuSplatTexture,
+                       m_UploadScratch,
+                       m_SplatData,
+                       m_SplatWidth,
+                       m_SplatHeight,
+                       dirty0,
+                       m_DirtyMinX,
+                       m_DirtyMinY,
+                       m_DirtyMaxX,
+                       m_DirtyMaxY);
+    SyncRgbaGpuTexture(m_GpuSplatTexture1,
+                       m_UploadScratch,
+                       m_SplatData1,
+                       m_SplatWidth,
+                       m_SplatHeight,
+                       dirty1,
+                       m_DirtyMinX,
+                       m_DirtyMinY,
+                       m_DirtyMaxX,
+                       m_DirtyMaxY);
+    m_GpuDirty = dirty0 || dirty1;
+    return m_GpuSplatTexture;
+}
+
+std::pair<std::shared_ptr<Texture>, std::shared_ptr<Texture>> TerrainComponent::SyncGpuSplatTextures() {
+    SyncGpuSplatTexture();
+    return { m_GpuSplatTexture, m_GpuSplatTexture1 };
 }
 
 } // namespace Engine

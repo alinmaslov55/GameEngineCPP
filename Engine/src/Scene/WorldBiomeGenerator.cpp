@@ -241,6 +241,19 @@ glm::u8vec4 BiomeSample::ToSplatRGBA8() const noexcept {
     return TerrainComponent::NormalizeWeights(r, g, b, a);
 }
 
+std::array<uint8_t, 8> BiomeSample::ToSplat8() const noexcept {
+    // 1-to-1 canonical TER-03 mapping:
+    // 0: Grass (BlackwoodThickets), 1: Ash (AshBarrens), 2: Tar (TarBogs),
+    // 3: Chalk (ChalkHighlands), 4: Cobblestone (SanctuaryCobble)
+    std::array<float, TerrainComponent::MaxLayers> w{};
+    w[0] = Weights[static_cast<size_t>(BiomeType::BlackwoodThickets)];
+    w[1] = Weights[static_cast<size_t>(BiomeType::AshBarrens)];
+    w[2] = Weights[static_cast<size_t>(BiomeType::TarBogs)];
+    w[3] = Weights[static_cast<size_t>(BiomeType::ChalkHighlands)];
+    w[4] = Weights[static_cast<size_t>(BiomeType::SanctuaryCobble)];
+    return TerrainComponent::NormalizeWeights8(w, 0u);
+}
+
 WorldBiomeGenerator::WorldBiomeGenerator(WorldGenConfig config) noexcept
     : m_Config(config),
       m_Noise(config.Seed) {}
@@ -405,6 +418,7 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
                                             float chunkSizeMeters,
                                             uint32_t splatResolution,
                                             std::vector<uint8_t>& outSplatRGBA,
+                                            std::vector<uint8_t>& outSplatRGBA1,
                                             std::vector<BiomeType>& outBiomeMap,
                                             std::vector<PropSpawnDesc>& outProps,
                                             std::vector<POISpawnDesc>& outPOIs) const {
@@ -414,11 +428,12 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
     const float texelStep = safeSize / static_cast<float>(cellSpan);
 
     outSplatRGBA.resize(static_cast<size_t>(res) * res * 4u);
+    outSplatRGBA1.resize(static_cast<size_t>(res) * res * 4u);
     outBiomeMap.resize(static_cast<size_t>(res) * res);
     outProps.clear();
     outPOIs.clear();
 
-    // 1. Evaluate node-aligned biome field + seamless RGBA8 splatweights
+    // 1. Evaluate node-aligned biome field + seamless 8-layer RGBA8 splatweights
     for (uint32_t pz = 0; pz < res; ++pz) {
         const float worldZ = static_cast<float>(static_cast<int64_t>(cz) * cellSpan + pz) * texelStep;
         for (uint32_t px = 0; px < res; ++px) {
@@ -427,12 +442,12 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
             const size_t texelIdx = static_cast<size_t>(pz) * res + px;
             outBiomeMap[texelIdx] = sample.DominantBiome;
 
-            const glm::u8vec4 rgba = sample.ToSplatRGBA8();
+            const std::array<uint8_t, TerrainComponent::MaxLayers> w8 = sample.ToSplat8();
             const size_t byteIdx = texelIdx * 4u;
-            outSplatRGBA[byteIdx + 0] = rgba.r;
-            outSplatRGBA[byteIdx + 1] = rgba.g;
-            outSplatRGBA[byteIdx + 2] = rgba.b;
-            outSplatRGBA[byteIdx + 3] = rgba.a;
+            for (uint32_t c = 0; c < 4u; ++c) {
+                outSplatRGBA[byteIdx + c] = w8[c];
+                outSplatRGBA1[byteIdx + c] = w8[c + 4u];
+            }
         }
     }
 

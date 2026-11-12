@@ -730,10 +730,14 @@ template<typename TerrainOwnerT>
 void DrawTerrainLayerSlots(TerrainOwnerT& owner) {
     ImGui::Separator();
     const char* layerLabels[Engine::TerrainComponent::MaxLayers] = {
-        "Layer 0 (R - Grass)",
-        "Layer 1 (G - Dirt)",
-        "Layer 2 (B - Cobble)",
-        "Layer 3 (A - Soil)"
+        "Layer 0: Grass (Blackwood Thickets)",
+        "Layer 1: Ash (Ash Barrens)",
+        "Layer 2: Tar (Tar Bogs)",
+        "Layer 3: Chalk (Chalk Highlands)",
+        "Layer 4: Cobblestone (Sanctuary Cobble)",
+        "Layer 5: Scorched Ash",
+        "Layer 6: Spare Layer 1",
+        "Layer 7: Spare Layer 2"
     };
     for (uint32_t i = 0; i < Engine::TerrainComponent::MaxLayers; ++i) {
         ImGui::PushID(static_cast<int>(i));
@@ -763,6 +767,14 @@ void DrawTerrainLayerSlots(TerrainOwnerT& owner) {
         if (ImGui::DragFloat("Tiling", &tiling, 0.01f, 0.05f, 10.0f, "%.2f")) {
             owner.SetLayerTilingScale(i, tiling);
         }
+
+        ImGui::SameLine();
+        ImGui::SetNextItemWidth(75.0f);
+        float gloss = layer.Glossiness;
+        if (ImGui::SliderFloat("Gloss", &gloss, 0.0f, 1.0f, "%.2f")) {
+            owner.SetLayerGlossiness(i, gloss);
+        }
+
         ImGui::PopID();
     }
 }
