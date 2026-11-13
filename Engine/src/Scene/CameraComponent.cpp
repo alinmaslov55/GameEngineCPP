@@ -83,6 +83,7 @@ void CameraComponent::ResetToTarget(const glm::vec3& targetPosition) noexcept {
     m_DirectionalKick = glm::vec2(0.0f);
     m_ShakeOffsetXZ = glm::vec2(0.0f);
     m_FirstSync = false;
+    m_LastSyncedFrame = std::numeric_limits<uint64_t>::max();
 
     Camera.SetFocalPoint(targetPosition);
     Camera.SetDistance(Distance);
@@ -162,6 +163,12 @@ void CameraComponent::SyncFromTransform(const Transform* transform) {
         return;
     }
 
+    // Guard render-sync stepping per frame so multi-pass rendering never double-decays trauma or damping
+    const uint64_t currentFrame = Time::GetFrameCount();
+    if (!m_FirstSync && m_LastSyncedFrame == currentFrame) {
+        return;
+    }
+
     const glm::vec3 targetPos = transform->GetWorldPosition();
     const float dt = Time::GetDeltaTime();
     const float unscaledDt = Time::GetUnscaledDeltaTime();
@@ -171,6 +178,7 @@ void CameraComponent::SyncFromTransform(const Transform* transform) {
     } else {
         UpdateRig(dt, unscaledDt, targetPos);
     }
+    m_LastSyncedFrame = currentFrame;
 }
 
 float CameraComponent::PerlinNoise1D(float t) noexcept {

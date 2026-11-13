@@ -78,7 +78,7 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
         bool baseMassRecomputed = false;
         if (!rb2d->RuntimeBody.IsValid()) {
             b2BodyDef bodyDef = b2DefaultBodyDef();
-            if (rb2d->IsStasisFrozen()) {
+            if (rb2d->IsStasisFrozen() && rb2d->Type != Rigidbody2D::BodyType::Static) {
                 bodyDef.type = b2_kinematicBody;
             } else if (rb2d->Type == Rigidbody2D::BodyType::Static) {
                 bodyDef.type = b2_staticBody;
@@ -173,6 +173,17 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
         for (auto* col : colliders) {
             col->RuntimeBody = rb2d->RuntimeBody;
             const bool hadShape = col->RuntimeShape.IsValid();
+            if (!col->IsEnabled()) {
+                if (hadShape) {
+                    b2ShapeId staleShape = b2LoadShapeId(col->RuntimeShape.Value);
+                    if (b2Shape_IsValid(staleShape)) {
+                        b2DestroyShape(staleShape, true);
+                    }
+                    col->RuntimeShape.Reset();
+                    baseMassRecomputed = true;
+                }
+                continue;
+            }
             col->CreateOrUpdateShape(rb2d->RuntimeBody, *transform, go);
             if (!hadShape && col->RuntimeShape.IsValid()) {
                 baseMassRecomputed = true;
@@ -205,6 +216,14 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                 }
             }
 
+            bool anyEnabledCollider = false;
+            for (auto* col : colliders) {
+                if (col->IsEnabled()) {
+                    anyEnabledCollider = true;
+                    break;
+                }
+            }
+
             b2BodyId bodyId;
             if (bodyHandle.IsValid()) {
                 bodyId = b2LoadBodyId(bodyHandle.Value);
@@ -219,7 +238,7 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                 bodyDef.userData = go;
 
                 bodyId = b2CreateBody(worldId, &bodyDef);
-                if (!go->IsActiveInHierarchy()) {
+                if (!go->IsActiveInHierarchy() || !anyEnabledCollider) {
                     b2Body_Disable(bodyId);
                 }
                 bodyHandle = BodyHandle{ b2StoreBodyId(bodyId) };
@@ -227,8 +246,30 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                                   go->GetName(), worldPos.x, worldPos.z, colliders.size());
             }
 
+            if (b2Body_IsValid(bodyId)) {
+                if (!go->IsActiveInHierarchy() || !anyEnabledCollider) {
+                    if (b2Body_IsEnabled(bodyId)) {
+                        b2Body_Disable(bodyId);
+                    }
+                } else {
+                    if (!b2Body_IsEnabled(bodyId)) {
+                        b2Body_Enable(bodyId);
+                    }
+                }
+            }
+
             for (auto* col : colliders) {
                 col->RuntimeBody = bodyHandle;
+                if (!col->IsEnabled()) {
+                    if (col->RuntimeShape.IsValid()) {
+                        b2ShapeId staleShape = b2LoadShapeId(col->RuntimeShape.Value);
+                        if (b2Shape_IsValid(staleShape)) {
+                            b2DestroyShape(staleShape, true);
+                        }
+                        col->RuntimeShape.Reset();
+                    }
+                    continue;
+                }
                 col->CreateOrUpdateShape(bodyHandle, *transform, go);
             }
         }
@@ -324,16 +365,106 @@ void PhysicsWorld2D::UnregisterRuntimeBody(GameObject* go) {
     }
 }
 
+void PhysicsWorld2D::UnregisterRigidbody(GameObject* go, Rigidbody2D* rb2d) {
+    AssertMainThreadAffinity("PhysicsWorld2D::UnregisterRigidbody");
+    if (go) {
+        RemovePhysicsBodyEntry(go);
+    }
+    if (!rb2d) return;
+
+    const BodyHandle rbBody = rb2d->RuntimeBody;
+    if (m_IsRuntimeRunning && rbBody.IsValid()) {
+        if (go) {
+            for (auto* col : go->GetComponents<Collider2D>()) {
+                if (col->RuntimeBody == rbBody) {
+                    col->RuntimeBody.Reset();
+                    col->RuntimeShape.Reset();
+                }
+            }
+        }
+        b2BodyId bodyId = b2LoadBodyId(rbBody.Value);
+        if (b2Body_IsValid(bodyId)) {
+            b2DestroyBody(bodyId);
+        }
+    }
+    rb2d->ResetRuntimeState();
+}
+
+void PhysicsWorld2D::UnregisterCollider(GameObject* go, Collider2D* col) {
+    AssertMainThreadAffinity("PhysicsWorld2D::UnregisterCollider");
+    if (!col) return;
+
+    if (m_IsRuntimeRunning && col->RuntimeShape.IsValid()) {
+        b2ShapeId shapeId = b2LoadShapeId(col->RuntimeShape.Value);
+        if (b2Shape_IsValid(shapeId)) {
+            b2DestroyShape(shapeId, true);
+        }
+    }
+    col->RuntimeShape.Reset();
+
+    const BodyHandle colBody = col->RuntimeBody;
+    col->RuntimeBody.Reset();
+
+    if (!m_IsRuntimeRunning || !go) return;
+
+    if (auto* rb2d = go->GetComponent<Rigidbody2D>();
+        rb2d && !rb2d->IsPendingRemoval() && rb2d->RuntimeBody == colBody) {
+        rb2d->RefreshMassFromShapes();
+        return;
+    }
+
+    if (colBody.IsValid()) {
+        for (const auto* other : go->GetComponents<Collider2D>()) {
+            if (other != col && !other->IsPendingRemoval() && other->RuntimeBody == colBody) {
+                return;
+            }
+        }
+        b2BodyId bodyId = b2LoadBodyId(colBody.Value);
+        if (b2Body_IsValid(bodyId)) {
+            b2DestroyBody(bodyId);
+        }
+    }
+}
+
+void PhysicsWorld2D::UnregisterTilemap(BodyHandle tilemapBody) {
+    AssertMainThreadAffinity("PhysicsWorld2D::UnregisterTilemap");
+    if (!m_IsRuntimeRunning || !tilemapBody.IsValid()) return;
+    b2BodyId bodyId = b2LoadBodyId(tilemapBody.Value);
+    if (b2Body_IsValid(bodyId)) {
+        b2DestroyBody(bodyId);
+    }
+}
+
 void PhysicsWorld2D::DisableRuntimeBody(GameObject* go) {
     AssertMainThreadAffinity("PhysicsWorld2D::DisableRuntimeBody");
     if (!m_IsRuntimeRunning || !go) return;
+
+    auto disableHandle = [go](BodyHandle handle, const char* kind) {
+        if (!handle.IsValid()) return;
+        b2BodyId bodyId = b2LoadBodyId(handle.Value);
+        if (b2Body_IsValid(bodyId) && b2Body_IsEnabled(bodyId)) {
+            b2Body_Disable(bodyId);
+            ENGINE_CORE_TRACE("PhysicsWorld2D: Disabled {} runtime body for '{}'", kind, go->GetName());
+        }
+    };
+
+    BodyHandle rbBody;
     if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
-        if (rb2d->RuntimeBody.IsValid()) {
-            b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
-            if (b2Body_IsValid(bodyId)) {
-                b2Body_Disable(bodyId);
-                ENGINE_CORE_TRACE("PhysicsWorld2D: Disabled runtime body for '{}'", go->GetName());
-            }
+        rbBody = rb2d->RuntimeBody;
+        disableHandle(rbBody, "rigidbody");
+    }
+
+    BodyHandle staticBody;
+    for (auto* col : go->GetComponents<Collider2D>()) {
+        if (col->RuntimeBody.IsValid() && col->RuntimeBody != rbBody && col->RuntimeBody != staticBody) {
+            staticBody = col->RuntimeBody;
+            disableHandle(staticBody, "collider");
+        }
+    }
+
+    if (auto* tilemap = go->GetComponent<Tilemap>()) {
+        if (tilemap->RuntimeBody.IsValid() && tilemap->RuntimeBody != rbBody && tilemap->RuntimeBody != staticBody) {
+            disableHandle(tilemap->RuntimeBody, "tilemap");
         }
     }
 }
@@ -946,7 +1077,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         b2Vec2 vB = b2Body_GetLinearVelocity(bodyB);
         b2Vec2 relVel{ vA.x - vB.x, vA.y - vB.y };
         b2Vec2 normal = begin.manifold.normal;
-        float approachSpeed = std::max(0.0f, -(relVel.x * normal.x + relVel.y * normal.y));
+        float approachSpeed = std::max(0.0f, relVel.x * normal.x + relVel.y * normal.y);
         float effectiveImpulse = reducedMass * approachSpeed;
 
         glm::vec2 contactPoint{ 0.0f };
@@ -1068,6 +1199,25 @@ void PhysicsWorld2D::UpdateCollidersAndGravity(float deltaTime) {
                     }
                 }
             } else {
+                if (!m_StaticCollidersDirty) {
+                    if (staticCount < m_StaticColliders.size()) {
+                        const auto& entry = m_StaticColliders[staticCount];
+                        if (entry.gameObject != gameObject.get() ||
+                            entry.transform != transform ||
+                            entry.collider != collider ||
+                            !transform || !collider ||
+                            transform->GetParent() != entry.cachedParent ||
+                            transform->position != entry.cachedPosition ||
+                            transform->scale != entry.cachedScale ||
+                            collider->size != entry.cachedSize ||
+                            collider->offset != entry.cachedOffset ||
+                            (transform->GetParent() && transform->GetWorldPosition() != entry.cachedWorldPosition)) {
+                            m_StaticCollidersDirty = true;
+                        }
+                    } else {
+                        m_StaticCollidersDirty = true;
+                    }
+                }
                 ++staticCount;
             }
         }
@@ -1078,21 +1228,6 @@ void PhysicsWorld2D::UpdateCollidersAndGravity(float deltaTime) {
 
     if (staticCount != m_StaticColliders.size()) {
         m_StaticCollidersDirty = true;
-    }
-
-    if (!m_StaticCollidersDirty) {
-        for (const auto& entry : m_StaticColliders) {
-            if (!entry.transform || !entry.collider ||
-                entry.transform->GetParent() != entry.cachedParent ||
-                entry.transform->position != entry.cachedPosition ||
-                entry.transform->scale != entry.cachedScale ||
-                entry.collider->size != entry.cachedSize ||
-                entry.collider->offset != entry.cachedOffset ||
-                (entry.transform->GetParent() && entry.transform->GetWorldPosition() != entry.cachedWorldPosition)) {
-                m_StaticCollidersDirty = true;
-                break;
-            }
-        }
     }
 
     if (m_StaticCollidersDirty) {

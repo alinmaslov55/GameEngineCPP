@@ -1,4 +1,5 @@
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsWorld2D.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/Scene.h"
@@ -121,36 +122,47 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             if (m_IsStasisFrozen) {
-                // Cache current dynamic velocity, angular velocity, and vertical elevation velocity
-                b2Vec2 vel = b2Body_GetLinearVelocity(bodyId);
-                m_StasisCachedVelocityXZ = { vel.x, vel.y };
-                m_StasisCachedAngularVelocity = b2Body_GetAngularVelocity(bodyId);
-                m_StasisCachedVerticalVelocity = VerticalVelocity;
                 m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
+                m_StasisCachedVerticalVelocity = VerticalVelocity;
+                if (Type == BodyType::Static) {
+                    // Static bodies must retain b2_staticBody rather than switching to kinematic
+                    m_StasisCachedVelocityXZ = { 0.0f, 0.0f };
+                    m_StasisCachedAngularVelocity = 0.0f;
+                } else {
+                    // Cache current velocity and angular velocity
+                    b2Vec2 vel = b2Body_GetLinearVelocity(bodyId);
+                    m_StasisCachedVelocityXZ = { vel.x, vel.y };
+                    m_StasisCachedAngularVelocity = b2Body_GetAngularVelocity(bodyId);
 
-                // Switch to kinematic and zero out velocities so body stays locked in place
-                b2Body_SetType(bodyId, b2_kinematicBody);
-                b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
-                b2Body_SetAngularVelocity(bodyId, 0.0f);
+                    // Switch to kinematic and zero out velocities so body stays locked in place
+                    if (Type == BodyType::Dynamic) {
+                        b2Body_SetType(bodyId, b2_kinematicBody);
+                    }
+                    b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+                    b2Body_SetAngularVelocity(bodyId, 0.0f);
+                }
             } else {
-                // Restore original body type
-                b2BodyType originalType = b2_dynamicBody;
-                if (Type == BodyType::Static) originalType = b2_staticBody;
-                else if (Type == BodyType::Kinematic) originalType = b2_kinematicBody;
-
-                b2Body_SetType(bodyId, originalType);
-                RefreshMassFromShapes();
-                b2Body_SetLinearVelocity(bodyId, b2Vec2{ m_StasisCachedVelocityXZ.x, m_StasisCachedVelocityXZ.y });
-                b2Body_SetAngularVelocity(bodyId, m_StasisCachedAngularVelocity);
                 VerticalVelocity = m_StasisCachedVerticalVelocity;
-
-                // Release and erupt all accumulated impulses
-                if (glm::length(m_QueuedStasisImpulseXZ) > 0.0f) {
-                    ENGINE_CORE_DEBUG("Rigidbody2D '{}': Erupting queued stasis impulse ({:.2f}, {:.2f})",
-                                      GetGameObject() ? GetGameObject()->GetName() : "<unowned>",
-                                      m_QueuedStasisImpulseXZ.x, m_QueuedStasisImpulseXZ.y);
-                    b2Body_ApplyLinearImpulseToCenter(bodyId, b2Vec2{ m_QueuedStasisImpulseXZ.x, m_QueuedStasisImpulseXZ.y }, true);
+                if (Type == BodyType::Static) {
                     m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
+                } else {
+                    // Restore original body type
+                    const b2BodyType originalType = (Type == BodyType::Dynamic) ? b2_dynamicBody : b2_kinematicBody;
+                    if (b2Body_GetType(bodyId) != originalType) {
+                        b2Body_SetType(bodyId, originalType);
+                    }
+                    RefreshMassFromShapes();
+                    b2Body_SetLinearVelocity(bodyId, b2Vec2{ m_StasisCachedVelocityXZ.x, m_StasisCachedVelocityXZ.y });
+                    b2Body_SetAngularVelocity(bodyId, m_StasisCachedAngularVelocity);
+
+                    // Release and erupt all accumulated impulses
+                    if (glm::length(m_QueuedStasisImpulseXZ) > 0.0f) {
+                        ENGINE_CORE_DEBUG("Rigidbody2D '{}': Erupting queued stasis impulse ({:.2f}, {:.2f})",
+                                          GetGameObject() ? GetGameObject()->GetName() : "<unowned>",
+                                          m_QueuedStasisImpulseXZ.x, m_QueuedStasisImpulseXZ.y);
+                        b2Body_ApplyLinearImpulseToCenter(bodyId, b2Vec2{ m_QueuedStasisImpulseXZ.x, m_QueuedStasisImpulseXZ.y }, true);
+                        m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
+                    }
                 }
             }
         }
@@ -268,7 +280,7 @@ void Rigidbody2D::ApplyMassMultiplierToBody() {
 
 void Rigidbody2D::RefreshMassFromShapes() {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::RefreshMassFromShapes");
-    if (!RuntimeBody.IsValid() || Type != BodyType::Dynamic) {
+    if (!RuntimeBody.IsValid() || Type != BodyType::Dynamic || m_IsStasisFrozen) {
         return;
     }
     b2BodyId bodyId = ToB2(RuntimeBody);
@@ -329,7 +341,25 @@ void Rigidbody2D::OnEnable() {
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
-            b2Body_Enable(bodyId);
+            if (auto* go = GetGameObject()) {
+                bool removedStaleShape = false;
+                for (auto* col : go->GetComponents<Collider2D>()) {
+                    if (!col->IsEnabled() && col->RuntimeShape.IsValid()) {
+                        b2ShapeId s = ToB2(col->RuntimeShape);
+                        if (b2Shape_IsValid(s)) {
+                            b2DestroyShape(s, true);
+                        }
+                        col->RuntimeShape.Reset();
+                        removedStaleShape = true;
+                    }
+                }
+            if (removedStaleShape) {
+                RefreshMassFromShapes();
+            }
+            }
+            if (!b2Body_IsEnabled(bodyId)) {
+                b2Body_Enable(bodyId);
+            }
         }
     } else if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
@@ -344,7 +374,7 @@ void Rigidbody2D::OnDisable() {
                       GetGameObject() ? GetGameObject()->GetName() : "<unowned>", RuntimeBody.IsValid());
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
-        if (b2Body_IsValid(bodyId)) {
+        if (b2Body_IsValid(bodyId) && b2Body_IsEnabled(bodyId)) {
             b2Body_Disable(bodyId);
         }
     }
@@ -356,7 +386,8 @@ void Rigidbody2D::OnDestroy() {
                       GetGameObject() ? GetGameObject()->GetName() : "<unowned>");
     if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene()) {
-            scene->UnregisterRuntimeBody(go);
+            scene->GetPhysicsWorld().UnregisterRigidbody(go, this);
+            return;
         }
     }
     ResetRuntimeState();
@@ -397,17 +428,33 @@ void Rigidbody2D::OnPoolAcquire() {
 
 void Rigidbody2D::OnPoolRelease() {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::OnPoolRelease");
+    const bool wasStasisFrozen = m_IsStasisFrozen;
+    m_IsStasisFrozen = false;
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
-            b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
-            b2Body_SetAngularVelocity(bodyId, 0.0f);
+            if (wasStasisFrozen) {
+                b2BodyType originalType = b2_dynamicBody;
+                if (Type == BodyType::Static) originalType = b2_staticBody;
+                else if (Type == BodyType::Kinematic) originalType = b2_kinematicBody;
+                if (b2Body_GetType(bodyId) != originalType) {
+                    b2Body_SetType(bodyId, originalType);
+                }
+                if (Type == BodyType::Dynamic) {
+                    RefreshMassFromShapes();
+                }
+            }
+            if (Type != BodyType::Static) {
+                b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+                b2Body_SetAngularVelocity(bodyId, 0.0f);
+            }
             b2Body_SetAwake(bodyId, false);
-            b2Body_Disable(bodyId);
+            if (b2Body_IsEnabled(bodyId)) {
+                b2Body_Disable(bodyId);
+            }
         }
     }
     VerticalVelocity = 0.0f;
-    m_IsStasisFrozen = false;
     m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
     m_StasisCachedVelocityXZ = { 0.0f, 0.0f };
     m_StasisCachedAngularVelocity = 0.0f;
@@ -466,26 +513,100 @@ static b2ShapeDef BuildDefaultColliderShapeDef(Collider2D* col, GameObject* go) 
 
 void Collider2D::OnEnable() {
     AssertPhysicsOwnerThread(this, "Collider2D::OnEnable");
+    auto* go = GetGameObject();
+    auto* scene = go ? go->GetScene() : nullptr;
+
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
-            b2Body_Enable(bodyId);
-        }
-    } else if (!RuntimeShape.IsValid()) {
-        if (auto* go = GetGameObject()) {
-            if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
-                scene->MarkPhysicsDirty(go);
+            if (!RuntimeShape.IsValid() && go) {
+                if (auto* transform = go->GetTransform()) {
+                    CreateOrUpdateShape(RuntimeBody, *transform, go);
+                    if (auto* rb2d = go->GetComponent<Rigidbody2D>();
+                        rb2d && !rb2d->IsPendingRemoval() && rb2d->RuntimeBody == RuntimeBody) {
+                        rb2d->RefreshMassFromShapes();
+                    }
+                    if (scene) {
+                        scene->InvalidateSpatialGrid();
+                    }
+                }
             }
+            if (go) {
+                for (auto* sibling : go->GetComponents<Collider2D>()) {
+                    if (sibling != this && !sibling->IsEnabled() && sibling->RuntimeShape.IsValid()) {
+                        b2ShapeId s = ToB2(sibling->RuntimeShape);
+                        if (b2Shape_IsValid(s)) {
+                            b2DestroyShape(s, true);
+                        }
+                        sibling->RuntimeShape.Reset();
+                    }
+                }
+                auto* rb2d = go->GetComponent<Rigidbody2D>();
+                if (go->IsActiveInHierarchy() && (!rb2d || rb2d->IsEnabled())) {
+                    if (!b2Body_IsEnabled(bodyId)) {
+                        b2Body_Enable(bodyId);
+                    }
+                }
+            }
+            return;
         }
+        RuntimeBody.Reset();
+        RuntimeShape.Reset();
+    }
+
+    if (!RuntimeShape.IsValid() && go && scene && scene->IsRuntimeRunning()) {
+        scene->MarkPhysicsDirty(go);
     }
 }
 
 void Collider2D::OnDisable() {
     AssertPhysicsOwnerThread(this, "Collider2D::OnDisable");
+    auto* go = GetGameObject();
+    auto* scene = go ? go->GetScene() : nullptr;
+
+    // Box2D v3 has no b2Shape_Disable(): when this Collider2D itself is disabled or removed
+    // (as opposed to whole-GO SetActive(false) where IsEnabled() remains true for pooling),
+    // destroy only this Collider2D's RuntimeShape so sibling colliders and shared Rigidbody2D remain active.
+    if (!IsEnabled() && RuntimeShape.IsValid()) {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
+        if (b2Shape_IsValid(shapeId)) {
+            b2DestroyShape(shapeId, true);
+        }
+        RuntimeShape.Reset();
+
+        if (go) {
+            if (auto* rb2d = go->GetComponent<Rigidbody2D>();
+                rb2d && !rb2d->IsPendingRemoval() && rb2d->RuntimeBody == RuntimeBody) {
+                rb2d->RefreshMassFromShapes();
+            }
+            if (scene) {
+                scene->InvalidateSpatialGrid();
+            }
+        }
+    }
+
     if (RuntimeBody.IsValid()) {
-        b2BodyId bodyId = ToB2(RuntimeBody);
-        if (b2Body_IsValid(bodyId)) {
-            b2Body_Disable(bodyId);
+        bool keepBodyEnabled = false;
+        if (go && go->IsActiveInHierarchy() && !go->IsPendingDestroy()) {
+            if (const auto* rb2d = go->GetComponent<Rigidbody2D>();
+                rb2d && rb2d->IsEnabled() && !rb2d->IsPendingRemoval() && rb2d->RuntimeBody == RuntimeBody) {
+                keepBodyEnabled = true;
+            }
+            if (!keepBodyEnabled) {
+                for (const auto* other : go->GetComponents<Collider2D>()) {
+                    if (other != this && other->IsEnabled() && !other->IsPendingRemoval() &&
+                        other->RuntimeBody == RuntimeBody) {
+                        keepBodyEnabled = true;
+                        break;
+                    }
+                }
+            }
+        }
+        if (!keepBodyEnabled) {
+            b2BodyId bodyId = ToB2(RuntimeBody);
+            if (b2Body_IsValid(bodyId) && b2Body_IsEnabled(bodyId)) {
+                b2Body_Disable(bodyId);
+            }
         }
     }
 }
@@ -494,20 +615,15 @@ void Collider2D::OnDestroy() {
     AssertPhysicsOwnerThread(this, "Collider2D::OnDestroy");
     if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene()) {
-            if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
-                if (RuntimeShape.IsValid()) {
-                    b2ShapeId shapeId = ToB2(RuntimeShape);
-                    if (b2Shape_IsValid(shapeId)) {
-                        b2DestroyShape(shapeId, true);
-                    }
-                    RuntimeShape.Reset();
-                }
-                rb2d->RefreshMassFromShapes();
-            } else {
-                scene->UnregisterRuntimeBody(go);
+            scene->GetPhysicsWorld().UnregisterCollider(go, this);
+            if (go->IsAlive()) {
+                scene->InvalidateSpatialGrid();
             }
+            return;
         }
     }
+    RuntimeShape.Reset();
+    RuntimeBody.Reset();
 }
 
 void Collider2D::OnPoolAcquire() {
@@ -662,7 +778,9 @@ void BoxCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& tra
         b2Polygon cur = b2Shape_GetPolygon(shapeId);
         if (cur.count != box.count ||
             std::abs(cur.vertices[0].x - box.vertices[0].x) > 1e-4f ||
-            std::abs(cur.vertices[0].y - box.vertices[0].y) > 1e-4f) {
+            std::abs(cur.vertices[0].y - box.vertices[0].y) > 1e-4f ||
+            std::abs(cur.vertices[2].x - box.vertices[2].x) > 1e-4f ||
+            std::abs(cur.vertices[2].y - box.vertices[2].y) > 1e-4f) {
             b2Shape_SetPolygon(shapeId, &box);
         }
     }
@@ -713,21 +831,55 @@ void CapsuleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform&
     capsule.center2 = b2Vec2{ Center2.x * scaleX, Center2.y * scaleZ };
     capsule.radius = std::max(0.001f, Radius * scaleFactor);
 
+    const float dx = capsule.center2.x - capsule.center1.x;
+    const float dy = capsule.center2.y - capsule.center1.y;
+    const float halfLength = 0.5f * std::sqrt(dx * dx + dy * dy);
+    const bool isDegenerate = halfLength <= 1e-5f;
+
+    b2Circle fallbackCircle;
+    fallbackCircle.center = b2Vec2{ 0.5f * (capsule.center1.x + capsule.center2.x),
+                                    0.5f * (capsule.center1.y + capsule.center2.y) };
+    fallbackCircle.radius = capsule.radius;
+
+    if (RuntimeShape.IsValid()) {
+        b2ShapeId shapeId = ToB2(RuntimeShape);
+        const b2ShapeType existingType = b2Shape_GetType(shapeId);
+        if ((isDegenerate && existingType != b2_circleShape) ||
+            (!isDegenerate && halfLength > 1e-3f && existingType == b2_circleShape)) {
+            b2DestroyShape(shapeId, true);
+            RuntimeShape.Reset();
+        }
+    }
+
     if (!RuntimeShape.IsValid()) {
         b2ShapeDef shapeDef = BuildDefaultColliderShapeDef(this, go);
-        b2ShapeId shapeId = b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
+        b2ShapeId shapeId = isDegenerate
+            ? b2CreateCircleShape(bodyId, &shapeDef, &fallbackCircle)
+            : b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
         RuntimeShape = ToHandle(shapeId);
-        ENGINE_CORE_DEBUG("CapsuleCollider2D '{}': Created capsule shape (r={:.3f}, sensor={}, cat=0x{:x})",
-                          go ? go->GetName() : "<unowned>", capsule.radius, IsSensor, CategoryBits);
+        ENGINE_CORE_DEBUG("CapsuleCollider2D '{}': Created {} shape (r={:.3f}, sensor={}, cat=0x{:x})",
+                          go ? go->GetName() : "<unowned>",
+                          (b2Shape_GetType(shapeId) == b2_circleShape) ? "circle-fallback" : "capsule",
+                          capsule.radius, IsSensor, CategoryBits);
     } else {
         b2ShapeId shapeId = ToB2(RuntimeShape);
-        b2Capsule cur = b2Shape_GetCapsule(shapeId);
-        if (std::abs(cur.radius - capsule.radius) > 1e-4f ||
-            std::abs(cur.center1.x - capsule.center1.x) > 1e-4f ||
-            std::abs(cur.center1.y - capsule.center1.y) > 1e-4f ||
-            std::abs(cur.center2.x - capsule.center2.x) > 1e-4f ||
-            std::abs(cur.center2.y - capsule.center2.y) > 1e-4f) {
-            b2Shape_SetCapsule(shapeId, &capsule);
+        const b2ShapeType existingType = b2Shape_GetType(shapeId);
+        if (existingType == b2_circleShape) {
+            b2Circle cur = b2Shape_GetCircle(shapeId);
+            if (std::abs(cur.radius - fallbackCircle.radius) > 1e-4f ||
+                std::abs(cur.center.x - fallbackCircle.center.x) > 1e-4f ||
+                std::abs(cur.center.y - fallbackCircle.center.y) > 1e-4f) {
+                b2Shape_SetCircle(shapeId, &fallbackCircle);
+            }
+        } else {
+            b2Capsule cur = b2Shape_GetCapsule(shapeId);
+            if (std::abs(cur.radius - capsule.radius) > 1e-4f ||
+                std::abs(cur.center1.x - capsule.center1.x) > 1e-4f ||
+                std::abs(cur.center1.y - capsule.center1.y) > 1e-4f ||
+                std::abs(cur.center2.x - capsule.center2.x) > 1e-4f ||
+                std::abs(cur.center2.y - capsule.center2.y) > 1e-4f) {
+                b2Shape_SetCapsule(shapeId, &capsule);
+            }
         }
     }
 }

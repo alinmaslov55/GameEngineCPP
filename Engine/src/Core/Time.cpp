@@ -19,6 +19,7 @@ float Time::s_PreHitStopTimeScale = 1.0f;
 float Time::s_MockDeltaTime = 0.0f;
 bool Time::s_UseMockDeltaTime = false;
 uint64_t Time::s_LastFrameTime = 0;
+uint64_t Time::s_FrameCount = 0;
 
 void Time::Init() {
     s_LastFrameTime = SDL_GetPerformanceCounter();
@@ -33,6 +34,7 @@ void Time::Init() {
     s_PreHitStopTimeScale = 1.0f;
     s_MockDeltaTime = 0.0f;
     s_UseMockDeltaTime = false;
+    s_FrameCount = 0;
     ENGINE_CORE_INFO("Time system initialized");
 }
 
@@ -89,10 +91,12 @@ void Time::Reset() noexcept {
     s_MockDeltaTime = 0.0f;
     s_UseMockDeltaTime = false;
     s_LastFrameTime = SDL_GetPerformanceCounter();
+    s_FrameCount = 0;
     ENGINE_CORE_DEBUG("Time system reset");
 }
 
 void Time::Update() {
+    ++s_FrameCount;
     float rawDelta = 0.0f;
     if (s_UseMockDeltaTime) {
         rawDelta = s_MockDeltaTime;

@@ -7,7 +7,10 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Core/JobSystem.h"
+#include "Engine/Core/Time.h"
+#include "Engine/Renderer/SceneRenderer.h"
 #include "Engine/Renderer/Texture2DArray.h"
+#include "Engine/Scene/CameraComponent.h"
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -832,6 +835,69 @@ TEST(TerrainFireGridTest, PropagatesAlongTarStripAcrossChunksAndScorches) {
     const auto scorchedSample = mgr->SampleSurfaceAtXZ(11.0f, 8.0f);
     // Flammability has dropped below ignition threshold due to Scorched Ash replacement
     EXPECT_LT(scorchedSample.Flammability, 0.35f);
+}
+
+TEST(TerrainChunkManagerTest, SceneRenderStreamsUncachedChunksWithPooledPropsWithoutReallocationUB) {
+    const bool jobWasInitialized = Engine::JobSystem::IsInitialized();
+    if (jobWasInitialized) {
+        // Ensure UpdateStreaming runs inline on the render call itself to stress immediate push_back on m_GameObjects
+        Engine::JobSystem::Shutdown();
+    }
+
+    Engine::Time::Reset();
+    Engine::Time::SetMockDeltaTime(0.016f);
+    Engine::Time::Update();
+
+    Engine::Scene scene("RenderStreamSafetyScene");
+
+    auto* camGo = scene.CreateGameObject("MainCamera");
+    camGo->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* camComp = camGo->AddComponent<Engine::CameraComponent>();
+    camComp->SmoothFollow = false;
+    camComp->TraumaDecay = 1.4f;
+    camComp->ResetToTarget({ 0.0f, 0.0f, 0.0f });
+
+    auto* terrainGo = scene.CreateGameObject("InfiniteTerrain");
+    auto* mgr = terrainGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 33u, 1, 3);
+    mgr->AutoStreamWithCamera = true;
+
+    Engine::WorldGenConfig cfg;
+    cfg.Enabled = true;
+    cfg.SpawnSceneEntities = true;
+    cfg.Seed = 42ULL;
+    mgr->ConfigureProceduralWorld(cfg);
+
+    // Traverse across multiple uncached chunk regions while calling GatherRenderContext / Render
+    const std::array<glm::vec3, 4> waypoints = {
+        glm::vec3{   0.0f, 0.0f,   0.0f },
+        glm::vec3{  48.0f, 0.0f,   0.0f },
+        glm::vec3{  96.0f, 0.0f,  48.0f },
+        glm::vec3{ 144.0f, 0.0f, -32.0f }
+    };
+
+    const size_t initialEntityCount = scene.GetGameObjects().size();
+    for (const glm::vec3& wp : waypoints) {
+        Engine::Time::Update();
+        camGo->GetTransform()->position = wp;
+        camComp->AddTrauma(0.5f);
+
+        // Two render context gathers in the same frame (multi-pass safe + no vector reallocation UB)
+        const auto ctx1 = scene.GetRenderer().GatherRenderContext(scene);
+        const auto ctx2 = scene.GetRenderer().GatherRenderContext(scene);
+        EXPECT_EQ(ctx1.activeCam, &camComp->Camera);
+        EXPECT_EQ(ctx2.activeCam, &camComp->Camera);
+        EXPECT_FALSE(scene.IsIteratingEntities());
+        EXPECT_NEAR(camComp->GetTrauma(), 0.5f - 1.4f * 0.016f, 1e-5f);
+        camComp->ResetToTarget(wp);
+    }
+
+    EXPECT_GT(scene.GetGameObjects().size(), initialEntityCount);
+    EXPECT_GE(mgr->GetActiveChunkCount(), 9u);
+
+    Engine::Time::Reset();
+    if (jobWasInitialized) {
+        Engine::JobSystem::Init(4);
+    }
 }
 
 } // namespace

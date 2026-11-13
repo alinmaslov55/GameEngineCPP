@@ -493,10 +493,14 @@ public:
             }
 
             Component* comp = foundIt->get();
-            if (comp->IsEnabled() && IsActiveInHierarchy()) {
+            const bool wasEnabledAndActive = comp->IsEnabled() && IsActiveInHierarchy();
+            comp->m_Enabled = false;
+            if (wasEnabledAndActive) {
                 comp->OnDisable();
             }
-            comp->m_Enabled = false;
+            if (m_ComponentIterationDepth > 0) {
+                comp->m_PendingRemoval = true;
+            }
 
             const uint16_t removedExactID = comp->GetTypeID();
             const uint16_t removedBaseID = comp->GetBaseTypeID();
@@ -534,12 +538,11 @@ public:
                           Detail::IsComponentWithBase<CleanT, Collider2D>()) {
                 NotifyPhysicsComponentRemoved(
                     std::is_same_v<CleanT, Tilemap>,
-                    std::is_same_v<CleanT, Rigidbody2D>);
+                    std::is_same_v<CleanT, Rigidbody2D>,
+                    comp);
             }
 
-            if (m_ComponentIterationDepth > 0) {
-                comp->m_PendingRemoval = true;
-            } else {
+            if (m_ComponentIterationDepth == 0) {
                 comp->OnDestroy();
                 m_Components.erase(foundIt);
             }
@@ -552,7 +555,7 @@ private:
     friend class Scene;
 
     void NotifyPhysicsComponentAdded();
-    void NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool removedIsRigidbody);
+    void NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool removedIsRigidbody, Component* removedComp = nullptr);
 
     Scene* m_Scene{ nullptr };
     Transform* m_Transform{nullptr};

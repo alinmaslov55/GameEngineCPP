@@ -7,6 +7,7 @@
 #include <concepts>
 #include <condition_variable>
 #include <cstdint>
+#include <exception>
 #include <functional>
 #include <latch>
 #include <memory>
@@ -184,8 +185,7 @@ public:
         }
 
         bool Steal(QueuedJob& outJob) {
-            std::unique_lock lock(m_Mutex, std::try_to_lock);
-            if (!lock.owns_lock()) return false;
+            std::lock_guard lock(m_Mutex);
             return m_Ring.PopFront(outJob);
         }
 
@@ -262,30 +262,56 @@ private:
         }
 
         using CleanFunc = std::remove_reference_t<Func>;
+        struct ParallelContext {
+            explicit ParallelContext(ptrdiff_t count) : workDone(count) {}
+            std::latch workDone;
+            std::mutex exceptionMutex;
+            std::exception_ptr firstException;
+
+            void CaptureException() noexcept {
+                std::lock_guard lock(exceptionMutex);
+                if (!firstException) {
+                    firstException = std::current_exception();
+                }
+            }
+        };
+
         struct ParallelChunkPacket {
             CleanFunc* func = nullptr;
-            std::latch* workDone = nullptr;
+            ParallelContext* context = nullptr;
             IndexType start{};
             IndexType end{};
         };
 
         auto runner = [](void* raw) {
             auto* packet = static_cast<ParallelChunkPacket*>(raw);
-            std::latch* latch = packet->workDone;
+            ParallelContext* ctx = packet->context;
+            struct CountDownGuard {
+                std::latch* l;
+                ~CountDownGuard() noexcept {
+                    if (l) {
+                        l->count_down();
+                    }
+                }
+            } countDownGuard{ &ctx->workDone };
+
             CleanFunc& fn = *(packet->func);
             const IndexType s = packet->start;
             const IndexType e = packet->end;
-            if constexpr (IsBatched) {
-                fn(s, e);
-            } else {
-                for (IndexType i = s; i < e; ++i) {
-                    fn(i);
+            try {
+                if constexpr (IsBatched) {
+                    fn(s, e);
+                } else {
+                    for (IndexType i = s; i < e; ++i) {
+                        fn(i);
+                    }
                 }
+            } catch (...) {
+                ctx->CaptureException();
             }
-            latch->count_down();
         };
 
-        std::latch workDone(static_cast<ptrdiff_t>(chunkCount));
+        ParallelContext ctx{ static_cast<ptrdiff_t>(chunkCount) };
 
         constexpr size_t kInlineChunkLimit = 64;
         std::array<ParallelChunkPacket, kInlineChunkLimit> inlinePackets{};
@@ -302,26 +328,40 @@ private:
             const IndexType chunkStart = start + static_cast<IndexType>(c * chunkSize);
             const IndexType chunkEnd = std::min(end, chunkStart + static_cast<IndexType>(chunkSize));
             packets[c].func = &func;
-            packets[c].workDone = &workDone;
+            packets[c].context = &ctx;
             packets[c].start = chunkStart;
             packets[c].end = chunkEnd;
         }
 
-        // Synchronize with all workers before stack packets leave scope
-        struct LatchWaitGuard {
-            std::latch& latch;
-            ~LatchWaitGuard() {
-                while (!latch.try_wait()) {
-                    if (!ExecuteOneJob()) {
-                        latch.wait();
-                        break;
+        // Synchronize with all workers before stack packets and ParallelContext leave scope
+        {
+            struct LatchWaitGuard {
+                std::latch& latch;
+                ~LatchWaitGuard() {
+                    while (!latch.try_wait()) {
+                        if (!ExecuteOneJob()) {
+                            latch.wait();
+                            break;
+                        }
                     }
                 }
-            }
-        } waitGuard{ workDone };
+            } waitGuard{ ctx.workDone };
 
-        for (size_t c = 0; c < chunkCount; ++c) {
-            SubmitRawJob(+runner, &packets[c]);
+            size_t submitted = 0;
+            try {
+                for (; submitted < chunkCount; ++submitted) {
+                    SubmitRawJob(+runner, &packets[submitted]);
+                }
+            } catch (...) {
+                if (submitted < chunkCount) {
+                    ctx.workDone.count_down(static_cast<ptrdiff_t>(chunkCount - submitted));
+                }
+                throw;
+            }
+        }
+
+        if (ctx.firstException) {
+            std::rethrow_exception(ctx.firstException);
         }
     }
 
@@ -330,7 +370,9 @@ private:
     QueuedJob FindWork(uint32_t workerIndex);
     void SubmitJob(std::shared_ptr<JobState> job);
     void SubmitQueuedJob(QueuedJob&& job);
+    static void SubmitOrExecuteJobState(std::shared_ptr<JobState> jobState);
     static void ExecuteJobState(const std::shared_ptr<JobState>& jobState);
+    void DrainQueuedJobsOnShutdown() noexcept;
     bool HasPendingWork() const;
 
     bool PopWorkerJob(uint32_t index, QueuedJob& outJob);
@@ -340,7 +382,8 @@ private:
 private:
     static std::unique_ptr<JobSystem> s_Instance;
 
-    bool m_Initialized = false;
+    std::atomic<bool> m_Initialized{ false };
+    std::atomic<bool> m_QueuesAlive{ false };
     uint32_t m_WorkerCount = 0;
     std::vector<std::jthread> m_Workers;
     std::vector<std::unique_ptr<WorkerQueue>> m_WorkerQueues;

@@ -71,6 +71,9 @@ public:
     // Body registration & synchronization
     void RegisterRuntimeBody(GameObject* go);
     void UnregisterRuntimeBody(GameObject* go);
+    void UnregisterRigidbody(GameObject* go, Rigidbody2D* rb2d);
+    void UnregisterCollider(GameObject* go, Collider2D* col);
+    void UnregisterTilemap(BodyHandle tilemapBody);
     void DisableRuntimeBody(GameObject* go);
     void MarkPhysicsDirty(GameObject* go);
     [[nodiscard]] size_t GetPendingPhysicsSyncCount() const noexcept { return m_PendingPhysicsSync.size(); }

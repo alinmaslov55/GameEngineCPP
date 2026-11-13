@@ -6,6 +6,7 @@
 #include <chrono>
 #include <numeric>
 #include <set>
+#include <stdexcept>
 #include <thread>
 #include <vector>
 
@@ -330,6 +331,164 @@ TEST(JobSystemTest, ParallelFor_StackPacketInlineAndOverflowExecution) {
     EXPECT_EQ(Engine::JobSystem::GetPendingJobCount(), 0u);
 
     Engine::JobSystem::Shutdown();
+}
+
+TEST(JobSystemTest, ContentionStress_NoPendingCountUnderflow) {
+    Engine::JobSystem::Init(4);
+
+    constexpr int kProducers = 4;
+    constexpr int kJobsPerProducer = 500;
+    constexpr size_t kMaxPossiblePending = static_cast<size_t>(kProducers * kJobsPerProducer * 4);
+
+    std::atomic<bool> producersDone{ false };
+    std::atomic<size_t> maxObservedPending{ 0 };
+    std::atomic<int> executedJobs{ 0 };
+
+    std::vector<std::thread> producers;
+    producers.reserve(kProducers);
+    for (int p = 0; p < kProducers; ++p) {
+        producers.emplace_back([&]() {
+            std::vector<Engine::JobHandle> localHandles;
+            localHandles.reserve(kJobsPerProducer);
+            for (int j = 0; j < kJobsPerProducer; ++j) {
+                localHandles.push_back(Engine::JobSystem::Dispatch([&]() {
+                    executedJobs.fetch_add(1, std::memory_order_relaxed);
+                }));
+                if ((j % 25) == 0) {
+                    Engine::JobSystem::ParallelFor(size_t(32), [&](size_t) {
+                        executedJobs.fetch_add(1, std::memory_order_relaxed);
+                    }, /*chunkSize=*/4);
+                }
+            }
+            Engine::JobSystem::WaitAll(localHandles);
+        });
+    }
+
+    // Monitor pending job counter concurrently on main thread to catch any unsigned underflow (SIZE_MAX)
+    while (!producersDone.load(std::memory_order_acquire)) {
+        const size_t pending = Engine::JobSystem::GetPendingJobCount();
+        EXPECT_LE(pending, kMaxPossiblePending);
+        size_t curMax = maxObservedPending.load(std::memory_order_relaxed);
+        while (pending > curMax && !maxObservedPending.compare_exchange_weak(curMax, pending)) {}
+
+        Engine::JobSystem::ExecuteOneJob();
+
+        bool allJoinedReady = (executedJobs.load(std::memory_order_acquire) >=
+            kProducers * kJobsPerProducer + kProducers * (kJobsPerProducer / 25) * 32);
+        if (allJoinedReady) {
+            producersDone.store(true, std::memory_order_release);
+        } else {
+            std::this_thread::yield();
+        }
+    }
+
+    for (auto& t : producers) {
+        t.join();
+    }
+
+    EXPECT_EQ(executedJobs.load(std::memory_order_relaxed),
+              kProducers * kJobsPerProducer + kProducers * (kJobsPerProducer / 25) * 32);
+    EXPECT_EQ(Engine::JobSystem::GetPendingJobCount(), 0u);
+    EXPECT_LE(maxObservedPending.load(), kMaxPossiblePending);
+
+    Engine::JobSystem::Shutdown();
+}
+
+TEST(JobSystemTest, ParallelFor_ExceptionDoesNotDeadlockWorkersOrCaller) {
+    Engine::JobSystem::Init(3);
+
+    // 1. Multi-chunk ParallelFor throwing on one chunk completes all chunks cleanly and rethrows on caller
+    std::atomic<int> nonThrowingChunks{ 0 };
+    EXPECT_THROW(
+        Engine::JobSystem::ParallelFor(size_t(16), [&](size_t i) {
+            if (i == 7) {
+                throw std::runtime_error("ParallelFor chunk exception");
+            }
+            nonThrowingChunks.fetch_add(1, std::memory_order_relaxed);
+        }, /*chunkSize=*/1),
+        std::runtime_error);
+
+    EXPECT_EQ(nonThrowingChunks.load(std::memory_order_relaxed), 15);
+    EXPECT_EQ(Engine::JobSystem::GetPendingJobCount(), 0u);
+
+    // 2. Subsequent dispatches and continuations after a throwing job still execute cleanly
+    std::atomic<bool> continuationRan{ false };
+    auto badJob = Engine::JobSystem::Dispatch([]() {
+        throw std::runtime_error("Dispatched job exception");
+    });
+    auto nextJob = badJob.Then([&]() {
+        continuationRan.store(true, std::memory_order_release);
+    });
+
+    nextJob.Wait();
+    EXPECT_TRUE(badJob.IsComplete());
+    EXPECT_TRUE(nextJob.IsComplete());
+    EXPECT_TRUE(continuationRan.load(std::memory_order_acquire));
+
+    Engine::JobSystem::Shutdown();
+}
+
+TEST(JobSystemTest, Shutdown_WithQueuedJobsAndBlockedWaitersCompletesWithoutHang) {
+    Engine::JobSystem::Init(2);
+
+    std::atomic<bool> releaseWorkers{ false };
+    std::atomic<int> blockerStarted{ 0 };
+
+    // Pin both workers briefly so the subsequent queued jobs and continuations remain queued until Shutdown
+    std::vector<Engine::JobHandle> blockers;
+    for (int i = 0; i < 2; ++i) {
+        blockers.push_back(Engine::JobSystem::Dispatch([&]() {
+            blockerStarted.fetch_add(1, std::memory_order_acq_rel);
+            while (!releaseWorkers.load(std::memory_order_acquire)) {
+                std::this_thread::yield();
+            }
+        }));
+    }
+
+    while (blockerStarted.load(std::memory_order_acquire) < 2) {
+        std::this_thread::yield();
+    }
+
+    constexpr int kQueuedJobs = 100;
+    std::atomic<int> completedJobs{ 0 };
+    std::vector<Engine::JobHandle> queuedHandles;
+    queuedHandles.reserve(kQueuedJobs * 2);
+
+    for (int i = 0; i < kQueuedJobs; ++i) {
+        auto h = Engine::JobSystem::Dispatch([&]() {
+            completedJobs.fetch_add(1, std::memory_order_relaxed);
+        });
+        auto cont = h.Then([&]() {
+            completedJobs.fetch_add(1, std::memory_order_relaxed);
+        });
+        queuedHandles.push_back(h);
+        queuedHandles.push_back(cont);
+    }
+
+    // External waiter thread blocked in JobHandle::Wait() before Shutdown runs
+    std::thread waiter([&]() {
+        queuedHandles.back().Wait();
+    });
+
+    // Release worker blockers slightly after Shutdown() starts so Shutdown() definitely runs
+    // while queued jobs and continuations are still pending in worker queues.
+    std::thread releaser([&]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(15));
+        releaseWorkers.store(true, std::memory_order_release);
+    });
+
+    Engine::JobSystem::Shutdown();
+
+    releaser.join();
+    waiter.join();
+    for (const auto& h : blockers) {
+        EXPECT_TRUE(h.IsComplete());
+    }
+    for (const auto& h : queuedHandles) {
+        EXPECT_TRUE(h.IsComplete());
+    }
+    EXPECT_EQ(completedJobs.load(std::memory_order_relaxed), kQueuedJobs * 2);
+    EXPECT_FALSE(Engine::JobSystem::IsInitialized());
 }
 
 } // namespace

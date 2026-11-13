@@ -4,7 +4,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
 
 [P0] CRITICAL CORRECTNESS, MEMORY-SAFETY & CONCURRENCY BUGS
 --------------------------------------------------------------------------------
-[ ] 1. Fix Mid-Render Vector Reallocation UB & Multi-Pass Camera Sync in SceneRenderer::GatherRenderContext()
+[x] 1. Fix Mid-Render Vector Reallocation UB & Multi-Pass Camera Sync in SceneRenderer::GatherRenderContext()
     - Files: Engine/src/Renderer/SceneRenderer.cpp (lines 124, 128-136, 317-335), Engine/src/Scene/Scene.cpp (lines 76-82), Engine/src/Scene/TerrainChunkManager.cpp (lines 931, 954-969)
     - Root Cause:
       * SceneRenderer::GatherRenderContext() iterates `scene.GetGameObjects()` without holding `Scene::ScopedIterationGuard` (`m_IterationDepth == 0`).
@@ -17,7 +17,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
       * Keep `CameraComponent::SyncFromTransform()` in the render sync path (preserving `CAM-02`), guard it with a per-frame stamp (`Time::GetFrameCount()`) so multi-pass rendering never double-decays trauma, and add `if (!go->IsActiveInHierarchy()) continue;` to the camera search loop.
     - Verification (EngineTests): Stream uncached chunks with new pooled prop entities across frames under iterator debug/ASan checks -> zero vector reallocation crashes and exactly 1 camera rig step per frame.
 
-[ ] 2. Fix Scene Teardown Destruction Order, Skipped OnDestroy() & Move Semantics
+[x] 2. Fix Scene Teardown Destruction Order, Skipped OnDestroy() & Move Semantics
     - Files: Engine/include/Engine/Scene/Scene.h (lines 224-235), Engine/src/Scene/Scene.cpp (lines 37-51, 197-206)
     - Root Cause:
       * `m_GameObjects` is declared before `m_PhysicsWorld`, `m_PoolManager`, and `m_Renderer` (`Scene.h:224-234`), so C++ reverse member destruction destroys subsystems before `m_GameObjects`.
@@ -28,7 +28,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
       * Declare `m_PhysicsWorld`, `m_PoolManager`, and `m_Renderer` before `m_GameObjects`, invoke `OnDestroy()` across surviving entities before subsystem teardown, delete or rebind `Scene` move ops, and invoke `ProcessPendingStarts()` after runtime physics registration and pushing to `m_GameObjects`.
     - Verification (EngineTests): Test `Start()` visibility of `Rigidbody2D::RuntimeBody.IsValid()`, verify `OnDestroy()` counts on `~Scene()`, and verify `Scene` move ownership or non-movability at compile/test time.
 
-[ ] 3. Fix Box2D Contact Begin-Event Approach Speed, RemoveComponent Body Leaks & Capsule Mismatch
+[x] 3. Fix Box2D Contact Begin-Event Approach Speed, RemoveComponent Body Leaks & Capsule Mismatch
     - Files: Engine/src/Physics/PhysicsWorld2D.cpp (lines 269-319, 825-866, 905-910, 1039-1056), Engine/src/Physics/PhysicsComponents.cpp (lines 103-141, 254-283, 330-338, 382-388, 456-484, 626-629, 666-692), Engine/include/Engine/Scene/GameObject.h (lines 495-545)
     - Root Cause:
       * While `contactEvents.hitEvents` (`:825-866`) properly uses Box2D's `hit.approachSpeed`, the `contactEvents.beginEvents` fallback (`:907-909`) computes `relVel = vA - vB` and negates `-(relVel.x * normal.x + relVel.y * normal.y)`. Because `b2Manifold::normal` points from shape A to shape B, approaching bodies have `(vA - vB) . normal > 0`, so the negation clamps approaching impacts to `0.0f` and scores separating bodies positive.
@@ -44,7 +44,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
       * Guard degenerate capsule lengths in update, compare both box extents (`vertices[0]` and `vertices[2]`), invalidate `m_StaticColliderCacheDirty` on any static collider add/remove, and restore dynamic body type in `OnPoolRelease()` while preserving `m_BaseMass` during stasis.
     - Verification (EngineTests): Assert positive `ApproachSpeed` on sub-threshold `beginEvents` impacts, zero Box2D body leaks on `RemoveComponent<Rigidbody2D>()`, multi-collider disable/remove without freezing `Rigidbody2D`, degenerate capsule runtime resize, and stasis-frozen pool reuse.
 
-[ ] 4. Fix JobSystem Pending-Count Underflow, Exception Deadlock & Shutdown Drops
+[x] 4. Fix JobSystem Pending-Count Underflow, Exception Deadlock & Shutdown Drops
     - Files: Engine/include/Engine/Core/JobSystem.h (lines 186-190, 272-325, 343), Engine/src/Core/JobSystem.cpp (lines 32-39, 74-98, 218-240, 291-303, 364-396)
     - Root Cause:
       * `SubmitQueuedJob()` pushes to worker queues before `m_PendingJobs.fetch_add(1)` (`:298 -> :303`), while `PopWorkerJob`/`StealWorkerJob`/`PopGlobalJob` decrement on pop (`:218-240`) allowing unsigned `size_t` underflow to `SIZE_MAX`, and `ExecuteOneJob()` early-exits on `m_PendingJobs == 0`.

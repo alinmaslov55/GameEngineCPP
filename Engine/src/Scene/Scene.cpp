@@ -38,17 +38,59 @@ Scene::~Scene() {
     if (m_PhysicsWorld && m_PhysicsWorld->IsRuntimeRunning()) {
         m_PhysicsWorld->OnRuntimeStop();
     }
+    m_IterationDepth = 0;
     if (m_PoolManager) {
         m_PoolManager->ClearAllPools();
     }
-    m_PendingDestroyQueue.clear();
-    m_PendingSpawnQueue.clear();
+
+    auto destroyBatch = [](const std::vector<GameObject*>& rawPtrs) {
+        for (GameObject* go : rawPtrs) {
+            if (!go || go->m_LifecycleState == EntityLifecycle::Destroyed) {
+                continue;
+            }
+            go->m_LifecycleState = EntityLifecycle::Destroyed;
+            for (size_t i = 0; i < go->m_Components.size(); ++i) {
+                if (go->m_Components[i]) {
+                    go->m_Components[i]->OnDestroy();
+                }
+            }
+        }
+    };
+
+    while (!m_PendingDestroyQueue.empty() || !m_GameObjects.empty() || !m_PendingSpawnQueue.empty()) {
+        if (!m_PendingDestroyQueue.empty()) {
+            auto queuedDestroys = std::move(m_PendingDestroyQueue);
+            m_PendingDestroyQueue.clear();
+            destroyBatch(queuedDestroys);
+        }
+
+        auto surviving = std::move(m_GameObjects);
+        m_GameObjects.clear();
+        auto pendingSpawns = std::move(m_PendingSpawnQueue);
+        m_PendingSpawnQueue.clear();
+
+        std::vector<GameObject*> rawSurviving;
+        rawSurviving.reserve(surviving.size() + pendingSpawns.size());
+        for (auto& go : surviving) {
+            if (go) {
+                rawSurviving.push_back(go.get());
+            }
+        }
+        for (auto& pending : pendingSpawns) {
+            if (pending) {
+                rawSurviving.push_back(pending.get());
+            }
+        }
+        destroyBatch(rawSurviving);
+
+        for (GameObject* go : rawSurviving) {
+            m_EntityUUIDMap.erase(go->GetUUID());
+        }
+    }
+
     m_EntityUUIDMap.clear();
     ENGINE_CORE_INFO("Scene destroyed: '{}'", m_Name);
 }
-
-Scene::Scene(Scene&&) noexcept = default;
-Scene& Scene::operator=(Scene&&) noexcept = default;
 
 // ============================================================================
 // Subsystem Accessors
@@ -195,14 +237,15 @@ void Scene::FlushEntityLifecycleQueues() {
                     m_EntityUUIDMap.erase(pending->GetUUID());
                 } else {
                     pending->m_LifecycleState = EntityLifecycle::Alive;
-                    pending->ProcessPendingStarts();
+                    GameObject* rawPending = pending.get();
                     if (m_PhysicsWorld && m_PhysicsWorld->IsRuntimeRunning()) {
-                        m_PhysicsWorld->RegisterRuntimeBody(pending.get());
+                        m_PhysicsWorld->RegisterRuntimeBody(rawPending);
                     }
-                    if (pending->HasStaticSpatialCollider()) {
+                    if (rawPending->HasStaticSpatialCollider()) {
                         staticColliderSpawned = true;
                     }
                     m_GameObjects.push_back(std::move(pending));
+                    rawPending->ProcessPendingStarts();
                 }
             }
 

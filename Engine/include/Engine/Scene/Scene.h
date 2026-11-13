@@ -61,8 +61,8 @@ public:
 
     Scene(const Scene&) = delete;
     Scene& operator=(const Scene&) = delete;
-    Scene(Scene&&) noexcept;
-    Scene& operator=(Scene&&) noexcept;
+    Scene(Scene&&) = delete;
+    Scene& operator=(Scene&&) = delete;
 
     // Subsystem accessors (SRP & DIP)
     [[nodiscard]] PhysicsWorld2D& GetPhysicsWorld() noexcept;
@@ -221,17 +221,18 @@ private:
     std::thread::id m_OwnerThreadId{ std::this_thread::get_id() };
 #endif
     std::string m_Name;
-    std::vector<std::unique_ptr<GameObject>> m_GameObjects;
-    std::vector<std::unique_ptr<GameObject>> m_PendingSpawnQueue;
-    std::vector<GameObject*> m_PendingDestroyQueue;
-    std::vector<Transform*> m_TempChildrenScratch;
-    std::unordered_map<uint64_t, GameObject*> m_EntityUUIDMap;
-    uint32_t m_IterationDepth = 0;
 
-    // Subsystems
+    // Subsystems (declared before entity storage so reverse member destruction destroys entities first)
     std::unique_ptr<PhysicsWorld2D> m_PhysicsWorld;
     std::unique_ptr<EntityPoolManager> m_PoolManager;
     std::unique_ptr<SceneRenderer> m_Renderer;
+
+    std::vector<Transform*> m_TempChildrenScratch;
+    std::unordered_map<uint64_t, GameObject*> m_EntityUUIDMap;
+    std::vector<GameObject*> m_PendingDestroyQueue;
+    std::vector<std::unique_ptr<GameObject>> m_GameObjects;
+    std::vector<std::unique_ptr<GameObject>> m_PendingSpawnQueue;
+    uint32_t m_IterationDepth = 0;
 };
 
 } // namespace Engine

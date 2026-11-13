@@ -5,6 +5,7 @@
 #include "Engine/Physics/PhysicsWorld2D.h"
 
 #include <thread>
+#include <type_traits>
 #ifdef _MSC_VER
 #include <crtdbg.h>
 #endif
@@ -115,6 +116,14 @@ TEST(SceneTest, OwnerThreadAffinityTrackingAndGuard) {
     EXPECT_TRUE(workerSawSceneOwner);
     EXPECT_TRUE(workerSawPhysicsOwner);
 #endif
+}
+
+TEST(SceneTest, NonCopyableAndNonMovableForPointerStability) {
+    static_assert(!std::is_copy_constructible_v<Engine::Scene>, "Scene must not be copy-constructible");
+    static_assert(!std::is_copy_assignable_v<Engine::Scene>, "Scene must not be copy-assignable");
+    static_assert(!std::is_move_constructible_v<Engine::Scene>, "Scene must not be move-constructible");
+    static_assert(!std::is_move_assignable_v<Engine::Scene>, "Scene must not be move-assignable");
+    SUCCEED();
 }
 
 } // namespace

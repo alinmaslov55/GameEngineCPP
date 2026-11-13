@@ -126,11 +126,12 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     static const auto kUIPanelMask = Detail::GetComponentTypeMask<UIPanel>();
     static const auto kUILabelMask = Detail::GetComponentTypeMask<UILabel>();
 
-    const auto& gameObjects = scene.GetGameObjects();
-
     ctx.activeCam = overrideCamera;
     if (!ctx.activeCam) {
-        for (auto& go : gameObjects) {
+        for (const auto& go : scene.GetGameObjects()) {
+            if (!go->IsActiveInHierarchy()) {
+                continue;
+            }
             if (go->GetComponentMask() & kCameraMask) {
                 if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
                     cameraComp->SyncFromTransform(go->GetTransform());
@@ -150,6 +151,29 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     const glm::vec3 camFocal = ctx.activeCam->GetFocalPoint();
     const glm::vec3 camForward = ctx.activeCam->GetForward();
     const glm::vec3 camRightXZ = ctx.activeCam->GetRightXZ();
+
+    // Pre-pass: Stream terrain chunks before locking entity iteration or caching m_GameObjects pointers.
+    // UpdateStreaming() may spawn/acquire pooled chunk entities and reallocate m_GameObjects.
+    m_TerrainChunkScratch.clear();
+    for (const auto& go : scene.GetGameObjects()) {
+        if (!go->IsActiveInHierarchy()) {
+            continue;
+        }
+        if (go->GetComponentMask() & kTerrainChunkMask) {
+            if (auto* chunkMgr = go->GetComponent<TerrainChunkManager>()) {
+                m_TerrainChunkScratch.emplace_back(chunkMgr, go->GetTransform());
+            }
+        }
+    }
+    for (const auto& [chunkMgr, tr] : m_TerrainChunkScratch) {
+        (void)tr;
+        if (chunkMgr && chunkMgr->AutoStreamWithCamera) {
+            chunkMgr->UpdateStreaming(camFocal);
+        }
+    }
+
+    Scene::ScopedIterationGuard iterationGuard(scene);
+    const auto& gameObjects = scene.GetGameObjects();
 
     m_StandeeCommands.clear();
     m_StandeeCommands.reserve(gameObjects.size());
@@ -334,9 +358,6 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
 
         if (mask & kTerrainChunkMask) {
             if (auto* chunkMgr = gameObject->GetComponent<TerrainChunkManager>()) {
-                if (chunkMgr->AutoStreamWithCamera) {
-                    chunkMgr->UpdateStreaming(camFocal);
-                }
                 m_TerrainChunkScratch.emplace_back(chunkMgr, gameObject->GetTransform());
             }
         }

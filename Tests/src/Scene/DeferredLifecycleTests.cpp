@@ -768,4 +768,96 @@ TEST(DeferredLifecycleTest, CascadingDestroyReusesTempChildrenScratch) {
     EXPECT_EQ(scene.GetTempChildrenScratchCapacity(), capBefore);
 }
 
+TEST(DeferredLifecycleTest, DeferredSpawnStartSeesValidRuntimeBodyAndSceneMembership) {
+    Engine::Scene scene("StartPhysicsVisibilityScene");
+    scene.OnRuntimeStart();
+
+    struct StartObserverComponent : public Engine::Component {
+        Engine::Scene* scenePtr = nullptr;
+        bool startCalled = false;
+        bool sawValidBodyInStart = false;
+        bool sawEntityInSceneInStart = false;
+
+        void Start() override {
+            startCalled = true;
+            auto* owner = GetGameObject();
+            if (!owner || !scenePtr) return;
+
+            if (auto* rb = owner->GetComponent<Engine::Rigidbody2D>()) {
+                sawValidBodyInStart = rb->RuntimeBody.IsValid();
+            }
+            for (const auto& go : scenePtr->GetGameObjects()) {
+                if (go.get() == owner) {
+                    sawEntityInSceneInStart = true;
+                    break;
+                }
+            }
+        }
+    };
+
+    StartObserverComponent* observer = nullptr;
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+        auto* spawned = scene.CreateGameObject("DeferredPhysicsEntity");
+        spawned->AddComponent<Engine::Rigidbody2D>();
+        spawned->AddComponent<Engine::CircleCollider2D>();
+        observer = spawned->AddComponent<StartObserverComponent>();
+        observer->scenePtr = &scene;
+        EXPECT_FALSE(observer->startCalled);
+    }
+
+    ASSERT_NE(observer, nullptr);
+    EXPECT_TRUE(observer->startCalled);
+    EXPECT_TRUE(observer->sawValidBodyInStart);
+    EXPECT_TRUE(observer->sawEntityInSceneInStart);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(DeferredLifecycleTest, SceneDestructorInvokesOnDestroyOnSurvivingAndQueuedEntities) {
+    int survivingDestroyed = 0;
+    int queuedDestroyed = 0;
+    bool subsystemAliveDuringOnDestroy = false;
+
+    struct TeardownTrackerComponent : public Engine::Component {
+        int* counter = nullptr;
+        bool* subsystemOk = nullptr;
+        Engine::Scene* scenePtr = nullptr;
+
+        void OnDestroy() override {
+            if (counter) {
+                ++(*counter);
+            }
+            if (subsystemOk && scenePtr) {
+                *subsystemOk = !scenePtr->IsRuntimeRunning() &&
+                               (&scenePtr->GetPhysicsWorld() != nullptr) &&
+                               (&scenePtr->GetPoolManager() != nullptr) &&
+                               (&scenePtr->GetRenderer() != nullptr);
+            }
+        }
+    };
+
+    {
+        Engine::Scene scene("TeardownOrderScene");
+
+        auto* surviving = scene.CreateGameObject("SurvivingEntity");
+        auto* survTracker = surviving->AddComponent<TeardownTrackerComponent>();
+        survTracker->counter = &survivingDestroyed;
+        survTracker->subsystemOk = &subsystemAliveDuringOnDestroy;
+        survTracker->scenePtr = &scene;
+
+        // Enqueue an entity in PendingDestroy without flushing before ~Scene()
+        auto* queued = scene.CreateGameObject("QueuedDestroyEntity");
+        auto* queuedTracker = queued->AddComponent<TeardownTrackerComponent>();
+        queuedTracker->counter = &queuedDestroyed;
+
+        scene.SetIsIteratingEntities(true);
+        scene.DestroyGameObject(queued);
+    }
+
+    EXPECT_EQ(survivingDestroyed, 1);
+    EXPECT_EQ(queuedDestroyed, 1);
+    EXPECT_TRUE(subsystemAliveDuringOnDestroy);
+}
+
 } // namespace

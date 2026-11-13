@@ -2,6 +2,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsWorld2D.h"
 #include "Engine/Physics/Collision2DInfo.h"
 #include "Engine/Utils/Logger.h"
 
@@ -45,7 +46,7 @@ void GameObject::NotifyPhysicsComponentAdded() {
     NotifyStaticSpatialColliderStateChanged();
 }
 
-void GameObject::NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool removedIsRigidbody) {
+void GameObject::NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool removedIsRigidbody, Component* removedComp) {
     if (!m_Scene) {
         return;
     }
@@ -53,6 +54,19 @@ void GameObject::NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool remov
     ENGINE_CORE_TRACE("GameObject '{}' (UUID {}): NotifyPhysicsComponentRemoved (tilemap={}, rb={})",
                       GetName(), GetUUID(), removedIsTilemap, removedIsRigidbody);
     if (m_Scene->IsRuntimeRunning()) {
+        auto& physicsWorld = m_Scene->GetPhysicsWorld();
+        if (removedComp) {
+            if (removedIsRigidbody) {
+                physicsWorld.UnregisterRigidbody(this, static_cast<Rigidbody2D*>(removedComp));
+            } else if (removedIsTilemap) {
+                auto* tilemap = static_cast<Tilemap*>(removedComp);
+                physicsWorld.UnregisterTilemap(tilemap->RuntimeBody);
+                tilemap->RuntimeBody.Reset();
+            } else {
+                physicsWorld.UnregisterCollider(this, static_cast<Collider2D*>(removedComp));
+            }
+        }
+
         if (HasComponent<Rigidbody2D>() || HasComponent<Collider2D>() || HasComponent<Tilemap>()) {
             m_Scene->MarkPhysicsDirty(this);
         } else {

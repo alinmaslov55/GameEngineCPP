@@ -592,4 +592,54 @@ TEST(SpatialQueriesAndStasisTest, OverlapArcXZ_InPlaceFilteringReusesCallerBuffe
     scene.OnRuntimeStop();
 }
 
+TEST(SpatialQueriesAndStasisTest, StasisFrozen_PreservesStaticBodyType_BaseMass_AndPoolReleaseRestoresDynamicType) {
+    Engine::Scene scene("StasisEdgeCasesScene");
+
+    // 1. Static Rigidbody2D must stay b2_staticBody when stasis-frozen
+    auto* staticGo = scene.CreateGameObject("StaticStasis");
+    auto* staticRb = staticGo->AddComponent<Engine::Rigidbody2D>();
+    staticRb->Type = Engine::Rigidbody2D::BodyType::Static;
+    staticGo->AddComponent<Engine::BoxCollider2D>()->size = { 1.0f, 1.0f };
+
+    // 2. Dynamic Rigidbody2D with non-1.0 base mass preserves m_BaseMass across RefreshMassFromShapes while frozen
+    auto* dynGo = scene.CreateGameObject("DynamicStasis");
+    auto* dynRb = dynGo->AddComponent<Engine::Rigidbody2D>();
+    dynRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    auto* dynBox = dynGo->AddComponent<Engine::BoxCollider2D>();
+    dynBox->size = { 2.0f, 2.0f }; // area 4.0 -> mass ~4.0 with density 1.0
+
+    scene.OnRuntimeStart();
+
+    b2BodyId staticBodyId = b2LoadBodyId(staticRb->RuntimeBody.Value);
+    b2BodyId dynBodyId = b2LoadBodyId(dynRb->RuntimeBody.Value);
+    ASSERT_TRUE(b2Body_IsValid(staticBodyId));
+    ASSERT_TRUE(b2Body_IsValid(dynBodyId));
+
+    const float initialBaseMass = dynRb->GetBaseMass();
+    EXPECT_NEAR(initialBaseMass, 4.0f, 1e-3f);
+
+    staticRb->SetStasisFrozen(true);
+    EXPECT_EQ(b2Body_GetType(staticBodyId), b2_staticBody);
+    staticRb->SetStasisFrozen(false);
+    EXPECT_EQ(b2Body_GetType(staticBodyId), b2_staticBody);
+
+    dynRb->SetStasisFrozen(true);
+    EXPECT_EQ(b2Body_GetType(dynBodyId), b2_kinematicBody);
+    dynRb->RefreshMassFromShapes();
+    EXPECT_NEAR(dynRb->GetBaseMass(), initialBaseMass, 1e-3f);
+
+    // 3. Releasing frozen dynamic entity back to pool must restore b2_dynamicBody for reuse
+    dynRb->OnPoolRelease();
+    EXPECT_FALSE(dynRb->IsStasisFrozen());
+    EXPECT_EQ(b2Body_GetType(dynBodyId), b2_dynamicBody);
+
+    dynRb->OnPoolAcquire();
+    dynRb->SetVelocityXZ({ 4.0f, 0.0f });
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_EQ(b2Body_GetType(dynBodyId), b2_dynamicBody);
+    EXPECT_GT(dynGo->GetTransform()->position.x, 0.02f);
+
+    scene.OnRuntimeStop();
+}
+
 } // namespace

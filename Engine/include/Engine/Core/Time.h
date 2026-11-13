@@ -13,6 +13,7 @@ public:
     [[nodiscard]] static float GetUnscaledDeltaTime() noexcept { return s_UnscaledDeltaTime; }
     [[nodiscard]] static float GetTotalTime() noexcept { return s_TotalTime; }
     [[nodiscard]] static float GetUnscaledTotalTime() noexcept { return s_UnscaledTotalTime; }
+    [[nodiscard]] static uint64_t GetFrameCount() noexcept { return s_FrameCount; }
 
     static void SetTimeScale(float scale) noexcept;
     [[nodiscard]] static float GetTimeScale() noexcept {
@@ -45,6 +46,7 @@ private:
     static float s_MockDeltaTime;
     static bool s_UseMockDeltaTime;
     static uint64_t s_LastFrameTime;
+    static uint64_t s_FrameCount;
 };
 } // namespace Engine
 

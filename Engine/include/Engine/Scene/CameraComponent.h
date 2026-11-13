@@ -9,6 +9,7 @@
 #include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <limits>
 #include <glm/glm.hpp>
 
 namespace Engine {
@@ -98,6 +99,7 @@ private:
     float m_DistanceVelocity = 0.0f;
     float m_TargetZoomFactor = 0.0f;
     bool m_FirstSync = true;
+    uint64_t m_LastSyncedFrame = std::numeric_limits<uint64_t>::max();
 
     // Trauma & shake state
     float m_Trauma = 0.0f;

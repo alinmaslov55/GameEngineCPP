@@ -481,3 +481,48 @@ TEST_F(ContactAndSensorEventTest, ProcessPhysicsEvents_EarlyReturnAndReusableScr
 
     scene.OnRuntimeStop();
 }
+
+// 9. Sub-threshold impacts handled via contactEvents.beginEvents compute positive ApproachSpeed in both directions
+TEST_F(ContactAndSensorEventTest, BeginEventApproachSpeed_SubThresholdImpactIsPositive) {
+    auto runDirectionTest = [](float startX, float velX, float wallX) {
+        Engine::Scene scene("BeginEventApproachSpeedScene");
+        scene.OnRuntimeStart();
+
+        auto* wall = scene.CreateGameObject("Wall");
+        wall->GetTransform()->position = { wallX, 0.0f, 0.0f };
+        auto* wallCol = wall->AddComponent<Engine::BoxCollider2D>();
+        wallCol->size = { 1.0f, 2.0f };
+        wallCol->EnableHitEvents = false;
+
+        auto* mover = scene.CreateGameObject("Mover");
+        mover->GetTransform()->position = { startX, 0.0f, 0.0f };
+        auto* rb = mover->AddComponent<Engine::Rigidbody2D>();
+        rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+        rb->LinearDamping = 0.0f;
+        rb->MassMultiplier = 1.0f;
+        auto* moverCol = mover->AddComponent<Engine::CircleCollider2D>();
+        moverCol->Radius = 0.5f;
+        moverCol->EnableHitEvents = false;
+        auto* recv = mover->AddComponent<TestEventReceiver>();
+
+        rb->SetVelocityXZ({ velX, 0.0f });
+
+        bool entered = false;
+        for (int i = 0; i < 60; ++i) {
+            scene.UpdateRuntime(1.0f / 60.0f);
+            if (recv->CollisionEnterCount > 0) {
+                entered = true;
+                break;
+            }
+        }
+
+        EXPECT_TRUE(entered);
+        EXPECT_GT(recv->LastCollisionInfo.ApproachSpeed, 0.2f);
+        EXPECT_GT(recv->LastCollisionInfo.EffectiveImpulse, 0.0f);
+
+        scene.OnRuntimeStop();
+    };
+
+    runDirectionTest(0.0f, 0.6f, 1.05f);
+    runDirectionTest(0.0f, -0.6f, -1.05f);
+}

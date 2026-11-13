@@ -1,7 +1,9 @@
 #include <gtest/gtest.h>
+#include "Engine/Core/Time.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Renderer/EditorCamera.h"
 #include "Engine/Renderer/OrthographicCamera.h"
+#include "Engine/Renderer/SceneRenderer.h"
 #include "Engine/Scene/CameraComponent.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/LightComponents.h"
@@ -464,6 +466,60 @@ TEST(CameraComponentTest, Perlin1DContinuityAndBounds) {
         // C1 continuous: delta across 0.01 step must be small
         EXPECT_LE(std::abs(valNext - val), 0.15f);
     }
+}
+
+TEST(CameraComponentTest, InactiveCameraSkippedAndMultiPassRenderStepsRigOncePerFrame) {
+    Engine::Time::Reset();
+    Engine::Time::SetMockDeltaTime(0.016f);
+    Engine::Time::Update();
+
+    Engine::Scene scene("MultiPassCameraSyncScene");
+
+    // Inactive camera listed first must be skipped by GatherRenderContext()
+    auto* inactiveGo = scene.CreateGameObject("InactiveCamera");
+    inactiveGo->GetTransform()->position = { 100.0f, 0.0f, 100.0f };
+    auto* inactiveCam = inactiveGo->AddComponent<Engine::CameraComponent>();
+    inactiveCam->SmoothFollow = false;
+    inactiveCam->ResetToTarget(inactiveGo->GetTransform()->position);
+    inactiveGo->SetActive(false);
+
+    // Active gameplay camera listed second
+    auto* activeGo = scene.CreateGameObject("ActiveCamera");
+    activeGo->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* activeCam = activeGo->AddComponent<Engine::CameraComponent>();
+    activeCam->FollowSmoothTime = 0.11f;
+    activeCam->TraumaDecay = 1.4f;
+    activeCam->ResetToTarget({ 0.0f, 0.0f, 0.0f });
+    activeCam->AddTrauma(0.8f);
+
+    // Move target slightly so smooth-follow would advance if stepped multiple times
+    activeGo->GetTransform()->position = { 10.0f, 0.0f, 0.0f };
+
+    // Frame 1: Call GatherRenderContext() 3 times within the same Time::GetFrameCount()
+    const auto ctxPass1 = scene.GetRenderer().GatherRenderContext(scene);
+    EXPECT_EQ(ctxPass1.activeCam, &activeCam->Camera);
+    const float expectedAfterOneStep = 0.8f - 1.4f * 0.016f;
+    EXPECT_NEAR(activeCam->GetTrauma(), expectedAfterOneStep, 1e-5f);
+    const glm::vec3 smoothedAfterPass1 = activeCam->GetSmoothedFocalPoint();
+    EXPECT_GT(smoothedAfterPass1.x, 0.0f);
+
+    const auto ctxPass2 = scene.GetRenderer().GatherRenderContext(scene);
+    const auto ctxPass3 = scene.GetRenderer().GatherRenderContext(scene);
+    EXPECT_EQ(ctxPass2.activeCam, &activeCam->Camera);
+    EXPECT_EQ(ctxPass3.activeCam, &activeCam->Camera);
+
+    // Rig state must NOT double-step or double-decay trauma on extra passes in the same frame
+    EXPECT_FLOAT_EQ(activeCam->GetTrauma(), expectedAfterOneStep);
+    EXPECT_EQ(activeCam->GetSmoothedFocalPoint(), smoothedAfterPass1);
+
+    // Frame 2: Advancing Time::Update() allows exactly 1 more step
+    Engine::Time::Update();
+    scene.GetRenderer().GatherRenderContext(scene);
+    const float expectedAfterTwoSteps = 0.8f - 2.0f * 1.4f * 0.016f;
+    EXPECT_NEAR(activeCam->GetTrauma(), expectedAfterTwoSteps, 1e-5f);
+    EXPECT_GT(activeCam->GetSmoothedFocalPoint().x, smoothedAfterPass1.x);
+
+    Engine::Time::Reset();
 }
 
 } // namespace
