@@ -3,6 +3,7 @@
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Physics/Collision2DInfo.h"
+#include "Engine/Utils/Logger.h"
 
 namespace Engine {
 
@@ -35,6 +36,8 @@ void GameObject::NotifyPhysicsComponentAdded() {
         return;
     }
     m_Scene->AssertMainThreadAffinity("GameObject::NotifyPhysicsComponentAdded");
+    ENGINE_CORE_TRACE("GameObject '{}' (UUID {}): NotifyPhysicsComponentAdded (runtime={})",
+                      GetName(), GetUUID(), m_Scene->IsRuntimeRunning());
     if (m_Scene->IsRuntimeRunning()) {
         m_Scene->RegisterRuntimeBody(this);
         m_Scene->MarkPhysicsDirty(this);
@@ -47,6 +50,8 @@ void GameObject::NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool remov
         return;
     }
     m_Scene->AssertMainThreadAffinity("GameObject::NotifyPhysicsComponentRemoved");
+    ENGINE_CORE_TRACE("GameObject '{}' (UUID {}): NotifyPhysicsComponentRemoved (tilemap={}, rb={})",
+                      GetName(), GetUUID(), removedIsTilemap, removedIsRigidbody);
     if (m_Scene->IsRuntimeRunning()) {
         if (HasComponent<Rigidbody2D>() || HasComponent<Collider2D>() || HasComponent<Tilemap>()) {
             m_Scene->MarkPhysicsDirty(this);
@@ -76,11 +81,13 @@ void GameObject::FlushPendingComponentRemovals() {
     }
     if (!hasPending) return;
 
+    size_t removedCount = 0;
     ++m_ComponentIterationDepth;
     for (size_t i = 0; i < m_Components.size(); ++i) {
         auto* comp = m_Components[i].get();
         if (comp && comp->IsPendingRemoval()) {
             comp->OnDestroy();
+            ++removedCount;
         }
     }
     --m_ComponentIterationDepth;
@@ -88,6 +95,8 @@ void GameObject::FlushPendingComponentRemovals() {
     std::erase_if(m_Components, [](const std::unique_ptr<Component>& comp) {
         return !comp || comp->IsPendingRemoval();
     });
+    ENGINE_CORE_DEBUG("GameObject '{}' (UUID {}): Flushed {} pending component removal(s)",
+                      GetName(), GetUUID(), removedCount);
 }
 
 void GameObject::DispatchCollisionEnter2D(const Collision2DInfo& info) {

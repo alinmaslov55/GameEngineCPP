@@ -4,6 +4,7 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Utils/Logger.h"
 
 #include <box2d/box2d.h>
 #include <box2d/collision.h>
@@ -58,7 +59,10 @@ bool Box2DOverlapCallback(b2ShapeId shapeId, void* context) {
 void PhysicsQueries::OverlapCircleXZ(const Scene& scene, glm::vec2 centerXZ, float radius,
                                     uint64_t maskBits, std::vector<GameObject*>& outHits) {
     outHits.clear();
-    if (radius <= 0.0f) return;
+    if (radius <= 0.0f) {
+        ENGINE_CORE_WARN("PhysicsQueries::OverlapCircleXZ ignored non-positive radius {}", radius);
+        return;
+    }
 
     if (scene.IsRuntimeRunning()) {
         b2WorldId worldId = b2LoadWorldId(scene.GetPhysicsWorldId());
@@ -72,6 +76,8 @@ void PhysicsQueries::OverlapCircleXZ(const Scene& scene, glm::vec2 centerXZ, flo
             OverlapContext ctx;
             ctx.outHits = &outHits;
             b2World_OverlapShape(worldId, &proxy, filter, Box2DOverlapCallback, &ctx);
+            ENGINE_CORE_TRACE("PhysicsQueries::OverlapCircleXZ (Box2D) at ({:.2f}, {:.2f}) r={:.2f} -> {} hits",
+                              centerXZ.x, centerXZ.y, radius, outHits.size());
             return;
         }
     }
@@ -118,13 +124,18 @@ void PhysicsQueries::OverlapCircleXZ(const Scene& scene, glm::vec2 centerXZ, flo
             outHits.push_back(go.get());
         }
     }
+    ENGINE_CORE_TRACE("PhysicsQueries::OverlapCircleXZ (fallback) at ({:.2f}, {:.2f}) r={:.2f} -> {} hits",
+                      centerXZ.x, centerXZ.y, radius, outHits.size());
 }
 
 void PhysicsQueries::OverlapArcXZ(const Scene& scene, glm::vec2 originXZ, glm::vec2 forwardXZ,
                                  float radius, float halfAngleDegrees, uint64_t maskBits,
                                  std::vector<GameObject*>& outHits) {
     outHits.clear();
-    if (radius <= 0.0f) return;
+    if (radius <= 0.0f) {
+        ENGINE_CORE_WARN("PhysicsQueries::OverlapArcXZ ignored non-positive radius {}", radius);
+        return;
+    }
 
     OverlapCircleXZ(scene, originXZ, radius, maskBits, outHits);
     if (outHits.empty()) return;
@@ -155,6 +166,8 @@ void PhysicsQueries::OverlapArcXZ(const Scene& scene, glm::vec2 originXZ, glm::v
         const float dot = glm::dot(fwd, dir);
         return dot < (cosThreshold - 1e-5f);
     });
+    ENGINE_CORE_TRACE("PhysicsQueries::OverlapArcXZ at ({:.2f}, {:.2f}) r={:.2f} halfAngle={:.1f} -> {} hits",
+                      originXZ.x, originXZ.y, radius, halfAngleDegrees, outHits.size());
 }
 
 bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm::vec2 endXZ,
@@ -162,7 +175,10 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
     outHit = RaycastHitXZ{};
     glm::vec2 diff = endXZ - startXZ;
     float maxDist = glm::length(diff);
-    if (maxDist < 1e-5f) return false;
+    if (maxDist < 1e-5f) {
+        ENGINE_CORE_TRACE("PhysicsQueries::RaycastClosestXZ skipped degenerate zero-length ray");
+        return false;
+    }
 
     if (scene.IsRuntimeRunning()) {
         b2WorldId worldId = b2LoadWorldId(scene.GetPhysicsWorldId());
@@ -185,6 +201,8 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
                             outHit.PointXZ = { res.point.x, res.point.y };
                             outHit.NormalXZ = { res.normal.x, res.normal.y };
                             outHit.Fraction = res.fraction;
+                            ENGINE_CORE_TRACE("PhysicsQueries::RaycastClosestXZ (Box2D) hit '{}' at ({:.2f}, {:.2f}) t={:.3f}",
+                                              go->GetName(), outHit.PointXZ.x, outHit.PointXZ.y, outHit.Fraction);
                             return true;
                         }
                     }
@@ -532,6 +550,10 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
                 }
             }
         }
+    }
+    if (foundHit && outHit.Entity) {
+        ENGINE_CORE_TRACE("PhysicsQueries::RaycastClosestXZ (fallback) hit '{}' at ({:.2f}, {:.2f}) t={:.3f}",
+                          outHit.Entity->GetName(), outHit.PointXZ.x, outHit.PointXZ.y, outHit.Fraction);
     }
     return foundHit;
 }

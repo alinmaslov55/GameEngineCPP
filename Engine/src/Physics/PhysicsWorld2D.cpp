@@ -42,10 +42,16 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
     AssertMainThreadAffinity("PhysicsWorld2D::RegisterRuntimeBody");
     if (!m_IsRuntimeRunning || !go) return;
     b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
-    if (!b2World_IsValid(worldId)) return;
+    if (!b2World_IsValid(worldId)) {
+        ENGINE_CORE_WARN("PhysicsWorld2D::RegisterRuntimeBody: Invalid b2WorldId while registering '{}'", go->GetName());
+        return;
+    }
 
     auto* transform = go->GetTransform();
-    if (!transform) return;
+    if (!transform) {
+        ENGINE_CORE_WARN("PhysicsWorld2D::RegisterRuntimeBody: '{}' has no Transform", go->GetName());
+        return;
+    }
 
     auto* rb2d = go->GetComponent<Rigidbody2D>();
     auto colliders = go->GetComponents<Collider2D>();
@@ -96,6 +102,8 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             bodyId = b2CreateBody(worldId, &bodyDef);
             rb2d->RuntimeBody = BodyHandle{ b2StoreBodyId(bodyId) };
             baseMassRecomputed = true;
+            ENGINE_CORE_DEBUG("PhysicsWorld2D: Created Box2D body for '{}' (type={}, pos=({:.2f}, {:.2f}), colliders={})",
+                              go->GetName(), static_cast<int>(rb2d->Type), worldPos.x, worldPos.z, colliders.size());
 
             if (rb2d->IsStasisFrozen()) {
                 b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
@@ -215,6 +223,8 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                     b2Body_Disable(bodyId);
                 }
                 bodyHandle = BodyHandle{ b2StoreBodyId(bodyId) };
+                ENGINE_CORE_DEBUG("PhysicsWorld2D: Created standalone static Box2D body for '{}' (pos=({:.2f}, {:.2f}), colliders={})",
+                                  go->GetName(), worldPos.x, worldPos.z, colliders.size());
             }
 
             for (auto* col : colliders) {
@@ -266,6 +276,7 @@ void PhysicsWorld2D::UnregisterRuntimeBody(GameObject* go) {
     std::erase(m_PendingPhysicsSync, go);
     RemovePhysicsBodyEntry(go);
 
+    uint32_t destroyedCount = 0;
     BodyHandle destroyedBody;
     if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
         if (rb2d->RuntimeBody.IsValid()) {
@@ -273,6 +284,7 @@ void PhysicsWorld2D::UnregisterRuntimeBody(GameObject* go) {
             b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
             if (b2Body_IsValid(bodyId)) {
                 b2DestroyBody(bodyId);
+                ++destroyedCount;
             }
         }
         rb2d->ResetRuntimeState();
@@ -291,6 +303,7 @@ void PhysicsWorld2D::UnregisterRuntimeBody(GameObject* go) {
         b2BodyId bodyId = b2LoadBodyId(staticBody.Value);
         if (b2Body_IsValid(bodyId)) {
             b2DestroyBody(bodyId);
+            ++destroyedCount;
         }
     }
 
@@ -299,9 +312,15 @@ void PhysicsWorld2D::UnregisterRuntimeBody(GameObject* go) {
             b2BodyId bodyId = b2LoadBodyId(tilemap->RuntimeBody.Value);
             if (b2Body_IsValid(bodyId)) {
                 b2DestroyBody(bodyId);
+                ++destroyedCount;
             }
             tilemap->RuntimeBody.Reset();
         }
+    }
+
+    if (destroyedCount > 0) {
+        ENGINE_CORE_DEBUG("PhysicsWorld2D: Unregistered runtime body for '{}' (destroyed {} Box2D bodies)",
+                          go->GetName(), destroyedCount);
     }
 }
 
@@ -313,6 +332,7 @@ void PhysicsWorld2D::DisableRuntimeBody(GameObject* go) {
             b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
             if (b2Body_IsValid(bodyId)) {
                 b2Body_Disable(bodyId);
+                ENGINE_CORE_TRACE("PhysicsWorld2D: Disabled runtime body for '{}'", go->GetName());
             }
         }
     }
@@ -360,6 +380,7 @@ void PhysicsWorld2D::CreateRuntimeTilemapBody(GameObject* go) {
     shapeDef.filter.categoryBits = PhysicsLayer::Environment;
     shapeDef.filter.maskBits = PhysicsLayer::All;
 
+    uint32_t shapeCount = 0;
     for (uint32_t gz = 0; gz < height; ++gz) {
         for (uint32_t gx = 0; gx < width; ++gx) {
             if (tilemap->GetTile(gx, gz).walkable) {
@@ -381,8 +402,12 @@ void PhysicsWorld2D::CreateRuntimeTilemapBody(GameObject* go) {
 
             b2Polygon tileBox = b2MakeOffsetBox(halfW, halfD, b2Vec2{ centerX, centerZ }, b2MakeRot(0.0f));
             b2CreatePolygonShape(bodyId, &shapeDef, &tileBox);
+            ++shapeCount;
         }
     }
+
+    ENGINE_CORE_DEBUG("PhysicsWorld2D: Created tilemap Box2D body for '{}' ({}x{} grid, {} merged collider spans)",
+                      go->GetName(), width, height, shapeCount);
 }
 
 void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int minRange, void* taskContext, void* userContext) {
@@ -423,6 +448,7 @@ void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int 
     }
 
     if (!taskSlot) {
+        ENGINE_CORE_TRACE("PhysicsWorld2D: Box2D task slots exhausted; executing {} items inline", itemCount);
         const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
         const uint32_t callerWorker = (currentWorker >= 0 && currentWorker < static_cast<int32_t>(workers))
                                           ? static_cast<uint32_t>(currentWorker)
@@ -517,6 +543,7 @@ void PhysicsWorld2D::OnRuntimeStart() {
         }
     }
     m_StaticCollidersDirty = true;
+    ENGINE_CORE_INFO("PhysicsWorld2D: Runtime started with {} tracked bodies", m_PhysicsBodies.size());
 }
 
 void PhysicsWorld2D::OnRuntimeStop() {
@@ -525,7 +552,10 @@ void PhysicsWorld2D::OnRuntimeStop() {
         return;
     }
 
-    ENGINE_CORE_INFO("PhysicsWorld2D: Stopping Box2D runtime physics");
+    ENGINE_CORE_INFO("PhysicsWorld2D: Stopping Box2D runtime physics (parallel tasks={}, serial tasks={}, tracked bodies={})",
+                     m_Box2DParallelTasksDispatched,
+                     m_Box2DSerialTasksExecuted,
+                     m_PhysicsBodies.size());
 
     b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
     if (b2World_IsValid(worldId)) {
@@ -775,6 +805,7 @@ void PhysicsWorld2D::ApplyAirbornePassThroughFilter(GameObject* go, bool airborn
     auto* rb2d = go->GetComponent<Rigidbody2D>();
     const uint64_t excludedMask = rb2d ? rb2d->AirbornePassThroughMask : PhysicsLayer::DefaultAirborneExcluded;
 
+    uint32_t updatedShapes = 0;
     for (auto* col : go->GetComponents<Collider2D>()) {
         if (!col->RuntimeShape.IsValid()) continue;
         b2ShapeId shapeId = b2LoadShapeId(col->RuntimeShape.Value);
@@ -782,7 +813,12 @@ void PhysicsWorld2D::ApplyAirbornePassThroughFilter(GameObject* go, bool airborn
             b2Filter filter = b2Shape_GetFilter(shapeId);
             filter.maskBits = airborne ? (col->MaskBits & ~excludedMask) : col->MaskBits;
             b2Shape_SetFilter(shapeId, filter);
+            ++updatedShapes;
         }
+    }
+    if (updatedShapes > 0) {
+        ENGINE_CORE_TRACE("PhysicsWorld2D: Updated airborne={} pass-through filter on {} shapes for '{}'",
+                          airborne, updatedShapes, go->GetName());
     }
 }
 
@@ -799,6 +835,10 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         sensors.beginCount == 0 && sensors.endCount == 0) {
         return;
     }
+
+    ENGINE_CORE_TRACE("PhysicsWorld2D: Events (hits={}, contactBegin={}, contactEnd={}, sensorBegin={}, sensorEnd={})",
+                      contacts.hitCount, contacts.beginCount, contacts.endCount,
+                      sensors.beginCount, sensors.endCount);
 
     // Guard entity lifecycle so DestroyGameObject calls during event dispatch defer to lifecycle queues
     Scene::ScopedIterationGuard guard(*m_Scene);
@@ -1113,6 +1153,8 @@ void PhysicsWorld2D::UpdateCollidersAndGravity(float deltaTime) {
         }
 
         m_StaticCollidersDirty = false;
+        ENGINE_CORE_DEBUG("PhysicsWorld2D: Rebuilt static collider spatial grid ({} colliders across {} grid cells)",
+                          m_StaticColliders.size(), m_StaticGrid.size());
     }
 }
 

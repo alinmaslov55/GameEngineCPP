@@ -1,4 +1,5 @@
 #include "Engine/Scene/TerrainFireGrid.h"
+#include "Engine/Utils/Logger.h"
 
 #include <glm/geometric.hpp>
 #include <algorithm>
@@ -29,6 +30,7 @@ void TerrainFireGrid::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
     const int32_t minZ = static_cast<int32_t>(std::floor((centerXZ.y - safeRadius) / CellSize));
     const int32_t maxZ = static_cast<int32_t>(std::floor((centerXZ.y + safeRadius) / CellSize));
 
+    uint32_t ignitedCount = 0;
     for (int32_t cz = minZ; cz <= maxZ; ++cz) {
         for (int32_t cx = minX; cx <= maxX; ++cx) {
             const FireCellCoord coord{ cx, cz };
@@ -53,8 +55,17 @@ void TerrainFireGrid::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
                     cell.VisualEntityUUID = m_SpawnVisual(center);
                 }
                 m_ActiveCells.emplace(coord, cell);
+                ++ignitedCount;
             }
         }
+    }
+
+    if (ignitedCount > 0) {
+        ENGINE_CORE_DEBUG("TerrainFireGrid::IgniteAtXZ: Ignited {} cell(s) around ({:.2f}, {:.2f}) r={:.2f} (active total: {})",
+                          ignitedCount, centerXZ.x, centerXZ.y, safeRadius, m_ActiveCells.size());
+    } else {
+        ENGINE_CORE_TRACE("TerrainFireGrid::IgniteAtXZ: No flammable cells ignited at ({:.2f}, {:.2f}) r={:.2f}",
+                          centerXZ.x, centerXZ.y, safeRadius);
     }
 }
 
@@ -82,9 +93,17 @@ void TerrainFireGrid::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
             m_ActiveCells.erase(it);
         }
     }
+
+    if (!toRemove.empty()) {
+        ENGINE_CORE_DEBUG("TerrainFireGrid::ExtinguishAtXZ: Extinguished {} cell(s) around ({:.2f}, {:.2f}) r={:.2f} (remaining: {})",
+                          toRemove.size(), centerXZ.x, centerXZ.y, safeRadius, m_ActiveCells.size());
+    }
 }
 
 void TerrainFireGrid::Clear() {
+    if (!m_ActiveCells.empty()) {
+        ENGINE_CORE_DEBUG("TerrainFireGrid::Clear: Clearing {} active fire cell(s)", m_ActiveCells.size());
+    }
     if (m_ReleaseVisual) {
         for (const auto& [coord, cell] : m_ActiveCells) {
             if (cell.VisualEntityUUID != 0) {
@@ -194,6 +213,11 @@ void TerrainFireGrid::SimulateTick(float tickDt) {
             }
             m_ActiveCells.erase(it);
         }
+    }
+
+    if (!pendingIgnitions.empty() || !pendingDecays.empty()) {
+        ENGINE_CORE_DEBUG("TerrainFireGrid::SimulateTick: +{} spread, -{} scorched (active total: {})",
+                          pendingIgnitions.size(), pendingDecays.size(), m_ActiveCells.size());
     }
 }
 

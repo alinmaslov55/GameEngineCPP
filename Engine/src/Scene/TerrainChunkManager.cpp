@@ -271,6 +271,8 @@ TerrainChunkManager::TerrainChunkManager()
         m_Layers[i].Glossiness = TerrainComponent::DefaultLayerGlossiness(i);
     }
     InitFireGrid();
+    ENGINE_CORE_INFO("TerrainChunkManager initialized (chunkSize={:.1f}m, splatRes={}x{}, activeRadius={}, retentionRadius={})",
+                     ChunkSizeMeters, SplatResolution, SplatResolution, ActiveRadiusChunks, CacheRetentionRadius);
 }
 
 TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
@@ -287,14 +289,19 @@ TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
         m_Layers[i].Glossiness = TerrainComponent::DefaultLayerGlossiness(i);
     }
     InitFireGrid();
+    ENGINE_CORE_INFO("TerrainChunkManager initialized (chunkSize={:.1f}m, splatRes={}x{}, activeRadius={}, retentionRadius={})",
+                     ChunkSizeMeters, SplatResolution, SplatResolution, ActiveRadiusChunks, CacheRetentionRadius);
 }
 
 TerrainChunkManager::~TerrainChunkManager() {
+    ENGINE_CORE_DEBUG("TerrainChunkManager shutting down ({} cached/resident chunks)", m_Chunks.size());
     ShutdownAsyncWorkers();
     m_FireGrid.ConfigureCallbacks(nullptr, nullptr, nullptr, nullptr);
 }
 
 void TerrainChunkManager::OnDestroy() {
+    ENGINE_CORE_INFO("TerrainChunkManager::OnDestroy: Releasing {} chunks and {} active fire cells",
+                     m_Chunks.size(), m_FireGrid.GetActiveFireCount());
     ShutdownAsyncWorkers();
     m_FireGrid.ConfigureCallbacks(nullptr, nullptr, nullptr, nullptr);
     m_FireGrid.Clear();
@@ -341,6 +348,9 @@ const TerrainChunk* TerrainChunkManager::GetChunk(ChunkCoord coord) const noexce
 void TerrainChunkManager::DispatchChunkGeneration(ChunkCoord coord) {
     const uint32_t res = std::clamp(SplatResolution, 5u, 513u);
     const float chunkSize = std::max(1.0f, ChunkSizeMeters);
+
+    ENGINE_CORE_DEBUG("TerrainChunkManager: Dispatching generation for chunk ({}, {}) [res={}x{}, size={:.1f}m, procedural={}]",
+                      coord.cx, coord.cz, res, res, chunkSize, m_WorldGenConfig.Enabled && m_BiomeGenerator);
 
     TerrainChunk& placeholder = m_Chunks[coord];
     placeholder.Coord = coord;
@@ -417,10 +427,13 @@ void TerrainChunkManager::DrainReadyPayloads() {
 
     const int32_t activeRadius = std::max(0, ActiveRadiusChunks);
     const int32_t retentionRadius = std::max(activeRadius, CacheRetentionRadius);
+    ENGINE_CORE_DEBUG("TerrainChunkManager::DrainReadyPayloads: Committing {} generated chunk payload(s)", payloads.size());
 
     for (auto& payload : payloads) {
         auto it = m_Chunks.find(payload.Coord);
         if (it == m_Chunks.end()) {
+            ENGINE_CORE_TRACE("TerrainChunkManager: Dropping stale payload for evicted chunk ({}, {})",
+                              payload.Coord.cx, payload.Coord.cz);
             continue;
         }
         TerrainChunk& chunk = it->second;
@@ -437,6 +450,8 @@ void TerrainChunkManager::DrainReadyPayloads() {
             std::abs(payload.Coord.cz - m_LastViewerChunk.cz)
         );
         if (dist > retentionRadius) {
+            ENGINE_CORE_DEBUG("TerrainChunkManager: Generated chunk ({}, {}) landed outside retention radius ({} > {}), discarding",
+                              payload.Coord.cx, payload.Coord.cz, dist, retentionRadius);
             ReleaseChunkEntities(chunk);
             m_Chunks.erase(it);
             continue;
@@ -535,6 +550,8 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
         if (dist > retentionRadius) {
             evictCandidates.emplace_back(coord, &chunk);
         } else if (dist > activeRadius && chunk.State != ChunkLoadState::CachedInRam) {
+            ENGINE_CORE_DEBUG("TerrainChunkManager: Demoting chunk ({}, {}) to RAM cache (dist={} > activeRadius={})",
+                              coord.cx, coord.cz, dist, activeRadius);
             chunk.GpuSplatTexture.reset();
             chunk.GpuSplatTexture1.reset();
             chunk.State = ChunkLoadState::CachedInRam;
@@ -552,7 +569,11 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
             return a.second->LastAccessFrame < b.second->LastAccessFrame;
         });
 
+        ENGINE_CORE_DEBUG("TerrainChunkManager: LRU-evicting {} chunk(s) beyond retention radius {}",
+                          evictCandidates.size(), retentionRadius);
         for (const auto& [coord, chunkPtr] : evictCandidates) {
+            ENGINE_CORE_TRACE("TerrainChunkManager: Evicting chunk ({}, {}) [userModified={}, lastAccess={}]",
+                              coord.cx, coord.cz, chunkPtr->UserModified, chunkPtr->LastAccessFrame);
             ReleaseChunkEntities(*chunkPtr);
             const float halfChunk = ChunkSizeMeters * 0.5f;
             const glm::vec2 center{
@@ -679,6 +700,10 @@ uint32_t TerrainChunkManager::ProcessGpuUploadRing() {
     }
 
     m_LastFrameUploadCount = uploaded;
+    if (uploaded > 0) {
+        ENGINE_CORE_TRACE("TerrainChunkManager: Uploaded {} chunk splat texture(s) to GPU ({} remaining in ring)",
+                          uploaded, m_GpuUploadRing.size());
+    }
     return uploaded;
 }
 
@@ -704,6 +729,8 @@ TerrainChunk& TerrainChunkManager::EnsureEditableChunk(ChunkCoord coord) {
     }
 
     const uint32_t res = std::clamp(SplatResolution, 5u, 513u);
+    ENGINE_CORE_DEBUG("TerrainChunkManager::EnsureEditableChunk: Creating new editable chunk ({}, {}) [res={}x{}]",
+                      coord.cx, coord.cz, res, res);
     TerrainChunk& created = m_Chunks[coord];
     created.Coord = coord;
     created.State = ChunkLoadState::ReadyForGpuUpload;
@@ -728,12 +755,15 @@ void TerrainChunkManager::PaintWorldBrush(float worldX,
                                           float falloff,
                                           float strength) {
     if (layerIndex >= TerrainComponent::MaxLayers || radiusWorld <= 0.0f || strength <= 0.0f) {
+        ENGINE_CORE_WARN("TerrainChunkManager::PaintWorldBrush ignored invalid params (layer={}, radius={:.2f}, strength={:.2f})",
+                         layerIndex, radiusWorld, strength);
         return;
     }
 
     const float pad = radiusWorld + 1e-3f;
     const ChunkCoord minCoord = WorldToChunk(worldX - pad, worldZ - pad);
     const ChunkCoord maxCoord = WorldToChunk(worldX + pad, worldZ + pad);
+    uint32_t paintedChunks = 0;
 
     for (int32_t cz = minCoord.cz; cz <= maxCoord.cz; ++cz) {
         for (int32_t cx = minCoord.cx; cx <= maxCoord.cx; ++cx) {
@@ -770,8 +800,14 @@ void TerrainChunkManager::PaintWorldBrush(float worldX,
                 if (chunk->IsResident() && (!chunk->HasGpuTexture() || chunk->GpuSplatTexture1 == nullptr)) {
                     EnqueueGpuUpload({ cx, cz }, *chunk);
                 }
+                ++paintedChunks;
             }
         }
+    }
+
+    if (paintedChunks > 0) {
+        ENGINE_CORE_TRACE("TerrainChunkManager::PaintWorldBrush: layer={} at ({:.2f}, {:.2f}) r={:.2f} -> {} chunk(s) dirtied",
+                          layerIndex, worldX, worldZ, radiusWorld, paintedChunks);
     }
 }
 
@@ -868,10 +904,15 @@ void TerrainChunkManager::ConfigureProceduralWorld(const WorldGenConfig& config)
     m_WorldGenConfig.OriginSafeRadius = std::max(0.5f, m_WorldGenConfig.OriginSafeRadius);
     m_WorldGenConfig.PoiApronRadius = std::max(0.5f, m_WorldGenConfig.PoiApronRadius);
     m_WorldGenConfig.PoiSuperCellChunks = std::max(1, m_WorldGenConfig.PoiSuperCellChunks);
+    ENGINE_CORE_INFO("TerrainChunkManager: Configuring procedural world (enabled={}, seed={}, safeRadius={:.1f}m, poiSuperCell={} chunks)",
+                     m_WorldGenConfig.Enabled, m_WorldGenConfig.Seed,
+                     m_WorldGenConfig.OriginSafeRadius, m_WorldGenConfig.PoiSuperCellChunks);
     RegenerateWorld();
 }
 
 void TerrainChunkManager::RegenerateWorld() {
+    ENGINE_CORE_INFO("TerrainChunkManager::RegenerateWorld: Clearing {} chunks (seed={})",
+                     m_Chunks.size(), m_WorldGenConfig.Seed);
     ShutdownAsyncWorkers();
     for (auto& [coord, chunk] : m_Chunks) {
         (void)coord;
@@ -894,6 +935,10 @@ void TerrainChunkManager::RegisterPropPrefab(ProceduralPropKind kind, const std:
     const size_t idx = static_cast<size_t>(kind);
     if (idx < m_PropPrefabs.size()) {
         m_PropPrefabs[idx] = prefab;
+        ENGINE_CORE_DEBUG("TerrainChunkManager: Registered prop prefab for kind={} (valid={})",
+                          idx, prefab && prefab->IsValid());
+    } else {
+        ENGINE_CORE_WARN("TerrainChunkManager::RegisterPropPrefab: Out-of-range prop kind index {}", idx);
     }
 }
 
@@ -912,6 +957,8 @@ void TerrainChunkManager::SpawnChunkEntities(TerrainChunk& chunk) {
     GameObject* owner = GetGameObject();
     Scene* scene = owner ? owner->GetScene() : nullptr;
     if (!scene) {
+        ENGINE_CORE_WARN("TerrainChunkManager::SpawnChunkEntities: Missing owner/scene for chunk ({}, {})",
+                         chunk.Coord.cx, chunk.Coord.cz);
         return;
     }
 
@@ -925,11 +972,14 @@ void TerrainChunkManager::SpawnChunkEntities(TerrainChunk& chunk) {
         }
         const auto& prefab = GetOrCreatePropPrefab(kind);
         if (!prefab || !prefab->IsValid()) {
+            ENGINE_CORE_WARN("TerrainChunkManager: Skipping prop kind {} due to invalid prefab", idx);
             return;
         }
         const auto& spec = kPropSpecs[idx];
         GameObject* spawned = scene->AcquirePooled(spec.PoolKey, *prefab, pos);
         if (!spawned) {
+            ENGINE_CORE_WARN("TerrainChunkManager: Failed to acquire pooled prop '{}' at ({:.2f}, {:.2f}, {:.2f})",
+                             spec.PoolKey, pos.x, pos.y, pos.z);
             return;
         }
         if (auto* t = spawned->GetTransform()) {
@@ -949,12 +999,17 @@ void TerrainChunkManager::SpawnChunkEntities(TerrainChunk& chunk) {
         acquireProp(poi.Kind, poi.WorldPosition, 1.0f, 0.0f);
     }
     chunk.EntitiesSpawned = true;
+    ENGINE_CORE_DEBUG("TerrainChunkManager: Spawned {} entity/entities for chunk ({}, {}) [props={}, POIs={}]",
+                      chunk.SpawnedEntityUUIDs.size(), chunk.Coord.cx, chunk.Coord.cz,
+                      chunk.Props.size(), chunk.POIs.size());
 }
 
 void TerrainChunkManager::ReleaseChunkEntities(TerrainChunk& chunk) {
     if (!chunk.EntitiesSpawned) {
         return;
     }
+    ENGINE_CORE_DEBUG("TerrainChunkManager: Releasing {} entity/entities for chunk ({}, {})",
+                      chunk.SpawnedEntityUUIDs.size(), chunk.Coord.cx, chunk.Coord.cz);
     GameObject* owner = GetGameObject();
     Scene* scene = owner ? owner->GetScene() : nullptr;
     if (scene) {
@@ -994,6 +1049,8 @@ uint64_t TerrainChunkManager::SpawnFirewallEntity(const glm::vec2& centerXZ) {
 
     GameObject* firewall = scene->CreateGameObject("TarFirewall");
     if (!firewall) {
+        ENGINE_CORE_WARN("TerrainChunkManager::SpawnFirewallEntity: Failed to create TarFirewall at ({:.2f}, {:.2f})",
+                         centerXZ.x, centerXZ.y);
         return 0;
     }
 
@@ -1030,6 +1087,7 @@ void TerrainChunkManager::ReleaseFirewallEntity(uint64_t uuid) {
     Scene* scene = owner ? owner->GetScene() : nullptr;
     if (scene) {
         if (GameObject* go = scene->FindGameObjectByUUID(uuid)) {
+            ENGINE_CORE_TRACE("TerrainChunkManager: Releasing TarFirewall entity (UUID: {})", uuid);
             scene->DestroyGameObject(go);
         }
     }

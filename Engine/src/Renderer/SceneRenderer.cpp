@@ -73,6 +73,7 @@ SceneRenderer::SceneRenderer()
 
 void SceneRenderer::OnViewportResize(Scene& scene, uint32_t width, uint32_t height) {
     if (width == 0 || height == 0) {
+        ENGINE_CORE_WARN("SceneRenderer::OnViewportResize ignored zero dimension ({}x{})", width, height);
         return;
     }
     m_ViewportWidth = width;
@@ -81,14 +82,18 @@ void SceneRenderer::OnViewportResize(Scene& scene, uint32_t width, uint32_t heig
     const float aspectRatio = static_cast<float>(width) / static_cast<float>(height);
     m_Camera.SetAspectRatio(aspectRatio);
 
+    uint32_t updatedCameras = 0;
     for (auto& go : scene.GetGameObjects()) {
         if (!go->IsActiveInHierarchy()) continue;
         if (auto* cameraComp = go->GetComponent<CameraComponent>()) {
             if (!cameraComp->FixedAspectRatio) {
                 cameraComp->SetViewportSize(width, height);
+                ++updatedCameras;
             }
         }
     }
+    ENGINE_CORE_DEBUG("SceneRenderer: Viewport resized to {}x{} (aspect={:.3f}, updatedCameras={})",
+                      width, height, aspectRatio, updatedCameras);
 }
 
 const PerspectiveCamera& SceneRenderer::GetActiveCamera(const Scene& scene) const {
@@ -136,6 +141,7 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
         }
         if (!ctx.activeCam) {
             ctx.activeCam = &m_Camera;
+            ENGINE_CORE_TRACE("SceneRenderer::GatherRenderContext using fallback internal camera");
         }
     }
 
@@ -486,6 +492,11 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     }
 
     ctx.useHDRPostProcess = (ctx.postProcess != nullptr && ctx.postProcess->Enabled && PostProcessor::IsValid());
+    ENGINE_CORE_TRACE(
+        "SceneRenderer::GatherRenderContext: standees={}, shadowStandees={}, torchStandees={}, pointLights={}, terrains={}, chunkManagers={}, hdr={}",
+        m_StandeeCommands.size(), m_ShadowStandeeCommands.size(), m_TorchShadowStandeeCommands.size(),
+        ctx.lighting.PointLightCount, m_TerrainScratch.size(), m_TerrainChunkScratch.size(), ctx.useHDRPostProcess
+    );
     return ctx;
 }
 
@@ -511,6 +522,7 @@ void SceneRenderer::RenderPassShadowMap(SceneRenderContext& ctx) {
     ctx.lighting.ShadowsEnabled = true;
     ctx.lighting.ShadowMapTextureID = ShadowMap::GetDepthTextureID();
     ctx.lighting.ShadowMapTexelSize = 1.0f / static_cast<float>(ShadowMap::GetResolution());
+    ENGINE_CORE_TRACE("SceneRenderer::RenderPassShadowMap: {} shadow casters", m_ShadowStandeeCommands.size());
 }
 
 void SceneRenderer::RenderPassTorchShadowMap(SceneRenderContext& ctx) {
@@ -573,6 +585,8 @@ void SceneRenderer::RenderPassTorchShadowMap(SceneRenderContext& ctx) {
     }
 
     TorchShadowMap::EndCapture();
+    ENGINE_CORE_TRACE("SceneRenderer::RenderPassTorchShadowMap: completed for torch at ({:.2f}, {:.2f}, {:.2f}) r={:.2f}",
+                      torchPos.x, torchPos.y, torchPos.z, shadowRadius);
 }
 
 void SceneRenderer::RenderPassGroundPlane(SceneRenderContext& ctx) {

@@ -50,6 +50,9 @@ Transform::~Transform() {
         m_Parent = nullptr;
     }
     // Orphan remaining children safely
+    if (!m_Children.empty()) {
+        ENGINE_CORE_TRACE("Transform::~Transform orphaning {} child transforms", m_Children.size());
+    }
     for (auto* child : m_Children) {
         if (child) {
             child->m_Parent = nullptr;
@@ -127,6 +130,10 @@ bool Transform::SetParent(Transform* newParent, bool keepWorldTransform) {
     m_LastScale = scale;
     SetDirty();
     NotifySpatialTransformChanged();
+    ENGINE_CORE_DEBUG("Transform::SetParent: '{}' reparented to '{}' (keepWorld={})",
+                      GetGameObject() ? GetGameObject()->GetName() : "<unnamed>",
+                      (m_Parent && m_Parent->GetGameObject()) ? m_Parent->GetGameObject()->GetName() : "<root>",
+                      keepWorldTransform);
     return true;
 }
 

@@ -2,6 +2,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Utils/Logger.h"
 
 namespace Engine {
 
@@ -38,12 +39,16 @@ void EntityPoolManager::PropagatePoolRelease(GameObject* root) {
 }
 
 void EntityPoolManager::PrewarmPool(const std::string& poolKey, const Prefab& prefab, uint32_t count) {
-    if (!m_Scene) return;
+    if (!m_Scene) {
+        ENGINE_CORE_WARN("EntityPoolManager::PrewarmPool('{}'): Scene is null", poolKey);
+        return;
+    }
     m_Scene->AssertMainThreadAffinity("EntityPoolManager::PrewarmPool");
     auto& pool = m_Pools[poolKey];
     pool.freeList.reserve(pool.freeList.size() + count);
     pool.allInstances.reserve(pool.allInstances.size() + count);
 
+    uint32_t spawned = 0;
     for (uint32_t i = 0; i < count; ++i) {
         GameObject* instance = m_Scene->InstantiatePrefab(prefab, glm::vec3(0.0f));
         if (instance) {
@@ -53,12 +58,18 @@ void EntityPoolManager::PrewarmPool(const std::string& poolKey, const Prefab& pr
             instance->SetActive(false);
             pool.freeList.push_back(instance);
             pool.allInstances.push_back(instance);
+            ++spawned;
         }
     }
+    ENGINE_CORE_INFO("EntityPoolManager::PrewarmPool('{}'): Prewarmed {}/{} instance(s) (total={})",
+                     poolKey, spawned, count, pool.allInstances.size());
 }
 
 GameObject* EntityPoolManager::AcquirePooled(const std::string& poolKey, const Prefab& prefab, const glm::vec3& worldPos) {
-    if (!m_Scene) return nullptr;
+    if (!m_Scene) {
+        ENGINE_CORE_ERROR("EntityPoolManager::AcquirePooled('{}'): Scene is null", poolKey);
+        return nullptr;
+    }
     m_Scene->AssertMainThreadAffinity("EntityPoolManager::AcquirePooled");
     auto& pool = m_Pools[poolKey];
     GameObject* instance = nullptr;
@@ -75,12 +86,15 @@ GameObject* EntityPoolManager::AcquirePooled(const std::string& poolKey, const P
         }
     }
 
+    const bool recycled = (instance != nullptr);
     if (!instance) {
         instance = m_Scene->InstantiatePrefab(prefab, worldPos);
         if (instance) {
             instance->SetPoolKey(poolKey);
             instance->SetInFreeList(false);
             pool.allInstances.push_back(instance);
+        } else {
+            ENGINE_CORE_ERROR("EntityPoolManager::AcquirePooled('{}'): Prefab instantiation failed", poolKey);
         }
     } else {
         if (auto* transform = instance->GetTransform()) {
@@ -91,6 +105,9 @@ GameObject* EntityPoolManager::AcquirePooled(const std::string& poolKey, const P
     if (instance) {
         PropagatePoolAcquire(instance);
         instance->SetActive(true);
+        ENGINE_CORE_TRACE("EntityPoolManager::AcquirePooled('{}'): {} UUID {} (free={}, total={})",
+                          poolKey, recycled ? "Reused" : "Allocated", instance->GetUUID(),
+                          pool.freeList.size(), pool.allInstances.size());
     }
 
     return instance;
@@ -100,7 +117,10 @@ void EntityPoolManager::ReleaseToPool(const std::string& poolKey, GameObject* in
     if (m_Scene) {
         m_Scene->AssertMainThreadAffinity("EntityPoolManager::ReleaseToPool");
     }
-    if (!instance) return;
+    if (!instance) {
+        ENGINE_CORE_WARN("EntityPoolManager::ReleaseToPool('{}'): Attempted to release null instance", poolKey);
+        return;
+    }
 
     PropagatePoolRelease(instance);
     instance->SetActive(false);
@@ -109,6 +129,8 @@ void EntityPoolManager::ReleaseToPool(const std::string& poolKey, GameObject* in
         instance->SetInFreeList(true);
         auto& pool = m_Pools[poolKey];
         pool.freeList.push_back(instance);
+        ENGINE_CORE_TRACE("EntityPoolManager::ReleaseToPool('{}'): Released UUID {} (free={}, total={})",
+                          poolKey, instance->GetUUID(), pool.freeList.size(), pool.allInstances.size());
     }
 }
 
@@ -136,6 +158,8 @@ void EntityPoolManager::ClearPool(const std::string& poolKey) {
     auto it = m_Pools.find(poolKey);
     if (it == m_Pools.end()) return;
 
+    ENGINE_CORE_INFO("EntityPoolManager::ClearPool('{}'): Destroying {} pooled instance(s)",
+                     poolKey, it->second.allInstances.size());
     auto instances = it->second.allInstances;
     for (auto* instance : instances) {
         if (instance && !instance->IsPendingDestroy()) {
@@ -148,6 +172,9 @@ void EntityPoolManager::ClearPool(const std::string& poolKey) {
 void EntityPoolManager::ClearAllPools() {
     if (!m_Scene) return;
     m_Scene->AssertMainThreadAffinity("EntityPoolManager::ClearAllPools");
+    if (!m_Pools.empty()) {
+        ENGINE_CORE_INFO("EntityPoolManager::ClearAllPools: Clearing {} pool(s)", m_Pools.size());
+    }
     auto pools = m_Pools;
     for (auto& [key, pool] : pools) {
         for (auto* instance : pool.allInstances) {

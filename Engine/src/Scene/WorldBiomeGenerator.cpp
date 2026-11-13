@@ -1,5 +1,6 @@
 #include "Engine/Scene/WorldBiomeGenerator.h"
 #include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Utils/Logger.h"
 
 #include <algorithm>
 #include <cmath>
@@ -256,7 +257,10 @@ std::array<uint8_t, 8> BiomeSample::ToSplat8() const noexcept {
 
 WorldBiomeGenerator::WorldBiomeGenerator(WorldGenConfig config) noexcept
     : m_Config(config),
-      m_Noise(config.Seed) {}
+      m_Noise(config.Seed) {
+    ENGINE_CORE_INFO("WorldBiomeGenerator initialized (seed={}, originSafeRadius={:.1f}m, poiApron={:.1f}m, superCell={} chunks)",
+                     m_Config.Seed, m_Config.OriginSafeRadius, m_Config.PoiApronRadius, m_Config.PoiSuperCellChunks);
+}
 
 POISpawnDesc WorldBiomeGenerator::ComputeSuperCellPOI(int32_t superX,
                                                       int32_t superZ,
@@ -601,6 +605,9 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
     scatterTier(kTiers[0], true);
     scatterTier(kTiers[1], false);
     scatterTier(kTiers[2], false);
+
+    ENGINE_CORE_DEBUG("WorldBiomeGenerator::GenerateChunkData ({}, {}): res={}x{}, props={}, POIs={}, exclusionPOIs={}",
+                      cx, cz, res, res, outProps.size(), outPOIs.size(), exclusionPOIs.size());
 }
 
 } // namespace Engine

@@ -243,6 +243,8 @@ Texture2DArray& Texture2DArray::operator=(Texture2DArray&& other) noexcept {
 
 void Texture2DArray::Bind(uint32_t slot) const {
     if (m_RendererID == 0 || !HasActiveGLArrayContext()) {
+        ENGINE_CORE_TRACE("Texture2DArray::Bind skipped (id={}, activeGL={})",
+                          m_RendererID, HasActiveGLArrayContext());
         return;
     }
     glActiveTexture(GL_TEXTURE0 + slot);
@@ -257,10 +259,14 @@ void Texture2DArray::Unbind() const {
 
 void Texture2DArray::SetLayerData(uint32_t layerIndex, const void* rgba8Data, bool generateMips) {
     if (layerIndex >= m_Layers || !rgba8Data) {
+        ENGINE_CORE_WARN("Texture2DArray::SetLayerData ignored invalid arguments (layer={}/{}, data={})",
+                         layerIndex, m_Layers, rgba8Data ? "valid" : "null");
         return;
     }
     m_UploadedLayers[layerIndex] = 1u;
     if (m_RendererID == 0 || !HasActiveGLArrayContext()) {
+        ENGINE_CORE_DEBUG("Texture2DArray::SetLayerData marked CPU layer {} without GL upload (id={})",
+                          layerIndex, m_RendererID);
         return;
     }
 
@@ -359,6 +365,8 @@ bool Texture2DArray::PackAlbedoHeightRGBA8(const uint8_t* diffusePixels,
                                            std::vector<uint8_t>& outRgba8,
                                            int fallbackHeight) {
     if (!diffusePixels || diffuseW == 0 || diffuseH == 0 || targetW == 0 || targetH == 0) {
+        ENGINE_CORE_WARN("Texture2DArray::PackAlbedoHeightRGBA8 rejected invalid dimensions/input ({}x{} -> {}x{})",
+                         diffuseW, diffuseH, targetW, targetH);
         return false;
     }
 
@@ -409,6 +417,8 @@ bool Texture2DArray::PackNormalGlossRGBA8(const uint8_t* normalPixels,
                                           uint32_t targetH,
                                           std::vector<uint8_t>& outRgba8) {
     if (targetW == 0 || targetH == 0) {
+        ENGINE_CORE_WARN("Texture2DArray::PackNormalGlossRGBA8 rejected zero target dimensions ({}x{})",
+                         targetW, targetH);
         return false;
     }
 
@@ -501,6 +511,8 @@ bool Texture2DArray::BuildAlbedoHeightSliceFromFiles(const std::string& diffuseP
                                                      const glm::u8vec4& fallbackRgba,
                                                      std::vector<uint8_t>& outRgba8) {
     if (targetW == 0 || targetH == 0) {
+        ENGINE_CORE_WARN("Texture2DArray::BuildAlbedoHeightSliceFromFiles rejected zero target dimensions ({}x{})",
+                         targetW, targetH);
         return false;
     }
 
@@ -517,6 +529,13 @@ bool Texture2DArray::BuildAlbedoHeightSliceFromFiles(const std::string& diffuseP
     int hw = 0, hh = 0, hch = 0;
     StbiPtr hPixels(!resolvedHeight.empty() ? stbi_load(resolvedHeight.c_str(), &hw, &hh, &hch, 0) : nullptr);
 
+    if (!diffusePath.empty() && !dPixels) {
+        ENGINE_CORE_WARN("Texture2DArray: Failed to load terrain diffuse '{}' (using solid fallback color)", diffusePath);
+    }
+    if (!heightPath.empty() && !hPixels) {
+        ENGINE_CORE_WARN("Texture2DArray: Failed to load terrain height map '{}' (using fallback height)", heightPath);
+    }
+
     if (!dPixels || dw <= 0 || dh <= 0) {
         const uint8_t solidPixel[4] = { fallbackRgba.r, fallbackRgba.g, fallbackRgba.b, fallbackRgba.a };
         return PackAlbedoHeightRGBA8(solidPixel,
@@ -532,6 +551,10 @@ bool Texture2DArray::BuildAlbedoHeightSliceFromFiles(const std::string& diffuseP
                                      outRgba8,
                                      hPixels ? -1 : static_cast<int>(fallbackRgba.a));
     }
+
+    ENGINE_CORE_DEBUG("Texture2DArray: Built albedo+height slice ({}x{}) from '{}' (diffuse {}x{}, height={})",
+                      targetW, targetH, resolvedDiffuse, dw, dh,
+                      hPixels ? resolvedHeight : "<luminance fallback>");
 
     return PackAlbedoHeightRGBA8(dPixels.get(),
                                  dch,
@@ -552,6 +575,8 @@ bool Texture2DArray::BuildNormalGlossSliceFromFiles(const std::string& normalPat
                                                     uint32_t targetH,
                                                     std::vector<uint8_t>& outRgba8) {
     if (targetW == 0 || targetH == 0) {
+        ENGINE_CORE_WARN("Texture2DArray::BuildNormalGlossSliceFromFiles rejected zero target dimensions ({}x{})",
+                         targetW, targetH);
         return false;
     }
 
@@ -561,6 +586,13 @@ bool Texture2DArray::BuildNormalGlossSliceFromFiles(const std::string& normalPat
     stbi_set_flip_vertically_on_load_thread(1);
     int nw = 0, nh = 0, nch = 0;
     StbiPtr nPixels(!resolvedNormal.empty() ? stbi_load(resolvedNormal.c_str(), &nw, &nh, &nch, 0) : nullptr);
+
+    if (!normalPath.empty() && !nPixels) {
+        ENGINE_CORE_WARN("Texture2DArray: Failed to load terrain normal map '{}' (using flat +Z fallback)", normalPath);
+    } else if (nPixels) {
+        ENGINE_CORE_DEBUG("Texture2DArray: Built normal+gloss slice ({}x{}, gloss={:.2f}) from '{}'",
+                          targetW, targetH, glossiness, resolvedNormal);
+    }
 
     return PackNormalGlossRGBA8(nPixels.get(),
                                 nch,

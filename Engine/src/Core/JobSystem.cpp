@@ -66,6 +66,7 @@ void JobSystem::Init(uint32_t workerCount) {
     if (workerCount == 0) {
         uint32_t numCores = std::thread::hardware_concurrency();
         workerCount = (numCores > 1) ? (numCores - 1) : 1;
+        ENGINE_CORE_DEBUG("JobSystem: Auto-detected {} worker threads (hardware_concurrency={})", workerCount, numCores);
     }
 
     s_Instance = std::unique_ptr<JobSystem>(new JobSystem(workerCount));
@@ -122,6 +123,7 @@ int32_t JobSystem::GetCurrentWorkerIndex() noexcept {
 
 JobHandle JobSystem::Dispatch(std::function<void()> job) {
     if (!job) {
+        ENGINE_CORE_WARN("JobSystem::Dispatch ignored empty job callback");
         return JobHandle{};
     }
 
@@ -129,6 +131,7 @@ JobHandle JobSystem::Dispatch(std::function<void()> job) {
     jobState->jobFunction = std::move(job);
 
     if (!IsInitialized()) {
+        ENGINE_CORE_DEBUG("JobSystem::Dispatch executing job inline (JobSystem uninitialized)");
         jobState->jobFunction();
         jobState->isFinished.store(true, std::memory_order_release);
         return JobHandle{ jobState };
@@ -147,6 +150,7 @@ JobHandle JobSystem::DispatchAfter(const JobHandle& dependency, std::function<vo
 
 JobHandle JobSystem::DispatchAfter(const std::vector<JobHandle>& dependencies, std::function<void()> job) {
     if (!job) {
+        ENGINE_CORE_WARN("JobSystem::DispatchAfter ignored empty job callback");
         return JobHandle{};
     }
 
@@ -154,6 +158,7 @@ JobHandle JobSystem::DispatchAfter(const std::vector<JobHandle>& dependencies, s
     jobState->jobFunction = std::move(job);
 
     if (!IsInitialized()) {
+        ENGINE_CORE_DEBUG("JobSystem::DispatchAfter executing job inline (JobSystem uninitialized)");
         jobState->jobFunction();
         jobState->isFinished.store(true, std::memory_order_release);
         return JobHandle{ jobState };
@@ -318,6 +323,7 @@ void JobSystem::SubmitJob(std::shared_ptr<JobState> job) {
 void JobSystem::SubmitRawJob(QueuedJob::RawCallback callback, void* userData) {
     if (!callback) return;
     if (!IsInitialized()) {
+        ENGINE_CORE_TRACE("JobSystem::SubmitRawJob executing callback inline (JobSystem uninitialized)");
         callback(userData);
         return;
     }

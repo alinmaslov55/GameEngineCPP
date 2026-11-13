@@ -3,6 +3,7 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SurfaceSample.h"
+#include "Engine/Utils/Logger.h"
 #include <box2d/box2d.h>
 #include <algorithm>
 
@@ -40,6 +41,8 @@ void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::ApplyImpulseXZ");
     if (m_IsStasisFrozen) {
         m_QueuedStasisImpulseXZ += impulseXZ;
+        ENGINE_CORE_TRACE("Rigidbody2D::ApplyImpulseXZ: Queued stasis impulse ({:.2f}, {:.2f}) on '{}'",
+                          impulseXZ.x, impulseXZ.y, GetGameObject() ? GetGameObject()->GetName() : "<unowned>");
         return;
     }
     if (RuntimeBody.IsValid()) {
@@ -49,6 +52,9 @@ void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_ApplyLinearImpulseToCenter(bodyId, b2Vec2{ impulseXZ.x, impulseXZ.y }, wake);
+        } else {
+            ENGINE_CORE_WARN("Rigidbody2D::ApplyImpulseXZ: Invalid Box2D body handle on '{}'",
+                             GetGameObject() ? GetGameObject()->GetName() : "<unowned>");
         }
     } else {
         InitialLinearVelocityXZ += impulseXZ;
@@ -67,6 +73,9 @@ void Rigidbody2D::ApplyForceXZ(const glm::vec2& forceXZ, bool wake) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_ApplyForceToCenter(bodyId, b2Vec2{ forceXZ.x, forceXZ.y }, wake);
+        } else {
+            ENGINE_CORE_WARN("Rigidbody2D::ApplyForceXZ: Invalid Box2D body handle on '{}'",
+                             GetGameObject() ? GetGameObject()->GetName() : "<unowned>");
         }
     }
 }
@@ -104,6 +113,9 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::SetStasisFrozen");
     if (m_IsStasisFrozen == frozen) return;
     m_IsStasisFrozen = frozen;
+    ENGINE_CORE_DEBUG("Rigidbody2D '{}': StasisFrozen -> {} (hasRuntimeBody={})",
+                      GetGameObject() ? GetGameObject()->GetName() : "<unowned>",
+                      frozen, RuntimeBody.IsValid());
 
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
@@ -134,6 +146,9 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
 
                 // Release and erupt all accumulated impulses
                 if (glm::length(m_QueuedStasisImpulseXZ) > 0.0f) {
+                    ENGINE_CORE_DEBUG("Rigidbody2D '{}': Erupting queued stasis impulse ({:.2f}, {:.2f})",
+                                      GetGameObject() ? GetGameObject()->GetName() : "<unowned>",
+                                      m_QueuedStasisImpulseXZ.x, m_QueuedStasisImpulseXZ.y);
                     b2Body_ApplyLinearImpulseToCenter(bodyId, b2Vec2{ m_QueuedStasisImpulseXZ.x, m_QueuedStasisImpulseXZ.y }, true);
                     m_QueuedStasisImpulseXZ = { 0.0f, 0.0f };
                 }
@@ -260,13 +275,17 @@ void Rigidbody2D::RefreshMassFromShapes() {
     if (!b2Body_IsValid(bodyId)) {
         return;
     }
-    if (b2Body_GetShapeCount(bodyId) > 0) {
+    const int shapeCount = b2Body_GetShapeCount(bodyId);
+    if (shapeCount > 0) {
         b2Body_ApplyMassFromShapes(bodyId);
     }
     const float unscaledMass = b2Body_GetMass(bodyId);
     m_BaseMass = (unscaledMass > 0.0001f) ? unscaledMass : 1.0f;
     m_AppliedMassMultiplier = 1.0f;
     ApplyMassMultiplierToBody();
+    ENGINE_CORE_TRACE("Rigidbody2D '{}': RefreshMassFromShapes (shapes={}, baseMass={:.3f}, mult={:.2f})",
+                      GetGameObject() ? GetGameObject()->GetName() : "<unowned>",
+                      shapeCount, m_BaseMass, MassMultiplier);
 }
 
 float Rigidbody2D::GetMass() const noexcept {
@@ -305,6 +324,8 @@ bool Rigidbody2D::GetBullet() const noexcept {
 
 void Rigidbody2D::OnEnable() {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::OnEnable");
+    ENGINE_CORE_TRACE("Rigidbody2D::OnEnable on '{}' (hasRuntimeBody={})",
+                      GetGameObject() ? GetGameObject()->GetName() : "<unowned>", RuntimeBody.IsValid());
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -319,6 +340,8 @@ void Rigidbody2D::OnEnable() {
 
 void Rigidbody2D::OnDisable() {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::OnDisable");
+    ENGINE_CORE_TRACE("Rigidbody2D::OnDisable on '{}' (hasRuntimeBody={})",
+                      GetGameObject() ? GetGameObject()->GetName() : "<unowned>", RuntimeBody.IsValid());
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -329,6 +352,8 @@ void Rigidbody2D::OnDisable() {
 
 void Rigidbody2D::OnDestroy() {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::OnDestroy");
+    ENGINE_CORE_DEBUG("Rigidbody2D::OnDestroy on '{}'",
+                      GetGameObject() ? GetGameObject()->GetName() : "<unowned>");
     if (auto* go = GetGameObject()) {
         if (auto* scene = go->GetScene()) {
             scene->UnregisterRuntimeBody(go);
@@ -339,6 +364,8 @@ void Rigidbody2D::OnDestroy() {
 
 void Rigidbody2D::OnPoolAcquire() {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::OnPoolAcquire");
+    ENGINE_CORE_TRACE("Rigidbody2D::OnPoolAcquire on '{}'",
+                      GetGameObject() ? GetGameObject()->GetName() : "<unowned>");
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -566,15 +593,23 @@ void Collider2D::SetGroupIndex(int32_t groupIndex) {
 
 void Collider2D::CreateOrUpdateShape(BodyHandle body, const Transform& transform, GameObject* go) {
     AssertPhysicsOwnerThread(this, "Collider2D::CreateOrUpdateShape");
-    if (!body.IsValid()) return;
+    if (!body.IsValid()) {
+        ENGINE_CORE_WARN("Collider2D::CreateOrUpdateShape: Invalid BodyHandle on '{}'", go ? go->GetName() : "<unowned>");
+        return;
+    }
     b2BodyId bodyId = ToB2(body);
-    if (!b2Body_IsValid(bodyId)) return;
+    if (!b2Body_IsValid(bodyId)) {
+        ENGINE_CORE_WARN("Collider2D::CreateOrUpdateShape: Invalid b2BodyId on '{}'", go ? go->GetName() : "<unowned>");
+        return;
+    }
 
     // Check if sensor state changed on existing shape
     if (RuntimeShape.IsValid()) {
         b2ShapeId shapeId = ToB2(RuntimeShape);
         if (b2Shape_IsValid(shapeId)) {
             if (b2Shape_IsSensor(shapeId) != IsSensor) {
+                ENGINE_CORE_DEBUG("Collider2D '{}': Recreating shape due to IsSensor toggle ({})",
+                                  go ? go->GetName() : "<unowned>", IsSensor);
                 b2DestroyShape(shapeId, true);
                 RuntimeShape.Reset();
             }
@@ -620,6 +655,8 @@ void BoxCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& tra
         b2ShapeDef shapeDef = BuildDefaultColliderShapeDef(this, go);
         b2ShapeId shapeId = b2CreatePolygonShape(bodyId, &shapeDef, &box);
         RuntimeShape = ToHandle(shapeId);
+        ENGINE_CORE_DEBUG("BoxCollider2D '{}': Created polygon shape (halfW={:.3f}, halfD={:.3f}, sensor={}, cat=0x{:x})",
+                          go ? go->GetName() : "<unowned>", halfW, halfD, IsSensor, CategoryBits);
     } else {
         b2ShapeId shapeId = ToB2(RuntimeShape);
         b2Polygon cur = b2Shape_GetPolygon(shapeId);
@@ -648,6 +685,8 @@ void CircleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& 
         b2ShapeDef shapeDef = BuildDefaultColliderShapeDef(this, go);
         b2ShapeId shapeId = b2CreateCircleShape(bodyId, &shapeDef, &circle);
         RuntimeShape = ToHandle(shapeId);
+        ENGINE_CORE_DEBUG("CircleCollider2D '{}': Created circle shape (r={:.3f}, sensor={}, cat=0x{:x})",
+                          go ? go->GetName() : "<unowned>", effectiveRadius, IsSensor, CategoryBits);
     } else {
         b2ShapeId shapeId = ToB2(RuntimeShape);
         b2Circle cur = b2Shape_GetCircle(shapeId);
@@ -678,6 +717,8 @@ void CapsuleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform&
         b2ShapeDef shapeDef = BuildDefaultColliderShapeDef(this, go);
         b2ShapeId shapeId = b2CreateCapsuleShape(bodyId, &shapeDef, &capsule);
         RuntimeShape = ToHandle(shapeId);
+        ENGINE_CORE_DEBUG("CapsuleCollider2D '{}': Created capsule shape (r={:.3f}, sensor={}, cat=0x{:x})",
+                          go ? go->GetName() : "<unowned>", capsule.radius, IsSensor, CategoryBits);
     } else {
         b2ShapeId shapeId = ToB2(RuntimeShape);
         b2Capsule cur = b2Shape_GetCapsule(shapeId);

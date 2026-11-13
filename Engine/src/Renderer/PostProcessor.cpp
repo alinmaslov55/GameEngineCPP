@@ -193,6 +193,7 @@ void PostProcessor::Init() {
 
     s_PPData = std::make_unique<PostProcessorStorage>();
     if (!HasGLPostProcessSupport()) {
+        ENGINE_CORE_WARN("PostProcessor::Init skipped: active OpenGL post-process context unavailable");
         return;
     }
 
@@ -216,8 +217,19 @@ void PostProcessor::Init() {
     s_PPData->CompositeShader->SetInt("u_SceneHDR", 0);
     s_PPData->CompositeShader->SetInt("u_BloomTexture", 1);
 
-    s_PPData->ResourcesValid = (s_PPData->FullscreenVAO != 0);
-    ENGINE_CORE_INFO("PostProcessor initialized successfully");
+    const bool shadersValid = s_PPData->DownsampleShader->IsValid() &&
+                              s_PPData->UpsampleShader->IsValid() &&
+                              s_PPData->CompositeShader->IsValid();
+    s_PPData->ResourcesValid = (s_PPData->FullscreenVAO != 0) && shadersValid;
+    if (!s_PPData->ResourcesValid) {
+        ENGINE_CORE_ERROR("PostProcessor initialization incomplete (FullscreenVAO={}, downsampleValid={}, upsampleValid={}, compositeValid={})",
+                          s_PPData->FullscreenVAO,
+                          s_PPData->DownsampleShader->IsValid(),
+                          s_PPData->UpsampleShader->IsValid(),
+                          s_PPData->CompositeShader->IsValid());
+    } else {
+        ENGINE_CORE_INFO("PostProcessor initialized successfully");
+    }
 }
 
 void PostProcessor::Shutdown() {
@@ -244,6 +256,7 @@ void PostProcessor::BeginHDRScene(uint32_t fallbackWidth,
                                   uint32_t fallbackHeight,
                                   const glm::vec3& clearColor) {
     if (!IsValid()) {
+        ENGINE_CORE_TRACE("PostProcessor::BeginHDRScene skipped (PostProcessor invalid or uninitialized)");
         return;
     }
 
@@ -281,6 +294,8 @@ void PostProcessor::BeginHDRScene(uint32_t fallbackWidth,
 
 void PostProcessor::EndHDRAndComposite(const PostProcessComponent& settings) {
     if (!IsValid() || !s_PPData->SceneActive) {
+        ENGINE_CORE_TRACE("PostProcessor::EndHDRAndComposite skipped (valid={}, sceneActive={})",
+                          IsValid(), s_PPData ? s_PPData->SceneActive : false);
         return;
     }
     s_PPData->SceneActive = false;

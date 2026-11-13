@@ -121,6 +121,8 @@ void SyncLayerTextureArrays(const std::array<TerrainLayer, TerrainComponent::Max
     if (anySliceUpdated) {
         s_TerrainData->AlbedoHeightArray->GenerateMipmaps();
         s_TerrainData->NormalRoughnessArray->GenerateMipmaps();
+        ENGINE_CORE_DEBUG("TerrainRenderer: Synchronized terrain layer texture arrays ({}x{}) and regenerated mipmaps",
+                          arrayW, arrayH);
     }
 }
 
@@ -130,6 +132,8 @@ std::shared_ptr<VertexArray> GetOrCreateStitchedVAO(uint32_t splatResolution) {
     if (it != s_TerrainData->StitchedVAOs.end()) {
         return it->second;
     }
+
+    ENGINE_CORE_DEBUG("TerrainRenderer: Creating stitched terrain quad VAO for splat resolution {}", safeRes);
 
     // Map quad edges [0, 1] directly to texel centers [0.5 / R .. (R - 0.5) / R]
     // so adjacent chunks sharing border texels interpolate with bit-exact C0 continuity under GL_LINEAR.
@@ -300,6 +304,9 @@ void TerrainRenderer::Init() {
 
     std::string shaderPath = ResourceManager::ResolvePath("assets/shaders/TerrainSplatmap.glsl");
     s_TerrainData->SplatShader = std::make_shared<Shader>(shaderPath);
+    if (!s_TerrainData->SplatShader->IsValid()) {
+        ENGINE_CORE_ERROR("TerrainRenderer: Failed to compile TerrainSplatmap shader from '{}'", shaderPath);
+    }
     s_TerrainData->SplatShader->Bind();
     s_TerrainData->SplatShader->SetInt("u_SplatWeights0", 0);
     s_TerrainData->SplatShader->SetInt("u_SplatWeights1", 1);
@@ -348,11 +355,13 @@ void TerrainRenderer::RenderTerrain(TerrainComponent& terrain,
                                     const PerspectiveCamera& camera,
                                     const SceneLightingData* lighting) {
     if (!s_TerrainData || !s_TerrainData->SplatShader) {
+        ENGINE_CORE_TRACE("TerrainRenderer::RenderTerrain skipped (uninitialized)");
         return;
     }
 
     auto [splatTex0, splatTex1] = terrain.SyncGpuSplatTextures();
     if (!splatTex0 || splatTex0->GetRendererID() == 0) {
+        ENGINE_CORE_TRACE("TerrainRenderer::RenderTerrain skipped (invalid splatTex0)");
         return;
     }
 

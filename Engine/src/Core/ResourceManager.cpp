@@ -62,15 +62,18 @@ std::filesystem::path ResourceManager::DiscoverAssetRoot(const std::string& proj
         // 1. Running directly inside Sandbox/ or a standalone distribution folder
         if (!projectSubdir.empty() && cwd.filename() == projectSubdir && HasProjectMarkers(cwd)) {
             SetAssetRoot(cwd);
+            ENGINE_CORE_DEBUG("ResourceManager::DiscoverAssetRoot matched project subdir CWD '{}'", s_AssetRoot.string());
             return s_AssetRoot;
         }
         // 2. Running from workspace root (e.g. C:/DEV/GameEngineCPP -> C:/DEV/GameEngineCPP/Sandbox)
         if (!projectSubdir.empty() && HasProjectMarkers(cwd / projectSubdir)) {
             SetAssetRoot(cwd / projectSubdir);
+            ENGINE_CORE_DEBUG("ResourceManager::DiscoverAssetRoot matched CWD/{} '{}'", projectSubdir, s_AssetRoot.string());
             return s_AssetRoot;
         }
         if (HasProjectMarkers(cwd)) {
             SetAssetRoot(cwd);
+            ENGINE_CORE_DEBUG("ResourceManager::DiscoverAssetRoot matched CWD markers '{}'", s_AssetRoot.string());
             return s_AssetRoot;
         }
     }
@@ -83,10 +86,14 @@ std::filesystem::path ResourceManager::DiscoverAssetRoot(const std::string& proj
         for (int depth = 0; depth < 5 && !probe.empty(); ++depth) {
             if (!projectSubdir.empty() && HasProjectMarkers(probe / projectSubdir)) {
                 SetAssetRoot(probe / projectSubdir);
+                ENGINE_CORE_DEBUG("ResourceManager::DiscoverAssetRoot matched exe ancestor subdir '{}' (depth {})",
+                                  s_AssetRoot.string(), depth);
                 return s_AssetRoot;
             }
             if (depth > 0 && HasProjectMarkers(probe)) {
                 SetAssetRoot(probe);
+                ENGINE_CORE_DEBUG("ResourceManager::DiscoverAssetRoot matched exe ancestor '{}' (depth {})",
+                                  s_AssetRoot.string(), depth);
                 return s_AssetRoot;
             }
             if (probe == probe.parent_path()) {
@@ -98,6 +105,7 @@ std::filesystem::path ResourceManager::DiscoverAssetRoot(const std::string& proj
         // 4. Fallback to assets copied next to executable
         if (HasProjectMarkers(exeDir)) {
             SetAssetRoot(exeDir);
+            ENGINE_CORE_DEBUG("ResourceManager::DiscoverAssetRoot matched exeDir '{}'", s_AssetRoot.string());
             return s_AssetRoot;
         }
     }
@@ -105,6 +113,8 @@ std::filesystem::path ResourceManager::DiscoverAssetRoot(const std::string& proj
     // Fallback to current working directory
     if (!cwd.empty()) {
         SetAssetRoot(cwd);
+        ENGINE_CORE_WARN("ResourceManager::DiscoverAssetRoot found no project markers; falling back to CWD '{}'",
+                         s_AssetRoot.string());
     }
     return s_AssetRoot;
 }
@@ -190,16 +200,19 @@ ResourceManager::ResolvedPathInfo ResourceManager::ResolvePathInfo(const std::st
     std::string resolved = ResolvePath(filepath);
     std::string key = ToRelativePath(resolved);
     s_PathResolutionCache[filepath] = { resolved, key };
+    ENGINE_CORE_TRACE("ResourceManager: Cached path '{}' -> '{}' (key '{}')", filepath, resolved, key);
     return { resolved, key };
 }
 
 void ResourceManager::ClearPathCache() {
     std::lock_guard lock(s_ResourceManagerMutex);
+    ENGINE_CORE_DEBUG("ResourceManager: Clearing path resolution cache ({} entries)", s_PathResolutionCache.size());
     s_PathResolutionCache.clear();
 }
 
 void ResourceManager::SetAsyncTextureLoading(bool enabled) noexcept {
     s_AsyncTextureLoadingEnabled.store(enabled, std::memory_order_release);
+    ENGINE_CORE_INFO("ResourceManager: Async texture loading {}", enabled ? "enabled" : "disabled");
 }
 
 bool ResourceManager::IsAsyncTextureLoadingEnabled() noexcept {
@@ -208,6 +221,7 @@ bool ResourceManager::IsAsyncTextureLoadingEnabled() noexcept {
 
 std::shared_ptr<Texture> ResourceManager::LoadTexture(const std::string& filepath) {
     if (filepath.empty()) {
+        ENGINE_CORE_WARN("ResourceManager::LoadTexture called with empty filepath");
         return nullptr;
     }
 
@@ -218,6 +232,7 @@ std::shared_ptr<Texture> ResourceManager::LoadTexture(const std::string& filepat
         auto& cache = AssetCache<Texture>::data;
         auto it = cache.find(info.CacheKey);
         if (it != cache.end()) {
+            ENGINE_CORE_TRACE("ResourceManager::LoadTexture: Cache hit for '{}'", info.CacheKey);
             return it->second;
         }
     }
@@ -235,6 +250,7 @@ std::shared_ptr<Texture> ResourceManager::LoadTexture(const std::string& filepat
 
 std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& filepath) {
     if (filepath.empty()) {
+        ENGINE_CORE_WARN("ResourceManager::LoadTextureAsync called with empty filepath");
         return nullptr;
     }
 
@@ -252,6 +268,8 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
 
     // If JobSystem is not initialized with active workers, fallback to synchronous decode
     if (!JobSystem::IsInitialized() || JobSystem::GetWorkerCount() == 0) {
+        ENGINE_CORE_DEBUG("ResourceManager::LoadTextureAsync falling back to synchronous load for '{}' (JobSystem inactive)",
+                          filepath);
         return LoadTexture(filepath);
     }
 
@@ -280,6 +298,7 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
         }
 
         // 3. Enqueue upload on main thread via PendingUploads queue
+        ENGINE_CORE_DEBUG("ResourceManager::LoadTextureAsync decoded '{}' ({}x{}, bpp={})", resolvedPath, w, h, bpp);
         {
             std::lock_guard lock(s_PendingUploadsMutex);
             s_PendingUploads.push_back({ placeholder, data, w, h, bpp });
@@ -307,6 +326,7 @@ size_t ResourceManager::ProcessPendingUploads(uint32_t maxUploads) {
         }
     }
 
+    ENGINE_CORE_DEBUG("ResourceManager: Uploading {} decoded async textures to GPU", batch.size());
     for (auto& upload : batch) {
         if (upload.TargetTexture && upload.PixelData) {
             upload.TargetTexture->PopulateFromData(upload.Width, upload.Height, upload.BPP, upload.PixelData);
@@ -320,6 +340,10 @@ size_t ResourceManager::ProcessPendingUploads(uint32_t maxUploads) {
 }
 
 void ResourceManager::WaitForPendingUploads() {
+    const uint32_t initialActive = s_ActiveAsyncLoads.load(std::memory_order_acquire);
+    if (initialActive > 0) {
+        ENGINE_CORE_INFO("ResourceManager: Waiting for {} active async texture loads to finish...", initialActive);
+    }
     while (s_ActiveAsyncLoads.load(std::memory_order_acquire) > 0) {
         if (!JobSystem::ExecuteOneJob()) {
             std::this_thread::yield();
