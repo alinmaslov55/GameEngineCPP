@@ -111,7 +111,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
     - Solution:
       * Hash terrain layer signatures into `uint64_t` keyed per cache/layer set; add a 1-channel `ResizeR8Bilinear()` helper; promote `m_FoliageInteractorGrid` to a cleared member; remove the spurious torch shadow clear pass; upload `PointLightBlock` once per frame in `SceneRenderer::Render()`.
 
-[ ] 10. Eliminate Box2D Enqueue Heap Allocations, Per-Step Scene Scans & O(N^2) Contact Deduplication
+[x] 10. Eliminate Box2D Enqueue Heap Allocations, Per-Step Scene Scans & O(N^2) Contact Deduplication
     - Files: Engine/src/Physics/PhysicsWorld2D.cpp (lines 394-496, 626-635, 870-878), Engine/src/Physics/PhysicsComponents.cpp (lines 391-406), Engine/src/Scene/Scene.cpp (lines 717-734)
     - Root Cause:
       * `Box2DEnqueueTask` (`:446`) calls `JobSystem::Dispatch(...)`, heap-allocating a `std::shared_ptr<JobState>` and `std::function` closure per chunk on every physics substep (contradicting the zero-heap-allocation design comment in `PhysicsWorld2D.h:171`), and `OnRuntimeStart()` (`:494`) sets `worldDef.workerCount = workers + 1` without clamping to Box2D's `B2_MAX_WORKERS`.

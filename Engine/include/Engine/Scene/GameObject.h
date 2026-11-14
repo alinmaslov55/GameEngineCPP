@@ -31,6 +31,8 @@ class BoxCollider2D;
 class CircleCollider2D;
 class CapsuleCollider2D;
 class Tilemap;
+class TerrainChunkManager;
+class TerrainComponent;
 struct Collision2DInfo;
 
 enum class EntityLifecycle : uint8_t {
@@ -99,6 +101,11 @@ template<typename CleanT, typename BaseT>
     }
     return false;
 }
+
+template<typename T>
+concept HasOverriddenFixedUpdate = requires {
+    requires !std::is_same_v<decltype(&T::FixedUpdate), void(Component::*)(float)>;
+};
 } // namespace Detail
 
 class GameObject : public Object {
@@ -117,6 +124,12 @@ public:
     [[nodiscard]] const Transform* GetTransform() const noexcept { return m_Transform; }
 
     [[nodiscard]] Scene* GetScene() const noexcept { return m_Scene; }
+    void SetScene(Scene* scene) noexcept;
+
+    [[nodiscard]] bool HasFixedUpdate() const noexcept { return m_FixedUpdateComponentCount > 0; }
+    void RegisterFixedUpdate();
+    void UnregisterFixedUpdate();
+    void InvalidateSceneTerrainCache();
 
     [[nodiscard]] ComponentMask128 GetComponentMask() const noexcept { return m_ComponentMask; }
 
@@ -177,6 +190,18 @@ public:
                       std::is_same_v<CleanT, Tilemap> ||
                       Detail::IsComponentWithBase<CleanT, Collider2D>()) {
             NotifyPhysicsComponentAdded();
+        }
+
+        if constexpr (Detail::HasOverriddenFixedUpdate<CleanT>) {
+            rawPtr->m_HasOverriddenFixedUpdate = true;
+            ++m_FixedUpdateComponentCount;
+            if (m_FixedUpdateComponentCount == 1) {
+                RegisterFixedUpdate();
+            }
+        }
+
+        if constexpr (std::is_same_v<CleanT, TerrainChunkManager> || std::is_same_v<CleanT, TerrainComponent>) {
+            InvalidateSceneTerrainCache();
         }
 
         return rawPtr;
@@ -553,6 +578,19 @@ public:
                     comp);
             }
 
+            if (comp->HasOverriddenFixedUpdate()) {
+                if (m_FixedUpdateComponentCount > 0) {
+                    --m_FixedUpdateComponentCount;
+                    if (m_FixedUpdateComponentCount == 0) {
+                        UnregisterFixedUpdate();
+                    }
+                }
+            }
+
+            if constexpr (std::is_same_v<CleanT, TerrainChunkManager> || std::is_same_v<CleanT, TerrainComponent>) {
+                InvalidateSceneTerrainCache();
+            }
+
             comp->m_PendingRemoval = true;
             if (m_ComponentIterationDepth == 0) {
                 FlushPendingComponentRemovals();
@@ -579,6 +617,7 @@ private:
     bool m_Active{ true };
     EntityLifecycle m_LifecycleState{ EntityLifecycle::Alive };
     uint32_t m_ComponentIterationDepth{ 0 };
+    uint16_t m_FixedUpdateComponentCount{ 0 };
 };
 
 inline void Component::SetEnabled(bool enabled) noexcept {

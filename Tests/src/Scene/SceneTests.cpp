@@ -3,6 +3,8 @@
 #include "Engine/Scene/SceneManager.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Physics/PhysicsWorld2D.h"
+#include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Scene/TerrainComponent.h"
 
 #include <thread>
 #include <type_traits>
@@ -124,6 +126,94 @@ TEST(SceneTest, NonCopyableAndNonMovableForPointerStability) {
     static_assert(!std::is_move_constructible_v<Engine::Scene>, "Scene must not be move-constructible");
     static_assert(!std::is_move_assignable_v<Engine::Scene>, "Scene must not be move-assignable");
     SUCCEED();
+}
+
+class FixedUpdateCountingScript : public Engine::Component {
+public:
+    uint32_t FixedUpdateCount = 0;
+    float LastDt = 0.0f;
+
+    void FixedUpdate(float fixedDeltaTime) override {
+        ++FixedUpdateCount;
+        LastDt = fixedDeltaTime;
+    }
+};
+
+TEST(SceneFixedUpdateTest, OnlyScriptedAndPhysicsEntitiesIterated) {
+    Engine::Scene scene("FixedUpdateScene");
+
+    // 100 standee props without FixedUpdate
+    for (int i = 0; i < 100; ++i) {
+        auto* prop = scene.CreateGameObject("Prop");
+        EXPECT_FALSE(prop->HasFixedUpdate());
+    }
+    EXPECT_TRUE(scene.GetFixedUpdateEntities().empty());
+
+    // 2 Rigidbody2D entities
+    auto* rbGo1 = scene.CreateGameObject("Actor1");
+    rbGo1->AddComponent<Engine::Rigidbody2D>();
+    EXPECT_TRUE(rbGo1->HasFixedUpdate());
+
+    auto* rbGo2 = scene.CreateGameObject("Actor2");
+    rbGo2->AddComponent<Engine::Rigidbody2D>();
+    EXPECT_TRUE(rbGo2->HasFixedUpdate());
+
+    // 1 custom script overriding FixedUpdate
+    auto* scriptGo = scene.CreateGameObject("ScriptedEntity");
+    auto* script = scriptGo->AddComponent<FixedUpdateCountingScript>();
+    EXPECT_TRUE(scriptGo->HasFixedUpdate());
+
+    // FixedUpdate entity list contains exactly the 3 entities
+    EXPECT_EQ(scene.GetFixedUpdateEntities().size(), 3u);
+
+    // Run a step
+    scene.OnRuntimeStart();
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_EQ(script->FixedUpdateCount, 1u);
+    EXPECT_NEAR(script->LastDt, 1.0f / 60.0f, 0.001f);
+
+    // Remove Rigidbody2D from Actor1 -> unregisters from FixedUpdate
+    EXPECT_TRUE(rbGo1->RemoveComponent<Engine::Rigidbody2D>());
+    EXPECT_FALSE(rbGo1->HasFixedUpdate());
+    EXPECT_EQ(scene.GetFixedUpdateEntities().size(), 2u);
+
+    // Destroy ScriptedEntity and flush queues
+    scene.DestroyGameObject(scriptGo);
+    scene.FlushEntityLifecycleQueues();
+    EXPECT_EQ(scene.GetFixedUpdateEntities().size(), 1u);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SceneTerrainCacheTest, SampleSurfaceAtXZIsO1AndInvalidates) {
+    Engine::Scene scene("TerrainCacheScene");
+
+    // Initially no terrain
+    auto emptySample = scene.SampleSurfaceAtXZ(10.0f, 10.0f);
+    EXPECT_NEAR(emptySample.LinearDamping, 4.5f, 1e-4f);
+    EXPECT_NEAR(emptySample.MaxSpeedMultiplier, 1.0f, 1e-4f);
+
+    // Add terrain entity
+    auto* terrainGo = scene.CreateGameObject("MainTerrain");
+    auto* tc = terrainGo->AddComponent<Engine::TerrainComponent>();
+    ASSERT_NE(tc, nullptr);
+
+    // Modifying terrain data or querying should use cached terrain
+    auto sample1 = scene.SampleSurfaceAtXZ(0.0f, 0.0f);
+    EXPECT_TRUE(std::isfinite(sample1.LinearDamping));
+
+    // Adding non-terrain entity invalidates dirty flag but resolves cleanly
+    auto* prop = scene.CreateGameObject("Tree");
+    (void)prop;
+    auto sample2 = scene.SampleSurfaceAtXZ(0.0f, 0.0f);
+    EXPECT_EQ(sample1.LinearDamping, sample2.LinearDamping);
+
+    // Destroying terrain entity and flushing returns to default
+    scene.DestroyGameObject(terrainGo);
+    scene.FlushEntityLifecycleQueues();
+    auto afterDestroy = scene.SampleSurfaceAtXZ(0.0f, 0.0f);
+    EXPECT_NEAR(afterDestroy.LinearDamping, 4.5f, 1e-4f);
+    EXPECT_NEAR(afterDestroy.MaxSpeedMultiplier, 1.0f, 1e-4f);
 }
 
 } // namespace

@@ -89,6 +89,11 @@ Scene::~Scene() {
     }
 
     m_EntityUUIDMap.clear();
+    m_FixedUpdateEntities.clear();
+    m_PendingFixedUpdateAdditions.clear();
+    m_CachedChunkManager = nullptr;
+    m_CachedTerrain = nullptr;
+    m_CachedTerrainTransform = nullptr;
     ENGINE_CORE_INFO("Scene destroyed: '{}'", m_Name);
 }
 
@@ -112,8 +117,9 @@ GameObject* Scene::CreateGameObject(const std::string& name) {
     ENGINE_CORE_DEBUG("Scene '{}': Creating GameObject '{}'", m_Name, name);
     auto gameObject = std::make_unique<GameObject>(name);
     GameObject* rawPtr = gameObject.get();
-    rawPtr->m_Scene = this;
+    rawPtr->SetScene(this);
     m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
+    m_TerrainCacheDirty = true;
 
     if (IsIteratingEntities()) {
         rawPtr->m_LifecycleState = EntityLifecycle::PendingSpawn;
@@ -130,8 +136,9 @@ GameObject* Scene::CreateGameObjectWithUUID(uint64_t uuid, const std::string& na
     ENGINE_CORE_DEBUG("Scene '{}': Creating GameObject '{}' with UUID {}", m_Name, name, uuid);
     auto gameObject = std::make_unique<GameObject>(uuid, name);
     GameObject* rawPtr = gameObject.get();
-    rawPtr->m_Scene = this;
+    rawPtr->SetScene(this);
     m_EntityUUIDMap[rawPtr->GetUUID()] = rawPtr;
+    m_TerrainCacheDirty = true;
 
     if (IsIteratingEntities()) {
         rawPtr->m_LifecycleState = EntityLifecycle::PendingSpawn;
@@ -161,6 +168,11 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
     if (!wasPendingSpawn) {
         m_PendingDestroyQueue.push_back(gameObject);
     }
+    if (m_IterationDepth == 0) {
+        std::erase(m_FixedUpdateEntities, gameObject);
+        std::erase(m_PendingFixedUpdateAdditions, gameObject);
+    }
+    m_TerrainCacheDirty = true;
 
     if (m_PhysicsWorld) {
         m_PhysicsWorld->DisableRuntimeBody(gameObject);
@@ -223,6 +235,8 @@ void Scene::FlushEntityLifecycleQueues() {
 
                 if (pending->IsPendingDestroy()) {
                     pending->m_LifecycleState = EntityLifecycle::Destroyed;
+                    std::erase(m_FixedUpdateEntities, pending.get());
+                    std::erase(m_PendingFixedUpdateAdditions, pending.get());
 
                     if (m_PhysicsWorld && m_PhysicsWorld->IsRuntimeRunning()) {
                         m_PhysicsWorld->UnregisterRuntimeBody(pending.get());
@@ -264,6 +278,9 @@ void Scene::FlushEntityLifecycleQueues() {
             for (auto* go : pendingDestroys) {
                 if (!go) continue;
 
+                std::erase(m_FixedUpdateEntities, go);
+                std::erase(m_PendingFixedUpdateAdditions, go);
+
                 go->m_LifecycleState = EntityLifecycle::Destroyed;
 
                 if (m_PhysicsWorld && m_PhysicsWorld->IsRuntimeRunning()) {
@@ -284,6 +301,10 @@ void Scene::FlushEntityLifecycleQueues() {
                 m_EntityUUIDMap.erase(go->GetUUID());
             }
 
+            std::erase_if(m_FixedUpdateEntities, [](GameObject* go) {
+                return !go || go->IsPendingDestroy() || go->IsDestroyed() || !go->HasFixedUpdate();
+            });
+
             std::erase_if(m_GameObjects, [](const std::unique_ptr<GameObject>& ptr) {
                 return ptr->IsDestroyed();
             });
@@ -297,6 +318,21 @@ void Scene::FlushEntityLifecycleQueues() {
     if (passes >= kMaxFlushPasses) {
         ENGINE_CORE_ERROR("Scene '{}': Reached max flush passes ({}), possible infinite lifecycle recursion", m_Name, kMaxFlushPasses);
     }
+
+    for (auto* go : m_PendingFixedUpdateAdditions) {
+        if (go && !go->IsPendingDestroy() && go->HasFixedUpdate()) {
+            if (std::find(m_FixedUpdateEntities.begin(), m_FixedUpdateEntities.end(), go) == m_FixedUpdateEntities.end()) {
+                m_FixedUpdateEntities.push_back(go);
+            }
+        }
+    }
+    m_PendingFixedUpdateAdditions.clear();
+
+    std::erase_if(m_FixedUpdateEntities, [](GameObject* go) {
+        return !go || go->IsPendingDestroy() || go->IsDestroyed() || !go->HasFixedUpdate();
+    });
+
+    m_TerrainCacheDirty = true;
 }
 
 GameObject* Scene::FindGameObjectByUUID(uint64_t uuid) const noexcept {
@@ -757,62 +793,101 @@ size_t Scene::GetBox2DTaskSlotCount() const noexcept {
     return m_PhysicsWorld ? m_PhysicsWorld->GetBox2DTaskSlotCount() : 0;
 }
 
-SurfaceSample Scene::SampleSurfaceAtXZ(float worldX, float worldZ) const noexcept {
-    for (const auto& go : m_GameObjects) {
-        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
-        if (const auto* tcm = go->GetComponent<TerrainChunkManager>()) {
-            return tcm->SampleSurfaceAtXZ(worldX, worldZ);
+void Scene::RegisterFixedUpdateEntity(GameObject* go) {
+    if (!go) return;
+    if (m_IterationDepth > 0) {
+        if (std::find(m_PendingFixedUpdateAdditions.begin(), m_PendingFixedUpdateAdditions.end(), go) == m_PendingFixedUpdateAdditions.end()) {
+            m_PendingFixedUpdateAdditions.push_back(go);
+        }
+    } else {
+        if (std::find(m_FixedUpdateEntities.begin(), m_FixedUpdateEntities.end(), go) == m_FixedUpdateEntities.end()) {
+            m_FixedUpdateEntities.push_back(go);
         }
     }
+}
+
+void Scene::UnregisterFixedUpdateEntity(GameObject* go) {
+    if (!go) return;
+    if (m_IterationDepth > 0) {
+        std::erase(m_PendingFixedUpdateAdditions, go);
+    } else {
+        std::erase(m_FixedUpdateEntities, go);
+    }
+}
+
+void Scene::RefreshTerrainCache() const noexcept {
+    m_CachedChunkManager = nullptr;
+    m_CachedTerrain = nullptr;
+    m_CachedTerrainTransform = nullptr;
+
     for (const auto& go : m_GameObjects) {
         if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
-        if (const auto* tc = go->GetComponent<TerrainComponent>()) {
-            const Transform* t = go->GetTransform();
-            const glm::vec3 origin = t ? t->GetWorldPosition() : glm::vec3(0.0f);
-            const glm::vec3 scale = t ? t->scale : glm::vec3(1.0f);
-            return tc->SampleSurfaceAtXZ(worldX, worldZ, origin, scale);
+        if (auto* tcm = go->GetComponent<TerrainChunkManager>()) {
+            m_CachedChunkManager = tcm;
+            break;
         }
+    }
+
+    if (!m_CachedChunkManager) {
+        for (const auto& go : m_GameObjects) {
+            if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
+            if (auto* tc = go->GetComponent<TerrainComponent>()) {
+                m_CachedTerrain = tc;
+                m_CachedTerrainTransform = go->GetTransform();
+                break;
+            }
+        }
+    }
+
+    m_TerrainCacheDirty = false;
+}
+
+SurfaceSample Scene::SampleSurfaceAtXZ(float worldX, float worldZ) const noexcept {
+    if (m_TerrainCacheDirty) {
+        RefreshTerrainCache();
+    }
+    if (m_CachedChunkManager) {
+        return m_CachedChunkManager->SampleSurfaceAtXZ(worldX, worldZ);
+    }
+    if (m_CachedTerrain) {
+        const glm::vec3 origin = m_CachedTerrainTransform ? m_CachedTerrainTransform->GetWorldPosition() : glm::vec3(0.0f);
+        const glm::vec3 scale = m_CachedTerrainTransform ? m_CachedTerrainTransform->scale : glm::vec3(1.0f);
+        return m_CachedTerrain->SampleSurfaceAtXZ(worldX, worldZ, origin, scale);
     }
     return SurfaceSample{};
 }
 
 void Scene::PaintMaterialWorld(const glm::vec2& centerXZ, uint32_t layerIdx, float radius, float strength) {
-    for (const auto& go : m_GameObjects) {
-        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
-        if (auto* tcm = go->GetComponent<TerrainChunkManager>()) {
-            tcm->PaintMaterialWorld(centerXZ, layerIdx, radius, strength);
-            return;
-        }
+    if (m_TerrainCacheDirty) {
+        RefreshTerrainCache();
     }
-    for (const auto& go : m_GameObjects) {
-        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
-        if (auto* tc = go->GetComponent<TerrainComponent>()) {
-            const Transform* t = go->GetTransform();
-            const glm::vec3 origin = t ? t->GetWorldPosition() : glm::vec3(0.0f);
-            const glm::vec3 scale = t ? t->scale : glm::vec3(1.0f);
-            tc->PaintMaterialWorld(centerXZ, layerIdx, radius, strength, origin, scale);
-            return;
-        }
+    if (m_CachedChunkManager) {
+        m_CachedChunkManager->PaintMaterialWorld(centerXZ, layerIdx, radius, strength);
+        return;
+    }
+    if (m_CachedTerrain) {
+        const glm::vec3 origin = m_CachedTerrainTransform ? m_CachedTerrainTransform->GetWorldPosition() : glm::vec3(0.0f);
+        const glm::vec3 scale = m_CachedTerrainTransform ? m_CachedTerrainTransform->scale : glm::vec3(1.0f);
+        m_CachedTerrain->PaintMaterialWorld(centerXZ, layerIdx, radius, strength, origin, scale);
+        return;
     }
 }
 
 void Scene::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
-    for (const auto& go : m_GameObjects) {
-        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
-        if (auto* tcm = go->GetComponent<TerrainChunkManager>()) {
-            tcm->IgniteAtXZ(centerXZ, radius);
-            return;
-        }
+    if (m_TerrainCacheDirty) {
+        RefreshTerrainCache();
+    }
+    if (m_CachedChunkManager) {
+        m_CachedChunkManager->IgniteAtXZ(centerXZ, radius);
     }
 }
 
 void Scene::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
-    for (const auto& go : m_GameObjects) {
-        if (!go || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) continue;
-        if (auto* tcm = go->GetComponent<TerrainChunkManager>()) {
-            tcm->ExtinguishAtXZ(centerXZ, radius);
-            return;
-        }
+    if (m_TerrainCacheDirty) {
+        RefreshTerrainCache();
+    }
+    if (m_CachedChunkManager) {
+        m_CachedChunkManager->ExtinguishAtXZ(centerXZ, radius);
     }
 }
 

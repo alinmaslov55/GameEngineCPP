@@ -37,6 +37,7 @@ public:
     [[nodiscard]] bool IsEnabled() const noexcept { return m_Enabled; }
     [[nodiscard]] bool HasStarted() const noexcept { return m_HasStarted; }
     [[nodiscard]] bool IsPendingRemoval() const noexcept { return m_PendingRemoval; }
+    [[nodiscard]] bool HasOverriddenFixedUpdate() const noexcept { return m_HasOverriddenFixedUpdate; }
 
     [[nodiscard]] uint16_t GetTypeID() const noexcept { return m_TypeID; }
     [[nodiscard]] uint16_t GetBaseTypeID() const noexcept { return m_BaseTypeID; }
@@ -56,6 +57,7 @@ private:
     bool m_Enabled{ true };
     bool m_HasStarted{ false };
     bool m_PendingRemoval{ false };
+    bool m_HasOverriddenFixedUpdate{ false };
 };
 } // namespace Engine
 

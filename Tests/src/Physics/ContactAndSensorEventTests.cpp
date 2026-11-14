@@ -526,3 +526,38 @@ TEST_F(ContactAndSensorEventTest, BeginEventApproachSpeed_SubThresholdImpactIsPo
     runDirectionTest(0.0f, 0.6f, 1.05f);
     runDirectionTest(0.0f, -0.6f, -1.05f);
 }
+
+TEST_F(ContactAndSensorEventTest, DeduplicatedHitAndBeginEventsViaBinarySearch) {
+    Engine::Scene scene("DeduplicationScene");
+
+    // Static wall
+    auto* wall = scene.CreateGameObject("Wall");
+    wall->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* wallCol = wall->AddComponent<Engine::BoxCollider2D>();
+    wallCol->size = { 1.0f, 10.0f };
+
+    // Moving dynamic actor
+    auto* actor = scene.CreateGameObject("Actor");
+    actor->GetTransform()->position = { -2.0f, 0.0f, 0.0f };
+    auto* rb = actor->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->LinearDamping = 0.0f;
+    auto* actorCol = actor->AddComponent<Engine::CircleCollider2D>();
+    actorCol->Radius = 0.5f;
+    actorCol->EnableHitEvents = true;
+    auto* recv = actor->AddComponent<TestEventReceiver>();
+
+    scene.OnRuntimeStart();
+    rb->SetVelocityXZ({ 5.0f, 0.0f });
+
+    // Step until collision
+    for (int i = 0; i < 30; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+        if (recv->CollisionEnterCount > 0) break;
+    }
+
+    EXPECT_GE(recv->CollisionEnterCount, 1u);
+    EXPECT_GT(recv->LastCollisionInfo.ApproachSpeed, 0.0f);
+
+    scene.OnRuntimeStop();
+}

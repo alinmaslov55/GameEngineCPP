@@ -26,6 +26,8 @@ class PhysicsWorld2D;
 class EntityPoolManager;
 class SceneRenderer;
 class Prefab;
+class TerrainChunkManager;
+class TerrainComponent;
 struct RaycastHitXZ;
 
 /// @brief CPU illumination query result evaluated on the XZ gameplay plane (LGT-03).
@@ -159,6 +161,13 @@ public:
     void PaintMaterialWorld(const glm::vec2& centerXZ, uint32_t layerIdx, float radius, float strength = 1.0f);
     void IgniteAtXZ(const glm::vec2& centerXZ, float radius);
     void ExtinguishAtXZ(const glm::vec2& centerXZ, float radius);
+    void InvalidateTerrainCache() noexcept { m_TerrainCacheDirty = true; }
+    void RefreshTerrainCache() const noexcept;
+
+    // FixedUpdate entity registry
+    [[nodiscard]] const std::vector<GameObject*>& GetFixedUpdateEntities() const noexcept { return m_FixedUpdateEntities; }
+    void RegisterFixedUpdateEntity(GameObject* go);
+    void UnregisterFixedUpdateEntity(GameObject* go);
 
     // Facade: Camera & Viewport (delegates to SceneRenderer)
     [[nodiscard]] PerspectiveCamera& GetCamera() noexcept;
@@ -183,6 +192,8 @@ public:
         std::atomic<int> remaining{ 0 };
         std::atomic<bool> done{ false };
         std::atomic<bool> inUse{ false };
+        uint32_t taskIndex{ 0 };
+        void* chunks{ nullptr };
 
         Box2DTask() = default;
         Box2DTask(const Box2DTask&) = delete;
@@ -190,6 +201,7 @@ public:
         Box2DTask(Box2DTask&&) = delete;
         Box2DTask& operator=(Box2DTask&&) = delete;
     };
+    static_assert(sizeof(Box2DTask) == 64, "Scene::Box2DTask size must equal 64 bytes for cache isolation");
 
     static constexpr size_t kMaxBox2DTasks = 16;
     [[nodiscard]] uint64_t GetBox2DParallelTasksDispatched() const noexcept;
@@ -233,6 +245,16 @@ private:
     std::vector<std::unique_ptr<GameObject>> m_GameObjects;
     std::vector<std::unique_ptr<GameObject>> m_PendingSpawnQueue;
     uint32_t m_IterationDepth = 0;
+
+    // Terrain fast-lookup cache for O(1) surface queries
+    mutable TerrainChunkManager* m_CachedChunkManager{ nullptr };
+    mutable TerrainComponent* m_CachedTerrain{ nullptr };
+    mutable Transform* m_CachedTerrainTransform{ nullptr };
+    mutable bool m_TerrainCacheDirty{ true };
+
+    // Active physics & scripted entity registry for FixedUpdate
+    std::vector<GameObject*> m_FixedUpdateEntities;
+    std::vector<GameObject*> m_PendingFixedUpdateAdditions;
 };
 
 } // namespace Engine

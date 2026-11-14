@@ -188,4 +188,33 @@ void GameObject::OnPoolRelease() {
     }
 }
 
+void GameObject::SetScene(Scene* scene) noexcept {
+    if (m_Scene == scene) return;
+    if (m_Scene && HasFixedUpdate()) {
+        m_Scene->UnregisterFixedUpdateEntity(this);
+    }
+    m_Scene = scene;
+    if (m_Scene && HasFixedUpdate()) {
+        m_Scene->RegisterFixedUpdateEntity(this);
+    }
+}
+
+void GameObject::RegisterFixedUpdate() {
+    if (m_Scene) {
+        m_Scene->RegisterFixedUpdateEntity(this);
+    }
+}
+
+void GameObject::UnregisterFixedUpdate() {
+    if (m_Scene) {
+        m_Scene->UnregisterFixedUpdateEntity(this);
+    }
+}
+
+void GameObject::InvalidateSceneTerrainCache() {
+    if (m_Scene) {
+        m_Scene->InvalidateTerrainCache();
+    }
+}
+
 } // namespace Engine

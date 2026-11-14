@@ -29,10 +29,24 @@ struct RaycastHitXZ;
 /// body registration, and spatial queries.
 class PhysicsWorld2D {
 public:
+    static constexpr size_t kMaxChunksPerTask = 64;
+    static constexpr int kMaxBox2DWorkers = 64; // Box2D v3 B2_MAX_WORKERS limit
+
     struct alignas(64) Box2DTask {
+        struct ChunkPacket {
+            b2TaskCallback* task = nullptr;
+            int startIndex = 0;
+            int endIndex = 0;
+            void* taskContext = nullptr;
+            Box2DTask* parentTask = nullptr;
+            uint32_t workerLimit = 0;
+        };
+
         std::atomic<int> remaining{ 0 };
         std::atomic<bool> done{ false };
         std::atomic<bool> inUse{ false };
+        uint32_t taskIndex{ 0 };
+        ChunkPacket* chunks{ nullptr };
 
         Box2DTask() = default;
         Box2DTask(const Box2DTask&) = delete;
@@ -40,6 +54,7 @@ public:
         Box2DTask(Box2DTask&&) = delete;
         Box2DTask& operator=(Box2DTask&&) = delete;
     };
+    static_assert(sizeof(Box2DTask) == 64, "PhysicsWorld2D::Box2DTask size must equal 64 bytes for cache isolation");
 
     static constexpr size_t kMaxBox2DTasks = 16;
     static constexpr float kSpatialCellSize = 2.0f;
@@ -114,6 +129,7 @@ public:
 private:
     static void* Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int minRange, void* taskContext, void* userContext);
     static void Box2DFinishTask(void* userTask, void* userContext);
+    static void ExecuteBox2DChunk(void* userData) noexcept;
 
     void CreateRuntimePhysicsBody(GameObject* go);
     void CreateRuntimeTilemapBody(GameObject* go);
@@ -156,6 +172,7 @@ private:
         uint64_t a = 0;
         uint64_t b = 0;
         bool operator==(const ShapePairKey&) const noexcept = default;
+        auto operator<=>(const ShapePairKey&) const noexcept = default;
     };
 
 #ifndef NDEBUG
@@ -164,6 +181,7 @@ private:
     Scene* m_Scene{ nullptr };
     bool m_IsRuntimeRunning{ false };
     uint32_t m_PhysicsWorldId{ 0 };
+    uint32_t m_Box2DWorkerCount{ 1 };
     float m_PhysicsAccumulator{ 0.0f };
     float m_PhysicsAlpha{ 0.0f };
     std::vector<GameObject*> m_PendingPhysicsSync;
@@ -173,6 +191,7 @@ private:
 
     // Box2D v3 multithreaded task management pool (zero heap allocation)
     alignas(64) std::array<Box2DTask, kMaxBox2DTasks> m_Box2DTasks;
+    std::array<std::array<Box2DTask::ChunkPacket, kMaxChunksPerTask>, kMaxBox2DTasks> m_Box2DTaskChunks{};
     uint64_t m_Box2DParallelTasksDispatched{ 0 };
     uint64_t m_Box2DSerialTasksExecuted{ 0 };
 

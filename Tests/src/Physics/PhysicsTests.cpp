@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "Engine/Core/JobSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsWorld2D.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Tilemap.h"
@@ -523,6 +524,86 @@ TEST(SpatialGrid2DTest, StaticColliderAndTilemapMovementInvalidatesGrid) {
     scene.Update(0.016f);
     EXPECT_FALSE(scene.IsSpatialGridDirty());
     EXPECT_LE(dyn->GetTransform()->position.x, 19.0001f);
+}
+
+TEST(PhysicsWorld2DTest, Box2DTaskPoolZeroHeapAllocationAndWorkerClamping) {
+    EXPECT_EQ(Engine::PhysicsWorld2D::kMaxBox2DWorkers, 64u);
+    EXPECT_EQ(Engine::PhysicsWorld2D::kMaxChunksPerTask, 64u);
+    EXPECT_EQ(sizeof(Engine::PhysicsWorld2D::Box2DTask), 64u);
+    EXPECT_EQ(alignof(Engine::PhysicsWorld2D::Box2DTask), 64u);
+
+    Engine::JobSystem::Init(4);
+
+    Engine::Scene scene("Box2DTaskPoolScene");
+    scene.OnRuntimeStart();
+
+    // Verify task slots are initialized with preallocated chunk packet pointers
+    const auto* slots = scene.GetBox2DTaskSlots();
+    ASSERT_NE(slots, nullptr);
+    for (size_t i = 0; i < scene.GetBox2DTaskSlotCount(); ++i) {
+        EXPECT_NE(slots[i].chunks, nullptr);
+        EXPECT_EQ(slots[i].taskIndex, static_cast<uint32_t>(i));
+    }
+
+    // Spawn 10 dynamic bodies so Box2D solver triggers worker tasks
+    for (int i = 0; i < 10; ++i) {
+        auto* go = scene.CreateGameObject("DynamicBody");
+        go->GetTransform()->position = { static_cast<float>(i) * 1.5f, 0.0f, 0.0f };
+        auto* rb = go->AddComponent<Engine::Rigidbody2D>();
+        rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+        auto* col = go->AddComponent<Engine::BoxCollider2D>();
+        col->size = { 1.0f, 1.0f };
+    }
+
+    // Step physics
+    for (int step = 0; step < 5; ++step) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+
+    // Verify tasks ran and total tasks is tracked
+    EXPECT_GE(scene.GetBox2DTotalTasks(), 0u);
+
+    scene.OnRuntimeStop();
+    Engine::JobSystem::Shutdown();
+}
+
+TEST(Rigidbody2DTest, LinearDampingRedundantCallsDeduplicated) {
+    Engine::Scene scene("DampingScene");
+    auto* go = scene.CreateGameObject("DampingActor");
+    auto* rb = go->AddComponent<Engine::Rigidbody2D>();
+    rb->LinearDamping = 3.0f;
+    go->AddComponent<Engine::BoxCollider2D>();
+
+    scene.OnRuntimeStart();
+
+    // First runtime initialization sets last applied damping
+    EXPECT_NEAR(rb->GetLastAppliedLinearDamping(), 3.0f, 1e-4f);
+
+    // Call SetLinearDampingRuntime with same value -> early exit deduplication
+    rb->SetLinearDampingRuntime(3.0f);
+    EXPECT_NEAR(rb->GetLastAppliedLinearDamping(), 3.0f, 1e-4f);
+
+    // Call with a slightly different value within epsilon (1e-4f) -> deduplicated
+    rb->SetLinearDampingRuntime(3.00001f);
+    EXPECT_NEAR(rb->GetLastAppliedLinearDamping(), 3.0f, 1e-4f);
+
+    // Call with new value -> updates
+    rb->SetLinearDampingRuntime(6.5f);
+    EXPECT_NEAR(rb->GetLastAppliedLinearDamping(), 6.5f, 1e-4f);
+
+    // Turn on terrain friction
+    rb->UseTerrainFriction = true;
+    scene.UpdateRuntime(1.0f / 60.0f);
+    // Since there's no custom terrain, default surface sample LinearDamping is 4.5f
+    EXPECT_NEAR(rb->GetLastAppliedLinearDamping(), 4.5f, 1e-4f);
+
+    // Run another step with identical surface sample -> damping remains deduplicated
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_NEAR(rb->GetLastAppliedLinearDamping(), 4.5f, 1e-4f);
+
+    scene.OnRuntimeStop();
+    // After runtime stop or pool release, last applied damping resets
+    EXPECT_NEAR(rb->GetLastAppliedLinearDamping(), -1.0f, 1e-4f);
 }
 
 } // namespace

@@ -22,6 +22,10 @@ namespace Engine {
 PhysicsWorld2D::PhysicsWorld2D(Scene* scene) noexcept
     : m_Scene(scene) {
     m_ContactedPairsScratch.reserve(64);
+    for (size_t i = 0; i < kMaxBox2DTasks; ++i) {
+        m_Box2DTasks[i].chunks = m_Box2DTaskChunks[i].data();
+        m_Box2DTasks[i].taskIndex = static_cast<uint32_t>(i);
+    }
 }
 
 PhysicsWorld2D::~PhysicsWorld2D() {
@@ -101,6 +105,7 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
 
             bodyId = b2CreateBody(worldId, &bodyDef);
             rb2d->RuntimeBody = BodyHandle{ b2StoreBodyId(bodyId) };
+            rb2d->m_LastAppliedLinearDamping = rb2d->LinearDamping;
             baseMassRecomputed = true;
             ENGINE_CORE_DEBUG("PhysicsWorld2D: Created Box2D body for '{}' (type={}, pos=({:.2f}, {:.2f}), colliders={})",
                               go->GetName(), static_cast<int>(rb2d->Type), worldPos.x, worldPos.z, colliders.size());
@@ -541,6 +546,25 @@ void PhysicsWorld2D::CreateRuntimeTilemapBody(GameObject* go) {
                       go->GetName(), width, height, shapeCount);
 }
 
+void PhysicsWorld2D::ExecuteBox2DChunk(void* userData) noexcept {
+    auto* packet = static_cast<Box2DTask::ChunkPacket*>(userData);
+    if (!packet || !packet->task || !packet->parentTask) {
+        return;
+    }
+
+    const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
+    const uint32_t wIdx = (currentWorker >= 0 && currentWorker < static_cast<int32_t>(packet->workerLimit))
+                              ? static_cast<uint32_t>(currentWorker)
+                              : (packet->workerLimit > 0 ? packet->workerLimit - 1u : 0u);
+
+    packet->task(packet->startIndex, packet->endIndex, wIdx, packet->taskContext);
+
+    if (packet->parentTask->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        packet->parentTask->done.store(true, std::memory_order_release);
+        packet->parentTask->done.notify_all();
+    }
+}
+
 void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int minRange, void* taskContext, void* userContext) {
     if (!task || itemCount <= 0) {
         return nullptr;
@@ -555,13 +579,13 @@ void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int 
 
     const int maxChunks = itemCount / minRange;
     const int availableThreads = static_cast<int>(workers + 1);
-    const int chunkCount = std::min(availableThreads, maxChunks);
+    const int chunkCount = std::min({ availableThreads, maxChunks, static_cast<int>(kMaxChunksPerTask) });
 
     if (chunkCount <= 1 || !JobSystem::IsInitialized() || workers == 0 || !physWorld) {
         const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
-        const uint32_t callerWorker = (currentWorker >= 0 && currentWorker < static_cast<int32_t>(workers))
+        const uint32_t callerWorker = (physWorld && currentWorker >= 0 && currentWorker < static_cast<int32_t>(physWorld->m_Box2DWorkerCount))
                                           ? static_cast<uint32_t>(currentWorker)
-                                          : workers;
+                                          : (physWorld && physWorld->m_Box2DWorkerCount > 0 ? physWorld->m_Box2DWorkerCount - 1u : 0u);
         task(0, itemCount, callerWorker, taskContext);
         if (physWorld) {
             ++physWorld->m_Box2DSerialTasksExecuted;
@@ -581,9 +605,9 @@ void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int 
     if (!taskSlot) {
         ENGINE_CORE_TRACE("PhysicsWorld2D: Box2D task slots exhausted; executing {} items inline", itemCount);
         const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
-        const uint32_t callerWorker = (currentWorker >= 0 && currentWorker < static_cast<int32_t>(workers))
+        const uint32_t callerWorker = (physWorld && currentWorker >= 0 && currentWorker < static_cast<int32_t>(physWorld->m_Box2DWorkerCount))
                                           ? static_cast<uint32_t>(currentWorker)
-                                          : workers;
+                                          : (physWorld->m_Box2DWorkerCount > 0 ? physWorld->m_Box2DWorkerCount - 1u : 0u);
         task(0, itemCount, callerWorker, taskContext);
         ++physWorld->m_Box2DSerialTasksExecuted;
         return nullptr;
@@ -600,18 +624,15 @@ void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int 
         const int start = c * baseSize + std::min(c, remainder);
         const int end = start + baseSize + (c < remainder ? 1 : 0);
 
-        JobSystem::Dispatch([task, start, end, taskContext, taskSlot, workers]() {
-            const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
-            const uint32_t wIdx = (currentWorker >= 0 && currentWorker < static_cast<int32_t>(workers))
-                                      ? static_cast<uint32_t>(currentWorker)
-                                      : workers;
-            task(start, end, wIdx, taskContext);
+        auto& packet = taskSlot->chunks[c];
+        packet.task = task;
+        packet.startIndex = start;
+        packet.endIndex = end;
+        packet.taskContext = taskContext;
+        packet.parentTask = taskSlot;
+        packet.workerLimit = physWorld->m_Box2DWorkerCount;
 
-            if (taskSlot->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-                taskSlot->done.store(true, std::memory_order_release);
-                taskSlot->done.notify_all();
-            }
-        });
+        JobSystem::SubmitRawJob(&PhysicsWorld2D::ExecuteBox2DChunk, &packet);
     }
 
     return taskSlot;
@@ -648,11 +669,15 @@ void PhysicsWorld2D::OnRuntimeStart() {
 
     const uint32_t workers = JobSystem::GetWorkerCount();
     if (JobSystem::IsInitialized() && workers > 0) {
-        worldDef.workerCount = static_cast<int>(workers + 1);
+        worldDef.workerCount = std::clamp(static_cast<int>(workers + 1), 1, kMaxBox2DWorkers);
+        m_Box2DWorkerCount = static_cast<uint32_t>(worldDef.workerCount);
         worldDef.enqueueTask = &PhysicsWorld2D::Box2DEnqueueTask;
         worldDef.finishTask = &PhysicsWorld2D::Box2DFinishTask;
         worldDef.userTaskContext = this;
         ENGINE_CORE_INFO("PhysicsWorld2D: Enabling Box2D v3 worker multithreading with {} workers", worldDef.workerCount);
+    } else {
+        worldDef.workerCount = 1;
+        m_Box2DWorkerCount = 1;
     }
 
     b2WorldId worldId = b2CreateWorld(&worldDef);
@@ -694,6 +719,7 @@ void PhysicsWorld2D::OnRuntimeStop() {
     }
     m_PhysicsWorldId = 0;
     m_IsRuntimeRunning = false;
+    m_Box2DWorkerCount = 1;
     m_PendingPhysicsSync.clear();
     m_PhysicsBodies.clear();
     m_PhysicsBodyIndices.clear();
@@ -783,13 +809,13 @@ void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
                 }
             }
 
-            // Pass 2: Fixed update dispatch on active components under iteration guard
+            // Pass 2: Fixed update dispatch on active physics & scripted components under iteration guard
             if (m_Scene) {
                 Scene::ScopedIterationGuard guard(*m_Scene);
-                const auto& gameObjects = m_Scene->GetGameObjects();
-                for (size_t i = 0; i < gameObjects.size(); ++i) {
-                    auto& go = gameObjects[i];
-                    if (go->IsActiveInHierarchy()) {
+                const auto& fixedEntities = m_Scene->GetFixedUpdateEntities();
+                for (size_t i = 0; i < fixedEntities.size(); ++i) {
+                    auto* go = fixedEntities[i];
+                    if (go && go->IsActiveInHierarchy() && !go->IsPendingDestroy() && go->HasFixedUpdate()) {
                         go->FixedUpdate(fixedDt);
                     }
                 }
@@ -1037,16 +1063,24 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         }
     }
 
+    // Sort and unique contacted pairs from hit events for O(log N) binary search deduplication
+    std::sort(m_ContactedPairsScratch.begin(), m_ContactedPairsScratch.end());
+    m_ContactedPairsScratch.erase(
+        std::unique(m_ContactedPairsScratch.begin(), m_ContactedPairsScratch.end()),
+        m_ContactedPairsScratch.end()
+    );
+
     // 2. Process Contact Begin Events (for pairs not already dispatched by hitEvents)
     for (int i = 0; i < contacts.beginCount; ++i) {
         const b2ContactBeginTouchEvent& begin = contacts.beginEvents[i];
         if (!b2Shape_IsValid(begin.shapeIdA) || !b2Shape_IsValid(begin.shapeIdB)) continue;
 
         const ShapePairKey pair = makePair(begin.shapeIdA, begin.shapeIdB);
-        if (std::find(m_ContactedPairsScratch.begin(), m_ContactedPairsScratch.end(), pair) != m_ContactedPairsScratch.end()) {
+        auto it = std::lower_bound(m_ContactedPairsScratch.begin(), m_ContactedPairsScratch.end(), pair);
+        if (it != m_ContactedPairsScratch.end() && *it == pair) {
             continue;
         }
-        m_ContactedPairsScratch.push_back(pair);
+        m_ContactedPairsScratch.insert(it, pair);
 
         b2BodyId bodyA = b2Shape_GetBody(begin.shapeIdA);
         b2BodyId bodyB = b2Shape_GetBody(begin.shapeIdB);

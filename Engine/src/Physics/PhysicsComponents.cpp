@@ -208,6 +208,10 @@ void Rigidbody2D::SetPositionXZ(const glm::vec2& worldXZ) {
 void Rigidbody2D::SetLinearDampingRuntime(float damping) {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::SetLinearDampingRuntime");
     LinearDamping = damping;
+    if (std::abs(m_LastAppliedLinearDamping - damping) < 1e-4f) {
+        return;
+    }
+    m_LastAppliedLinearDamping = damping;
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
@@ -460,6 +464,7 @@ void Rigidbody2D::OnPoolRelease() {
     m_StasisCachedAngularVelocity = 0.0f;
     m_StasisCachedVerticalVelocity = 0.0f;
     m_AirbornePassThroughActive = false;
+    m_LastAppliedLinearDamping = -1.0f;
 }
 
 void Rigidbody2D::FixedUpdate(float fixedDeltaTime) {
@@ -476,7 +481,9 @@ void Rigidbody2D::FixedUpdate(float fixedDeltaTime) {
 
     const glm::vec3 worldPos = transform->GetWorldPosition();
     const SurfaceSample sample = scene->SampleSurfaceAtXZ(worldPos.x, worldPos.z);
-    SetLinearDampingRuntime(sample.LinearDamping);
+    if (std::abs(m_LastAppliedLinearDamping - sample.LinearDamping) > 1e-4f) {
+        SetLinearDampingRuntime(sample.LinearDamping);
+    }
 }
 
 // ============================================================================

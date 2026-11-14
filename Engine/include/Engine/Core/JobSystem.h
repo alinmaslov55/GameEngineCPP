@@ -20,6 +20,7 @@
 namespace Engine {
 
 class JobSystem;
+class PhysicsWorld2D;
 
 struct JobState {
     std::atomic<bool> isFinished{ false };
@@ -115,6 +116,11 @@ public:
     static void ParallelForBatched(IndexType start, IndexType end, Func&& func, size_t chunkSize = 0) {
         ParallelForImpl<IndexType, Func, true>(start, end, std::forward<Func>(func), chunkSize);
     }
+
+    // Zero-allocation raw callback submission for high-frequency engine subsystems (e.g. PhysicsWorld2D)
+    static void SubmitRawJob(QueuedJob::RawCallback callback, void* userData);
+
+    friend class PhysicsWorld2D;
 
     JobSystem(uint32_t workerCount);
     ~JobSystem();
@@ -365,7 +371,6 @@ private:
         }
     }
 
-    static void SubmitRawJob(QueuedJob::RawCallback callback, void* userData);
     void WorkerLoop(std::stop_token stopToken, uint32_t workerIndex);
     QueuedJob FindWork(uint32_t workerIndex);
     void SubmitJob(std::shared_ptr<JobState> job);

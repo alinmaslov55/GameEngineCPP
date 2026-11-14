@@ -89,9 +89,12 @@ public:
         RuntimeBody.Reset();
         m_BaseMass = 0.0f;
         m_AppliedMassMultiplier = 1.0f;
+        m_LastAppliedLinearDamping = -1.0f;
     }
     void SetBullet(bool bullet);
     [[nodiscard]] bool GetBullet() const noexcept;
+    [[nodiscard]] float GetLastAppliedLinearDamping() const noexcept { return m_LastAppliedLinearDamping; }
+    void SetLastAppliedLinearDamping(float damping) noexcept { m_LastAppliedLinearDamping = damping; }
 
     // Component lifecycle hooks
     void OnEnable() override;
@@ -118,9 +121,12 @@ public:
     void SetStasisCachedVerticalVelocity(float v) noexcept { m_StasisCachedVerticalVelocity = v; }
 
 private:
+    friend class PhysicsWorld2D;
+
     bool m_AirbornePassThroughActive = false;
     float m_BaseMass = 0.0f;
     float m_AppliedMassMultiplier = 1.0f;
+    float m_LastAppliedLinearDamping = -1.0f;
 
     // Chronos Stasis state
     bool m_IsStasisFrozen = false;
