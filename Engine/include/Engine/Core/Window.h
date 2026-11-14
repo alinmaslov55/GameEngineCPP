@@ -10,6 +10,9 @@ public:
     Window(const std::string& title, int width, int height);
     ~Window();
 
+    Window(const Window&) = delete;
+    Window& operator=(const Window&) = delete;
+
     void PollEvents();
     void SwapBuffers();
     void Update();
@@ -18,6 +21,7 @@ public:
     int GetHeight() const { return m_Height; }
 
     bool ShouldClose() const { return m_ShouldClose; }
+    bool IsInitialized() const noexcept { return m_IsInitialized; }
     SDL_Window* GetNativeWindow() const { return m_Window; }
     SDL_Window* GetSDLWindow() const { return m_Window; }
     SDL_GLContext GetGLContext() const { return m_GLContext; }
@@ -28,6 +32,7 @@ private:
     int m_Width{0};
     int m_Height{0};
     bool m_ShouldClose{false};
+    bool m_IsInitialized{false};
 };
 } // namespace Engine
 

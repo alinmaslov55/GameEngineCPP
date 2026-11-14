@@ -543,15 +543,26 @@ public:
     int acquireCount = 0;
     int releaseCount = 0;
     int customState = 42;
+    std::vector<std::string> events;
+
+    void OnEnable() override {
+        events.push_back("OnEnable");
+    }
+
+    void OnDisable() override {
+        events.push_back("OnDisable");
+    }
 
     void OnPoolAcquire() override {
         ++acquireCount;
         customState = 100;
+        events.push_back("OnPoolAcquire");
     }
 
     void OnPoolRelease() override {
         ++releaseCount;
         customState = 0;
+        events.push_back("OnPoolRelease");
     }
 };
 
@@ -634,6 +645,38 @@ TEST(PrefabAndPoolingTest, ReleaseToPoolMutatingChildrenUsesScratchSafely) {
     EXPECT_EQ(siblingCompC->customState, 0);
     EXPECT_EQ(gcComp->customState, 0);
     EXPECT_EQ(poolMgr.GetTempChildrenScratchCapacity(), capBefore);
+}
+
+TEST(PrefabAndPoolingTest, PoolAcquireHookOrderAndDuplicateReleaseGuard) {
+    auto scene = std::make_shared<Engine::Scene>("LifecycleOrderScene");
+    auto* instance = scene->CreateGameObject("LifecycleInstance");
+    auto* tracker = instance->AddComponent<CustomPooledComponent>();
+    instance->SetPoolKey("TestLifecyclePool");
+    EXPECT_TRUE(instance->IsActive());
+    tracker->events.clear(); // Clear initial OnEnable from creation
+
+    // 1. Release to pool: must invoke OnDisable BEFORE OnPoolRelease
+    scene->ReleaseToPool("TestLifecyclePool", instance);
+    ASSERT_EQ(tracker->events.size(), 2u);
+    EXPECT_EQ(tracker->events[0], "OnDisable");
+    EXPECT_EQ(tracker->events[1], "OnPoolRelease");
+    EXPECT_FALSE(instance->IsActive());
+    EXPECT_TRUE(instance->IsInFreeList());
+
+    // 2. Calling ReleaseToPool a second time on the already-released instance must be a guarded no-op!
+    scene->ReleaseToPool("TestLifecyclePool", instance);
+    EXPECT_EQ(tracker->events.size(), 2u);
+
+    // 3. Acquire pooled instance: must invoke OnPoolAcquire BEFORE OnEnable!
+    Engine::Prefab dummyPrefab;
+    auto* recycled = scene->AcquirePooled("TestLifecyclePool", dummyPrefab, { 10.0f, 0.0f, 5.0f });
+    ASSERT_EQ(recycled, instance);
+    EXPECT_TRUE(instance->IsActive());
+    EXPECT_FALSE(instance->IsInFreeList());
+
+    ASSERT_EQ(tracker->events.size(), 4u);
+    EXPECT_EQ(tracker->events[2], "OnPoolAcquire");
+    EXPECT_EQ(tracker->events[3], "OnEnable");
 }
 
 } // namespace

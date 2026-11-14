@@ -242,15 +242,23 @@ public:
                     stackChildren[i] = children[i];
                 }
                 for (size_t i = 0; i < count; ++i) {
-                    if (stackChildren[i] && stackChildren[i]->GetGameObject()) {
-                        stackChildren[i]->GetGameObject()->NotifyHierarchyActiveChanged();
+                    if (stackChildren[i]) {
+                        if (auto* childGo = stackChildren[i]->GetGameObject()) {
+                            if (childGo->IsActive()) {
+                                childGo->NotifyHierarchyActiveChanged();
+                            }
+                        }
                     }
                 }
             } else {
                 auto childrenCopy = children;
                 for (auto* child : childrenCopy) {
-                    if (child && child->GetGameObject()) {
-                        child->GetGameObject()->NotifyHierarchyActiveChanged();
+                    if (child) {
+                        if (auto* childGo = child->GetGameObject()) {
+                            if (childGo->IsActive()) {
+                                childGo->NotifyHierarchyActiveChanged();
+                            }
+                        }
                     }
                 }
             }
@@ -374,26 +382,29 @@ public:
             return nullptr;
         } else {
             const uint16_t targetID = Detail::GetComponentTypeID<CleanT>();
-            if (!m_ComponentMask.Intersects(ComponentMask128::FromBit(targetID))) {
-                return nullptr;
-            }
-            // Pass 1: Zero-RTTI O(N) integer ID match
-            for (const auto& component : m_Components) {
-                if (!component || component->IsPendingRemoval()) continue;
-                if (component->GetTypeID() == targetID || component->GetBaseTypeID() == targetID) {
-                    return static_cast<T*>(component.get());
+            if constexpr (std::is_final_v<CleanT> || Detail::IsRegisteredPolymorphicBase<CleanT>()) {
+                if (!m_ComponentMask.Intersects(ComponentMask128::FromBit(targetID))) {
+                    return nullptr;
                 }
-            }
-            // Pass 2: Fallback for non-final, unregistered polymorphic hierarchies (compiled out for final & registered bases)
-            if constexpr (!std::is_final_v<CleanT> && !Detail::IsRegisteredPolymorphicBase<CleanT>()) {
                 for (const auto& component : m_Components) {
                     if (!component || component->IsPendingRemoval()) continue;
+                    if (component->GetTypeID() == targetID || component->GetBaseTypeID() == targetID) {
+                        return static_cast<T*>(component.get());
+                    }
+                }
+                return nullptr;
+            } else {
+                for (const auto& component : m_Components) {
+                    if (!component || component->IsPendingRemoval()) continue;
+                    if (component->GetTypeID() == targetID || component->GetBaseTypeID() == targetID) {
+                        return static_cast<T*>(component.get());
+                    }
                     if (T* casted = dynamic_cast<T*>(component.get())) {
                         return casted;
                     }
                 }
+                return nullptr;
             }
-            return nullptr;
         }
     }
 
@@ -412,10 +423,10 @@ public:
             }
         } else {
             const uint16_t targetID = Detail::GetComponentTypeID<CleanT>();
-            if (!m_ComponentMask.Intersects(ComponentMask128::FromBit(targetID))) {
-                return result;
-            }
             if constexpr (std::is_final_v<CleanT> || Detail::IsRegisteredPolymorphicBase<CleanT>()) {
+                if (!m_ComponentMask.Intersects(ComponentMask128::FromBit(targetID))) {
+                    return result;
+                }
                 for (const auto& component : m_Components) {
                     if (!component || component->IsPendingRemoval()) continue;
                     if (component->GetTypeID() == targetID || component->GetBaseTypeID() == targetID) {
@@ -542,9 +553,9 @@ public:
                     comp);
             }
 
+            comp->m_PendingRemoval = true;
             if (m_ComponentIterationDepth == 0) {
-                comp->OnDestroy();
-                m_Components.erase(foundIt);
+                FlushPendingComponentRemovals();
             }
             ENGINE_CORE_DEBUG("GameObject '{}': Removed component", GetName());
             return true;

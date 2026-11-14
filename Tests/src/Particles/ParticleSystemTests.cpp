@@ -60,5 +60,44 @@ TEST(ParticleSystemTest, UpdateSimulatesMotionAndCompactExpiredParticles) {
     EXPECT_EQ(ps.GetActiveParticleCount(), 0u);
 }
 
+TEST(ParticleSystemTest, PoolSaturationWrapsRingIndexAcrossFullCapacity) {
+    Engine::ParticleSystem ps(3);
+
+    Engine::ParticleProps props;
+    props.velocity = { 0.0f, 0.0f, 0.0f };
+    props.velocityVariation = { 0.0f, 0.0f, 0.0f };
+    props.lifeTime = 10.0f;
+
+    // Fill pool to capacity (3 particles)
+    props.position = { 1.0f, 0.0f, 0.0f };
+    ps.Emit(props);
+    props.position = { 2.0f, 0.0f, 0.0f };
+    ps.Emit(props);
+    props.position = { 3.0f, 0.0f, 0.0f };
+    ps.Emit(props);
+    EXPECT_EQ(ps.GetActiveParticleCount(), 3u);
+
+    // 4th particle emitted while saturated: must overwrite ring index 0
+    props.position = { 10.0f, 0.0f, 0.0f };
+    ps.Emit(props);
+    EXPECT_FLOAT_EQ(ps.GetParticles()[0].position.x, 10.0f);
+    EXPECT_FLOAT_EQ(ps.GetParticles()[1].position.x, 2.0f);
+    EXPECT_FLOAT_EQ(ps.GetParticles()[2].position.x, 3.0f);
+
+    // 5th particle emitted while saturated: must advance ring to index 1 (not overwrite index 0 again)
+    props.position = { 20.0f, 0.0f, 0.0f };
+    ps.Emit(props);
+    EXPECT_FLOAT_EQ(ps.GetParticles()[0].position.x, 10.0f);
+    EXPECT_FLOAT_EQ(ps.GetParticles()[1].position.x, 20.0f);
+    EXPECT_FLOAT_EQ(ps.GetParticles()[2].position.x, 3.0f);
+
+    // 6th particle emitted while saturated: must advance ring to index 2
+    props.position = { 30.0f, 0.0f, 0.0f };
+    ps.Emit(props);
+    EXPECT_FLOAT_EQ(ps.GetParticles()[0].position.x, 10.0f);
+    EXPECT_FLOAT_EQ(ps.GetParticles()[1].position.x, 20.0f);
+    EXPECT_FLOAT_EQ(ps.GetParticles()[2].position.x, 30.0f);
+}
+
 } // namespace
 

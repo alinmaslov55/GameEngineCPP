@@ -84,7 +84,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
       * Add exact AABB `ExtinguishInBoundsXZ` per evicted chunk; skip `DrainReadyPayloads()` apply if `chunk.State != ChunkLoadState::Generating || chunk.UserModified`; call `m_FireGrid.Clear()` before nulling callbacks in `OnDestroy()`; cap `TerrainFireGrid::Update()` ticks per frame.
     - Verification (EngineTests): Ignite tar across chunk border and evict one chunk (neighbor fire intact); edit `Generating` chunk before worker finishes (edits kept); destroy `TerrainChunkManager` while burning (`TarFirewall` entity count == 0).
 
-[ ] 8. Fix Camera Hit-Stop Trauma Wipe, EntityPoolManager Ordering & Window/Input/Serializer/Lifecycle Safety
+[x] 8. Fix Camera Hit-Stop Trauma Wipe, EntityPoolManager Ordering & Window/Input/Serializer/Lifecycle Safety
     - Files: Engine/src/Scene/CameraComponent.cpp (lines 169-195), Engine/src/Scene/EntityPoolManager.cpp (lines 47-118), Engine/include/Engine/Scene/GameObject.h (lines 216-258, 376-396), Engine/src/Scene/GameObject.cpp (lines 79-90), Engine/include/Engine/Core/Window.h (lines 8-31), Engine/src/Core/Window.cpp (lines 15-59), Engine/src/Core/Application.cpp (lines 47-80), Engine/src/Core/Input.cpp (lines 299-333, 385-407), Engine/src/Core/Time.cpp (lines 39-112), Engine/include/Engine/Audio/AudioSource.h (lines 23-62), Engine/include/Engine/Animation/Animator.h (lines 54-85), Engine/src/Particles/ParticleSystem.cpp (lines 34-99), Engine/src/Scene/SceneSerializer.cpp (lines 1173-1204, 1424-1448)
     - Root Cause:
       * `CameraComponent::SyncFromTransform` calls `ResetToTarget()` when `!SmoothFollow && dt <= 0.0f` (`:169`), which zeroes `m_Trauma` and `m_DirectionalKick` during hit-stop (`TimeScale == 0.0f`).

@@ -173,7 +173,7 @@ void CameraComponent::SyncFromTransform(const Transform* transform) {
     const float dt = Time::GetDeltaTime();
     const float unscaledDt = Time::GetUnscaledDeltaTime();
 
-    if (m_FirstSync || (!SmoothFollow && dt <= 0.0f)) {
+    if (m_FirstSync) {
         ResetToTarget(targetPos);
     } else {
         UpdateRig(dt, unscaledDt, targetPos);

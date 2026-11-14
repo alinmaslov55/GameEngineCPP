@@ -1200,30 +1200,49 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
     std::shared_ptr<Font> font = nullptr;
     if (labelJson.contains("Font") && labelJson["Font"].is_object()) {
         const auto& fontJson = labelJson["Font"];
-        font = std::make_shared<Font>();
+        std::string atlasPath;
         if (fontJson.contains("AtlasTexturePath") && fontJson["AtlasTexturePath"].is_string()) {
-            std::string atlasPath = fontJson["AtlasTexturePath"].get<std::string>();
+            atlasPath = fontJson["AtlasTexturePath"].get<std::string>();
+        }
+
+        static std::mutex s_FontCacheMutex;
+        static std::unordered_map<std::string, std::shared_ptr<Font>> s_FontCache;
+
+        if (!atlasPath.empty()) {
+            std::lock_guard<std::mutex> lock(s_FontCacheMutex);
+            auto it = s_FontCache.find(atlasPath);
+            if (it != s_FontCache.end()) {
+                font = it->second;
+            }
+        }
+
+        if (!font) {
+            font = std::make_shared<Font>();
             if (!atlasPath.empty()) {
                 font->atlasTexture = ResourceManager::Load<Texture>(atlasPath);
             }
-        }
-        if (fontJson.contains("Characters") && fontJson["Characters"].is_array()) {
-            for (const auto& chJson : fontJson["Characters"]) {
-                std::string chStr = chJson.value("Char", "");
-                if (chStr.empty()) continue;
+            if (fontJson.contains("Characters") && fontJson["Characters"].is_array()) {
+                for (const auto& chJson : fontJson["Characters"]) {
+                    std::string chStr = chJson.value("Char", "");
+                    if (chStr.empty()) continue;
 
-                Character ch{};
-                if (chJson.contains("SubTexture")) {
-                    ch.subTexture = DeserializeSubTexture(chJson["SubTexture"]);
+                    Character ch{};
+                    if (chJson.contains("SubTexture")) {
+                        ch.subTexture = DeserializeSubTexture(chJson["SubTexture"]);
+                    }
+                    if (chJson.contains("Size")) {
+                        ch.size = AsVec2(chJson["Size"]);
+                    }
+                    if (chJson.contains("Bearing")) {
+                        ch.bearing = AsVec2(chJson["Bearing"]);
+                    }
+                    ch.advance = chJson.value("Advance", 0.0f);
+                    font->AddCharacter(chStr[0], ch);
                 }
-                if (chJson.contains("Size")) {
-                    ch.size = AsVec2(chJson["Size"]);
-                }
-                if (chJson.contains("Bearing")) {
-                    ch.bearing = AsVec2(chJson["Bearing"]);
-                }
-                ch.advance = chJson.value("Advance", 0.0f);
-                font->AddCharacter(chStr[0], ch);
+            }
+            if (!atlasPath.empty()) {
+                std::lock_guard<std::mutex> lock(s_FontCacheMutex);
+                s_FontCache[atlasPath] = font;
             }
         }
     }
@@ -1421,70 +1440,76 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
         return false;
     }
 
-    json sceneJson;
     try {
-        sceneJson = json::parse(jsonString);
+        json sceneJson = json::parse(jsonString);
+        if (!sceneJson.is_object()) {
+            ENGINE_CORE_ERROR("SceneSerializer::DeserializeFromString: Root JSON must be an object");
+            return false;
+        }
+
+        if (sceneJson.contains("SceneName") && sceneJson["SceneName"].is_string()) {
+            m_Scene->SetName(sceneJson["SceneName"].get<std::string>());
+        }
+        if (sceneJson.contains("OrthographicSize") && sceneJson["OrthographicSize"].is_number()) {
+            m_Scene->SetOrthographicSize(sceneJson["OrthographicSize"].get<float>());
+        }
+        if (sceneJson.contains("Camera") && sceneJson["Camera"].is_object()) {
+            DeserializeSceneCamera(sceneJson["Camera"], m_Scene->GetCamera());
+        }
+
+        size_t loadedCount = 0;
+        std::vector<std::pair<GameObject*, uint64_t>> parentLinks;
+        if (sceneJson.contains("GameObjects") && sceneJson["GameObjects"].is_array()) {
+            for (const auto& entityJson : sceneJson["GameObjects"]) {
+                std::string name = entityJson.value("Name", "GameObject");
+                GameObject* go = entityJson.contains("UUID")
+                    ? m_Scene->CreateGameObjectWithUUID(entityJson["UUID"].get<uint64_t>(), name)
+                    : m_Scene->CreateGameObject(name);
+                loadedCount++;
+
+                uint64_t parentUUID = entityJson.value("ParentUUID", 0ULL);
+                if (parentUUID != 0) {
+                    parentLinks.emplace_back(go, parentUUID);
+                }
+
+                if (entityJson.contains("Tag")) {
+                    if (entityJson["Tag"].is_string()) {
+                        go->SetTag(StringToEntityTag(entityJson["Tag"].get<std::string>()));
+                    } else if (entityJson["Tag"].is_number()) {
+                        go->SetTag(static_cast<EntityTag>(entityJson["Tag"].get<uint16_t>()));
+                    }
+                }
+                if (entityJson.contains("LayerMask") && entityJson["LayerMask"].is_number()) {
+                    go->SetLayer(entityJson["LayerMask"].get<uint32_t>());
+                }
+
+                if (entityJson.contains("Components")) {
+                    DeserializeEntityComponents(go, entityJson["Components"], name);
+                }
+            }
+
+            // Pass 2: Connect parent-child hierarchy
+            for (const auto& [childGo, parentUUID] : parentLinks) {
+                if (auto* parentGo = m_Scene->FindGameObjectByUUID(parentUUID)) {
+                    if (auto* childTransform = childGo->GetTransform()) {
+                        childTransform->SetParent(parentGo->GetTransform(), /*keepWorldTransform=*/false);
+                    }
+                } else {
+                    ENGINE_CORE_WARN("SceneSerializer: Entity '{}' ({}) references missing parent UUID {}",
+                                     childGo->GetName(), childGo->GetUUID(), parentUUID);
+                }
+            }
+        }
+
+        ENGINE_CORE_DEBUG("Scene deserialized from JSON ({} GameObjects loaded)", loadedCount);
+        return true;
+    } catch (const nlohmann::json::exception& e) {
+        ENGINE_CORE_ERROR("SceneSerializer::DeserializeFromString JSON exception: {}", e.what());
+        return false;
     } catch (const std::exception& e) {
-        ENGINE_CORE_ERROR("Failed to parse scene JSON string: {}", e.what());
+        ENGINE_CORE_ERROR("SceneSerializer::DeserializeFromString exception: {}", e.what());
         return false;
     }
-
-    if (sceneJson.contains("SceneName") && sceneJson["SceneName"].is_string()) {
-        m_Scene->SetName(sceneJson["SceneName"].get<std::string>());
-    }
-    if (sceneJson.contains("OrthographicSize") && sceneJson["OrthographicSize"].is_number()) {
-        m_Scene->SetOrthographicSize(sceneJson["OrthographicSize"].get<float>());
-    }
-    if (sceneJson.contains("Camera") && sceneJson["Camera"].is_object()) {
-        DeserializeSceneCamera(sceneJson["Camera"], m_Scene->GetCamera());
-    }
-
-    size_t loadedCount = 0;
-    std::vector<std::pair<GameObject*, uint64_t>> parentLinks;
-    if (sceneJson.contains("GameObjects") && sceneJson["GameObjects"].is_array()) {
-        for (const auto& entityJson : sceneJson["GameObjects"]) {
-            std::string name = entityJson.value("Name", "GameObject");
-            GameObject* go = entityJson.contains("UUID")
-                ? m_Scene->CreateGameObjectWithUUID(entityJson["UUID"].get<uint64_t>(), name)
-                : m_Scene->CreateGameObject(name);
-            loadedCount++;
-
-            uint64_t parentUUID = entityJson.value("ParentUUID", 0ULL);
-            if (parentUUID != 0) {
-                parentLinks.emplace_back(go, parentUUID);
-            }
-
-            if (entityJson.contains("Tag")) {
-                if (entityJson["Tag"].is_string()) {
-                    go->SetTag(StringToEntityTag(entityJson["Tag"].get<std::string>()));
-                } else if (entityJson["Tag"].is_number()) {
-                    go->SetTag(static_cast<EntityTag>(entityJson["Tag"].get<uint16_t>()));
-                }
-            }
-            if (entityJson.contains("LayerMask") && entityJson["LayerMask"].is_number()) {
-                go->SetLayer(entityJson["LayerMask"].get<uint32_t>());
-            }
-
-            if (entityJson.contains("Components")) {
-                DeserializeEntityComponents(go, entityJson["Components"], name);
-            }
-        }
-
-        // Pass 2: Connect parent-child hierarchy
-        for (const auto& [childGo, parentUUID] : parentLinks) {
-            if (auto* parentGo = m_Scene->FindGameObjectByUUID(parentUUID)) {
-                if (auto* childTransform = childGo->GetTransform()) {
-                    childTransform->SetParent(parentGo->GetTransform(), /*keepWorldTransform=*/false);
-                }
-            } else {
-                ENGINE_CORE_WARN("SceneSerializer: Entity '{}' ({}) references missing parent UUID {}",
-                                 childGo->GetName(), childGo->GetUUID(), parentUUID);
-            }
-        }
-    }
-
-    ENGINE_CORE_DEBUG("Scene deserialized from JSON ({} GameObjects loaded)", loadedCount);
-    return true;
 }
 
 bool SceneSerializer::Deserialize(const std::string& filepath) {

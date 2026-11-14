@@ -43,12 +43,14 @@ Window::Window(const std::string& title, int width, int height)
         return;
     }
 
+    m_IsInitialized = true;
     ENGINE_CORE_INFO("OpenGL Context Initialized: Version {}.{}", GLVersion.major, GLVersion.minor);
     ENGINE_CORE_INFO("Window '{}' created successfully (VSync enabled)", title);
 }
 
 Window::~Window() {
     ENGINE_CORE_INFO("Destroying window...");
+    m_IsInitialized = false;
     if (m_GLContext) {
         SDL_GL_DestroyContext(m_GLContext);
     }
@@ -95,12 +97,12 @@ void Window::PollEvents() {
 
             case SDL_EVENT_KEY_DOWN:
                 if (!event.key.repeat) {
-                    Input::OnKeyEvent(true);
+                    Input::OnKeyEvent(event.key.scancode, true);
                 }
                 break;
 
             case SDL_EVENT_MOUSE_BUTTON_DOWN:
-                Input::OnMouseButtonEvent(true);
+                Input::OnMouseButtonEvent(event.button.button, true);
                 break;
 
             case SDL_EVENT_MOUSE_MOTION:
@@ -108,7 +110,7 @@ void Window::PollEvents() {
                 break;
 
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-                Input::OnGamepadButtonEvent(true);
+                Input::OnGamepadButtonEvent(static_cast<SDL_GamepadButton>(event.gbutton.button), true);
                 break;
 
             case SDL_EVENT_GAMEPAD_AXIS_MOTION: {

@@ -52,22 +52,31 @@ public:
     void OnPoolRelease() override { Stop(); }
 
     void Update(float deltaTime) override {
-        if (!m_CurrentClip || m_CurrentClip->frames.empty()) return;
+        if (!m_CurrentClip || m_CurrentClip->frames.empty() || deltaTime <= 0.0f) return;
 
         m_CurrentTime += deltaTime;
+        const float frameDuration = m_CurrentClip->frameDuration;
 
-        if (m_CurrentTime >= m_CurrentClip->frameDuration) {
-            m_CurrentTime -= m_CurrentClip->frameDuration;
-            m_CurrentFrameIndex++;
+        if (frameDuration > 1e-4f && m_CurrentTime >= frameDuration) {
+            bool changed = false;
+            while (m_CurrentTime >= frameDuration) {
+                m_CurrentTime -= frameDuration;
+                m_CurrentFrameIndex++;
+                changed = true;
 
-            if (m_CurrentFrameIndex >= m_CurrentClip->frames.size()) {
-                if (m_CurrentClip->loop) {
-                    m_CurrentFrameIndex = 0;
-                } else {
-                    m_CurrentFrameIndex = static_cast<uint32_t>(m_CurrentClip->frames.size() - 1);
+                if (m_CurrentFrameIndex >= m_CurrentClip->frames.size()) {
+                    if (m_CurrentClip->loop) {
+                        m_CurrentFrameIndex = 0;
+                    } else {
+                        m_CurrentFrameIndex = static_cast<uint32_t>(m_CurrentClip->frames.size() - 1);
+                        m_CurrentTime = 0.0f;
+                        break;
+                    }
                 }
             }
-            UpdateSpriteRenderer();
+            if (changed) {
+                UpdateSpriteRenderer();
+            }
         }
     }
 
@@ -77,6 +86,9 @@ public:
 private:
     void UpdateSpriteRenderer() {
         if (!m_CurrentClip || m_CurrentClip->frames.empty() || m_CurrentFrameIndex >= m_CurrentClip->frames.size()) {
+            return;
+        }
+        if (!GetGameObject()) {
             return;
         }
         auto spriteRenderer = GetGameObject()->GetComponent<SpriteRenderer>();

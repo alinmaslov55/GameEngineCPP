@@ -86,31 +86,38 @@ void GameObject::NotifyPhysicsComponentRemoved(bool removedIsTilemap, bool remov
 void GameObject::FlushPendingComponentRemovals() {
     if (m_ComponentIterationDepth > 0) return;
 
-    bool hasPending = false;
-    for (const auto& comp : m_Components) {
-        if (comp && comp->IsPendingRemoval()) {
-            hasPending = true;
+    size_t totalRemoved = 0;
+    while (true) {
+        std::vector<std::unique_ptr<Component>> batchToDestroy;
+        for (auto it = m_Components.begin(); it != m_Components.end(); ) {
+            if (*it && (*it)->IsPendingRemoval()) {
+                batchToDestroy.push_back(std::move(*it));
+                it = m_Components.erase(it);
+            } else if (!*it) {
+                it = m_Components.erase(it);
+            } else {
+                ++it;
+            }
+        }
+
+        if (batchToDestroy.empty()) {
             break;
         }
-    }
-    if (!hasPending) return;
 
-    size_t removedCount = 0;
-    ++m_ComponentIterationDepth;
-    for (size_t i = 0; i < m_Components.size(); ++i) {
-        auto* comp = m_Components[i].get();
-        if (comp && comp->IsPendingRemoval()) {
-            comp->OnDestroy();
-            ++removedCount;
+        totalRemoved += batchToDestroy.size();
+        ++m_ComponentIterationDepth;
+        for (auto& comp : batchToDestroy) {
+            if (comp) {
+                comp->OnDestroy();
+            }
         }
+        --m_ComponentIterationDepth;
     }
-    --m_ComponentIterationDepth;
 
-    std::erase_if(m_Components, [](const std::unique_ptr<Component>& comp) {
-        return !comp || comp->IsPendingRemoval();
-    });
-    ENGINE_CORE_DEBUG("GameObject '{}' (UUID {}): Flushed {} pending component removal(s)",
-                      GetName(), GetUUID(), removedCount);
+    if (totalRemoved > 0) {
+        ENGINE_CORE_DEBUG("GameObject '{}' (UUID {}): Flushed {} pending component removal(s)",
+                          GetName(), GetUUID(), totalRemoved);
+    }
 }
 
 void GameObject::DispatchCollisionEnter2D(const Collision2DInfo& info) {

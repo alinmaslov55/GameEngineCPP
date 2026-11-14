@@ -35,8 +35,9 @@ void ParticleSystem::Emit(const ParticleProps& particleProps) {
     if (m_ActiveParticleCount < m_ParticlePool.size()) {
         targetIndex = m_ActiveParticleCount++;
     } else {
-        // Pool saturated, recycle oldest particle at index 0
-        targetIndex = 0;
+        // Pool saturated, advance ring index across full capacity
+        targetIndex = m_PoolIndex;
+        m_PoolIndex = (m_PoolIndex + 1) % static_cast<uint32_t>(m_ParticlePool.size());
     }
 
     ENGINE_CORE_TRACE("ParticleSystem: Emitting particle at ({:.2f}, {:.2f}, {:.2f}), pool index: {}",

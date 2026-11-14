@@ -43,5 +43,17 @@ TEST(AudioSourceTest, ComponentLifecycleAndNullSafety) {
     SUCCEED();
 }
 
+TEST(AudioSourceTest, DisableDestroyAndPoolReleaseStopPlaybackSafely) {
+    Engine::GameObject entity("SafeAudioSource");
+    auto* source = entity.AddComponent<Engine::AudioSource>();
+    ASSERT_NE(source, nullptr);
+
+    // Call OnDisable, OnPoolRelease, OnDestroy without active stream -> safe no-ops
+    source->OnDisable();
+    source->OnPoolRelease();
+    source->OnDestroy();
+    SUCCEED();
+}
+
 } // namespace
 

@@ -994,6 +994,8 @@ void TerrainChunkManager::SpawnChunkEntities(TerrainChunk& chunk) {
         if (auto* t = spawned->GetTransform()) {
             t->scale = spec.BaseScale * scaleMult;
             t->SnapshotPrevious();
+            t->SetDirty();
+            scene->MarkPhysicsDirty(spawned);
         }
         if (auto* sprite = spawned->GetComponent<SpriteRenderer>()) {
             sprite->SetWindPhaseOffset(windPhase);

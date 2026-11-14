@@ -378,5 +378,67 @@ TEST(GameObjectTest, CustomRegisteredPolymorphicHierarchyZeroRTTI) {
     EXPECT_EQ(entity.GetComponent<CustomPolyBase>(), nullptr);
 }
 
+TEST(GameObjectTest, UnregisteredPolymorphicBaseQueryFallbackAndCascadingRemovals) {
+    // 1. Unregistered polymorphic base (no using ComponentBaseType)
+    class IUnregisteredBase : public Engine::Component {
+    public:
+        virtual int GetScore() const = 0;
+    };
+
+    class UnregisteredDerivedA : public IUnregisteredBase {
+    public:
+        bool* destroyedPtr = nullptr;
+        int GetScore() const override { return 100; }
+        void OnDestroy() override {
+            if (destroyedPtr) *destroyedPtr = true;
+        }
+    };
+
+    class UnregisteredDerivedB : public IUnregisteredBase {
+    public:
+        UnregisteredDerivedA* target = nullptr;
+        bool* destroyedPtr = nullptr;
+        int GetScore() const override { return 200; }
+        void OnDestroy() override {
+            if (destroyedPtr) *destroyedPtr = true;
+            if (target && GetGameObject()) {
+                GetGameObject()->RemoveComponent<UnregisteredDerivedA>();
+            }
+        }
+    };
+
+    static_assert(!Engine::Detail::IsRegisteredPolymorphicBase<IUnregisteredBase>());
+
+    Engine::GameObject entity("UnregisteredEntity");
+    auto* compA = entity.AddComponent<UnregisteredDerivedA>();
+    auto* compB = entity.AddComponent<UnregisteredDerivedB>();
+
+    // Pass 2 dynamic_cast fallback must find unregistered base without early mask rejection
+    auto* baseComp = entity.GetComponent<IUnregisteredBase>();
+    ASSERT_NE(baseComp, nullptr);
+    EXPECT_EQ(baseComp->GetScore(), 100);
+
+    auto allBaseComps = entity.GetComponents<IUnregisteredBase>();
+    ASSERT_EQ(allBaseComps.size(), 2u);
+    EXPECT_EQ(allBaseComps[0], static_cast<IUnregisteredBase*>(compA));
+    EXPECT_EQ(allBaseComps[1], static_cast<IUnregisteredBase*>(compB));
+
+    // 2. Cascading component removal: destroying compB triggers removal of compA
+    bool compADestroyed = false;
+    bool compBDestroyed = false;
+    compA->destroyedPtr = &compADestroyed;
+    compB->destroyedPtr = &compBDestroyed;
+    compB->target = compA;
+
+    // Removing compB triggers OnDestroy on compB, which calls RemoveComponent<UnregisteredDerivedA>().
+    // Both components must have OnDestroy called and both must be cleanly flushed without iterator issues.
+    EXPECT_TRUE(entity.RemoveComponent<UnregisteredDerivedB>());
+    EXPECT_TRUE(compBDestroyed);
+    EXPECT_TRUE(compADestroyed);
+    EXPECT_EQ(entity.GetComponent<UnregisteredDerivedA>(), nullptr);
+    EXPECT_EQ(entity.GetComponent<UnregisteredDerivedB>(), nullptr);
+    EXPECT_EQ(entity.GetComponent<IUnregisteredBase>(), nullptr);
+}
+
 } // namespace
 

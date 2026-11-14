@@ -39,15 +39,18 @@ struct TransparentStringHash {
 struct InputState {
     std::array<bool, SDL_SCANCODE_COUNT> CurrKeys{};
     std::array<bool, SDL_SCANCODE_COUNT> PrevKeys{};
+    std::array<bool, SDL_SCANCODE_COUNT> LatchedKeysDown{};
 
     std::array<bool, kMaxMouseButtons> CurrMouseButtons{};
     std::array<bool, kMaxMouseButtons> PrevMouseButtons{};
+    std::array<bool, kMaxMouseButtons> LatchedMouseButtonsDown{};
     glm::vec2 MousePosition{0.0f, 0.0f};
     float ScrollDeltaX = 0.0f;
     float ScrollDeltaY = 0.0f;
 
     std::array<bool, SDL_GAMEPAD_BUTTON_COUNT> CurrPadButtons{};
     std::array<bool, SDL_GAMEPAD_BUTTON_COUNT> PrevPadButtons{};
+    std::array<bool, SDL_GAMEPAD_BUTTON_COUNT> LatchedPadButtonsDown{};
     std::array<float, SDL_GAMEPAD_AXIS_COUNT> CurrPadAxes{};
     std::array<float, SDL_GAMEPAD_AXIS_COUNT> PrevPadAxes{};
 
@@ -294,6 +297,9 @@ void Input::BeginFrame() {
     s_State.PrevPadAxes = s_State.CurrPadAxes;
     s_State.ScrollDeltaX = 0.0f;
     s_State.ScrollDeltaY = 0.0f;
+    s_State.LatchedKeysDown.fill(false);
+    s_State.LatchedMouseButtonsDown.fill(false);
+    s_State.LatchedPadButtonsDown.fill(false);
 }
 
 void Input::Update() {
@@ -331,6 +337,23 @@ void Input::Update() {
         s_State.CurrPadButtons.fill(false);
         s_State.CurrPadAxes.fill(0.0f);
     }
+
+    // Merge latched edge transitions to prevent dropping sub-frame taps
+    for (size_t k = 0; k < s_State.CurrKeys.size(); ++k) {
+        if (s_State.LatchedKeysDown[k]) {
+            s_State.CurrKeys[k] = true;
+        }
+    }
+    for (size_t b = 1; b < kMaxMouseButtons; ++b) {
+        if (s_State.LatchedMouseButtonsDown[b]) {
+            s_State.CurrMouseButtons[b] = true;
+        }
+    }
+    for (size_t b = 0; b < SDL_GAMEPAD_BUTTON_COUNT; ++b) {
+        if (s_State.LatchedPadButtonsDown[b]) {
+            s_State.CurrPadButtons[b] = true;
+        }
+    }
 }
 
 void Input::OnMouseWheel(float wheelX, float wheelY) {
@@ -347,9 +370,27 @@ void Input::OnKeyEvent(bool pressed) {
     }
 }
 
+void Input::OnKeyEvent(SDL_Scancode key, bool pressed) {
+    if (pressed) {
+        s_State.ActiveDeviceMode = InputDeviceMode::KeyboardMouse;
+        if (IsValidScancode(key)) {
+            s_State.LatchedKeysDown[static_cast<size_t>(key)] = true;
+        }
+    }
+}
+
 void Input::OnMouseButtonEvent(bool pressed) {
     if (pressed) {
         s_State.ActiveDeviceMode = InputDeviceMode::KeyboardMouse;
+    }
+}
+
+void Input::OnMouseButtonEvent(int button, bool pressed) {
+    if (pressed) {
+        s_State.ActiveDeviceMode = InputDeviceMode::KeyboardMouse;
+        if (button >= 1 && static_cast<size_t>(button) < kMaxMouseButtons) {
+            s_State.LatchedMouseButtonsDown[static_cast<size_t>(button)] = true;
+        }
     }
 }
 
@@ -362,6 +403,15 @@ void Input::OnMouseMotionEvent(float relX, float relY) {
 void Input::OnGamepadButtonEvent(bool pressed) {
     if (pressed) {
         s_State.ActiveDeviceMode = InputDeviceMode::Gamepad;
+    }
+}
+
+void Input::OnGamepadButtonEvent(SDL_GamepadButton button, bool pressed) {
+    if (pressed) {
+        s_State.ActiveDeviceMode = InputDeviceMode::Gamepad;
+        if (IsValidGamepadButton(button)) {
+            s_State.LatchedPadButtonsDown[static_cast<size_t>(button)] = true;
+        }
     }
 }
 
@@ -382,14 +432,16 @@ void Input::OnGamepadAdded(SDL_JoystickID which) {
     if (!s_Gamepad) {
         s_Gamepad = SDL_OpenGamepad(which);
         if (s_Gamepad) {
-            ENGINE_CORE_INFO("Connected gamepad: {}", SDL_GetGamepadName(s_Gamepad));
+            const char* name = SDL_GetGamepadName(s_Gamepad);
+            ENGINE_CORE_INFO("Connected gamepad: {}", name ? name : "Unknown Gamepad");
         }
     }
 }
 
 void Input::OnGamepadRemoved(SDL_JoystickID which) {
     if (s_Gamepad && SDL_GetGamepadID(s_Gamepad) == which) {
-        ENGINE_CORE_INFO("Disconnected gamepad: {}", SDL_GetGamepadName(s_Gamepad));
+        const char* name = SDL_GetGamepadName(s_Gamepad);
+        ENGINE_CORE_INFO("Disconnected gamepad: {}", name ? name : "Unknown Gamepad");
         SDL_CloseGamepad(s_Gamepad);
         s_Gamepad = nullptr;
         s_State.CurrPadButtons.fill(false);
@@ -404,7 +456,8 @@ void Input::ConnectFirstGamepad() {
     if (joysticks && count > 0) {
         s_Gamepad = SDL_OpenGamepad(joysticks[0]);
         if (s_Gamepad) {
-            ENGINE_CORE_INFO("Connected gamepad: {}", SDL_GetGamepadName(s_Gamepad));
+            const char* name = SDL_GetGamepadName(s_Gamepad);
+            ENGINE_CORE_INFO("Connected gamepad: {}", name ? name : "Unknown Gamepad");
         }
     }
     SDL_free(joysticks);

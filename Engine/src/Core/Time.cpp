@@ -39,6 +39,10 @@ void Time::Init() {
 }
 
 void Time::SetTimeScale(float scale) noexcept {
+    if (!std::isfinite(scale)) {
+        ENGINE_CORE_WARN("Time::SetTimeScale ignored non-finite scale {}", scale);
+        return;
+    }
     const float clamped = std::clamp(scale, 0.0f, 4.0f);
     if (clamped != scale) {
         ENGINE_CORE_WARN("Time::SetTimeScale clamped {} -> {}", scale, clamped);
@@ -50,17 +54,18 @@ void Time::SetTimeScale(float scale) noexcept {
 }
 
 void Time::SetFixedDeltaTime(float fixedDt) noexcept {
-    if (fixedDt > 0.0001f) {
-        s_FixedDeltaTime = fixedDt;
-        ENGINE_CORE_DEBUG("Time::SetFixedDeltaTime set to {:.5f}s", fixedDt);
-    } else {
+    if (!std::isfinite(fixedDt) || fixedDt <= 0.0001f) {
         ENGINE_CORE_WARN("Time::SetFixedDeltaTime ignored invalid value {}", fixedDt);
+        return;
     }
+    s_FixedDeltaTime = fixedDt;
+    ENGINE_CORE_DEBUG("Time::SetFixedDeltaTime set to {:.5f}s", fixedDt);
 }
 
 void Time::TriggerHitStop(float unscaledDurationSeconds, float hitScale) noexcept {
-    if (unscaledDurationSeconds <= 0.0f) {
-        ENGINE_CORE_WARN("Time::TriggerHitStop ignored non-positive duration {}", unscaledDurationSeconds);
+    if (!std::isfinite(unscaledDurationSeconds) || !std::isfinite(hitScale) || unscaledDurationSeconds <= 0.0f) {
+        ENGINE_CORE_WARN("Time::TriggerHitStop ignored non-positive or invalid duration/scale {} / {}",
+                         unscaledDurationSeconds, hitScale);
         return;
     }
     if (s_HitStopTimer <= 0.0f) {
@@ -73,8 +78,14 @@ void Time::TriggerHitStop(float unscaledDurationSeconds, float hitScale) noexcep
 }
 
 void Time::SetMockDeltaTime(float dt) noexcept {
+    if (!std::isfinite(dt) || dt < 0.0f) {
+        s_MockDeltaTime = 0.0f;
+        s_UseMockDeltaTime = false;
+        ENGINE_CORE_WARN("Time::SetMockDeltaTime disabled with invalid dt {}", dt);
+        return;
+    }
     s_MockDeltaTime = dt;
-    s_UseMockDeltaTime = (dt >= 0.0f);
+    s_UseMockDeltaTime = true;
     ENGINE_CORE_DEBUG("Time::SetMockDeltaTime enabled={} (dt={:.5f}s)", s_UseMockDeltaTime, dt);
 }
 
@@ -106,8 +117,10 @@ void Time::Update() {
         s_LastFrameTime = currentFrameTime;
     }
 
-    // Clamp frame delta to 0.10s to prevent spiral-of-death on extreme hitches
-    if (rawDelta > 0.10f) {
+    // Clamp frame delta to [0.0s, 0.10s] to prevent spiral-of-death on extreme hitches and reject invalid values
+    if (!std::isfinite(rawDelta) || rawDelta < 0.0f) {
+        rawDelta = 0.0f;
+    } else if (rawDelta > 0.10f) {
         ENGINE_CORE_TRACE("Time::Update clamped rawDelta {:.4f}s -> 0.1000s", rawDelta);
         rawDelta = 0.10f;
     }
@@ -117,7 +130,11 @@ void Time::Update() {
     // Decay hit-stop if active using unscaled delta time
     float effectiveTimeScale = s_TimeScale;
     if (s_HitStopTimer > 0.0f) {
-        effectiveTimeScale = s_HitStopTimeScale;
+        if (s_TimeScale == 0.0f || s_PreHitStopTimeScale == 0.0f) {
+            effectiveTimeScale = 0.0f;
+        } else {
+            effectiveTimeScale = s_HitStopTimeScale;
+        }
         s_HitStopTimer -= rawDelta;
         if (s_HitStopTimer <= 0.0f) {
             s_HitStopTimer = 0.0f;

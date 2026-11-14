@@ -84,5 +84,23 @@ TEST(AnimatorTest, UpdateAdvancesFramesAndHandlesLooping) {
     EXPECT_EQ(animator->GetCurrentClipName(), "Walk");
 }
 
+TEST(AnimatorTest, UnattachedAnimatorAndMultiFrameHitchDoNotCrash) {
+    // 1. Unattached Animator (null GetGameObject()) must not crash on UpdateSpriteRenderer
+    Engine::Animator unattached;
+    auto clip = std::make_shared<Engine::AnimationClip>("Attack", 0.05f, false);
+    clip->AddFrame(nullptr);
+    clip->AddFrame(nullptr);
+    clip->AddFrame(nullptr);
+    clip->AddFrame(nullptr);
+
+    unattached.AddClip(clip);
+    unattached.Play("Attack");
+
+    // Advance across a 0.20s frame hitch (4 frames worth of duration)
+    // Must loop/advance without crashing on null GameObject
+    unattached.Update(0.20f);
+    EXPECT_EQ(unattached.GetCurrentClipName(), "Attack");
+}
+
 } // namespace
 

@@ -522,5 +522,44 @@ TEST(CameraComponentTest, InactiveCameraSkippedAndMultiPassRenderStepsRigOncePer
     Engine::Time::Reset();
 }
 
+TEST(CameraComponentTest, HitStopWithSmoothFollowDisabledPreservesTrauma) {
+    Engine::Time::Reset();
+    Engine::Time::SetMockDeltaTime(0.016f);
+    Engine::Time::Update();
+
+    Engine::Transform transform;
+    transform.position = { 0.0f, 0.0f, 0.0f };
+
+    Engine::CameraComponent camComp;
+    camComp.SmoothFollow = false;
+    camComp.TraumaDecay = 1.0f;
+    camComp.SyncFromTransform(&transform); // First sync resets to target
+
+    // Add trauma and kick
+    camComp.AddTrauma(0.8f, glm::vec2(0.5f, 0.0f));
+    EXPECT_FLOAT_EQ(camComp.GetTrauma(), 0.8f);
+
+    // Hit-stop occurs: game is frozen (timeScale = 0.0f, dt = 0.0f)
+    Engine::Time::SetTimeScale(0.0f);
+    Engine::Time::Update();
+    EXPECT_FLOAT_EQ(Engine::Time::GetDeltaTime(), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::Time::GetUnscaledDeltaTime(), 0.016f);
+
+    // Move transform during hit-stop
+    transform.position = { 15.0f, 0.0f, 5.0f };
+    camComp.SyncFromTransform(&transform);
+
+    // Trauma must NOT be wiped to 0.0f by ResetToTarget! It should decay by unscaledDt * TraumaDecay
+    const float expectedTrauma = 0.8f - 0.016f * 1.0f;
+    EXPECT_NEAR(camComp.GetTrauma(), expectedTrauma, 1e-4f);
+    EXPECT_GT(camComp.GetTrauma(), 0.7f);
+
+    // Camera focal point should snap to target position + shake offset
+    EXPECT_FLOAT_EQ(camComp.GetSmoothedFocalPoint().x, 15.0f);
+    EXPECT_FLOAT_EQ(camComp.GetSmoothedFocalPoint().z, 5.0f);
+
+    Engine::Time::Reset();
+}
+
 } // namespace
 

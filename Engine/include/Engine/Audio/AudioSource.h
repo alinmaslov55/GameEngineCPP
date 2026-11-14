@@ -10,15 +10,29 @@ class AudioSource final : public Component {
 public:
     AudioSource() = default;
     
-    ~AudioSource() {
+    ~AudioSource() override {
+        Stop();
         if (m_Stream) {
             ENGINE_CORE_DEBUG("AudioSource destroyed, closing audio stream");
             SDL_DestroyAudioStream(m_Stream);
+            m_Stream = nullptr;
         }
     }
 
     AudioSource(const AudioSource&) = delete;
     AudioSource& operator=(const AudioSource&) = delete;
+
+    void OnDisable() override {
+        Stop();
+    }
+
+    void OnDestroy() override {
+        Stop();
+    }
+
+    void OnPoolRelease() override {
+        Stop();
+    }
 
     void SetClip(const std::shared_ptr<AudioClip>& clip) {
         m_Clip = clip;

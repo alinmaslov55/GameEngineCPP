@@ -14,6 +14,7 @@
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/UI/UIPanel.h"
+#include "Engine/UI/UILabel.h"
 #include "Engine/Core/ResourceManager.h"
 #include <box2d/box2d.h>
 #include <filesystem>
@@ -693,6 +694,87 @@ TEST(SceneSerializerTest, UseTerrainFrictionRoundTrip) {
 
     EXPECT_TRUE(loadedRb->UseTerrainFriction);
     EXPECT_NEAR(loadedRb->LinearDamping, 3.2f, 1e-4f);
+}
+
+TEST(SceneSerializerTest, MalformedOrMismatchedTypeJsonReturnsFalseWithoutThrowing) {
+    auto scene = std::make_shared<Engine::Scene>("MalformedTestScene");
+    Engine::SceneSerializer serializer(scene);
+
+    // 1. Invalid syntax
+    EXPECT_FALSE(serializer.DeserializeFromString("{{not_valid_json"));
+    EXPECT_FALSE(serializer.DeserializeFromString(""));
+
+    // 2. Mismatched top-level type or unexpected field types
+    EXPECT_FALSE(serializer.DeserializeFromString("42"));
+    EXPECT_FALSE(serializer.DeserializeFromString("\"just a string\""));
+
+    // 3. Corrupted entities array containing mismatched primitive types
+    const std::string badEntityJson = R"({
+        "SceneName": "BadScene",
+        "GameObjects": [
+            { "UUID": "this_should_be_a_uint64_not_a_string" }
+        ]
+    })";
+    // Must fail gracefully without throwing unhandled nlohmann::json exceptions
+    EXPECT_FALSE(serializer.DeserializeFromString(badEntityJson));
+}
+
+TEST(SceneSerializerTest, DeserializedUILabelsShareCachedFont) {
+    const std::string uiSceneJson = R"({
+        "SceneName": "UIScene",
+        "GameObjects": [
+            {
+                "UUID": 1001,
+                "Name": "Label1",
+                "Components": {
+                    "UILabels": [
+                        {
+                            "Text": "Score: 100",
+                            "Position": [10.0, 20.0],
+                            "Scale": 1.0,
+                            "Font": {
+                                "AtlasTexturePath": "assets/fonts/default.png"
+                            }
+                        }
+                    ]
+                }
+            },
+            {
+                "UUID": 1002,
+                "Name": "Label2",
+                "Components": {
+                    "UILabels": [
+                        {
+                            "Text": "High: 500",
+                            "Position": [10.0, 50.0],
+                            "Scale": 1.0,
+                            "Font": {
+                                "AtlasTexturePath": "assets/fonts/default.png"
+                            }
+                        }
+                    ]
+                }
+            }
+        ]
+    })";
+
+    auto scene = std::make_shared<Engine::Scene>("FontCacheScene");
+    Engine::SceneSerializer serializer(scene);
+    ASSERT_TRUE(serializer.DeserializeFromString(uiSceneJson));
+
+    auto* go1 = scene->FindGameObjectByUUID(1001);
+    auto* go2 = scene->FindGameObjectByUUID(1002);
+    ASSERT_NE(go1, nullptr);
+    ASSERT_NE(go2, nullptr);
+
+    auto* label1 = go1->GetComponent<Engine::UILabel>();
+    auto* label2 = go2->GetComponent<Engine::UILabel>();
+    ASSERT_NE(label1, nullptr);
+    ASSERT_NE(label2, nullptr);
+
+    // Both labels sharing the same atlas path must share the exact same Font instance
+    ASSERT_NE(label1->font, nullptr);
+    EXPECT_EQ(label1->font, label2->font);
 }
 
 } // namespace

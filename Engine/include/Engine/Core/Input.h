@@ -91,9 +91,12 @@ public:
     // SDL Event-driven Input & Gamepad Notification Callbacks
     static void OnMouseWheel(float wheelX, float wheelY);
     static void OnKeyEvent(bool pressed);
+    static void OnKeyEvent(SDL_Scancode key, bool pressed);
     static void OnMouseButtonEvent(bool pressed);
+    static void OnMouseButtonEvent(int button, bool pressed);
     static void OnMouseMotionEvent(float relX, float relY);
     static void OnGamepadButtonEvent(bool pressed);
+    static void OnGamepadButtonEvent(SDL_GamepadButton button, bool pressed);
     static void OnGamepadAxisEvent(SDL_GamepadAxis axis, float normalizedValue);
     static void OnGamepadAdded(SDL_JoystickID which);
     static void OnGamepadRemoved(SDL_JoystickID which);

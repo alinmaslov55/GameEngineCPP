@@ -44,6 +44,9 @@ void Application::Initialize() {
     ResourceManager::DiscoverAssetRoot("Sandbox");
 
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
+    if (!m_Window->IsInitialized()) {
+        ENGINE_CORE_CRITICAL("Failed to initialize engine window!");
+    }
     Time::Init();
     Input::Init();
     Input::SetViewportRect(
@@ -77,7 +80,6 @@ void Application::PushLayer(std::unique_ptr<Layer> layer) {
 
 void Application::Run() {
     ENGINE_CORE_INFO("Starting application run loop");
-    Time::Init();
 
     while (m_Running) {
         // 1. Process Events

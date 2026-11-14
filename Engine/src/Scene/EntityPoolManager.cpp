@@ -54,8 +54,8 @@ void EntityPoolManager::PrewarmPool(const std::string& poolKey, const Prefab& pr
         if (instance) {
             instance->SetPoolKey(poolKey);
             instance->SetInFreeList(true);
-            PropagatePoolRelease(instance);
             instance->SetActive(false);
+            PropagatePoolRelease(instance);
             pool.freeList.push_back(instance);
             pool.allInstances.push_back(instance);
             ++spawned;
@@ -92,6 +92,7 @@ GameObject* EntityPoolManager::AcquirePooled(const std::string& poolKey, const P
         if (instance) {
             instance->SetPoolKey(poolKey);
             instance->SetInFreeList(false);
+            instance->SetActive(false);
             pool.allInstances.push_back(instance);
         } else {
             ENGINE_CORE_ERROR("EntityPoolManager::AcquirePooled('{}'): Prefab instantiation failed", poolKey);
@@ -121,17 +122,18 @@ void EntityPoolManager::ReleaseToPool(const std::string& poolKey, GameObject* in
         ENGINE_CORE_WARN("EntityPoolManager::ReleaseToPool('{}'): Attempted to release null instance", poolKey);
         return;
     }
-
-    PropagatePoolRelease(instance);
-    instance->SetActive(false);
-
-    if (!instance->IsInFreeList()) {
-        instance->SetInFreeList(true);
-        auto& pool = m_Pools[poolKey];
-        pool.freeList.push_back(instance);
-        ENGINE_CORE_TRACE("EntityPoolManager::ReleaseToPool('{}'): Released UUID {} (free={}, total={})",
-                          poolKey, instance->GetUUID(), pool.freeList.size(), pool.allInstances.size());
+    if (instance->IsInFreeList() || instance->IsPendingDestroy()) {
+        return;
     }
+
+    instance->SetActive(false);
+    PropagatePoolRelease(instance);
+
+    instance->SetInFreeList(true);
+    auto& pool = m_Pools[poolKey];
+    pool.freeList.push_back(instance);
+    ENGINE_CORE_TRACE("EntityPoolManager::ReleaseToPool('{}'): Released UUID {} (free={}, total={})",
+                      poolKey, instance->GetUUID(), pool.freeList.size(), pool.allInstances.size());
 }
 
 void EntityPoolManager::ReleaseToPool(GameObject* instance) {
