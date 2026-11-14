@@ -59,13 +59,19 @@ private:
 std::shared_ptr<RingBufferLogSink> s_RingBufferSink{nullptr};
 spdlog::level::level_enum s_CurrentLevel = spdlog::level::info;
 bool s_Initialized = false;
+std::mutex s_LoggerMutex;
+
+void InitLocked(std::shared_ptr<spdlog::logger>& coreLogger,
+                std::shared_ptr<spdlog::logger>& clientLogger);
 } // namespace
 
 std::shared_ptr<spdlog::logger> Logger::s_CoreLogger{nullptr};
 std::shared_ptr<spdlog::logger> Logger::s_ClientLogger{nullptr};
 
-void Logger::Init() {
-    if (s_Initialized) {
+namespace {
+void InitLocked(std::shared_ptr<spdlog::logger>& coreLogger,
+                std::shared_ptr<spdlog::logger>& clientLogger) {
+    if (s_Initialized && coreLogger && clientLogger) {
         return;
     }
 
@@ -79,32 +85,47 @@ void Logger::Init() {
 
     std::vector<spdlog::sink_ptr> sinks = { fileSink, s_RingBufferSink };
 
-    s_CoreLogger = std::make_shared<spdlog::logger>("ENGINE", sinks.begin(), sinks.end());
-    s_CoreLogger->set_level(s_CurrentLevel);
-    s_CoreLogger->flush_on(spdlog::level::warn);
-    spdlog::register_logger(s_CoreLogger);
+    spdlog::drop("ENGINE");
+    spdlog::drop("APP");
 
-    s_ClientLogger = std::make_shared<spdlog::logger>("APP", sinks.begin(), sinks.end());
-    s_ClientLogger->set_level(s_CurrentLevel);
-    s_ClientLogger->flush_on(spdlog::level::warn);
-    spdlog::register_logger(s_ClientLogger);
+    coreLogger = std::make_shared<spdlog::logger>("ENGINE", sinks.begin(), sinks.end());
+    coreLogger->set_level(s_CurrentLevel);
+    coreLogger->flush_on(spdlog::level::warn);
+    spdlog::register_logger(coreLogger);
+
+    clientLogger = std::make_shared<spdlog::logger>("APP", sinks.begin(), sinks.end());
+    clientLogger->set_level(s_CurrentLevel);
+    clientLogger->flush_on(spdlog::level::warn);
+    spdlog::register_logger(clientLogger);
 
     s_Initialized = true;
 }
+} // namespace
+
+void Logger::Init() {
+    std::lock_guard<std::mutex> lock(s_LoggerMutex);
+    InitLocked(s_CoreLogger, s_ClientLogger);
+}
 
 void Logger::Shutdown() {
+    std::lock_guard<std::mutex> lock(s_LoggerMutex);
     if (s_CoreLogger) {
         s_CoreLogger->flush();
     }
     if (s_ClientLogger) {
         s_ClientLogger->flush();
     }
+    spdlog::drop("ENGINE");
+    spdlog::drop("APP");
+    s_CoreLogger.reset();
+    s_ClientLogger.reset();
+    s_RingBufferSink.reset();
+    s_Initialized = false;
 }
 
 void Logger::SetLevel(spdlog::level::level_enum level) {
-    if (!s_Initialized) {
-        Init();
-    }
+    std::lock_guard<std::mutex> lock(s_LoggerMutex);
+    InitLocked(s_CoreLogger, s_ClientLogger);
     s_CurrentLevel = level;
     if (s_CoreLogger) {
         s_CoreLogger->set_level(level);
@@ -115,23 +136,55 @@ void Logger::SetLevel(spdlog::level::level_enum level) {
 }
 
 spdlog::level::level_enum Logger::GetLevel() {
+    std::lock_guard<std::mutex> lock(s_LoggerMutex);
     return s_CurrentLevel;
 }
 
+std::shared_ptr<spdlog::logger> Logger::GetCoreLogger() {
+    std::lock_guard<std::mutex> lock(s_LoggerMutex);
+    if (!s_CoreLogger) {
+        InitLocked(s_CoreLogger, s_ClientLogger);
+    }
+    return s_CoreLogger;
+}
+
+std::shared_ptr<spdlog::logger> Logger::GetClientLogger() {
+    std::lock_guard<std::mutex> lock(s_LoggerMutex);
+    if (!s_ClientLogger) {
+        InitLocked(s_CoreLogger, s_ClientLogger);
+    }
+    return s_ClientLogger;
+}
+
 std::vector<Logger::LogEntry> Logger::GetRecentLogs() {
-    if (!s_RingBufferSink) {
+    std::shared_ptr<RingBufferLogSink> sink;
+    {
+        std::lock_guard<std::mutex> lock(s_LoggerMutex);
+        sink = s_RingBufferSink;
+    }
+    if (!sink) {
         return {};
     }
-    return s_RingBufferSink->GetEntries();
+    return sink->GetEntries();
 }
 
 uint64_t Logger::GetLogRevision() {
-    return s_RingBufferSink ? s_RingBufferSink->GetRevision() : 0;
+    std::shared_ptr<RingBufferLogSink> sink;
+    {
+        std::lock_guard<std::mutex> lock(s_LoggerMutex);
+        sink = s_RingBufferSink;
+    }
+    return sink ? sink->GetRevision() : 0;
 }
 
 void Logger::ClearLogs() {
-    if (s_RingBufferSink) {
-        s_RingBufferSink->Clear();
+    std::shared_ptr<RingBufferLogSink> sink;
+    {
+        std::lock_guard<std::mutex> lock(s_LoggerMutex);
+        sink = s_RingBufferSink;
+    }
+    if (sink) {
+        sink->Clear();
     }
 }
 

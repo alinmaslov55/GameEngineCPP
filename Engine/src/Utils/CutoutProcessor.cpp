@@ -6,6 +6,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <mutex>
 #include <glm/glm.hpp>
 
 namespace Engine {
@@ -346,13 +347,18 @@ CutoutProcessResult CutoutProcessor::ProcessFile(const std::filesystem::path& in
         std::filesystem::create_directories(parentDir, ec);
     }
 
-    stbi_flip_vertically_on_write(0);
-    const int writeOk = stbi_write_png(outStr.c_str(),
-                                       static_cast<int>(width),
-                                       static_cast<int>(height),
-                                       4,
-                                       rgba.data(),
-                                       static_cast<int>(width * 4u));
+    int writeOk = 0;
+    {
+        static std::mutex s_StbWriteMutex;
+        std::lock_guard<std::mutex> writeLock(s_StbWriteMutex);
+        stbi_flip_vertically_on_write(0);
+        writeOk = stbi_write_png(outStr.c_str(),
+                                 static_cast<int>(width),
+                                 static_cast<int>(height),
+                                 4,
+                                 rgba.data(),
+                                 static_cast<int>(width * 4u));
+    }
     if (writeOk == 0) {
         result.Success = false;
         result.ErrorMessage = "Failed to write processed PNG to: " + outStr;

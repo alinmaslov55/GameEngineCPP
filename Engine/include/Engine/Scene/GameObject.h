@@ -49,7 +49,7 @@ inline uint32_t AllocateComponentTypeID(std::atomic<uint32_t>& counter) noexcept
         ENGINE_CORE_CRITICAL(
             "ComponentMask128 limit exceeded: attempted to register component type ID {} (max allowed: {}).",
             id, kMaxComponentTypes);
-        if (auto& logger = ::Engine::Logger::GetCoreLogger()) {
+        if (auto logger = ::Engine::Logger::GetCoreLogger()) {
             logger->flush();
         }
         std::fprintf(stderr,

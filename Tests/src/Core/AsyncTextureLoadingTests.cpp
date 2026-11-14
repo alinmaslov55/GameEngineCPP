@@ -184,5 +184,122 @@ TEST(CutoutProcessorAsyncTest, ProcessFileAsyncExecutesInBackgroundAndInvokesCal
     Engine::JobSystem::Shutdown();
 }
 
+TEST(AsyncTextureLoadingTest, FailedAsyncDecodeEvictsPlaceholderAndAllowsReload) {
+    Engine::JobSystem::Shutdown();
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+    Engine::JobSystem::Init(4);
+
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "engine_async_tex_fail_test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+    const std::filesystem::path targetPng = tempDir / "delayed_asset.png";
+    std::filesystem::remove(targetPng, ec);
+
+    // Dispatch async load before the file exists -> decode must fail and evict failed placeholder
+    auto failedPlaceholder = Engine::ResourceManager::LoadTextureAsync(targetPng.string());
+    ASSERT_NE(failedPlaceholder, nullptr);
+    Engine::ResourceManager::WaitForPendingUploads();
+    EXPECT_EQ(Engine::ResourceManager::GetPendingUploadCount(), 0u);
+    EXPECT_EQ(Engine::ResourceManager::Get<Engine::Texture>(targetPng.string()), nullptr);
+
+    // Create valid PNG and retry -> should now decode and upload cleanly
+    WriteTestPng(targetPng, 16, 16, 40, 120, 220, 255);
+    auto recovered = Engine::ResourceManager::LoadTextureAsync(targetPng.string());
+    ASSERT_NE(recovered, nullptr);
+    EXPECT_NE(recovered, failedPlaceholder);
+    Engine::ResourceManager::WaitForPendingUploads();
+    EXPECT_TRUE(recovered->IsLoaded());
+    EXPECT_EQ(recovered->GetWidth(), 16);
+    EXPECT_EQ(recovered->GetHeight(), 16);
+
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+    std::filesystem::remove_all(tempDir, ec);
+    Engine::JobSystem::Shutdown();
+}
+
+TEST(AsyncTextureLoadingTest, WaitForPendingUploadsReturnsCleanlyWhenJobSystemShutsDown) {
+    Engine::JobSystem::Shutdown();
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+    Engine::JobSystem::Init(2);
+
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "engine_async_tex_shutdown_test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+    for (int i = 0; i < 6; ++i) {
+        WriteTestPng(tempDir / ("img_" + std::to_string(i) + ".png"), 16, 16, 255, 0, 255, 255);
+        (void)Engine::ResourceManager::LoadTextureAsync((tempDir / ("img_" + std::to_string(i) + ".png")).string());
+    }
+
+    Engine::JobSystem::Shutdown();
+    Engine::ResourceManager::WaitForPendingUploads();
+    EXPECT_EQ(Engine::ResourceManager::GetPendingUploadCount(), 0u);
+
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+    std::filesystem::remove_all(tempDir, ec);
+}
+
+TEST(CutoutProcessorAsyncTest, ParallelProcessFileAsyncBatchCompletesWithoutGlobalStateRace) {
+    Engine::JobSystem::Shutdown();
+    Engine::JobSystem::Init(4);
+
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "engine_cutout_parallel_test";
+    std::error_code ec;
+    std::filesystem::remove_all(tempDir, ec);
+    std::filesystem::create_directories(tempDir, ec);
+
+    constexpr int kCount = 12;
+    constexpr uint32_t w = 24;
+    constexpr uint32_t h = 24;
+    std::vector<uint8_t> greenImg(static_cast<size_t>(w) * h * 4u, 0u);
+    for (uint32_t y = 0; y < h; ++y) {
+        for (uint32_t x = 0; x < w; ++x) {
+            const size_t idx = (static_cast<size_t>(y) * w + x) * 4u;
+            greenImg[idx + 1] = 255u;
+            greenImg[idx + 3] = 255u;
+        }
+    }
+    for (uint32_t y = 6; y <= 17; ++y) {
+        for (uint32_t x = 6; x <= 17; ++x) {
+            const size_t idx = (static_cast<size_t>(y) * w + x) * 4u;
+            greenImg[idx + 0] = 200u;
+            greenImg[idx + 1] = 30u;
+            greenImg[idx + 2] = 40u;
+            greenImg[idx + 3] = 255u;
+        }
+    }
+
+    stbi_flip_vertically_on_write(0);
+    std::vector<Engine::JobHandle> handles;
+    std::vector<Engine::CutoutProcessResult> results(kCount);
+    handles.reserve(kCount);
+
+    Engine::CutoutProcessSettings settings;
+    settings.BackgroundMode = Engine::CutoutKeyMode::ChromaGreen;
+    settings.AutoTrimAndBottomFlush = true;
+
+    for (int i = 0; i < kCount; ++i) {
+        const auto inPng = tempDir / ("in_" + std::to_string(i) + ".png");
+        const auto outPng = tempDir / ("out_" + std::to_string(i) + ".png");
+        ASSERT_NE(stbi_write_png(inPng.string().c_str(), static_cast<int>(w), static_cast<int>(h), 4, greenImg.data(), static_cast<int>(w * 4u)), 0);
+        handles.push_back(Engine::CutoutProcessor::ProcessFileAsync(
+            inPng, outPng, settings, [&results, i](const Engine::CutoutProcessResult& res) {
+                results[i] = res;
+            }));
+    }
+
+    for (int i = 0; i < kCount; ++i) {
+        if (handles[i].IsValid()) {
+            handles[i].Wait();
+        }
+        EXPECT_TRUE(results[i].Success);
+        EXPECT_GT(results[i].OutputWidth, 0u);
+        EXPECT_GT(results[i].OutputHeight, 0u);
+        EXPECT_TRUE(std::filesystem::exists(tempDir / ("out_" + std::to_string(i) + ".png"), ec));
+    }
+
+    std::filesystem::remove_all(tempDir, ec);
+    Engine::JobSystem::Shutdown();
+}
+
 } // namespace
 

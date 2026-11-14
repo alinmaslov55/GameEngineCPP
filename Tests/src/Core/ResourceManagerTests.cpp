@@ -2,6 +2,8 @@
 #include "Engine/Core/ResourceManager.h"
 #include <filesystem>
 #include <string>
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -70,6 +72,66 @@ TEST(ResourceManagerTest, CachesAssetsAcrossRelativeAndResolvedPaths) {
         Engine::ResourceManager::SetAssetRoot(prevRoot);
     }
     std::error_code ec;
+    std::filesystem::remove_all(tempRoot, ec);
+}
+
+TEST(ResourceManagerTest, ConcurrentLoadGetAndPathResolutionAreThreadSafe) {
+    Engine::ResourceManager::ClearType<DummyAsset>();
+    DummyAsset::constructCount = 0;
+
+    const std::filesystem::path prevRoot = Engine::ResourceManager::GetAssetRoot();
+    const std::filesystem::path tempRoot = std::filesystem::temp_directory_path() / "res_mgr_concurrent_test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempRoot / "textures", ec);
+    Engine::ResourceManager::SetAssetRoot(tempRoot);
+
+    constexpr int kNumThreads = 6;
+    constexpr int kIterations = 40;
+    std::vector<std::thread> threads;
+    threads.reserve(kNumThreads);
+
+    for (int t = 0; t < kNumThreads; ++t) {
+        threads.emplace_back([t]() {
+            for (int i = 0; i < kIterations; ++i) {
+                const std::string key = "textures/concurrent_" + std::to_string(i % 6) + ".png";
+                auto loaded = Engine::ResourceManager::Load<DummyAsset>(key);
+                EXPECT_NE(loaded, nullptr);
+                auto fetched = Engine::ResourceManager::Get<DummyAsset>(key);
+                EXPECT_NE(fetched, nullptr);
+                if ((t % 2) == 0 && (i % 10) == 0) {
+                    (void)Engine::ResourceManager::ResolvePathInfo(key);
+                }
+            }
+        });
+    }
+    for (auto& th : threads) {
+        th.join();
+    }
+
+    // Also stress concurrent SetAssetRoot / GetAssetRoot / ResolvePath / Reload / ClearType
+    std::vector<std::thread> rootThreads;
+    for (int t = 0; t < 4; ++t) {
+        rootThreads.emplace_back([t, &tempRoot]() {
+            for (int i = 0; i < 25; ++i) {
+                if (t == 0) {
+                    Engine::ResourceManager::SetAssetRoot(tempRoot);
+                } else {
+                    auto root = Engine::ResourceManager::GetAssetRoot();
+                    EXPECT_FALSE(root.empty());
+                    (void)Engine::ResourceManager::ResolvePath("textures/item.png");
+                    (void)Engine::ResourceManager::Reload<DummyAsset>("textures/concurrent_0.png");
+                }
+            }
+        });
+    }
+    for (auto& th : rootThreads) {
+        th.join();
+    }
+
+    Engine::ResourceManager::ClearType<DummyAsset>();
+    if (!prevRoot.empty()) {
+        Engine::ResourceManager::SetAssetRoot(prevRoot);
+    }
     std::filesystem::remove_all(tempRoot, ec);
 }
 

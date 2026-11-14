@@ -27,7 +27,7 @@ inline void AssertThreadAffinity([[maybe_unused]] std::thread::id ownerThreadId,
         ENGINE_CORE_CRITICAL(
             "Main-thread affinity violation in '{}': caller thread {} != owner thread {}.",
             opName, callerStream.str(), ownerStream.str());
-        if (auto& logger = ::Engine::Logger::GetCoreLogger()) {
+        if (auto logger = ::Engine::Logger::GetCoreLogger()) {
             logger->flush();
         }
         std::fprintf(stderr,

@@ -53,7 +53,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
       * Increment `m_PendingJobs` before enqueueing; guarantee `latch->count_down()` via RAII scope guard in `ParallelForImpl`; make `m_Initialized` atomic; drain or mark queued `JobState` jobs during `Shutdown()`.
     - Verification (EngineTests): Stress `Dispatch`/`ParallelFor` under contention and call `Shutdown()` with queued jobs waiting on `JobHandle::Wait()` -> zero hangs or counter underflows.
 
-[ ] 5. Fix ResourceManager & Logger Thread Safety + Cutout stb Global State Race
+[x] 5. Fix ResourceManager & Logger Thread Safety + Cutout stb Global State Race
     - Files: Engine/include/Engine/Core/ResourceManager.h (lines 16-157), Engine/src/Core/ResourceManager.cpp (lines 21-51, 184-194, 216-329), Engine/include/Engine/Utils/Logger.h (lines 29-37), Engine/src/Utils/Logger.cpp (lines 60-119), Engine/src/Utils/CutoutProcessor.cpp (lines 349-386)
     - Root Cause:
       * Generic `ResourceManager::Load<T>`, `Get<T>`, `Reload<T>`, `ClearType<T>`, `ClearType<Texture>`, and `SetAssetRoot()` read/mutate shared maps without locking `s_ResourceManagerMutex`; `LoadTexture`/`LoadTextureAsync` suffer check-then-insert TOCTOU races and leave failed async placeholders permanently cached; `WaitForPendingUploads()` spin-yields if `JobSystem` shuts down with in-flight loads.

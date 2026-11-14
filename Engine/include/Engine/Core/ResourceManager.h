@@ -6,6 +6,7 @@
 #include <concepts>
 #include <filesystem>
 #include <memory>
+#include <mutex>
 #include <string>
 #include <string_view>
 #include <unordered_map>
@@ -15,6 +16,7 @@ namespace Engine {
 // Internal templated cache to hold specific asset types
 template<typename T>
 struct AssetCache {
+    inline static std::mutex mutex;
     inline static std::unordered_map<std::string, std::shared_ptr<T>> data;
 };
 
@@ -27,7 +29,7 @@ public:
 
     // Configures the root directory used to resolve relative asset paths
     static void SetAssetRoot(const std::filesystem::path& rootPath);
-    [[nodiscard]] static const std::filesystem::path& GetAssetRoot() noexcept;
+    [[nodiscard]] static std::filesystem::path GetAssetRoot();
 
     // Automatically discovers the asset root relative to working directory or executable location
     static std::filesystem::path DiscoverAssetRoot(const std::string& projectSubdir = "Sandbox");
@@ -75,18 +77,32 @@ public:
         }
 
         ResolvedPathInfo info = ResolvePathInfo(filepath);
-        auto& cache = AssetCache<T>::data;
 
-        // Check if the asset is already loaded
-        auto it = cache.find(info.CacheKey);
-        if (it != cache.end()) {
-            ENGINE_CORE_TRACE("ResourceManager: Returning cached asset: '{}' (resolved: '{}')", info.CacheKey, info.ResolvedPath);
-            return it->second;
+        {
+            std::lock_guard lock(AssetCache<T>::mutex);
+            auto& cache = AssetCache<T>::data;
+            auto it = cache.find(info.CacheKey);
+            if (it != cache.end() && it->second) {
+                ENGINE_CORE_TRACE("ResourceManager: Returning cached asset: '{}' (resolved: '{}')", info.CacheKey, info.ResolvedPath);
+                return it->second;
+            }
         }
 
-        // Instantiate using the resolved path, cache under normalized relative key, and return
+        // Construct outside AssetCache<T>::mutex so nested loads inside T's ctor cannot deadlock
         std::shared_ptr<T> asset = std::make_shared<T>(info.ResolvedPath);
-        cache[info.CacheKey] = asset;
+
+        {
+            std::lock_guard lock(AssetCache<T>::mutex);
+            auto& cache = AssetCache<T>::data;
+            auto [it, inserted] = cache.try_emplace(info.CacheKey, asset);
+            if (!inserted) {
+                if (it->second) {
+                    ENGINE_CORE_TRACE("ResourceManager: Returning concurrently cached asset: '{}'", info.CacheKey);
+                    return it->second;
+                }
+                it->second = asset;
+            }
+        }
 
         ENGINE_CORE_INFO("ResourceManager: Loaded new asset into cache: '{}' (from '{}')", info.CacheKey, info.ResolvedPath);
         return asset;
@@ -100,6 +116,7 @@ public:
         }
 
         ResolvedPathInfo info = ResolvePathInfo(filepath);
+        std::lock_guard lock(AssetCache<T>::mutex);
         auto& cache = AssetCache<T>::data;
         auto it = cache.find(info.CacheKey);
         if (it != cache.end()) {
@@ -117,16 +134,26 @@ public:
             return nullptr;
         }
         ResolvedPathInfo info = ResolvePathInfo(filepath);
-        auto& cache = AssetCache<T>::data;
-        auto it = cache.find(info.CacheKey);
-        if (it != cache.end() && it->second) {
-            if constexpr (requires(T& obj) { obj.ReloadFromDisk(); }) {
-                ENGINE_CORE_INFO("ResourceManager: Reloading cached asset in-place: '{}'", info.CacheKey);
-                it->second->ReloadFromDisk();
-                return it->second;
+        std::shared_ptr<T> existing;
+        {
+            std::lock_guard lock(AssetCache<T>::mutex);
+            auto& cache = AssetCache<T>::data;
+            auto it = cache.find(info.CacheKey);
+            if (it != cache.end() && it->second) {
+                if constexpr (requires(T& obj) { obj.ReloadFromDisk(); }) {
+                    existing = it->second;
+                } else {
+                    ENGINE_CORE_DEBUG("ResourceManager: Evicting cached asset for fresh reload: '{}'", info.CacheKey);
+                    cache.erase(it);
+                }
             }
-            ENGINE_CORE_DEBUG("ResourceManager: Evicting cached asset for fresh reload: '{}'", info.CacheKey);
-            cache.erase(it);
+        }
+        if constexpr (requires(T& obj) { obj.ReloadFromDisk(); }) {
+            if (existing) {
+                ENGINE_CORE_INFO("ResourceManager: Reloading cached asset in-place: '{}'", info.CacheKey);
+                existing->ReloadFromDisk();
+                return existing;
+            }
         }
         return Load<T>(filepath);
     }
@@ -134,6 +161,7 @@ public:
     // Clears all loaded assets of a specific type to free memory
     template<typename T>
     static void ClearType() {
+        std::lock_guard lock(AssetCache<T>::mutex);
         auto& cache = AssetCache<T>::data;
         ENGINE_CORE_INFO("ResourceManager: Cleared cache (freed {} entries)", cache.size());
         cache.clear();
@@ -151,6 +179,7 @@ template<>
 template<>
 inline void ResourceManager::ClearType<Texture>() {
     WaitForPendingUploads();
+    std::lock_guard lock(AssetCache<Texture>::mutex);
     auto& cache = AssetCache<Texture>::data;
     ENGINE_CORE_INFO("ResourceManager: Cleared Texture cache (freed {} entries)", cache.size());
     cache.clear();

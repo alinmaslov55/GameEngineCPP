@@ -26,15 +26,8 @@ public:
     static uint64_t GetLogRevision();
     static void ClearLogs();
 
-    static std::shared_ptr<spdlog::logger>& GetCoreLogger() {
-        if (!s_CoreLogger) Init();
-        return s_CoreLogger;
-    }
-
-    static std::shared_ptr<spdlog::logger>& GetClientLogger() {
-        if (!s_ClientLogger) Init();
-        return s_ClientLogger;
-    }
+    static std::shared_ptr<spdlog::logger> GetCoreLogger();
+    static std::shared_ptr<spdlog::logger> GetClientLogger();
 
     template<typename... Args>
     static void Trace(spdlog::format_string_t<Args...> fmt, Args&&... args) {

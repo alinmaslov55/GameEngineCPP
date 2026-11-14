@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include "Engine/Utils/Logger.h"
+#include <thread>
+#include <vector>
 
 namespace {
 
@@ -21,6 +23,44 @@ TEST(LoggerTest, LoggerInitializationAndRevisionIncrement) {
     // Retrieve recent logs
     auto logs = Engine::Logger::GetRecentLogs();
     EXPECT_FALSE(logs.empty());
+}
+
+TEST(LoggerTest, RepeatedInitShutdownAndConcurrentLoggingAreSafe) {
+    for (int cycle = 0; cycle < 3; ++cycle) {
+        Engine::Logger::Shutdown();
+        Engine::Logger::Init();
+        Engine::Logger::SetLevel(spdlog::level::debug);
+        EXPECT_EQ(Engine::Logger::GetLevel(), spdlog::level::debug);
+        ASSERT_NE(Engine::Logger::GetCoreLogger(), nullptr);
+        ASSERT_NE(Engine::Logger::GetClientLogger(), nullptr);
+        ENGINE_CORE_INFO("Logger restart cycle {}", cycle);
+    }
+
+    constexpr int kThreads = 6;
+    std::vector<std::thread> workers;
+    workers.reserve(kThreads);
+    for (int t = 0; t < kThreads; ++t) {
+        workers.emplace_back([t]() {
+            for (int i = 0; i < 40; ++i) {
+                Engine::Logger::Init();
+                auto core = Engine::Logger::GetCoreLogger();
+                auto client = Engine::Logger::GetClientLogger();
+                EXPECT_NE(core, nullptr);
+                EXPECT_NE(client, nullptr);
+                ENGINE_CORE_INFO("Concurrent log thread={} iter={}", t, i);
+                if ((i % 10) == 0) {
+                    (void)Engine::Logger::GetRecentLogs();
+                    (void)Engine::Logger::GetLogRevision();
+                }
+            }
+        });
+    }
+    for (auto& w : workers) {
+        w.join();
+    }
+
+    Engine::Logger::SetLevel(spdlog::level::info);
+    Engine::Logger::ClearLogs();
 }
 
 } // namespace
