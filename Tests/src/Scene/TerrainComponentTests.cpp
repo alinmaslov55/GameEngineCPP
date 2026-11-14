@@ -9,8 +9,11 @@
 #include "Engine/Core/JobSystem.h"
 #include "Engine/Core/Time.h"
 #include "Engine/Renderer/SceneRenderer.h"
+#include "Engine/Renderer/SpriteRenderer.h"
+#include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Renderer/Texture2DArray.h"
 #include "Engine/Scene/CameraComponent.h"
+#include "Engine/Scene/FoliageWindComponents.h"
 #include <array>
 #include <cmath>
 #include <filesystem>
@@ -1036,6 +1039,121 @@ TEST(TerrainFireGridTest, UpdateCapsTicksPerFrameOnLargeDeltaTimeHitch) {
 
     // Ticks are capped to MaxTicksPerFrame (5 ticks = 0.5s), well below MaxBurnDuration (4.5s)
     EXPECT_GT(grid.GetActiveFireCount(), 0u);
+}
+
+TEST(TerrainArraySplatTest, ResizeR8BilinearAccurateInterpolation) {
+    // 2x2 source
+    const uint8_t src2x2[4] = { 10, 50, 100, 200 };
+
+    // Same-size copy (2x2 -> 2x2)
+    std::vector<uint8_t> outSame;
+    Engine::Texture2DArray::ResizeR8Bilinear(src2x2, 2u, 2u, 2u, 2u, outSame);
+    ASSERT_EQ(outSame.size(), 4u);
+    EXPECT_EQ(outSame[0], 10u);
+    EXPECT_EQ(outSame[1], 50u);
+    EXPECT_EQ(outSame[2], 100u);
+    EXPECT_EQ(outSame[3], 200u);
+
+    // Upsample 2x2 -> 4x4
+    std::vector<uint8_t> out4x4;
+    Engine::Texture2DArray::ResizeR8Bilinear(src2x2, 2u, 2u, 4u, 4u, out4x4);
+    ASSERT_EQ(out4x4.size(), 16u);
+    // Values should be bounded within [10, 200]
+    for (uint8_t val : out4x4) {
+        EXPECT_GE(val, 10u);
+        EXPECT_LE(val, 200u);
+    }
+    // Top-left pixel should be close to 10
+    EXPECT_NEAR(static_cast<float>(out4x4[0]), 10.0f, 15.0f);
+    // Bottom-right pixel should be close to 200
+    EXPECT_NEAR(static_cast<float>(out4x4[15]), 200.0f, 35.0f);
+
+    // Downsample 4x4 -> 1x1
+    std::vector<uint8_t> out1x1;
+    Engine::Texture2DArray::ResizeR8Bilinear(out4x4.data(), 4u, 4u, 1u, 1u, out1x1);
+    ASSERT_EQ(out1x1.size(), 1u);
+    EXPECT_GT(out1x1[0], 10u);
+    EXPECT_LT(out1x1[0], 200u);
+
+    // Null and empty dimension guards
+    std::vector<uint8_t> outEmpty;
+    Engine::Texture2DArray::ResizeR8Bilinear(nullptr, 2u, 2u, 4u, 4u, outEmpty);
+    EXPECT_TRUE(outEmpty.empty());
+    Engine::Texture2DArray::ResizeR8Bilinear(src2x2, 0u, 2u, 4u, 4u, outEmpty);
+    EXPECT_TRUE(outEmpty.empty());
+}
+
+TEST(TerrainRendererTest, MultiTerrainDistinctLayerSetsDoNotThrashCache) {
+    Engine::TerrainRenderer::Init();
+
+    std::array<Engine::TerrainLayer, Engine::TerrainComponent::MaxLayers> layersA{};
+    layersA[0].Glossiness = 0.25f;
+    layersA[1].Glossiness = 0.50f;
+
+    std::array<Engine::TerrainLayer, Engine::TerrainComponent::MaxLayers> layersB{};
+    layersB[0].Glossiness = 0.85f;
+    layersB[1].Glossiness = 0.10f;
+
+    // Cache set A
+    Engine::TerrainRenderer::SyncLayerTextures(layersA);
+    EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 1u);
+    const uint64_t hashA = Engine::TerrainRenderer::GetActiveLayerSetHash();
+    EXPECT_NE(hashA, 0ull);
+
+    // Cache set B
+    Engine::TerrainRenderer::SyncLayerTextures(layersB);
+    EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 2u);
+    const uint64_t hashB = Engine::TerrainRenderer::GetActiveLayerSetHash();
+    EXPECT_NE(hashB, 0ull);
+    EXPECT_NE(hashA, hashB);
+
+    // Switch back to A: must hit cache and NOT reallocate or rebuild
+    Engine::TerrainRenderer::SyncLayerTextures(layersA);
+    EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 2u);
+    EXPECT_EQ(Engine::TerrainRenderer::GetActiveLayerSetHash(), hashA);
+
+    // Switch back to B: must hit cache and NOT reallocate or rebuild
+    Engine::TerrainRenderer::SyncLayerTextures(layersB);
+    EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 2u);
+    EXPECT_EQ(Engine::TerrainRenderer::GetActiveLayerSetHash(), hashB);
+
+    // Capacity bound check: add sets C, D, E (cache capped at 4)
+    auto layersC = layersA; layersC[2].Glossiness = 0.33f;
+    auto layersD = layersA; layersD[2].Glossiness = 0.66f;
+    auto layersE = layersA; layersE[2].Glossiness = 0.99f;
+    Engine::TerrainRenderer::SyncLayerTextures(layersC);
+    EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 3u);
+    Engine::TerrainRenderer::SyncLayerTextures(layersD);
+    EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 4u);
+    Engine::TerrainRenderer::SyncLayerTextures(layersE);
+    EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 4u);
+
+    Engine::TerrainRenderer::Shutdown();
+    EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 0u);
+}
+
+TEST(SceneRendererOptimizationTest, FoliageGridReusesCapacityAndNoHeapThrashing) {
+    Engine::Scene scene("FoliageOptScene");
+    auto* windObj = scene.CreateGameObject("Wind");
+    auto* wind = windObj->AddComponent<Engine::WindComponent>();
+    wind->InteractiveRustle = true;
+
+    for (int i = 0; i < 3; ++i) {
+        auto* fObj = scene.CreateGameObject("Foliage" + std::to_string(i));
+        fObj->GetTransform()->position = { static_cast<float>(i) * 2.0f, 0.0f, 0.0f };
+        auto* spr = fObj->AddComponent<Engine::SpriteRenderer>();
+        spr->SetWindSwayWeight(0.5f);
+    }
+
+    Engine::SceneRenderer renderer;
+    renderer.GatherRenderContext(scene);
+    const size_t bucketCount1 = renderer.GetFoliageInteractorGrid().bucket_count();
+
+    // Gather again
+    renderer.GatherRenderContext(scene);
+    const size_t bucketCount2 = renderer.GetFoliageInteractorGrid().bucket_count();
+    // Scratch map retains capacity across frames
+    EXPECT_GE(bucketCount2, bucketCount1);
 }
 
 } // namespace

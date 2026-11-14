@@ -321,8 +321,8 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
         sunRightXZ = ctx.dirLight->GetSunRightXZ();
     }
 
-    // Populate 2D spatial hash grid for foliage interactors
-    std::unordered_map<uint64_t, std::vector<uint32_t>> foliageInteractorGrid;
+    // Populate 2D spatial hash grid for foliage interactors (reusing scratch storage to avoid per-frame allocations)
+    m_FoliageInteractorGrid.clear();
     static constexpr float kFoliageInteractionRadius = 1.25f;
     static constexpr float kSpatialCellSize = 2.0f;
     if (ctx.windComp && ctx.windComp->InteractiveRustle && !m_FoliageScratch.empty()) {
@@ -337,7 +337,7 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
                 for (int32_t cx = minCX; cx <= maxCX; ++cx) {
                     const uint64_t key = (static_cast<uint64_t>(static_cast<uint32_t>(cx)) << 32) |
                                          static_cast<uint64_t>(static_cast<uint32_t>(cz));
-                    foliageInteractorGrid[key].push_back(i);
+                    m_FoliageInteractorGrid[key].push_back(i);
                 }
             }
         }
@@ -425,13 +425,13 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
 
                             float camProximityBend = 0.0f;
                             float shadowProximityBend = 0.0f;
-                            if (ctx.windComp && ctx.windComp->InteractiveRustle && rawWindWeight > 0.0001f && !foliageInteractorGrid.empty()) {
+                            if (ctx.windComp && ctx.windComp->InteractiveRustle && rawWindWeight > 0.0001f && !m_FoliageInteractorGrid.empty()) {
                                 const int32_t scx = static_cast<int32_t>(std::floor(worldPos.x / kSpatialCellSize));
                                 const int32_t scz = static_cast<int32_t>(std::floor(worldPos.z / kSpatialCellSize));
                                 const uint64_t cellKey = (static_cast<uint64_t>(static_cast<uint32_t>(scx)) << 32) |
                                                          static_cast<uint64_t>(static_cast<uint32_t>(scz));
-                                const auto it = foliageInteractorGrid.find(cellKey);
-                                if (it != foliageInteractorGrid.end() && !it->second.empty()) {
+                                const auto it = m_FoliageInteractorGrid.find(cellKey);
+                                if (it != m_FoliageInteractorGrid.end() && !it->second.empty()) {
                                     float camBendSum = 0.0f;
                                     float shadowBendSum = 0.0f;
                                     for (uint32_t interactorIdx : it->second) {
@@ -577,8 +577,6 @@ void SceneRenderer::RenderPassTorchShadowMap(SceneRenderContext& ctx) {
     ctx.lighting.TorchLightMatrices = quadrantMatrices;
 
     // Clear entire 4-quadrant depth atlas once before rendering per-quadrant standee geometry
-    Renderer2D::BeginShadowPass(quadrantMatrices[0], 0.15f);
-    Renderer2D::EndScene();
     TorchShadowMap::BeginCapture();
 
     for (uint32_t q = 0; q < TorchShadowMap::QuadrantCount; ++q) {

@@ -445,5 +445,43 @@ TEST(IlluminationQueryTest, DominantSourcePriorityPrecedenceOcclusionAndHierarch
     EXPECT_EQ(occludedSide.DominantSafeSource, nullptr);
 }
 
+TEST(PointLightUploadTest, PointLightBlockUploadsDeduplicated) {
+    Engine::Renderer::Init();
+    Engine::Renderer::ResetPointLightUploadCount();
+
+    Engine::SceneLightingData lighting;
+    lighting.LightingActive = true;
+    lighting.PointLightCount = 2;
+    lighting.PointLights[0].PositionAndRadius = { 1.0f, 2.0f, 3.0f, 5.0f };
+    lighting.PointLights[0].ColorAndIntensity = { 1.0f, 0.9f, 0.8f, 2.0f };
+    lighting.PointLights[0].Params = { 1.0f, 0.0f, 0.1f, 0.005f };
+    lighting.PointLights[1].PositionAndRadius = { 10.0f, 0.0f, 5.0f, 8.0f };
+    lighting.PointLights[1].ColorAndIntensity = { 0.2f, 0.5f, 1.0f, 1.5f };
+    lighting.PointLights[1].Params = { 1.0f, 0.0f, 0.1f, 0.005f };
+
+    // Initial upload
+    Engine::Renderer::UploadPointLights(&lighting);
+    EXPECT_EQ(Engine::Renderer::GetPointLightUploadCount(), 1u);
+
+    // Redundant upload with identical light data should be skipped
+    Engine::Renderer::UploadPointLights(&lighting);
+    EXPECT_EQ(Engine::Renderer::GetPointLightUploadCount(), 1u);
+
+    // Another redundant call
+    Engine::Renderer::UploadPointLights(&lighting);
+    EXPECT_EQ(Engine::Renderer::GetPointLightUploadCount(), 1u);
+
+    // Modifying light position triggers an upload
+    lighting.PointLights[0].PositionAndRadius.x += 1.0f;
+    Engine::Renderer::UploadPointLights(&lighting);
+    EXPECT_EQ(Engine::Renderer::GetPointLightUploadCount(), 2u);
+
+    // Calling again with modified data skips
+    Engine::Renderer::UploadPointLights(&lighting);
+    EXPECT_EQ(Engine::Renderer::GetPointLightUploadCount(), 2u);
+
+    Engine::Renderer::Shutdown();
+}
+
 } // namespace
 

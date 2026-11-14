@@ -350,6 +350,58 @@ void Texture2DArray::ResizeRGBA8Bilinear(const uint8_t* src,
     }
 }
 
+void Texture2DArray::ResizeR8Bilinear(const uint8_t* src,
+                                      uint32_t srcW,
+                                      uint32_t srcH,
+                                      uint32_t dstW,
+                                      uint32_t dstH,
+                                      std::vector<uint8_t>& outR8) {
+    if (!src || srcW == 0 || srcH == 0 || dstW == 0 || dstH == 0) {
+        outR8.clear();
+        return;
+    }
+
+    const size_t dstBytes = static_cast<size_t>(dstW) * static_cast<size_t>(dstH);
+    outR8.resize(dstBytes);
+
+    if (srcW == dstW && srcH == dstH) {
+        std::memcpy(outR8.data(), src, dstBytes);
+        return;
+    }
+
+    const float scaleX = static_cast<float>(srcW) / static_cast<float>(dstW);
+    const float scaleY = static_cast<float>(srcH) / static_cast<float>(dstH);
+
+    for (uint32_t y = 0; y < dstH; ++y) {
+        const float fy = (static_cast<float>(y) + 0.5f) * scaleY - 0.5f;
+        const float cy = std::clamp(fy, 0.0f, static_cast<float>(srcH - 1u));
+        const uint32_t y0 = static_cast<uint32_t>(std::floor(cy));
+        const uint32_t y1 = std::min(srcH - 1u, y0 + 1u);
+        const float wy = cy - static_cast<float>(y0);
+
+        for (uint32_t x = 0; x < dstW; ++x) {
+            const float fx = (static_cast<float>(x) + 0.5f) * scaleX - 0.5f;
+            const float cx = std::clamp(fx, 0.0f, static_cast<float>(srcW - 1u));
+            const uint32_t x0 = static_cast<uint32_t>(std::floor(cx));
+            const uint32_t x1 = std::min(srcW - 1u, x0 + 1u);
+            const float wx = cx - static_cast<float>(x0);
+
+            const size_t idx00 = static_cast<size_t>(y0) * srcW + x0;
+            const size_t idx10 = static_cast<size_t>(y0) * srcW + x1;
+            const size_t idx01 = static_cast<size_t>(y1) * srcW + x0;
+            const size_t idx11 = static_cast<size_t>(y1) * srcW + x1;
+            const size_t dstIdx = static_cast<size_t>(y) * dstW + x;
+
+            const float top = static_cast<float>(src[idx00]) * (1.0f - wx) +
+                              static_cast<float>(src[idx10]) * wx;
+            const float bot = static_cast<float>(src[idx01]) * (1.0f - wx) +
+                              static_cast<float>(src[idx11]) * wx;
+            const float val = top * (1.0f - wy) + bot * wy;
+            outR8[dstIdx] = static_cast<uint8_t>(std::clamp(static_cast<int>(std::lround(val)), 0, 255));
+        }
+    }
+}
+
 bool Texture2DArray::PackAlbedoHeightRGBA8(const uint8_t* diffusePixels,
                                            int diffuseChannels,
                                            uint32_t diffuseW,
@@ -374,19 +426,15 @@ bool Texture2DArray::PackAlbedoHeightRGBA8(const uint8_t* diffusePixels,
     const size_t pixelCount = static_cast<size_t>(targetW) * static_cast<size_t>(targetH);
     if (heightPixels && heightW > 0 && heightH > 0) {
         const int safeHCh = std::clamp(heightChannels, 1, 4);
-        std::vector<uint8_t> heightRgba(static_cast<size_t>(heightW) * static_cast<size_t>(heightH) * 4u);
+        std::vector<uint8_t> heightR8(static_cast<size_t>(heightW) * static_cast<size_t>(heightH));
         for (size_t i = 0; i < static_cast<size_t>(heightW) * static_cast<size_t>(heightH); ++i) {
-            const uint8_t hByte = ExtractLuminance(&heightPixels[i * static_cast<size_t>(safeHCh)], safeHCh);
-            heightRgba[i * 4u + 0] = hByte;
-            heightRgba[i * 4u + 1] = hByte;
-            heightRgba[i * 4u + 2] = hByte;
-            heightRgba[i * 4u + 3] = hByte;
+            heightR8[i] = ExtractLuminance(&heightPixels[i * static_cast<size_t>(safeHCh)], safeHCh);
         }
 
         std::vector<uint8_t> resizedHeight;
-        ResizeRGBA8Bilinear(heightRgba.data(), heightW, heightH, targetW, targetH, resizedHeight);
+        ResizeR8Bilinear(heightR8.data(), heightW, heightH, targetW, targetH, resizedHeight);
         for (size_t i = 0; i < pixelCount; ++i) {
-            outRgba8[i * 4u + 3] = resizedHeight[i * 4u + 0];
+            outRgba8[i * 4u + 3] = resizedHeight[i];
         }
     } else if (fallbackHeight >= 0) {
         const uint8_t hConst = static_cast<uint8_t>(std::clamp(fallbackHeight, 0, 255));

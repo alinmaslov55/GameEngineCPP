@@ -31,6 +31,10 @@ public:
                                    float groundY,
                                    const PerspectiveCamera& camera,
                                    const SceneLightingData* lighting = nullptr);
+
+    static void SyncLayerTextures(const std::array<TerrainLayer, TerrainComponent::MaxLayers>& layers);
+    static size_t GetCachedLayerSetCount();
+    static uint64_t GetActiveLayerSetHash();
 };
 
 } // namespace Engine

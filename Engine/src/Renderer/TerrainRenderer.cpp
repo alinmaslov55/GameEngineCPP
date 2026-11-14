@@ -12,6 +12,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <limits>
 #include <memory>
 #include <string>
 #include <unordered_map>
@@ -37,6 +38,14 @@ static const std::array<glm::u8vec4, TerrainComponent::MaxLayers> kFallbackLayer
     glm::u8vec4( 90,  86,  78, 255)  // 7: Spare 2
 }};
 
+struct TerrainLayerSetEntry {
+    uint64_t SetHash = 0;
+    std::shared_ptr<Texture2DArray> AlbedoHeightArray;
+    std::shared_ptr<Texture2DArray> NormalRoughnessArray;
+    std::array<uint64_t, TerrainComponent::MaxLayers> LayerHashes{};
+    uint64_t LastUsedFrame = 0;
+};
+
 struct TerrainRendererStorage {
     std::shared_ptr<VertexArray> GroundVAO;
     std::shared_ptr<VertexBuffer> GroundVBO;
@@ -44,9 +53,10 @@ struct TerrainRendererStorage {
     std::unordered_map<uint32_t, std::shared_ptr<VertexArray>> StitchedVAOs;
     std::shared_ptr<Shader> SplatShader;
 
-    std::shared_ptr<Texture2DArray> AlbedoHeightArray;
-    std::shared_ptr<Texture2DArray> NormalRoughnessArray;
-    std::array<std::string, TerrainComponent::MaxLayers> CachedLayerSignatures{};
+    // Cache of up to 4 distinct layer sets to prevent multi-terrain cache thrashing
+    std::unordered_map<uint64_t, std::unique_ptr<TerrainLayerSetEntry>> LayerSetCache;
+    TerrainLayerSetEntry* ActiveLayerSet = nullptr;
+    uint64_t FrameCounter = 0;
 
     std::shared_ptr<Texture> FallbackSplatTex0;
     std::shared_ptr<Texture> FallbackSplatTex1;
@@ -60,33 +70,113 @@ struct TerrainRendererStorage {
 
 std::unique_ptr<TerrainRendererStorage> s_TerrainData = nullptr;
 
-std::string MakeRawLayerSignature(const TerrainLayer& layer, uint32_t layerIndex) {
-    const std::string diffusePath = layer.LayerTexture ? layer.LayerTexture->GetFilepath() : "";
+inline uint64_t Fnv1a64(const void* data, size_t size, uint64_t hash = 14695981039346656037ull) noexcept {
+    const uint8_t* ptr = static_cast<const uint8_t*>(data);
+    for (size_t i = 0; i < size; ++i) {
+        hash ^= static_cast<uint64_t>(ptr[i]);
+        hash *= 1099511628211ull;
+    }
+    return hash;
+}
+
+inline uint64_t Fnv1a64Str(const std::string& str, uint64_t hash = 14695981039346656037ull) noexcept {
+    return Fnv1a64(str.data(), str.size(), hash);
+}
+
+uint64_t ComputeLayerSignatureHash(const TerrainLayer& layer, uint32_t layerIndex) noexcept {
+    uint64_t hash = 14695981039346656037ull;
+    hash = Fnv1a64(&layerIndex, sizeof(layerIndex), hash);
+
+    const std::string& diffusePath = layer.LayerTexture ? layer.LayerTexture->GetFilepath() : "";
     const uint32_t texId = layer.LayerTexture ? layer.LayerTexture->GetRendererID() : 0u;
-    const bool loaded = layer.LayerTexture ? layer.LayerTexture->IsLoaded() : false;
-    const int glossQ = static_cast<int>(std::lround(std::clamp(layer.Glossiness, 0.0f, 1.0f) * 1000.0f));
-    return std::to_string(layerIndex) + "|" + std::to_string(texId) + "|" + (loaded ? "1" : "0") + "|" +
-           diffusePath + "|" + layer.HeightMapPath + "|" + layer.NormalMapPath + "|" + std::to_string(glossQ);
+    const uint8_t loaded = (layer.LayerTexture && layer.LayerTexture->IsLoaded()) ? 1u : 0u;
+    const int32_t glossQ = static_cast<int32_t>(std::lround(std::clamp(layer.Glossiness, 0.0f, 1.0f) * 1000.0f));
+
+    hash = Fnv1a64(&texId, sizeof(texId), hash);
+    hash = Fnv1a64(&loaded, sizeof(loaded), hash);
+    hash = Fnv1a64Str(diffusePath, hash);
+    hash = Fnv1a64Str(layer.HeightMapPath, hash);
+    hash = Fnv1a64Str(layer.NormalMapPath, hash);
+    hash = Fnv1a64(&glossQ, sizeof(glossQ), hash);
+
+    return hash;
+}
+
+uint64_t ComputeLayerSetHash(const std::array<TerrainLayer, TerrainComponent::MaxLayers>& layers) noexcept {
+    uint64_t setHash = 14695981039346656037ull;
+    for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+        uint64_t layerHash = ComputeLayerSignatureHash(layers[i], i);
+        setHash = Fnv1a64(&layerHash, sizeof(layerHash), setHash);
+    }
+    return setHash;
 }
 
 void SyncLayerTextureArrays(const std::array<TerrainLayer, TerrainComponent::MaxLayers>& layers) {
-    if (!s_TerrainData || !s_TerrainData->AlbedoHeightArray || !s_TerrainData->NormalRoughnessArray) {
+    if (!s_TerrainData) {
         return;
     }
 
-    const uint32_t arrayW = s_TerrainData->AlbedoHeightArray->GetWidth();
-    const uint32_t arrayH = s_TerrainData->AlbedoHeightArray->GetHeight();
-    bool anySliceUpdated = false;
+    const uint64_t setHash = ComputeLayerSetHash(layers);
+    if (s_TerrainData->ActiveLayerSet && s_TerrainData->ActiveLayerSet->SetHash == setHash) {
+        return;
+    }
+
+    auto it = s_TerrainData->LayerSetCache.find(setHash);
+    if (it != s_TerrainData->LayerSetCache.end()) {
+        s_TerrainData->ActiveLayerSet = it->second.get();
+        s_TerrainData->ActiveLayerSet->LastUsedFrame = ++s_TerrainData->FrameCounter;
+        return;
+    }
+
+    // Evict oldest entry if cache is at capacity (bounded at 4 sets)
+    static constexpr size_t kMaxCachedLayerSets = 4;
+    if (s_TerrainData->LayerSetCache.size() >= kMaxCachedLayerSets) {
+        uint64_t oldestFrame = std::numeric_limits<uint64_t>::max();
+        uint64_t oldestKey = 0;
+        bool foundOldest = false;
+        for (const auto& [key, entryPtr] : s_TerrainData->LayerSetCache) {
+            if (entryPtr.get() == s_TerrainData->ActiveLayerSet) {
+                continue;
+            }
+            if (entryPtr->LastUsedFrame < oldestFrame) {
+                oldestFrame = entryPtr->LastUsedFrame;
+                oldestKey = key;
+                foundOldest = true;
+            }
+        }
+        if (foundOldest) {
+            s_TerrainData->LayerSetCache.erase(oldestKey);
+        } else {
+            s_TerrainData->LayerSetCache.erase(s_TerrainData->LayerSetCache.begin());
+        }
+    }
+
+    auto newEntry = std::make_unique<TerrainLayerSetEntry>();
+    newEntry->SetHash = setHash;
+    newEntry->LastUsedFrame = ++s_TerrainData->FrameCounter;
+    newEntry->AlbedoHeightArray = std::make_shared<Texture2DArray>(
+        Texture2DArray::DefaultWidth,
+        Texture2DArray::DefaultHeight,
+        TerrainComponent::MaxLayers,
+        /*linearFilter=*/true,
+        /*repeatWrap=*/true
+    );
+    newEntry->NormalRoughnessArray = std::make_shared<Texture2DArray>(
+        Texture2DArray::DefaultWidth,
+        Texture2DArray::DefaultHeight,
+        TerrainComponent::MaxLayers,
+        /*linearFilter=*/true,
+        /*repeatWrap=*/true
+    );
+
+    const uint32_t arrayW = newEntry->AlbedoHeightArray->GetWidth();
+    const uint32_t arrayH = newEntry->AlbedoHeightArray->GetHeight();
     std::vector<uint8_t> albedoHeightScratch;
     std::vector<uint8_t> normalGlossScratch;
 
     for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
         const auto& layer = layers[i];
-        const std::string rawSig = MakeRawLayerSignature(layer, i);
-        if (rawSig == s_TerrainData->CachedLayerSignatures[i]) {
-            continue;
-        }
-        s_TerrainData->CachedLayerSignatures[i] = rawSig;
+        newEntry->LayerHashes[i] = ComputeLayerSignatureHash(layer, i);
 
         const std::string diffusePath = layer.LayerTexture ? layer.LayerTexture->GetFilepath() : "";
         const ResolvedTerrainMaps resolved = Texture2DArray::ResolveTerrainMapCompanions(
@@ -103,8 +193,7 @@ void SyncLayerTextureArrays(const std::array<TerrainLayer, TerrainComponent::Max
                 arrayH,
                 kFallbackLayerColors[i],
                 albedoHeightScratch)) {
-            s_TerrainData->AlbedoHeightArray->SetLayerData(i, albedoHeightScratch.data(), /*generateMips=*/false);
-            anySliceUpdated = true;
+            newEntry->AlbedoHeightArray->SetLayerData(i, albedoHeightScratch.data(), /*generateMips=*/false);
         }
 
         if (Texture2DArray::BuildNormalGlossSliceFromFiles(
@@ -113,17 +202,17 @@ void SyncLayerTextureArrays(const std::array<TerrainLayer, TerrainComponent::Max
                 arrayW,
                 arrayH,
                 normalGlossScratch)) {
-            s_TerrainData->NormalRoughnessArray->SetLayerData(i, normalGlossScratch.data(), /*generateMips=*/false);
-            anySliceUpdated = true;
+            newEntry->NormalRoughnessArray->SetLayerData(i, normalGlossScratch.data(), /*generateMips=*/false);
         }
     }
 
-    if (anySliceUpdated) {
-        s_TerrainData->AlbedoHeightArray->GenerateMipmaps();
-        s_TerrainData->NormalRoughnessArray->GenerateMipmaps();
-        ENGINE_CORE_DEBUG("TerrainRenderer: Synchronized terrain layer texture arrays ({}x{}) and regenerated mipmaps",
-                          arrayW, arrayH);
-    }
+    newEntry->AlbedoHeightArray->GenerateMipmaps();
+    newEntry->NormalRoughnessArray->GenerateMipmaps();
+    ENGINE_CORE_DEBUG("TerrainRenderer: Cached new terrain layer set (hash {:016x}, {}x{}) and generated mipmaps",
+                      setHash, arrayW, arrayH);
+
+    s_TerrainData->ActiveLayerSet = newEntry.get();
+    s_TerrainData->LayerSetCache.emplace(setHash, std::move(newEntry));
 }
 
 std::shared_ptr<VertexArray> GetOrCreateStitchedVAO(uint32_t splatResolution) {
@@ -166,8 +255,12 @@ void BindSplatShaderAndState(const std::array<TerrainLayer, TerrainComponent::Ma
                              const PerspectiveCamera& camera,
                              const SceneLightingData* lighting) {
     SyncLayerTextureArrays(layers);
-    s_TerrainData->AlbedoHeightArray->Bind(2);
-    s_TerrainData->NormalRoughnessArray->Bind(3);
+    if (s_TerrainData->ActiveLayerSet &&
+        s_TerrainData->ActiveLayerSet->AlbedoHeightArray &&
+        s_TerrainData->ActiveLayerSet->NormalRoughnessArray) {
+        s_TerrainData->ActiveLayerSet->AlbedoHeightArray->Bind(2);
+        s_TerrainData->ActiveLayerSet->NormalRoughnessArray->Bind(3);
+    }
 
     std::array<float, TerrainComponent::MaxLayers> layerTiling{};
     for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
@@ -223,8 +316,6 @@ void BindSplatShaderAndState(const std::array<TerrainLayer, TerrainComponent::Ma
                 shader.SetMat4(kTorchMatNames[q], lighting->TorchLightMatrices[static_cast<size_t>(q)]);
             }
         }
-
-        Renderer::UploadPointLights(lighting);
     } else {
         glBindTexture(GL_TEXTURE_2D, s_TerrainData->WhiteFallbackDepthTex->GetRendererID());
         glActiveTexture(GL_TEXTURE6);
@@ -272,21 +363,6 @@ void TerrainRenderer::Init() {
 
     s_TerrainData->GroundIB = std::make_shared<IndexBuffer>(indices, 6);
     s_TerrainData->GroundVAO->SetIndexBuffer(s_TerrainData->GroundIB);
-
-    s_TerrainData->AlbedoHeightArray = std::make_shared<Texture2DArray>(
-        Texture2DArray::DefaultWidth,
-        Texture2DArray::DefaultHeight,
-        TerrainComponent::MaxLayers,
-        /*linearFilter=*/true,
-        /*repeatWrap=*/true
-    );
-    s_TerrainData->NormalRoughnessArray = std::make_shared<Texture2DArray>(
-        Texture2DArray::DefaultWidth,
-        Texture2DArray::DefaultHeight,
-        TerrainComponent::MaxLayers,
-        /*linearFilter=*/true,
-        /*repeatWrap=*/true
-    );
 
     const uint8_t defaultSplatPixel0[4] = { 255, 0, 0, 0 };
     s_TerrainData->FallbackSplatTex0 = std::make_shared<Texture>(
@@ -453,6 +529,18 @@ void TerrainRenderer::RenderChunkManager(TerrainChunkManager& chunkManager,
     }
 
     shader.Unbind();
+}
+
+void TerrainRenderer::SyncLayerTextures(const std::array<TerrainLayer, TerrainComponent::MaxLayers>& layers) {
+    SyncLayerTextureArrays(layers);
+}
+
+size_t TerrainRenderer::GetCachedLayerSetCount() {
+    return s_TerrainData ? s_TerrainData->LayerSetCache.size() : 0u;
+}
+
+uint64_t TerrainRenderer::GetActiveLayerSetHash() {
+    return (s_TerrainData && s_TerrainData->ActiveLayerSet) ? s_TerrainData->ActiveLayerSet->SetHash : 0ull;
 }
 
 } // namespace Engine

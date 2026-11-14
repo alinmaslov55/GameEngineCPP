@@ -3,6 +3,7 @@
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
 #include <algorithm>
+#include <cstring>
 #include <memory>
 
 namespace Engine {
@@ -10,28 +11,38 @@ namespace Engine {
 namespace {
 std::unique_ptr<UniformBuffer> s_PointLightUBO = nullptr;
 PointLightUBOBlock s_PointLightUploadScratch{};
+PointLightUBOBlock s_LastUploadedPointLights{};
+bool s_HasUploadedPointLights = false;
+uint64_t s_PointLightUploadCount = 0;
 } // namespace
 
 void Renderer::Init() {
     ENGINE_CORE_INFO("Initializing Renderer (3D Depth Buffering enabled)...");
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-    glDepthMask(GL_TRUE);
+    if (glad_glEnable != nullptr) {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glDepthMask(GL_TRUE);
 
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    if (glad_glGenBuffers != nullptr) {
-        s_PointLightUBO = std::make_unique<UniformBuffer>(
-            static_cast<uint32_t>(sizeof(PointLightUBOBlock)),
-            SceneLightingData::PointLightUBOBinding
-        );
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
     }
+
+    s_HasUploadedPointLights = false;
+    s_PointLightUploadCount = 0;
+    std::memset(&s_LastUploadedPointLights, 0, sizeof(PointLightUBOBlock));
+
+    s_PointLightUBO = std::make_unique<UniformBuffer>(
+        static_cast<uint32_t>(sizeof(PointLightUBOBlock)),
+        SceneLightingData::PointLightUBOBinding
+    );
     ENGINE_CORE_INFO("Renderer initialized");
 }
 
 void Renderer::Shutdown() {
     s_PointLightUBO.reset();
+    s_HasUploadedPointLights = false;
+    s_PointLightUploadCount = 0;
+    std::memset(&s_LastUploadedPointLights, 0, sizeof(PointLightUBOBlock));
     ENGINE_CORE_INFO("Renderer shut down");
 }
 
@@ -55,7 +66,27 @@ void Renderer::UploadPointLights(const SceneLightingData* lighting) {
     s_PointLightUploadScratch.Header = { static_cast<int>(count), shadowLightActive, 0, 0 };
     const uint32_t uploadBytes = static_cast<uint32_t>(sizeof(glm::ivec4)) +
                                  count * static_cast<uint32_t>(sizeof(PointLightUniform));
+
+    // Deduplicate uploads: skip glBufferSubData when lighting payload is identical
+    if (s_HasUploadedPointLights &&
+        std::memcmp(&s_PointLightUploadScratch, &s_LastUploadedPointLights, uploadBytes) == 0) {
+        return;
+    }
+
     s_PointLightUBO->SetData(&s_PointLightUploadScratch, uploadBytes, 0);
+    std::memcpy(&s_LastUploadedPointLights, &s_PointLightUploadScratch, uploadBytes);
+    s_HasUploadedPointLights = true;
+    ++s_PointLightUploadCount;
+}
+
+uint64_t Renderer::GetPointLightUploadCount() {
+    return s_PointLightUploadCount;
+}
+
+void Renderer::ResetPointLightUploadCount() {
+    s_PointLightUploadCount = 0;
+    s_HasUploadedPointLights = false;
+    std::memset(&s_LastUploadedPointLights, 0, sizeof(PointLightUBOBlock));
 }
 
 void Renderer::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {

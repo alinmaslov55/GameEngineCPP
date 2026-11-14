@@ -6,6 +6,7 @@
 #include "Engine/Scene/StandeeCommand.h"
 
 #include <vector>
+#include <unordered_map>
 #include <utility>
 #include <cstdint>
 #include <glm/vec2.hpp>
@@ -69,6 +70,8 @@ public:
 
     SceneRenderContext GatherRenderContext(Scene& scene, const PerspectiveCamera* overrideCamera = nullptr);
 
+    [[nodiscard]] const std::unordered_map<uint64_t, std::vector<uint32_t>>& GetFoliageInteractorGrid() const noexcept { return m_FoliageInteractorGrid; }
+
 private:
     struct PointLightCandidate {
         PointLightUniform Uniform{};
@@ -85,7 +88,6 @@ private:
     void RenderPassParticles(SceneRenderContext& ctx);
     void RenderPassScreenUI();
 
-private:
     PerspectiveCamera m_Camera;
     uint32_t m_ViewportWidth{ 1280 };
     uint32_t m_ViewportHeight{ 720 };
@@ -105,6 +107,7 @@ private:
     std::vector<ParticleSystem*> m_ParticleScratch;
     std::vector<UIPanel*> m_UIPanelScratch;
     std::vector<UILabel*> m_UILabelScratch;
+    std::unordered_map<uint64_t, std::vector<uint32_t>> m_FoliageInteractorGrid;
 };
 
 } // namespace Engine

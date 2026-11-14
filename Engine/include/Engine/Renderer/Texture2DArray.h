@@ -59,6 +59,13 @@ public:
                                     uint32_t dstH,
                                     std::vector<uint8_t>& outRgba8);
 
+    static void ResizeR8Bilinear(const uint8_t* src,
+                                 uint32_t srcW,
+                                 uint32_t srcH,
+                                 uint32_t dstW,
+                                 uint32_t dstH,
+                                 std::vector<uint8_t>& outR8);
+
     /// @brief Packs diffuse RGB and height A into an RGBA8 buffer at targetW x targetH.
     /// If `heightPixels` is null, `fallbackHeight >= 0` fills uniform height, or `< 0` derives luminance from RGB.
     static bool PackAlbedoHeightRGBA8(const uint8_t* diffusePixels,

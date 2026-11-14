@@ -14,6 +14,8 @@ public:
     static void Init();
     static void Shutdown();
     static void UploadPointLights(const SceneLightingData* lighting);
+    static uint64_t GetPointLightUploadCount();
+    static void ResetPointLightUploadCount();
     static void SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height);
     static void SetDepthTest(bool enabled);
     static void SetDepthMask(bool writeEnabled);

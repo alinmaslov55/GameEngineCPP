@@ -224,8 +224,6 @@ void Renderer2D::ApplyLightingUniforms(const SceneLightingData* lighting) {
                 shader.SetMat4(kTorchMatNames[q], lighting->TorchLightMatrices[static_cast<size_t>(q)]);
             }
         }
-
-        Renderer::UploadPointLights(lighting);
     } else {
         // Bind WhiteTexture to slots 13 & 14 immediately so ShadowMap / TorchShadowMap are never still bound during FBO writes
         s_Data->BoundShadowTextureID = s_Data->WhiteTexture;

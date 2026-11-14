@@ -102,7 +102,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
 
 [P1] PERFORMANCE & FRAME-PACING HOTSPOTS
 --------------------------------------------------------------------------------
-[ ] 9. Eliminate Per-Frame Terrain Sync Thrashing, Unnecessary String Hash Lookups & Height Bloat
+[x] 9. Eliminate Per-Frame Terrain Sync Thrashing, Unnecessary String Hash Lookups & Height Bloat
     - Files: Engine/src/Renderer/TerrainRenderer.cpp (lines 63-125), Engine/src/Renderer/Texture2DArray.cpp (lines 369-384), Engine/src/Renderer/SceneRenderer.cpp (lines 295-314, 546-549), Engine/src/Renderer/Renderer.cpp (lines 38-59)
     - Root Cause:
       * `MakeRawLayerSignature()` creates heap `std::string`s across 8 layers every draw call, and a single global `CachedLayerSignatures` forces synchronous PNG decoding + `1024x1024` resizes + mipmap regeneration every frame whenever two terrains have distinct layers.
