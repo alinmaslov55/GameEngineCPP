@@ -900,5 +900,143 @@ TEST(TerrainChunkManagerTest, SceneRenderStreamsUncachedChunksWithPooledPropsWit
     }
 }
 
+TEST(TerrainChunkManagerTest, EvictionExtinguishesOnlyEvictedChunkLeavingNeighborFireIntact) {
+    Engine::TerrainChunkManager mgr(16.0f, 33u, 1, 1);
+
+    auto& c0 = mgr.EnsureEditableChunk({ 0, 0 });
+    auto& c1 = mgr.EnsureEditableChunk({ 1, 0 });
+
+    // Initialize both chunks with Ash Barrens (non-flammable Layer 1)
+    for (size_t i = 0; i < c0.SplatData.size(); i += 4u) {
+        c0.SplatData[i + 0] = 0u;
+        c0.SplatData[i + 1] = 255u;
+        c0.SplatData[i + 2] = 0u;
+        c0.SplatData[i + 3] = 0u;
+    }
+    for (size_t i = 0; i < c1.SplatData.size(); i += 4u) {
+        c1.SplatData[i + 0] = 0u;
+        c1.SplatData[i + 1] = 255u;
+        c1.SplatData[i + 2] = 0u;
+        c1.SplatData[i + 3] = 0u;
+    }
+
+    // Paint Tar (Layer 2) across border from x=13 to x=19 along z=8
+    mgr.PaintWorldSegment({ 13.0f, 8.0f }, { 19.0f, 8.0f }, 2u, 1.2f, 0.4f, 1.0f);
+    EXPECT_GT(mgr.SampleSurfaceAtXZ(14.0f, 8.0f).Flammability, 0.35f);
+    EXPECT_GT(mgr.SampleSurfaceAtXZ(18.0f, 8.0f).Flammability, 0.35f);
+
+    // Ignite fire in chunk (0, 0) at x=14 and in chunk (1, 0) at x=18
+    mgr.IgniteAtXZ({ 14.0f, 8.0f }, 0.6f);
+    mgr.IgniteAtXZ({ 18.0f, 8.0f }, 0.6f);
+    EXPECT_TRUE(mgr.IsBurningAtXZ(14.0f, 8.0f));
+    EXPECT_TRUE(mgr.IsBurningAtXZ(18.0f, 8.0f));
+
+    // Stream viewer to x=40.0m (chunk cx=2). With retention radius 1:
+    // Chunk (0, 0) has distance |0 - 2| = 2 > 1 -> evicted!
+    // Chunk (1, 0) has distance |1 - 2| = 1 <= 1 -> retained!
+    mgr.UpdateStreaming(glm::vec3(40.0f, 0.0f, 8.0f));
+
+    EXPECT_EQ(mgr.GetChunk({ 0, 0 }), nullptr);
+    EXPECT_NE(mgr.GetChunk({ 1, 0 }), nullptr);
+
+    // Fire in evicted chunk (0, 0) must be extinguished
+    EXPECT_FALSE(mgr.IsBurningAtXZ(14.0f, 8.0f));
+    // Fire in neighboring resident chunk (1, 0) MUST REMAIN INTACT!
+    EXPECT_TRUE(mgr.IsBurningAtXZ(18.0f, 8.0f));
+}
+
+TEST(TerrainChunkManagerTest, UserModifiedChunkIsNotOverwrittenByAsyncPayloadDrain) {
+    const bool jobWasInit = Engine::JobSystem::IsInitialized();
+    if (!jobWasInit) {
+        Engine::JobSystem::Init(2);
+    }
+
+    Engine::TerrainChunkManager mgr(16.0f, 33u, 1, 2);
+
+    // Dispatch background generation for chunk (3, 3)
+    mgr.DispatchChunkGeneration({ 3, 3 });
+    auto* initialChunk = mgr.GetChunk({ 3, 3 });
+    ASSERT_NE(initialChunk, nullptr);
+    EXPECT_EQ(initialChunk->State, Engine::ChunkLoadState::Generating);
+
+    // User modifies chunk while background generation is in-flight
+    auto& editable = mgr.EnsureEditableChunk({ 3, 3 });
+    editable.UserModified = true;
+    for (size_t i = 0; i < editable.SplatData.size(); i += 4u) {
+        editable.SplatData[i + 0] = 0u;
+        editable.SplatData[i + 1] = 0u;
+        editable.SplatData[i + 2] = 0u;
+        editable.SplatData[i + 3] = 255u; // Distinct custom layer 3
+    }
+
+    // Wait for in-flight async jobs to complete and drain payloads: must NOT overwrite editable.UserModified chunk!
+    mgr.FlushPendingGenerations();
+
+    auto* verifiedChunk = mgr.GetChunk({ 3, 3 });
+    ASSERT_NE(verifiedChunk, nullptr);
+    EXPECT_TRUE(verifiedChunk->UserModified);
+    EXPECT_EQ(verifiedChunk->SplatData[3], 255u);
+    EXPECT_EQ(verifiedChunk->SplatData[0], 0u);
+
+    if (!jobWasInit) {
+        Engine::JobSystem::Shutdown();
+    }
+}
+
+TEST(TerrainChunkManagerTest, OnDestroyReleasesAllTarFirewallEntities) {
+    Engine::Scene scene("FirewallCleanupScene");
+
+    auto* terrainGo = scene.CreateGameObject("Terrain");
+    auto* mgr = terrainGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 33u, 1, 2);
+
+    Engine::WorldGenConfig cfg;
+    cfg.Enabled = true;
+    cfg.SpawnSceneEntities = true;
+    mgr->ConfigureProceduralWorld(cfg);
+
+    auto& chunk = mgr->EnsureEditableChunk({ 0, 0 });
+    // Paint tar at (8.0, 8.0)
+    mgr->PaintMaterialWorld({ 8.0f, 8.0f }, 2u, 3.0f, 1.0f);
+    mgr->IgniteAtXZ({ 8.0f, 8.0f }, 1.5f);
+
+    EXPECT_GT(mgr->GetFireGrid().GetActiveFireCount(), 0u);
+
+    size_t spawnedFirewalls = 0;
+    for (const auto& go : scene.GetGameObjects()) {
+        if (go && go->GetName() == "TarFirewall") {
+            ++spawnedFirewalls;
+        }
+    }
+    EXPECT_GT(spawnedFirewalls, 0u);
+
+    // Destroy the TerrainChunkManager component
+    mgr->OnDestroy();
+
+    size_t remainingFirewalls = 0;
+    for (const auto& go : scene.GetGameObjects()) {
+        if (go && go->GetName() == "TarFirewall") {
+            ++remainingFirewalls;
+        }
+    }
+    EXPECT_EQ(remainingFirewalls, 0u);
+    EXPECT_EQ(mgr->GetFireGrid().GetActiveFireCount(), 0u);
+}
+
+TEST(TerrainFireGridTest, UpdateCapsTicksPerFrameOnLargeDeltaTimeHitch) {
+    Engine::TerrainFireGrid grid;
+    grid.ConfigureCallbacks(
+        [](float, float) { return 1.0f; },
+        [](const glm::vec2&, float, float) {}
+    );
+    grid.IgniteAtXZ({ 0.0f, 0.0f }, 0.5f);
+    EXPECT_GT(grid.GetActiveFireCount(), 0u);
+
+    // A massive frame hitch of 10.0 seconds
+    grid.Update(10.0f);
+
+    // Ticks are capped to MaxTicksPerFrame (5 ticks = 0.5s), well below MaxBurnDuration (4.5s)
+    EXPECT_GT(grid.GetActiveFireCount(), 0u);
+}
+
 } // namespace
 

@@ -100,6 +100,42 @@ void TerrainFireGrid::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
     }
 }
 
+void TerrainFireGrid::ExtinguishInBoundsXZ(const glm::vec2& minXZ, const glm::vec2& maxXZ) {
+    if (m_ActiveCells.empty()) {
+        return;
+    }
+
+    const float minX = std::min(minXZ.x, maxXZ.x);
+    const float maxX = std::max(minXZ.x, maxXZ.x);
+    const float minZ = std::min(minXZ.y, maxXZ.y);
+    const float maxZ = std::max(minXZ.y, maxXZ.y);
+
+    std::vector<FireCellCoord> toRemove;
+    toRemove.reserve(m_ActiveCells.size());
+
+    for (const auto& [coord, cell] : m_ActiveCells) {
+        const glm::vec2 center = CoordToWorldCenter(coord);
+        if (center.x >= minX && center.x < maxX && center.y >= minZ && center.y < maxZ) {
+            toRemove.push_back(coord);
+        }
+    }
+
+    for (const auto& coord : toRemove) {
+        auto it = m_ActiveCells.find(coord);
+        if (it != m_ActiveCells.end()) {
+            if (m_ReleaseVisual && it->second.VisualEntityUUID != 0) {
+                m_ReleaseVisual(it->second.VisualEntityUUID);
+            }
+            m_ActiveCells.erase(it);
+        }
+    }
+
+    if (!toRemove.empty()) {
+        ENGINE_CORE_DEBUG("TerrainFireGrid::ExtinguishInBoundsXZ: Extinguished {} cell(s) in bounds [{:.2f}, {:.2f}] - [{:.2f}, {:.2f}] (remaining: {})",
+                          toRemove.size(), minX, minZ, maxX, maxZ, m_ActiveCells.size());
+    }
+}
+
 void TerrainFireGrid::Clear() {
     if (!m_ActiveCells.empty()) {
         ENGINE_CORE_DEBUG("TerrainFireGrid::Clear: Clearing {} active fire cell(s)", m_ActiveCells.size());
@@ -129,13 +165,19 @@ void TerrainFireGrid::Update(float dt) {
     }
 
     m_TickAccumulator += dt;
-    while (m_TickAccumulator >= TickInterval) {
+    uint32_t ticksExecuted = 0;
+    while (m_TickAccumulator >= TickInterval && ticksExecuted < MaxTicksPerFrame) {
         m_TickAccumulator -= TickInterval;
         SimulateTick(TickInterval);
+        ++ticksExecuted;
         if (m_ActiveCells.empty()) {
             m_TickAccumulator = 0.0f;
             break;
         }
+    }
+
+    if (ticksExecuted >= MaxTicksPerFrame && m_TickAccumulator >= TickInterval) {
+        m_TickAccumulator = 0.0f;
     }
 }
 

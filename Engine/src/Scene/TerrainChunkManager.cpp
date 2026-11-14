@@ -296,6 +296,7 @@ TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
 TerrainChunkManager::~TerrainChunkManager() {
     ENGINE_CORE_DEBUG("TerrainChunkManager shutting down ({} cached/resident chunks)", m_Chunks.size());
     ShutdownAsyncWorkers();
+    m_FireGrid.Clear();
     m_FireGrid.ConfigureCallbacks(nullptr, nullptr, nullptr, nullptr);
 }
 
@@ -303,8 +304,8 @@ void TerrainChunkManager::OnDestroy() {
     ENGINE_CORE_INFO("TerrainChunkManager::OnDestroy: Releasing {} chunks and {} active fire cells",
                      m_Chunks.size(), m_FireGrid.GetActiveFireCount());
     ShutdownAsyncWorkers();
-    m_FireGrid.ConfigureCallbacks(nullptr, nullptr, nullptr, nullptr);
     m_FireGrid.Clear();
+    m_FireGrid.ConfigureCallbacks(nullptr, nullptr, nullptr, nullptr);
     for (auto& [coord, chunk] : m_Chunks) {
         (void)coord;
         ReleaseChunkEntities(chunk);
@@ -437,6 +438,11 @@ void TerrainChunkManager::DrainReadyPayloads() {
             continue;
         }
         TerrainChunk& chunk = it->second;
+        if (chunk.State != ChunkLoadState::Generating || chunk.UserModified) {
+            ENGINE_CORE_DEBUG("TerrainChunkManager: Skipping async payload for chunk ({}, {}) [state={}, userModified={}]",
+                              payload.Coord.cx, payload.Coord.cz, static_cast<int>(chunk.State), chunk.UserModified);
+            continue;
+        }
         chunk.ChunkSizeMeters = payload.ChunkSize;
         chunk.SplatResolution = payload.Resolution;
         chunk.SplatData = std::move(payload.SplatData);
@@ -575,12 +581,15 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
             ENGINE_CORE_TRACE("TerrainChunkManager: Evicting chunk ({}, {}) [userModified={}, lastAccess={}]",
                               coord.cx, coord.cz, chunkPtr->UserModified, chunkPtr->LastAccessFrame);
             ReleaseChunkEntities(*chunkPtr);
-            const float halfChunk = ChunkSizeMeters * 0.5f;
-            const glm::vec2 center{
-                (static_cast<float>(coord.cx) + 0.5f) * ChunkSizeMeters,
-                (static_cast<float>(coord.cz) + 0.5f) * ChunkSizeMeters
+            const glm::vec2 minXZ{
+                static_cast<float>(coord.cx) * ChunkSizeMeters,
+                static_cast<float>(coord.cz) * ChunkSizeMeters
             };
-            m_FireGrid.ExtinguishAtXZ(center, halfChunk * 1.45f);
+            const glm::vec2 maxXZ{
+                static_cast<float>(coord.cx + 1) * ChunkSizeMeters,
+                static_cast<float>(coord.cz + 1) * ChunkSizeMeters
+            };
+            m_FireGrid.ExtinguishInBoundsXZ(minXZ, maxXZ);
             m_Chunks.erase(coord);
         }
     }
@@ -1179,6 +1188,10 @@ void TerrainChunkManager::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
 
 void TerrainChunkManager::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
     m_FireGrid.ExtinguishAtXZ(centerXZ, radius);
+}
+
+void TerrainChunkManager::ExtinguishInBoundsXZ(const glm::vec2& minXZ, const glm::vec2& maxXZ) {
+    m_FireGrid.ExtinguishInBoundsXZ(minXZ, maxXZ);
 }
 
 bool TerrainChunkManager::IsBurningAtXZ(float worldX, float worldZ) const noexcept {

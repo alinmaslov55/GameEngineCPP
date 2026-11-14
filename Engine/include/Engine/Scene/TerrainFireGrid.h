@@ -45,6 +45,7 @@ public:
     static constexpr float SpreadDelay = 0.18f;      // 0.18s delay before spreading to 8 neighbors
     static constexpr float MaxBurnDuration = 4.5f;   // 4.5s burn lifespan before decay to Scorched Ash
     static constexpr float MinFlammability = 0.35f;  // Flammability threshold to catch fire
+    static constexpr uint32_t MaxTicksPerFrame = 5;  // Max simulation ticks per update to bound frame hitches
 
     using FlammabilityQuery = std::function<float(float worldX, float worldZ)>;
     using PaintScorchedCallback = std::function<void(const glm::vec2& centerXZ, float radius, float strength)>;
@@ -66,6 +67,7 @@ public:
 
     void IgniteAtXZ(const glm::vec2& centerXZ, float radius);
     void ExtinguishAtXZ(const glm::vec2& centerXZ, float radius);
+    void ExtinguishInBoundsXZ(const glm::vec2& minXZ, const glm::vec2& maxXZ);
     void Clear();
 
     void Update(float dt);

@@ -128,6 +128,8 @@ public:
     void UpdateStreaming(const glm::vec3& viewerWorldPos);
     void FlushPendingGenerations();
     uint32_t ProcessGpuUploadRing();
+    void DispatchChunkGeneration(ChunkCoord coord);
+    void DrainReadyPayloads();
 
     [[nodiscard]] TerrainChunk* GetChunk(ChunkCoord coord) noexcept;
     [[nodiscard]] const TerrainChunk* GetChunk(ChunkCoord coord) const noexcept;
@@ -164,6 +166,7 @@ public:
     [[nodiscard]] SurfaceSample SampleSurfaceAtXZ(float worldX, float worldZ) const noexcept;
     void IgniteAtXZ(const glm::vec2& centerXZ, float radius);
     void ExtinguishAtXZ(const glm::vec2& centerXZ, float radius);
+    void ExtinguishInBoundsXZ(const glm::vec2& minXZ, const glm::vec2& maxXZ);
     [[nodiscard]] bool IsBurningAtXZ(float worldX, float worldZ) const noexcept;
     void UpdateFire(float dt);
     [[nodiscard]] const TerrainFireGrid& GetFireGrid() const noexcept { return m_FireGrid; }
@@ -222,8 +225,6 @@ private:
         std::vector<GeneratedChunkPayload> ReadyPayloads;
     };
 
-    void DispatchChunkGeneration(ChunkCoord coord);
-    void DrainReadyPayloads();
     void SynchronizeSharedBorders(TerrainChunk& chunk) noexcept;
     void EnqueueGpuUpload(ChunkCoord coord, TerrainChunk& chunk);
     void DemoteAndEvictChunks(ChunkCoord centerChunk);

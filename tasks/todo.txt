@@ -74,7 +74,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
       * Return `-1` immediately in `GetUniformLocation()` when `m_RendererID == 0` and validate shader compilation in `TerrainRenderer` and `PostProcessor::IsValid()`; guard `PreProcess`/`Compile` bounds; zero moved-from dimensions/layers in `Texture2DArray`; maintain cumulative attribute index + integer attributes in `VertexArray`; call `StartBatch()` inside `Flush()`; check `if (!s_Data)` in `SubmitQuad()`; set `m_IsLoaded` after validation; guard 0-size FBOs.
     - Verification (EngineTests): Query uniforms on invalid `Shader`, invoke `SetLayerData` on moved-from `Texture2DArray`, parse empty `#type\n`, construct `0x0` `Texture`/`Framebuffer`, and attach multiple VBOs to one `VertexArray`.
 
-[ ] 7. Fix Chunk Eviction Over-Extinguish, Async Chunk Overwrite & OnDestroy TarFirewall Leak
+[x] 7. Fix Chunk Eviction Over-Extinguish, Async Chunk Overwrite & OnDestroy TarFirewall Leak
     - Files: Engine/src/Scene/TerrainChunkManager.cpp (lines 297-305, 345-351, 421-450, 557-562, 685-704), Engine/src/Scene/TerrainFireGrid.cpp (lines 87-121)
     - Root Cause:
       * `DemoteAndEvictChunks()` calls `ExtinguishAtXZ` with circular radius `halfChunk * 1.45f`, extinguishing active fire inside neighboring still-resident chunks.
