@@ -26,9 +26,11 @@ public:
     const std::shared_ptr<IndexBuffer>& GetIndexBuffer() const { return m_IndexBuffer; }
 
     uint32_t GetRendererID() const { return m_RendererID; }
+    [[nodiscard]] uint32_t GetAttributeCount() const noexcept { return m_VertexBufferIndex; }
 
 private:
     uint32_t m_RendererID{0};
+    uint32_t m_VertexBufferIndex{0};
     std::vector<std::shared_ptr<VertexBuffer>> m_VertexBuffers;
     std::shared_ptr<IndexBuffer> m_IndexBuffer;
 };

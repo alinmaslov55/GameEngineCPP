@@ -73,7 +73,7 @@ Texture::Texture(uint32_t width,
       m_LinearFilter(linearFilter),
       m_HasMipmaps(false),
       m_RepeatWrap(repeatWrap),
-      m_IsLoaded(true) {
+      m_IsLoaded(false) {
     if (width == 0 || height == 0 || !HasActiveGLContext()) {
         return;
     }
@@ -92,6 +92,7 @@ Texture::Texture(uint32_t width,
     glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaData);
     glBindTexture(GL_TEXTURE_2D, 0);
+    m_IsLoaded = true;
 }
 
 Texture::~Texture() {

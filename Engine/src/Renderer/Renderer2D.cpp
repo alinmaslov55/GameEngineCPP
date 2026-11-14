@@ -395,6 +395,8 @@ void Renderer2D::Flush() {
     if (supportsBaseVertex) {
         s_Data->CurrentVertexOffset += vertexCount;
     }
+
+    StartBatch();
 }
 
 void Renderer2D::SubmitVertices(
@@ -458,6 +460,8 @@ void Renderer2D::SubmitQuad(
     float emissive,
     float shadowReceiverOffset)
 {
+    if (!s_Data) return;
+
     static const glm::vec3 kZeroWindParams[4] = {
         { 0.0f, 0.0f, 0.0f },
         { 0.0f, 0.0f, 0.0f },

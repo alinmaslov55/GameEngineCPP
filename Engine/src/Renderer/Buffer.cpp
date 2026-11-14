@@ -8,6 +8,9 @@ namespace Engine {
 
 VertexBuffer::VertexBuffer(uint32_t size)
     : m_Capacity(size) {
+    if (glad_glGenBuffers == nullptr) {
+        return;
+    }
     glGenBuffers(1, &m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ARRAY_BUFFER, size, nullptr, GL_DYNAMIC_DRAW);
@@ -16,6 +19,9 @@ VertexBuffer::VertexBuffer(uint32_t size)
 
 VertexBuffer::VertexBuffer(const float* vertices, uint32_t size)
     : m_Capacity(size) {
+    if (glad_glGenBuffers == nullptr) {
+        return;
+    }
     glGenBuffers(1, &m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ARRAY_BUFFER, size, vertices, GL_STATIC_DRAW);
@@ -29,7 +35,7 @@ VertexBuffer::VertexBuffer(std::span<const float> vertices)
     : VertexBuffer(vertices.data(), static_cast<uint32_t>(vertices.size_bytes())) {}
 
 VertexBuffer::~VertexBuffer() {
-    if (m_RendererID != 0) {
+    if (m_RendererID != 0 && glad_glDeleteBuffers != nullptr) {
         ENGINE_CORE_DEBUG("VertexBuffer destroyed with ID: {}", m_RendererID);
         glDeleteBuffers(1, &m_RendererID);
         m_RendererID = 0;
@@ -44,7 +50,7 @@ VertexBuffer::VertexBuffer(VertexBuffer&& other) noexcept
 
 VertexBuffer& VertexBuffer::operator=(VertexBuffer&& other) noexcept {
     if (this != &other) {
-        if (m_RendererID != 0) {
+        if (m_RendererID != 0 && glad_glDeleteBuffers != nullptr) {
             glDeleteBuffers(1, &m_RendererID);
         }
         m_RendererID = std::exchange(other.m_RendererID, 0);
@@ -55,11 +61,17 @@ VertexBuffer& VertexBuffer::operator=(VertexBuffer&& other) noexcept {
 }
 
 void VertexBuffer::Bind() const {
+    if (m_RendererID == 0 || glad_glBindBuffer == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("VertexBuffer ID {} bound", m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
 }
 
 void VertexBuffer::Unbind() const {
+    if (glad_glBindBuffer == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("VertexBuffer ID {} unbound", m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
@@ -69,18 +81,27 @@ void VertexBuffer::SetData(const void* data, uint32_t size) {
 }
 
 void VertexBuffer::SetSubData(const void* data, uint32_t size, uint32_t offset) {
+    if (m_RendererID == 0 || glad_glBindBuffer == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("VertexBuffer ID {} SetSubData ({} bytes at offset {})", m_RendererID, size, offset);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
     glBufferSubData(GL_ARRAY_BUFFER, offset, size, data);
 }
 
 void VertexBuffer::Orphan() {
+    if (m_RendererID == 0 || glad_glBindBuffer == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("VertexBuffer ID {} Orphan (capacity: {} bytes)", m_RendererID, m_Capacity);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ARRAY_BUFFER, m_Capacity, nullptr, GL_DYNAMIC_DRAW);
 }
 
 IndexBuffer::IndexBuffer(const uint32_t* indices, uint32_t count) : m_Count(count) {
+    if (glad_glGenBuffers == nullptr) {
+        return;
+    }
     glGenBuffers(1, &m_RendererID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(uint32_t), indices, GL_STATIC_DRAW);
@@ -94,7 +115,7 @@ IndexBuffer::IndexBuffer(std::span<const uint32_t> indices)
     : IndexBuffer(indices.data(), static_cast<uint32_t>(indices.size())) {}
 
 IndexBuffer::~IndexBuffer() {
-    if (m_RendererID != 0) {
+    if (m_RendererID != 0 && glad_glDeleteBuffers != nullptr) {
         ENGINE_CORE_DEBUG("IndexBuffer destroyed with ID: {}", m_RendererID);
         glDeleteBuffers(1, &m_RendererID);
         m_RendererID = 0;
@@ -108,7 +129,7 @@ IndexBuffer::IndexBuffer(IndexBuffer&& other) noexcept
 
 IndexBuffer& IndexBuffer::operator=(IndexBuffer&& other) noexcept {
     if (this != &other) {
-        if (m_RendererID != 0) {
+        if (m_RendererID != 0 && glad_glDeleteBuffers != nullptr) {
             glDeleteBuffers(1, &m_RendererID);
         }
         m_RendererID = std::exchange(other.m_RendererID, 0);
@@ -118,11 +139,17 @@ IndexBuffer& IndexBuffer::operator=(IndexBuffer&& other) noexcept {
 }
 
 void IndexBuffer::Bind() const {
+    if (m_RendererID == 0 || glad_glBindBuffer == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("IndexBuffer ID {} bound", m_RendererID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_RendererID);
 }
 
 void IndexBuffer::Unbind() const {
+    if (glad_glBindBuffer == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("IndexBuffer ID {} unbound", m_RendererID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }

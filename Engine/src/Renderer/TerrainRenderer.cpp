@@ -306,16 +306,17 @@ void TerrainRenderer::Init() {
     s_TerrainData->SplatShader = std::make_shared<Shader>(shaderPath);
     if (!s_TerrainData->SplatShader->IsValid()) {
         ENGINE_CORE_ERROR("TerrainRenderer: Failed to compile TerrainSplatmap shader from '{}'", shaderPath);
+    } else {
+        s_TerrainData->SplatShader->Bind();
+        s_TerrainData->SplatShader->SetInt("u_SplatWeights0", 0);
+        s_TerrainData->SplatShader->SetInt("u_SplatWeights1", 1);
+        s_TerrainData->SplatShader->SetInt("u_AlbedoHeightArray", 2);
+        s_TerrainData->SplatShader->SetInt("u_NormalRoughnessArray", 3);
+        s_TerrainData->SplatShader->SetInt("u_ShadowMap", 5);
+        s_TerrainData->SplatShader->SetInt("u_TorchShadowMap", 6);
+        s_TerrainData->SplatShader->BindUniformBlock("PointLightBlock", SceneLightingData::PointLightUBOBinding);
+        s_TerrainData->SplatShader->Unbind();
     }
-    s_TerrainData->SplatShader->Bind();
-    s_TerrainData->SplatShader->SetInt("u_SplatWeights0", 0);
-    s_TerrainData->SplatShader->SetInt("u_SplatWeights1", 1);
-    s_TerrainData->SplatShader->SetInt("u_AlbedoHeightArray", 2);
-    s_TerrainData->SplatShader->SetInt("u_NormalRoughnessArray", 3);
-    s_TerrainData->SplatShader->SetInt("u_ShadowMap", 5);
-    s_TerrainData->SplatShader->SetInt("u_TorchShadowMap", 6);
-    s_TerrainData->SplatShader->BindUniformBlock("PointLightBlock", SceneLightingData::PointLightUBOBinding);
-    s_TerrainData->SplatShader->Unbind();
 
     ENGINE_CORE_INFO("TerrainRenderer initialized successfully");
 }
@@ -354,8 +355,8 @@ void TerrainRenderer::RenderTerrain(TerrainComponent& terrain,
                                     const glm::vec3& scale,
                                     const PerspectiveCamera& camera,
                                     const SceneLightingData* lighting) {
-    if (!s_TerrainData || !s_TerrainData->SplatShader) {
-        ENGINE_CORE_TRACE("TerrainRenderer::RenderTerrain skipped (uninitialized)");
+    if (!s_TerrainData || !s_TerrainData->SplatShader || !s_TerrainData->SplatShader->IsValid()) {
+        ENGINE_CORE_TRACE("TerrainRenderer::RenderTerrain skipped (uninitialized or invalid shader)");
         return;
     }
 
@@ -389,7 +390,7 @@ void TerrainRenderer::RenderChunkManager(TerrainChunkManager& chunkManager,
                                          float groundY,
                                          const PerspectiveCamera& camera,
                                          const SceneLightingData* lighting) {
-    if (!s_TerrainData || !s_TerrainData->SplatShader) {
+    if (!s_TerrainData || !s_TerrainData->SplatShader || !s_TerrainData->SplatShader->IsValid()) {
         return;
     }
 

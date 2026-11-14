@@ -45,10 +45,15 @@ std::unordered_map<uint32_t, std::string> Shader::PreProcess(const std::string& 
             break;
         }
 
-        size_t begin = pos + typeTokenLength + 1;
-        std::string type = source.substr(begin, eol - begin);
-        type.erase(0, type.find_first_not_of(" \t"));
-        type.erase(type.find_last_not_of(" \t\r\n") + 1);
+        size_t begin = pos + typeTokenLength;
+        std::string type = (begin < eol) ? source.substr(begin, eol - begin) : std::string{};
+        const size_t first = type.find_first_not_of(" \t");
+        if (first == std::string::npos) {
+            type.clear();
+        } else {
+            const size_t last = type.find_last_not_of(" \t\r\n");
+            type = type.substr(first, last - first + 1);
+        }
 
         uint32_t glType = 0;
         if (type == "vertex") {
@@ -82,6 +87,12 @@ bool Shader::Compile(const std::unordered_map<uint32_t, std::string>& shaderSour
         return false;
     }
 
+    if (glad_glCreateProgram == nullptr || glad_glCreateShader == nullptr) {
+        ENGINE_CORE_WARN("Shader::Compile skipped for '{}': no active OpenGL context",
+                         m_Name.empty() ? "unnamed" : m_Name);
+        return false;
+    }
+
     uint32_t program = glCreateProgram();
     std::vector<uint32_t> glShaderIDs;
     glShaderIDs.reserve(shaderSources.size());
@@ -97,8 +108,12 @@ bool Shader::Compile(const std::unordered_map<uint32_t, std::string>& shaderSour
         if (isCompiled == GL_FALSE) {
             GLint maxLength = 0;
             glGetShaderiv(shader, GL_INFO_LOG_LENGTH, &maxLength);
-            std::vector<GLchar> infoLog(maxLength);
-            glGetShaderInfoLog(shader, maxLength, &maxLength, &infoLog[0]);
+            std::string infoStr = "No info log available";
+            if (maxLength > 0) {
+                std::vector<GLchar> infoLog(static_cast<size_t>(maxLength), '\0');
+                glGetShaderInfoLog(shader, maxLength, &maxLength, infoLog.data());
+                infoStr.assign(infoLog.data());
+            }
             glDeleteShader(shader);
 
             for (uint32_t id : glShaderIDs) {
@@ -108,7 +123,7 @@ bool Shader::Compile(const std::unordered_map<uint32_t, std::string>& shaderSour
             glDeleteProgram(program);
 
             ENGINE_CORE_ERROR("Shader compilation failed ({}, stage 0x{:X}): {}",
-                              m_Name.empty() ? "unnamed" : m_Name, stage, infoLog.data());
+                              m_Name.empty() ? "unnamed" : m_Name, stage, infoStr);
             return false;
         }
 
@@ -123,8 +138,12 @@ bool Shader::Compile(const std::unordered_map<uint32_t, std::string>& shaderSour
     if (isLinked == GL_FALSE) {
         GLint maxLength = 0;
         glGetProgramiv(program, GL_INFO_LOG_LENGTH, &maxLength);
-        std::vector<GLchar> infoLog(maxLength);
-        glGetProgramInfoLog(program, maxLength, &maxLength, &infoLog[0]);
+        std::string infoStr = "No info log available";
+        if (maxLength > 0) {
+            std::vector<GLchar> infoLog(static_cast<size_t>(maxLength), '\0');
+            glGetProgramInfoLog(program, maxLength, &maxLength, infoLog.data());
+            infoStr.assign(infoLog.data());
+        }
 
         for (uint32_t id : glShaderIDs) {
             glDetachShader(program, id);
@@ -133,7 +152,7 @@ bool Shader::Compile(const std::unordered_map<uint32_t, std::string>& shaderSour
         glDeleteProgram(program);
 
         ENGINE_CORE_ERROR("Shader link failed ({}): {}",
-                          m_Name.empty() ? "unnamed" : m_Name, infoLog.data());
+                          m_Name.empty() ? "unnamed" : m_Name, infoStr);
         return false;
     }
 
@@ -142,7 +161,7 @@ bool Shader::Compile(const std::unordered_map<uint32_t, std::string>& shaderSour
         glDeleteShader(id);
     }
 
-    if (m_RendererID != 0) {
+    if (m_RendererID != 0 && glad_glDeleteProgram != nullptr) {
         glDeleteProgram(m_RendererID);
     }
     m_RendererID = program;
@@ -181,7 +200,7 @@ Shader::Shader(const std::string& name, const std::string& vertexSrc, const std:
 }
 
 Shader::~Shader() {
-    if (m_RendererID != 0) {
+    if (m_RendererID != 0 && glad_glDeleteProgram != nullptr) {
         ENGINE_CORE_DEBUG("Shader program destroyed with ID: {}", m_RendererID);
         glDeleteProgram(m_RendererID);
         m_RendererID = 0;
@@ -198,7 +217,7 @@ Shader::Shader(Shader&& other) noexcept
 
 Shader& Shader::operator=(Shader&& other) noexcept {
     if (this != &other) {
-        if (m_RendererID != 0) {
+        if (m_RendererID != 0 && glad_glDeleteProgram != nullptr) {
             glDeleteProgram(m_RendererID);
         }
         m_RendererID = std::exchange(other.m_RendererID, 0);
@@ -226,16 +245,26 @@ bool Shader::Reload() {
 }
 
 void Shader::Bind() const {
+    if (m_RendererID == 0 || glad_glUseProgram == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("Shader program ID {} bound", m_RendererID);
     glUseProgram(m_RendererID);
 }
 
 void Shader::Unbind() const {
+    if (glad_glUseProgram == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("Shader program ID {} unbound", m_RendererID);
     glUseProgram(0);
 }
 
 int Shader::GetUniformLocation(std::string_view name) const {
+    if (m_RendererID == 0 || glad_glGetUniformLocation == nullptr) {
+        return -1;
+    }
+
     auto it = m_UniformLocationCache.find(name);
     if (it != m_UniformLocationCache.end()) {
         return it->second;
@@ -256,12 +285,18 @@ int Shader::GetUniformLocation(std::string_view name) const {
 
 void Shader::SetInt(std::string_view name, int value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetInt: {} = {}", m_RendererID, name, value);
-    glUniform1i(GetUniformLocation(name), value);
+    const int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform1i(location, value);
+    }
 }
 
 void Shader::SetIntArray(std::string_view name, const int* values, uint32_t count) const {
     ENGINE_CORE_TRACE("Shader ID {} SetIntArray: {} (count: {})", m_RendererID, name, count);
-    glUniform1iv(GetUniformLocation(name), static_cast<GLsizei>(count), values);
+    const int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform1iv(location, static_cast<GLsizei>(count), values);
+    }
 }
 
 void Shader::SetIntArray(std::string_view name, std::span<const int> values) const {
@@ -270,12 +305,18 @@ void Shader::SetIntArray(std::string_view name, std::span<const int> values) con
 
 void Shader::SetFloat(std::string_view name, float value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloat: {} = {:.3f}", m_RendererID, name, value);
-    glUniform1f(GetUniformLocation(name), value);
+    const int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform1f(location, value);
+    }
 }
 
 void Shader::SetFloatArray(std::string_view name, const float* values, uint32_t count) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloatArray: {} (count: {})", m_RendererID, name, count);
-    glUniform1fv(GetUniformLocation(name), static_cast<GLsizei>(count), values);
+    const int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform1fv(location, static_cast<GLsizei>(count), values);
+    }
 }
 
 void Shader::SetFloatArray(std::string_view name, std::span<const float> values) const {
@@ -284,22 +325,34 @@ void Shader::SetFloatArray(std::string_view name, std::span<const float> values)
 
 void Shader::SetFloat2(std::string_view name, const glm::vec2& value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloat2: {} = ({:.2f}, {:.2f})", m_RendererID, name, value.x, value.y);
-    glUniform2f(GetUniformLocation(name), value.x, value.y);
+    const int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform2f(location, value.x, value.y);
+    }
 }
 
 void Shader::SetFloat3(std::string_view name, const glm::vec3& value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloat3: {} = ({:.2f}, {:.2f}, {:.2f})", m_RendererID, name, value.x, value.y, value.z);
-    glUniform3f(GetUniformLocation(name), value.x, value.y, value.z);
+    const int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform3f(location, value.x, value.y, value.z);
+    }
 }
 
 void Shader::SetFloat4(std::string_view name, const glm::vec4& value) const {
     ENGINE_CORE_TRACE("Shader ID {} SetFloat4: {} = ({:.2f}, {:.2f}, {:.2f}, {:.2f})", m_RendererID, name, value.x, value.y, value.z, value.w);
-    glUniform4f(GetUniformLocation(name), value.x, value.y, value.z, value.w);
+    const int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniform4f(location, value.x, value.y, value.z, value.w);
+    }
 }
 
 void Shader::SetMat4(std::string_view name, const glm::mat4& matrix) const {
     ENGINE_CORE_TRACE("Shader ID {} SetMat4: {}", m_RendererID, name);
-    glUniformMatrix4fv(GetUniformLocation(name), 1, GL_FALSE, glm::value_ptr(matrix));
+    const int location = GetUniformLocation(name);
+    if (location != -1) {
+        glUniformMatrix4fv(location, 1, GL_FALSE, glm::value_ptr(matrix));
+    }
 }
 
 void Shader::ApplyUniformBlockBindings() const {

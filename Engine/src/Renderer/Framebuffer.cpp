@@ -16,16 +16,16 @@ Framebuffer::~Framebuffer() {
 }
 
 void Framebuffer::Release() {
-    if (m_RendererID != 0) {
+    if (m_RendererID != 0 && glad_glDeleteFramebuffers != nullptr) {
         ENGINE_CORE_DEBUG("Framebuffer destroyed with ID: {}", m_RendererID);
         glDeleteFramebuffers(1, &m_RendererID);
         m_RendererID = 0;
     }
-    if (m_ColorAttachment != 0) {
+    if (m_ColorAttachment != 0 && glad_glDeleteTextures != nullptr) {
         glDeleteTextures(1, &m_ColorAttachment);
         m_ColorAttachment = 0;
     }
-    if (m_DepthAttachment != 0) {
+    if (m_DepthAttachment != 0 && glad_glDeleteTextures != nullptr) {
         glDeleteTextures(1, &m_DepthAttachment);
         m_DepthAttachment = 0;
     }
@@ -51,6 +51,16 @@ Framebuffer& Framebuffer::operator=(Framebuffer&& other) noexcept {
 
 void Framebuffer::Invalidate() {
     Release();
+
+    if (m_Specification.Width == 0 || m_Specification.Height == 0) {
+        ENGINE_CORE_WARN("Framebuffer::Invalidate skipped: invalid dimensions {}x{}",
+                         m_Specification.Width, m_Specification.Height);
+        return;
+    }
+    if (glad_glGenFramebuffers == nullptr || glad_glBindFramebuffer == nullptr) {
+        ENGINE_CORE_WARN("Framebuffer::Invalidate skipped: no active OpenGL context");
+        return;
+    }
 
     glGenFramebuffers(1, &m_RendererID);
     glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
@@ -79,12 +89,18 @@ void Framebuffer::Invalidate() {
 }
 
 void Framebuffer::Bind() {
+    if (m_RendererID == 0 || glad_glBindFramebuffer == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("Framebuffer ID {} bound ({}x{})", m_RendererID, m_Specification.Width, m_Specification.Height);
     glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
     glViewport(0, 0, m_Specification.Width, m_Specification.Height);
 }
 
 void Framebuffer::Unbind() {
+    if (glad_glBindFramebuffer == nullptr) {
+        return;
+    }
     ENGINE_CORE_TRACE("Framebuffer ID {} unbound", m_RendererID);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }

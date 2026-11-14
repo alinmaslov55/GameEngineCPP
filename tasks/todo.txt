@@ -63,7 +63,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
       * Synchronize all `AssetCache<T>` and `s_AssetRoot` operations cleanly; deduplicate/evict failed async texture placeholders; wrap `PendingTextureUpload::PixelData` in RAII `unique_ptr`; protect `Logger` init/shutdown/level with `std::mutex`/`call_once`; protect or remove global stb write-flip mutation in async workers.
     - Verification (EngineTests): Concurrent `ResourceManager` load + failed async decode eviction, repeated `Logger::Init`/`Shutdown` cycles, and parallel `CutoutProcessor::ProcessFileAsync`.
 
-[ ] 6. Fix Shader ID 0 Spam, Texture2DArray Move OOB Write, VertexArray & PostProcessor Validation
+[x] 6. Fix Shader ID 0 Spam, Texture2DArray Move OOB Write, VertexArray & PostProcessor Validation
     - Files: Engine/src/Renderer/Shader.cpp (lines 48-51, 99-127, 238-255), Engine/src/Renderer/TerrainRenderer.cpp (lines 350-385), Engine/src/Renderer/Texture2DArray.cpp (lines 214-265), Engine/src/Renderer/VertexArray.cpp (lines 67-105), Engine/src/Renderer/PostProcessor.cpp (lines 189-219), Engine/src/Renderer/Renderer2D.cpp (lines 357-398, 469), Engine/src/Renderer/Texture.cpp (lines 63-79), Engine/src/Renderer/Framebuffer.cpp (lines 52-79)
     - Root Cause:
       * `Shader::GetUniformLocation()` lacks `if (m_RendererID == 0) return -1;`, flooding logs with `Shader ID 0: Uniform '...' not found or unused` when shaders fail compilation; `TerrainRenderer` only checks shader pointer nullness; `PostProcessor::IsValid()` checks only `FullscreenVAO != 0`; `Shader::PreProcess` underflows `eol - begin` on empty `#type\n`; `Shader::Compile` indexes `&infoLog[0]` when `maxLength == 0`.

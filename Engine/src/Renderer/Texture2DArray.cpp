@@ -212,15 +212,14 @@ Texture2DArray::~Texture2DArray() {
 }
 
 Texture2DArray::Texture2DArray(Texture2DArray&& other) noexcept
-    : m_RendererID(other.m_RendererID),
-      m_Width(other.m_Width),
-      m_Height(other.m_Height),
-      m_Layers(other.m_Layers),
+    : m_RendererID(std::exchange(other.m_RendererID, 0)),
+      m_Width(std::exchange(other.m_Width, 0)),
+      m_Height(std::exchange(other.m_Height, 0)),
+      m_Layers(std::exchange(other.m_Layers, 0)),
       m_LinearFilter(other.m_LinearFilter),
       m_RepeatWrap(other.m_RepeatWrap),
-      m_AppliedAnisotropy(other.m_AppliedAnisotropy),
+      m_AppliedAnisotropy(std::exchange(other.m_AppliedAnisotropy, 0.0f)),
       m_UploadedLayers(std::move(other.m_UploadedLayers)) {
-    other.m_RendererID = 0;
 }
 
 Texture2DArray& Texture2DArray::operator=(Texture2DArray&& other) noexcept {
@@ -228,15 +227,14 @@ Texture2DArray& Texture2DArray::operator=(Texture2DArray&& other) noexcept {
         if (m_RendererID != 0 && glad_glDeleteTextures != nullptr) {
             glDeleteTextures(1, &m_RendererID);
         }
-        m_RendererID = other.m_RendererID;
-        m_Width = other.m_Width;
-        m_Height = other.m_Height;
-        m_Layers = other.m_Layers;
+        m_RendererID = std::exchange(other.m_RendererID, 0);
+        m_Width = std::exchange(other.m_Width, 0);
+        m_Height = std::exchange(other.m_Height, 0);
+        m_Layers = std::exchange(other.m_Layers, 0);
         m_LinearFilter = other.m_LinearFilter;
         m_RepeatWrap = other.m_RepeatWrap;
-        m_AppliedAnisotropy = other.m_AppliedAnisotropy;
+        m_AppliedAnisotropy = std::exchange(other.m_AppliedAnisotropy, 0.0f);
         m_UploadedLayers = std::move(other.m_UploadedLayers);
-        other.m_RendererID = 0;
     }
     return *this;
 }
@@ -258,7 +256,7 @@ void Texture2DArray::Unbind() const {
 }
 
 void Texture2DArray::SetLayerData(uint32_t layerIndex, const void* rgba8Data, bool generateMips) {
-    if (layerIndex >= m_Layers || !rgba8Data) {
+    if (layerIndex >= m_Layers || layerIndex >= m_UploadedLayers.size() || !rgba8Data) {
         ENGINE_CORE_WARN("Texture2DArray::SetLayerData ignored invalid arguments (layer={}/{}, data={})",
                          layerIndex, m_Layers, rgba8Data ? "valid" : "null");
         return;

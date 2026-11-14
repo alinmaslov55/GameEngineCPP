@@ -203,19 +203,25 @@ void PostProcessor::Init() {
 
     std::string downsamplePath = ResourceManager::ResolvePath("assets/shaders/PostProcess_BloomDownsample.glsl");
     s_PPData->DownsampleShader = std::make_shared<Shader>(downsamplePath);
-    s_PPData->DownsampleShader->Bind();
-    s_PPData->DownsampleShader->SetInt("u_SrcTexture", 0);
+    if (s_PPData->DownsampleShader->IsValid()) {
+        s_PPData->DownsampleShader->Bind();
+        s_PPData->DownsampleShader->SetInt("u_SrcTexture", 0);
+    }
 
     std::string upsamplePath = ResourceManager::ResolvePath("assets/shaders/PostProcess_BloomUpsample.glsl");
     s_PPData->UpsampleShader = std::make_shared<Shader>(upsamplePath);
-    s_PPData->UpsampleShader->Bind();
-    s_PPData->UpsampleShader->SetInt("u_SrcTexture", 0);
+    if (s_PPData->UpsampleShader->IsValid()) {
+        s_PPData->UpsampleShader->Bind();
+        s_PPData->UpsampleShader->SetInt("u_SrcTexture", 0);
+    }
 
     std::string compositePath = ResourceManager::ResolvePath("assets/shaders/PostProcess_Composite.glsl");
     s_PPData->CompositeShader = std::make_shared<Shader>(compositePath);
-    s_PPData->CompositeShader->Bind();
-    s_PPData->CompositeShader->SetInt("u_SceneHDR", 0);
-    s_PPData->CompositeShader->SetInt("u_BloomTexture", 1);
+    if (s_PPData->CompositeShader->IsValid()) {
+        s_PPData->CompositeShader->Bind();
+        s_PPData->CompositeShader->SetInt("u_SceneHDR", 0);
+        s_PPData->CompositeShader->SetInt("u_BloomTexture", 1);
+    }
 
     const bool shadersValid = s_PPData->DownsampleShader->IsValid() &&
                               s_PPData->UpsampleShader->IsValid() &&
@@ -249,7 +255,12 @@ void PostProcessor::Shutdown() {
 }
 
 bool PostProcessor::IsValid() {
-    return s_PPData != nullptr && s_PPData->ResourcesValid;
+    return s_PPData != nullptr &&
+           s_PPData->ResourcesValid &&
+           s_PPData->FullscreenVAO != 0 &&
+           s_PPData->DownsampleShader && s_PPData->DownsampleShader->IsValid() &&
+           s_PPData->UpsampleShader && s_PPData->UpsampleShader->IsValid() &&
+           s_PPData->CompositeShader && s_PPData->CompositeShader->IsValid();
 }
 
 void PostProcessor::BeginHDRScene(uint32_t fallbackWidth,
