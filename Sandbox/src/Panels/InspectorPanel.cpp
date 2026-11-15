@@ -302,6 +302,45 @@ void InspectorPanel::DrawSpriteRenderer(Engine::SpriteRenderer& spriteRenderer, 
         }
     }
 
+    if (ImGui::TreeNodeEx("Combat & Cutout FX", ImGuiTreeNodeFlags_DefaultOpen)) {
+        float dissolve = spriteRenderer.GetDissolveAmount();
+        if (ImGui::SliderFloat("Dissolve Amount", &dissolve, 0.0f, 1.0f, "%.2f")) {
+            spriteRenderer.SetDissolveAmount(dissolve);
+        }
+        if (dissolve > 0.001f) {
+            float edgeWidth = spriteRenderer.GetDissolveEdgeWidth();
+            if (ImGui::SliderFloat("Dissolve Edge Width", &edgeWidth, 0.01f, 0.35f, "%.2f")) {
+                spriteRenderer.SetDissolveEdgeWidth(edgeWidth);
+            }
+        }
+
+        float flash = spriteRenderer.GetFlashAmount();
+        if (ImGui::SliderFloat("Hit Flash", &flash, 0.0f, 1.0f, "%.2f")) {
+            spriteRenderer.SetFlashAmount(flash);
+        }
+        if (flash > 0.001f) {
+            const char* flashModes[] = { "Pure White (Stun)", "Crimson Impact", "Spectral Blue", "Divine Gold" };
+            float modeVal = spriteRenderer.GetFlashColorMode();
+            int currentMode = (modeVal >= 0.0f && modeVal <= 3.0f) ? static_cast<int>(modeVal) : 0;
+            if (ImGui::Combo("Flash Tint Mode", &currentMode, flashModes, 4)) {
+                spriteRenderer.SetFlashMode(static_cast<Engine::SpriteRenderer::FlashMode>(currentMode));
+            }
+        }
+
+        bool silhouette = spriteRenderer.GetRenderSilhouette();
+        if (ImGui::Checkbox("Render Silhouette", &silhouette)) {
+            spriteRenderer.SetRenderSilhouette(silhouette);
+        }
+        if (silhouette) {
+            glm::vec4 silColor = spriteRenderer.GetSilhouetteColor();
+            if (ImGui::ColorEdit4("Silhouette Color", &silColor.x)) {
+                spriteRenderer.SetSilhouetteColor(silColor);
+            }
+        }
+
+        ImGui::TreePop();
+    }
+
     std::string texLabel = "None";
     auto currentTex = spriteRenderer.GetTexture();
     if (currentTex && !currentTex->GetFilepath().empty()) {

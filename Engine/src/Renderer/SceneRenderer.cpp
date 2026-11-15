@@ -24,6 +24,8 @@
 #include "Engine/Core/Time.h"
 #include "Engine/Utils/Logger.h"
 
+#include <glad/glad.h>
+
 #ifndef GLM_ENABLE_EXPERIMENTAL
 #define GLM_ENABLE_EXPERIMENTAL
 #endif
@@ -176,6 +178,7 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
 
     m_StandeeCommands.clear();
     m_StandeeCommands.reserve(gameObjects.size());
+    m_SilhouetteCommands.clear();
     m_ShadowStandeeCommands.clear();
     m_ShadowStandeeCommands.reserve(gameObjects.size());
     m_TorchShadowStandeeCommands.clear();
@@ -469,9 +472,15 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
                             cmd.viewDepth = glm::dot(worldPos - camEye, camForward);
                             cmd.boundsCenter = boundsCenter;
                             cmd.boundsRadius = boundsRadius;
+                            cmd.cutoutFX = sprite->GetCutoutFX();
+                            cmd.renderSilhouette = sprite->GetRenderSilhouette();
+                            cmd.silhouetteColor = sprite->GetSilhouetteColor();
 
                             if (inCamera) {
                                 m_StandeeCommands.push_back(cmd);
+                                if (cmd.renderSilhouette) {
+                                    m_SilhouetteCommands.push_back(cmd);
+                                }
                             }
                             if (inShadow) {
                                 m_ShadowStandeeCommands.push_back(cmd);
@@ -724,6 +733,32 @@ void SceneRenderer::RenderPassCutoutStandees(SceneRenderContext& ctx) {
     Renderer2D::DrawStandeesParallel(m_StandeeCommands, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(), camRightXZ, /*isShadowPass=*/false);
 
     Renderer2D::EndScene();
+
+    // Canopy Occlusion / Shadow Sight Silhouette Pass:
+    // Second lightweight draw state for entities flagged RenderSilhouette == true occluded by foreground geometry.
+    if (!m_SilhouetteCommands.empty()) {
+        std::sort(m_SilhouetteCommands.begin(), m_SilhouetteCommands.end(), [](const auto& a, const auto& b) noexcept {
+            return a.viewDepth > b.viewDepth;
+        });
+
+        glDepthFunc(GL_GREATER);
+        glDepthMask(GL_FALSE);
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+        Renderer2D::BeginScene(*ctx.activeCam, ctx.lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.01f);
+        if (ctx.windComp) {
+            Renderer2D::SetWindData(ctx.BuildWindUniforms(camRightXZ));
+        }
+
+        Renderer2D::DrawStandeesParallel(m_SilhouetteCommands, ctx.activeCam->GetRight(), ctx.activeCam->GetUp(), camRightXZ,
+                                         /*isShadowPass=*/false, /*isTorchShadowPass=*/false, /*isSilhouettePass=*/true);
+
+        Renderer2D::EndScene();
+
+        glDepthFunc(GL_LEQUAL);
+        glDepthMask(GL_TRUE);
+    }
 }
 
 void SceneRenderer::RenderPassParticles(SceneRenderContext& ctx) {

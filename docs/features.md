@@ -205,7 +205,7 @@ flowchart TD
 | **`TER-02`** | Seeded Perlin Biome Generator & Prop/POI Scatter | `DONE` | **P1** | W3 | `TER-01`, `ECS-04` | `SAV-01` (biome tables) | Procedural world & POI generation |
 | **`TER-03`** | Array Height/Normal Splatmap & 5th Cobble Layer | `DONE` | **P1** | W2 | `TER-01`, `LGT-01` | `RND-02` (anisotropy) | `TER-04` |
 | **`TER-04`** | CPU Surface Sampler & Systemic Tar/Fire Grid | `DONE` | **P1** | W3 | `TER-01`, `TER-03`, `PHY-02` | `VFX-01`, `AUD-02` | `VFX-02`, Tar Siphon, Chalk slide, Footsteps |
-| **`RND-01`** | Cutout Combat Shader FX (Dissolve, Flash, Outline)| `TODO` | **P1** | W2 | `LGT-01` | `LGT-03` (Shadow Sight) | Death ash dissolve, hit-stun flash, Revenants |
+| **`RND-01`** | Cutout Combat Shader FX (Dissolve, Flash, Outline)| `DONE` | **P1** | W2 | `LGT-01` | `LGT-03` (Shadow Sight) | Death ash dissolve, hit-stun flash, Revenants |
 | **`RND-02`** | Sprite Atlas Metadata Loader & Anisotropic Filter | `TODO` | **P1** | W0 | *None (Root)* | `ResourceManager` | `ANI-01`, `VFX-01`, `RND-03` |
 | **`RND-03`** | GPU Compressed Texture Pipeline (BC7 / KTX2) | `TODO` | **P2** | W2 | `RND-02` | `ANI-03` | 4K Master ~218 MB VRAM target |
 | **`ANI-01`** | Multi-Directional Animation State Machine & FlipX | `TODO` | **P0** | W1 | `RND-02`, `ANI-03` | `ECS-03` | `ANI-02` |
@@ -790,7 +790,7 @@ flowchart TD
 ---
 
 #### `RND-01` — Cutout Combat Shader FX (Ash Dissolve, Hit-Flash & Silhouette)
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `LGT-01` | Unlocks: Monster death dissolves, hit-stun flashes, *Shadow Sight*, Revenants
 - **Current Gap:** `QuadVertex` (`Renderer2D.h:19`) and `Batch2D.glsl` have no dissolve threshold, solid flash mix, or occluded silhouette pass.
 - **Proposed `QuadVertex` & `Batch2D.glsl` Extension:**

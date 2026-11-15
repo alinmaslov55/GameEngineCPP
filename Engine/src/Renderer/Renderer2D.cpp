@@ -61,14 +61,16 @@ struct Renderer2DStorage {
     static constexpr uint32_t MaxIndices = MaxQuads * 6;
     static constexpr uint32_t RingBufferMultiplier = 3;
     static constexpr uint32_t TotalVertices = MaxVertices * RingBufferMultiplier;
-    static constexpr uint32_t MaxTextureSlots = 13; // Slots 0..12 = batched color textures; 13 = ShadowMap; 14 = TorchShadowMap; 15 = reserved (DissolveNoise)
+    static constexpr uint32_t MaxTextureSlots = 13; // Slots 0..12 = batched color textures; 13 = ShadowMap; 14 = TorchShadowMap; 15 = DissolveNoise
     static constexpr uint32_t ShadowMapTextureSlot = 13;
     static constexpr uint32_t TorchShadowMapTextureSlot = 14;
+    static constexpr uint32_t DissolveNoiseTextureSlot = 15;
 
     std::shared_ptr<VertexArray> QuadVertexArray;
     std::shared_ptr<VertexBuffer> QuadVertexBuffer;
     std::shared_ptr<Shader> TextureShader;
     uint32_t WhiteTexture = 0;
+    uint32_t DissolveNoiseTexture = 0;
 
     uint32_t QuadIndexCount = 0;
     std::unique_ptr<QuadVertex[]> QuadVertexBufferBase;
@@ -90,6 +92,10 @@ struct Renderer2DStorage {
         if (WhiteTexture != 0 && glad_glDeleteTextures != nullptr) {
             glDeleteTextures(1, &WhiteTexture);
             WhiteTexture = 0;
+        }
+        if (DissolveNoiseTexture != 0 && glad_glDeleteTextures != nullptr) {
+            glDeleteTextures(1, &DissolveNoiseTexture);
+            DissolveNoiseTexture = 0;
         }
     }
 };
@@ -118,7 +124,8 @@ void Renderer2D::Init() {
         { ShaderDataType::Float,  "a_AlphaCutoff"  },
         { ShaderDataType::Float,  "a_Emissive"     },
         { ShaderDataType::Float,  "a_ShadowOffset" },
-        { ShaderDataType::Float3, "a_WindParams"   }
+        { ShaderDataType::Float3, "a_WindParams"   },
+        { ShaderDataType::Float4, "a_CutoutFX"     }
     });
     s_Data->QuadVertexArray->AddVertexBuffer(s_Data->QuadVertexBuffer);
 
@@ -142,7 +149,7 @@ void Renderer2D::Init() {
     auto quadIB = std::make_shared<IndexBuffer>(quadIndices);
     s_Data->QuadVertexArray->SetIndexBuffer(quadIB);
 
-    // Create 1x1 white texture for solid color rendering in slot 0 & fallback shadow slot 15
+    // Create 1x1 white texture for solid color rendering in slot 0 & fallback shadow slot 13/14
     glGenTextures(1, &s_Data->WhiteTexture);
     glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
@@ -151,6 +158,53 @@ void Renderer2D::Init() {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     uint32_t whiteData = 0xffffffff;
     glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, &whiteData);
+    glBindTexture(GL_TEXTURE_2D, 0);
+
+    // Create 256x256 seamless procedural R8 noise texture for ash dissolve in slot 15
+    glGenTextures(1, &s_Data->DissolveNoiseTexture);
+    glBindTexture(GL_TEXTURE_2D, s_Data->DissolveNoiseTexture);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+
+    std::vector<uint8_t> noiseData(256 * 256);
+    auto hash2D = [](int x, int y) -> float {
+        int n = x + y * 57;
+        n = (n << 13) ^ n;
+        return (1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f) * 0.5f + 0.5f;
+    };
+    auto smoothNoise = [&](float x, float y, int period) -> float {
+        int x0 = static_cast<int>(std::floor(x));
+        int y0 = static_cast<int>(std::floor(y));
+        float tx = x - static_cast<float>(x0);
+        float ty = y - static_cast<float>(y0);
+        tx = tx * tx * (3.0f - 2.0f * tx);
+        ty = ty * ty * (3.0f - 2.0f * ty);
+        int xi0 = ((x0 % period) + period) % period;
+        int yi0 = ((y0 % period) + period) % period;
+        int xi1 = (xi0 + 1) % period;
+        int yi1 = (yi0 + 1) % period;
+        float v00 = hash2D(xi0, yi0);
+        float v10 = hash2D(xi1, yi0);
+        float v01 = hash2D(xi0, yi1);
+        float v11 = hash2D(xi1, yi1);
+        float top = v00 * (1.0f - tx) + v10 * tx;
+        float bottom = v01 * (1.0f - tx) + v11 * tx;
+        return top * (1.0f - ty) + bottom * ty;
+    };
+
+    for (int y = 0; y < 256; ++y) {
+        for (int x = 0; x < 256; ++x) {
+            float v = 0.0f;
+            v += smoothNoise(static_cast<float>(x) * (8.0f / 256.0f),  static_cast<float>(y) * (8.0f / 256.0f),  8)  * 0.50f;
+            v += smoothNoise(static_cast<float>(x) * (16.0f / 256.0f), static_cast<float>(y) * (16.0f / 256.0f), 16) * 0.25f;
+            v += smoothNoise(static_cast<float>(x) * (32.0f / 256.0f), static_cast<float>(y) * (32.0f / 256.0f), 32) * 0.125f;
+            v += smoothNoise(static_cast<float>(x) * (64.0f / 256.0f), static_cast<float>(y) * (64.0f / 256.0f), 64) * 0.125f;
+            noiseData[y * 256 + x] = static_cast<uint8_t>(std::clamp(v * 255.0f, 0.0f, 255.0f));
+        }
+    }
+    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 256, 256, 0, GL_RED, GL_UNSIGNED_BYTE, noiseData.data());
     glBindTexture(GL_TEXTURE_2D, 0);
 
     int32_t samplers[Renderer2DStorage::MaxTextureSlots];
@@ -164,6 +218,7 @@ void Renderer2D::Init() {
     s_Data->TextureShader->SetIntArray("u_Textures", samplers, Renderer2DStorage::MaxTextureSlots);
     s_Data->TextureShader->SetInt("u_ShadowMap", static_cast<int>(Renderer2DStorage::ShadowMapTextureSlot));
     s_Data->TextureShader->SetInt("u_TorchShadowMap", static_cast<int>(Renderer2DStorage::TorchShadowMapTextureSlot));
+    s_Data->TextureShader->SetInt("u_DissolveNoise", static_cast<int>(Renderer2DStorage::DissolveNoiseTextureSlot));
     s_Data->TextureShader->BindUniformBlock("PointLightBlock", SceneLightingData::PointLightUBOBinding);
 
     s_Data->TextureSlots[0] = s_Data->WhiteTexture;
@@ -375,6 +430,8 @@ void Renderer2D::Flush() {
     glBindTexture(GL_TEXTURE_2D, s_Data->BoundShadowTextureID);
     glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::TorchShadowMapTextureSlot);
     glBindTexture(GL_TEXTURE_2D, s_Data->BoundTorchShadowTextureID);
+    glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::DissolveNoiseTextureSlot);
+    glBindTexture(GL_TEXTURE_2D, s_Data->DissolveNoiseTexture);
 
     s_Data->TextureShader->Bind();
     s_Data->QuadVertexArray->Bind();
@@ -434,6 +491,7 @@ void Renderer2D::SubmitVertices(
         s_Data->QuadVertexBufferPtr->Emissive     = emissive;
         s_Data->QuadVertexBufferPtr->ShadowOffset = shadowReceiverOffset;
         s_Data->QuadVertexBufferPtr->WindParams   = windParams[i];
+        s_Data->QuadVertexBufferPtr->CutoutFX     = glm::vec4(0.0f, 0.0f, 0.0f, 0.08f);
         s_Data->QuadVertexBufferPtr++;
     }
 
@@ -662,6 +720,7 @@ void SubmitStandeesInternal(
     const glm::vec3& camRightXZ,
     bool isShadowPass,
     bool isTorchShadowPass,
+    bool isSilhouettePass,
     const glm::vec3& torchWorldPos,
     std::span<const glm::vec2> defaultTexCoords)
 {
@@ -795,9 +854,12 @@ void SubmitStandeesInternal(
             const bool shadowMode = isShadowPass || isTorchShadowPass;
             const float cutoff = (cmd.alphaCutoff < 0.0f) ? defaultAlphaCutoff : cmd.alphaCutoff;
             const float resolvedCutoff = shadowMode ? std::max(0.05f, cutoff) : cutoff;
-            const float emissive = shadowMode ? -1.0f : cmd.emissive;
-            const float shadowOffset = shadowMode ? 0.0f : cmd.receiverOffset;
-            const glm::vec4 tint = shadowMode ? glm::vec4(1.0f) : cmd.color;
+            const float emissive = isSilhouettePass ? -2.0f : (shadowMode ? -1.0f : cmd.emissive);
+            const float shadowOffset = (shadowMode || isSilhouettePass) ? 0.0f : cmd.receiverOffset;
+            const glm::vec4 tint = isSilhouettePass ? cmd.silhouetteColor : (shadowMode ? glm::vec4(1.0f) : cmd.color);
+            const glm::vec4 cutoutFX = (shadowMode || isSilhouettePass)
+                ? glm::vec4(cmd.cutoutFX.x, 0.0f, 0.0f, cmd.cutoutFX.w)
+                : cmd.cutoutFX;
             const float texIdx = texSlots[i];
             const bool isBillboard = (billboardMode == SpriteRenderer::BillboardMode::ViewPlane ||
                                       billboardMode == SpriteRenderer::BillboardMode::CylindricalY);
@@ -811,6 +873,7 @@ void SubmitStandeesInternal(
                 v[c].Emissive     = emissive;
                 v[c].ShadowOffset = shadowOffset;
                 v[c].WindParams   = isBillboard ? wind[c] : glm::vec3(0.0f);
+                v[c].CutoutFX     = cutoutFX;
             }
         });
 
@@ -829,13 +892,15 @@ void Renderer2D::DrawStandeesParallel(
     const glm::vec3& camRight,
     const glm::vec3& camUp,
     const glm::vec3& camRightXZ,
-    bool isShadowPass)
+    bool isShadowPass,
+    bool isTorchShadowPass,
+    bool isSilhouettePass)
 {
     if (!s_Data) {
         return;
     }
     SubmitStandeesInternal(*s_Data, commands, camRight, camUp, camRightXZ,
-                           isShadowPass, /*isTorchShadowPass=*/false, glm::vec3(0.0f), kDefaultTexCoords);
+                           isShadowPass, isTorchShadowPass, isSilhouettePass, glm::vec3(0.0f), kDefaultTexCoords);
 }
 
 void Renderer2D::DrawStandeesTorchShadowParallel(
@@ -848,7 +913,7 @@ void Renderer2D::DrawStandeesTorchShadowParallel(
     const glm::vec3 worldUp{ 0.0f, 1.0f, 0.0f };
     const glm::vec3 fallbackRight{ 1.0f, 0.0f, 0.0f };
     SubmitStandeesInternal(*s_Data, commands, fallbackRight, worldUp, fallbackRight,
-                           /*isShadowPass=*/true, /*isTorchShadowPass=*/true, torchWorldPos, kDefaultTexCoords);
+                           /*isShadowPass=*/true, /*isTorchShadowPass=*/true, /*isSilhouettePass=*/false, torchWorldPos, kDefaultTexCoords);
 }
 
 void Renderer2D::DrawParticlesParallel(
@@ -901,6 +966,7 @@ void Renderer2D::DrawParticlesParallel(
                 v[c].Emissive     = emissive;
                 v[c].ShadowOffset = 0.25f;
                 v[c].WindParams   = glm::vec3(0.0f);
+                v[c].CutoutFX     = glm::vec4(0.0f, 0.0f, 0.0f, 0.08f);
             }
         });
 

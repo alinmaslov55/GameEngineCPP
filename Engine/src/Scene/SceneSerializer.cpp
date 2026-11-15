@@ -156,6 +156,12 @@ void SerializeSpriteRenderer(const GameObject* go, json& compsJson) {
     spriteJson["Emissive"] = spriteRenderer->GetEmissive();
     spriteJson["WindSwayWeight"] = spriteRenderer->GetWindSwayWeight();
     spriteJson["WindPhaseOffset"] = spriteRenderer->GetWindPhaseOffset();
+    spriteJson["DissolveAmount"] = spriteRenderer->GetDissolveAmount();
+    spriteJson["DissolveEdgeWidth"] = spriteRenderer->GetDissolveEdgeWidth();
+    spriteJson["FlashAmount"] = spriteRenderer->GetFlashAmount();
+    spriteJson["FlashColorMode"] = spriteRenderer->GetFlashColorMode();
+    spriteJson["RenderSilhouette"] = spriteRenderer->GetRenderSilhouette();
+    spriteJson["SilhouetteColor"] = ToJson(spriteRenderer->GetSilhouetteColor());
 
     if (auto tex = spriteRenderer->GetTexture()) {
         spriteJson["TexturePath"] = ResourceManager::ToRelativePath(tex->GetFilepath());
@@ -776,6 +782,14 @@ void DeserializeSpriteRenderer(GameObject* go, const json& srJson, [[maybe_unuse
     sprite->SetEmissive(srJson.value("Emissive", 0.0f));
     sprite->SetWindSwayWeight(srJson.value("WindSwayWeight", 0.0f));
     sprite->SetWindPhaseOffset(srJson.value("WindPhaseOffset", 0.0f));
+    sprite->SetDissolveAmount(srJson.value("DissolveAmount", 0.0f));
+    sprite->SetDissolveEdgeWidth(srJson.value("DissolveEdgeWidth", 0.08f));
+    sprite->SetFlashAmount(srJson.value("FlashAmount", 0.0f));
+    sprite->SetFlashColorMode(srJson.value("FlashColorMode", 0.0f));
+    sprite->SetRenderSilhouette(srJson.value("RenderSilhouette", false));
+    if (srJson.contains("SilhouetteColor")) {
+        sprite->SetSilhouetteColor(AsVec4(srJson["SilhouetteColor"], glm::vec4(0.2f, 0.4f, 0.9f, 0.28f)));
+    }
     if (srJson.contains("TexturePath") && srJson["TexturePath"].is_string()) {
         std::string texPath = srJson["TexturePath"].get<std::string>();
         if (!texPath.empty()) {

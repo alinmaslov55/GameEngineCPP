@@ -33,6 +33,11 @@ struct StandeeRenderCommand {
     float viewDepth = 0.0f;
     glm::vec3 boundsCenter{ 0.0f };
     float boundsRadius = 0.0f;
+
+    // Cutout Combat FX & Silhouette
+    glm::vec4 cutoutFX{ 0.0f, 0.0f, 0.0f, 0.08f };
+    bool renderSilhouette = false;
+    glm::vec4 silhouetteColor{ 0.25f, 0.35f, 0.85f, 0.28f };
 };
 
 } // namespace Engine

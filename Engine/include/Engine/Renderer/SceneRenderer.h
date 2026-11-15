@@ -95,6 +95,7 @@ private:
 
     // Hot-path scratch buffers to prevent per-frame dynamic heap allocations
     std::vector<StandeeRenderCommand> m_StandeeCommands;
+    std::vector<StandeeRenderCommand> m_SilhouetteCommands;
     std::vector<StandeeRenderCommand> m_ShadowStandeeCommands;
     std::vector<StandeeRenderCommand> m_TorchShadowStandeeCommands;
     std::vector<StandeeRenderCommand> m_TorchQuadrantScratch;

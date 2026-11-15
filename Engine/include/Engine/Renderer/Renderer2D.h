@@ -25,7 +25,9 @@ struct QuadVertex {
     float Emissive;     // < 0.0 = unlit; >= 0.0 = lit + self-illumination multiplier
     float ShadowOffset; // World-space receiver offset along -SunDirection to prevent billboard self-shadowing
     glm::vec3 WindParams; // x = top-anchored sway weight, y = anchor spatial phase, z = proximity bend (m)
+    glm::vec4 CutoutFX; // x = DissolveAmount [0..1], y = FlashAmount [0..1], z = FlashColorMode/Packed, w = DissolveEdgeWidth
 };
+static_assert(sizeof(QuadVertex) == 80, "QuadVertex layout size must be 80 bytes");
 
 void ComputeBillboardCorners(const glm::vec3& anchorPosition,
                              const glm::vec2& size,
@@ -139,7 +141,9 @@ public:
                                      const glm::vec3& camRight,
                                      const glm::vec3& camUp,
                                      const glm::vec3& camRightXZ,
-                                     bool isShadowPass);
+                                     bool isShadowPass,
+                                     bool isTorchShadowPass = false,
+                                     bool isSilhouettePass = false);
 
     static void DrawStandeesTorchShadowParallel(std::span<const StandeeRenderCommand> commands,
                                                 const glm::vec3& torchWorldPos);

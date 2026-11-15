@@ -9,6 +9,7 @@ layout(location = 4) in float a_AlphaCutoff;
 layout(location = 5) in float a_Emissive;
 layout(location = 6) in float a_ShadowOffset;
 layout(location = 7) in vec3 a_WindParams;
+layout(location = 8) in vec4 a_CutoutFX;
 
 uniform mat4 u_ViewProjection;
 uniform int u_WindActive;
@@ -26,6 +27,7 @@ flat out int v_TexIndex;
 out float v_AlphaCutoff;
 out float v_Emissive;
 out float v_ShadowOffset;
+out vec4 v_CutoutFX;
 
 void main() {
     vec3 worldPos = a_Position;
@@ -48,6 +50,7 @@ void main() {
     v_AlphaCutoff = a_AlphaCutoff;
     v_Emissive = a_Emissive;
     v_ShadowOffset = a_ShadowOffset;
+    v_CutoutFX = a_CutoutFX;
     gl_Position = u_ViewProjection * vec4(worldPos, 1.0);
 }
 
@@ -61,12 +64,14 @@ flat in int v_TexIndex;
 in float v_AlphaCutoff;
 in float v_Emissive;
 in float v_ShadowOffset;
+in vec4 v_CutoutFX;
 
 out vec4 color;
 
 uniform sampler2D u_Textures[13];
 uniform sampler2D u_ShadowMap;
 uniform sampler2D u_TorchShadowMap;
+uniform sampler2D u_DissolveNoise;
 
 uniform int u_LightingEnabled;
 uniform vec3 u_SunDirection;
@@ -214,6 +219,24 @@ vec3 evaluatePointLights(vec3 worldPos, float receiverOffset) {
     return accum;
 }
 
+vec3 getFlashTargetRGB(float modeOrPacked) {
+    if (modeOrPacked <= 0.5) {
+        return vec3(1.0, 1.0, 1.0); // Pure White
+    } else if (modeOrPacked < 1.5) {
+        return vec3(1.0, 0.15, 0.15); // Crimson Impact
+    } else if (modeOrPacked < 2.5) {
+        return vec3(0.35, 0.75, 1.5); // Spectral Blue
+    } else if (modeOrPacked < 3.5) {
+        return vec3(1.5, 1.2, 0.25); // Divine Gold
+    }
+    // Packed 24-bit RGB (stored as mode = 4.0 + float(packedInt))
+    int packedVal = int(round(modeOrPacked - 4.0));
+    float r = float((packedVal >> 16) & 0xFF) / 255.0;
+    float g = float((packedVal >> 8) & 0xFF) / 255.0;
+    float b = float(packedVal & 0xFF) / 255.0;
+    return vec3(r, g, b);
+}
+
 void main() {
     vec4 texSample = vec4(1.0);
     switch (v_TexIndex) {
@@ -232,11 +255,21 @@ void main() {
         case 12: texSample = texture(u_Textures[12], v_TexCoord); break;
     }
     vec4 texColor = v_Color * texSample;
-    if (v_AlphaCutoff > 0.0 && texColor.a < v_AlphaCutoff) {
+    float alphaMask = (v_Emissive < -1.5) ? texSample.a : texColor.a;
+    if (v_AlphaCutoff > 0.0 && alphaMask < v_AlphaCutoff) {
         discard;
     }
 
-    vec3 finalRGB = texColor.rgb;
+    // Early Ash Dissolve Discard
+    float dissolveNoise = 0.0;
+    if (v_CutoutFX.x > 0.001) {
+        dissolveNoise = texture(u_DissolveNoise, v_WorldPos.xz * 1.4 + vec2(0.0, v_WorldPos.y * 1.4)).r;
+        if (dissolveNoise < v_CutoutFX.x) {
+            discard;
+        }
+    }
+
+    vec3 finalRGB = (v_Emissive < -1.5) ? v_Color.rgb : texColor.rgb;
     if (u_LightingEnabled == 1 && v_Emissive >= 0.0) {
         float shadowVis = computeShadowVisibility(v_WorldPos, v_ShadowOffset);
         vec3 sunAndAmbient = u_AmbientColor * u_AmbientIntensity +
@@ -244,6 +277,19 @@ void main() {
         vec3 pointGlow = evaluatePointLights(v_WorldPos, v_ShadowOffset);
         finalRGB = texColor.rgb * (sunAndAmbient + pointGlow + vec3(v_Emissive));
     }
+
+    // Dissolve glowing HDR ember edge
+    if (v_CutoutFX.x > 0.001 && dissolveNoise < (v_CutoutFX.x + v_CutoutFX.w)) {
+        float edgeT = clamp((dissolveNoise - v_CutoutFX.x) / max(v_CutoutFX.w, 0.001), 0.0, 1.0);
+        finalRGB = mix(vec3(3.2, 0.85, 0.15), finalRGB, edgeT);
+    }
+
+    // Hit-Stun Flash (applied post-lighting so FlashAmount = 1.0 produces a crisp impact frame)
+    if (v_CutoutFX.y > 0.001) {
+        vec3 flashTarget = getFlashTargetRGB(v_CutoutFX.z);
+        finalRGB = mix(finalRGB, flashTarget, clamp(v_CutoutFX.y, 0.0, 1.0));
+    }
+
     color = vec4(finalRGB, texColor.a);
 }
 

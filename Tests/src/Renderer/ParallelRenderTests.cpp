@@ -113,6 +113,7 @@ TEST(ParallelRenderTest, ParallelVertexGenerationAlgorithm) {
             v[c].Emissive = 0.0f;
             v[c].ShadowOffset = 0.48f;
             v[c].WindParams = glm::vec3(0.0f);
+            v[c].CutoutFX = glm::vec4(0.0f, 0.0f, 0.0f, 0.08f);
         }
     });
 

@@ -78,6 +78,68 @@ public:
     float GetWindPhaseOffset() const { return m_WindPhaseOffset; }
     void SetWindPhaseOffset(float offset) { m_WindPhaseOffset = offset; }
 
+    //Ash Dissolve, Hit-Flash & Canopy Occlusion Silhouette
+    enum class FlashMode : uint32_t {
+        PureWhite = 0,
+        Crimson = 1,
+        CrimsonImpact = 1,
+        SpectralBlue = 2,
+        DivineGold = 3,
+        Custom = 4
+    };
+
+    float GetDissolveAmount() const { return m_DissolveAmount; }
+    void SetDissolveAmount(float amount) { m_DissolveAmount = std::clamp(amount, 0.0f, 1.0f); }
+
+    float GetDissolveEdgeWidth() const { return m_DissolveEdgeWidth; }
+    void SetDissolveEdgeWidth(float width) { m_DissolveEdgeWidth = std::clamp(width, 0.001f, 0.5f); }
+
+    float GetFlashAmount() const { return m_FlashAmount; }
+    void SetFlashAmount(float amount) { m_FlashAmount = std::clamp(amount, 0.0f, 1.0f); }
+
+    float GetFlashColorMode() const { return m_FlashColorMode; }
+    void SetFlashColorMode(float mode) { m_FlashColorMode = mode; }
+    void SetFlashMode(FlashMode mode) { m_FlashColorMode = static_cast<float>(mode); }
+
+    void SetFlashColor(const glm::vec3& rgb) {
+        if (rgb == glm::vec3(1.0f, 1.0f, 1.0f)) {
+            m_FlashColorMode = 0.0f;
+        } else if (rgb == glm::vec3(1.0f, 0.15f, 0.15f)) {
+            m_FlashColorMode = 1.0f;
+        } else if (rgb == glm::vec3(0.35f, 0.75f, 1.5f)) {
+            m_FlashColorMode = 2.0f;
+        } else if (rgb == glm::vec3(1.5f, 1.2f, 0.25f)) {
+            m_FlashColorMode = 3.0f;
+        } else {
+            const auto r = static_cast<uint32_t>(std::clamp(rgb.r, 0.0f, 1.0f) * 255.0f);
+            const auto g = static_cast<uint32_t>(std::clamp(rgb.g, 0.0f, 1.0f) * 255.0f);
+            const auto b = static_cast<uint32_t>(std::clamp(rgb.b, 0.0f, 1.0f) * 255.0f);
+            m_FlashColorMode = 4.0f + static_cast<float>((r << 16) | (g << 8) | b);
+        }
+    }
+
+    [[nodiscard]] glm::vec3 GetFlashColor() const {
+        if (m_FlashColorMode <= 0.5f) return glm::vec3(1.0f, 1.0f, 1.0f);
+        if (m_FlashColorMode < 1.5f)  return glm::vec3(1.0f, 0.15f, 0.15f);
+        if (m_FlashColorMode < 2.5f)  return glm::vec3(0.35f, 0.75f, 1.5f);
+        if (m_FlashColorMode < 3.5f)  return glm::vec3(1.5f, 1.2f, 0.25f);
+        const auto packed = static_cast<uint32_t>(m_FlashColorMode - 4.0f);
+        const float r = static_cast<float>((packed >> 16) & 0xFF) / 255.0f;
+        const float g = static_cast<float>((packed >> 8) & 0xFF) / 255.0f;
+        const float b = static_cast<float>(packed & 0xFF) / 255.0f;
+        return glm::vec3(r, g, b);
+    }
+
+    bool GetRenderSilhouette() const { return m_RenderSilhouette; }
+    void SetRenderSilhouette(bool render) { m_RenderSilhouette = render; }
+
+    const glm::vec4& GetSilhouetteColor() const { return m_SilhouetteColor; }
+    void SetSilhouetteColor(const glm::vec4& color) { m_SilhouetteColor = color; }
+
+    [[nodiscard]] glm::vec4 GetCutoutFX() const noexcept {
+        return glm::vec4(m_DissolveAmount, m_FlashAmount, m_FlashColorMode, m_DissolveEdgeWidth);
+    }
+
 private:
     std::shared_ptr<Texture> m_Texture = nullptr;
     std::shared_ptr<SubTexture2D> m_SubTexture = nullptr;
@@ -89,6 +151,12 @@ private:
     float m_Emissive = 0.0f;
     float m_WindSwayWeight = 0.0f;
     float m_WindPhaseOffset = 0.0f;
+    float m_DissolveAmount = 0.0f;
+    float m_DissolveEdgeWidth = 0.08f;
+    float m_FlashAmount = 0.0f;
+    float m_FlashColorMode = 0.0f;
+    bool m_RenderSilhouette = false;
+    glm::vec4 m_SilhouetteColor{ 0.25f, 0.35f, 0.85f, 0.28f };
 };
 } // namespace Engine
 
