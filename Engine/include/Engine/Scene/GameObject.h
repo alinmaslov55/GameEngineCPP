@@ -347,7 +347,6 @@ public:
 
     void Update(float deltaTime) {
         if (!IsActiveInHierarchy()) return;
-        ENGINE_CORE_TRACE("GameObject '{}': Updating components", GetName());
         ScopedComponentIterationGuard guard(*this);
         for (size_t i = 0; i < m_Components.size(); ++i) {
             if (!IsActiveInHierarchy()) break;

@@ -37,11 +37,11 @@ TEST_F(RigidbodyLifecycleTest, MidRuntimeSpawnDynamicRigidbody) {
     auto* bc2d = go->AddComponent<Engine::BoxCollider2D>();
     ASSERT_NE(bc2d, nullptr);
     bc2d->size = { 1.0f, 1.0f };
-    bc2d->density = 1.0f;
+    bc2d->Density = 1.0f;
 
     // Body and fixture must be immediately created mid-runtime
     EXPECT_NE(rb2d->RuntimeBody, nullptr);
-    EXPECT_NE(bc2d->RuntimeFixture, nullptr);
+    EXPECT_NE(bc2d->RuntimeShape, nullptr);
 
     b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
     EXPECT_TRUE(b2Body_IsValid(bodyId));
@@ -73,7 +73,7 @@ TEST_F(RigidbodyLifecycleTest, ApplyImpulseAndLinearDampingDeceleration) {
 
     auto* bc2d = go->AddComponent<Engine::BoxCollider2D>();
     bc2d->size = { 0.8f, 0.8f };
-    bc2d->density = 1.0f;
+    bc2d->Density = 1.0f;
 
     // Apply high-speed impulse along +X
     rb2d->ApplyImpulseXZ({ 25.0f, 0.0f });
@@ -128,7 +128,7 @@ TEST_F(RigidbodyLifecycleTest, ApplyForceXZConstantAcceleration) {
 
     auto* bc2d = go->AddComponent<Engine::BoxCollider2D>();
     bc2d->size = { 1.0f, 1.0f };
-    bc2d->density = 1.0f;
+    bc2d->Density = 1.0f;
 
     float prevVelZ = 0.0f;
     for (int step = 0; step < 15; ++step) {
@@ -238,7 +238,7 @@ TEST_F(RigidbodyLifecycleTest, MassMultiplierAndBulletCCD) {
     auto* rb2d = go->AddComponent<Engine::Rigidbody2D>();
     auto* bc2d = go->AddComponent<Engine::BoxCollider2D>();
     bc2d->size = { 2.0f, 2.0f };
-    bc2d->density = 2.0f;
+    bc2d->Density = 2.0f;
 
     float baseMass = rb2d->GetMass();
     EXPECT_GT(baseMass, 0.0f);
@@ -272,7 +272,7 @@ TEST_F(RigidbodyLifecycleTest, MassMultiplierRemainsConstantAcross120FramesAndVe
     rbScaled->LinearDamping = 3.0f;
     auto* bcScaled = goScaled->AddComponent<Engine::BoxCollider2D>();
     bcScaled->size = { 1.0f, 1.0f };
-    bcScaled->density = 1.0f;
+    bcScaled->Density = 1.0f;
 
     // 2. Reference body with MassMultiplier = 1.0f and unscaled shape density = 2.5f (exact 2.5 kg mass)
     auto* goRef = scene.CreateGameObject("ReferenceBody");
@@ -284,7 +284,7 @@ TEST_F(RigidbodyLifecycleTest, MassMultiplierRemainsConstantAcross120FramesAndVe
     rbRef->LinearDamping = 3.0f;
     auto* bcRef = goRef->AddComponent<Engine::BoxCollider2D>();
     bcRef->size = { 1.0f, 1.0f };
-    bcRef->density = 2.5f;
+    bcRef->Density = 2.5f;
 
     scene.OnRuntimeStart();
 

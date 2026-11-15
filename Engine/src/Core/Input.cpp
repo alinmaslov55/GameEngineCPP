@@ -303,8 +303,6 @@ void Input::BeginFrame() {
 }
 
 void Input::Update() {
-    ENGINE_CORE_TRACE("Input::Update");
-
     int numKeys = 0;
     const bool* keyState = SDL_GetKeyboardState(&numKeys);
     if (keyState && numKeys > 0) {
@@ -330,8 +328,7 @@ void Input::Update() {
         }
         for (int a = 0; a < SDL_GAMEPAD_AXIS_COUNT; ++a) {
             const Sint16 raw = SDL_GetGamepadAxis(s_Gamepad, static_cast<SDL_GamepadAxis>(a));
-            const float normalized = std::clamp(static_cast<float>(raw) / 32767.0f, -1.0f, 1.0f);
-            s_State.CurrPadAxes[static_cast<size_t>(a)] = normalized;
+            s_State.CurrPadAxes[static_cast<size_t>(a)] = NormalizeGamepadAxis(raw);
         }
     } else if (!s_State.GamepadConnectedForTesting) {
         s_State.CurrPadButtons.fill(false);

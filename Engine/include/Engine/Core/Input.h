@@ -54,6 +54,11 @@ public:
     static bool IsGamepadButtonJustReleased(SDL_GamepadButton btn);
     static float GetGamepadAxis(SDL_GamepadAxis axis); // Returns -1.0f to 1.0f
 
+    [[nodiscard]] static constexpr float NormalizeGamepadAxis(Sint16 rawValue) noexcept {
+        const float normalized = static_cast<float>(rawValue) / 32767.0f;
+        return (normalized < -1.0f) ? -1.0f : (normalized > 1.0f ? 1.0f : normalized);
+    }
+
     // Action Bindings & Radial Deadzone Locomotion
     static void BindAction(std::string_view actionName, const ActionBinding& binding);
     static void UnbindAction(std::string_view actionName);

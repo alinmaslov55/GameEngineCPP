@@ -428,7 +428,6 @@ BiomeSample WorldBiomeGenerator::EvaluateBiomeAtXZWithPOIs(float worldX,
     sample.Elevation = elevation;
     return sample;
 }
-}
 
 void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
                                             int32_t cz,
@@ -612,7 +611,7 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
 
                     PropSpawnDesc desc;
                     desc.Kind = propKind;
-                    desc.SourceBiome = bio.DominantBiome;
+                    desc.SourceBiome = dominant;
                     desc.WorldPosition = { cand.PosXZ.x, 0.0f, cand.PosXZ.y };
                     desc.ScaleMultiplier = spec.ScaleJitterMin + (spec.ScaleJitterMax - spec.ScaleJitterMin) * tScale;
                     desc.WindPhaseOffset = tPhase * 6.283185f;

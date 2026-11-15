@@ -142,7 +142,6 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
         }
         if (!ctx.activeCam) {
             ctx.activeCam = &m_Camera;
-            ENGINE_CORE_TRACE("SceneRenderer::GatherRenderContext using fallback internal camera");
         }
     }
 
@@ -513,11 +512,6 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     }
 
     ctx.useHDRPostProcess = (ctx.postProcess != nullptr && ctx.postProcess->Enabled && PostProcessor::IsValid());
-    ENGINE_CORE_TRACE(
-        "SceneRenderer::GatherRenderContext: standees={}, shadowStandees={}, torchStandees={}, pointLights={}, terrains={}, chunkManagers={}, hdr={}",
-        m_StandeeCommands.size(), m_ShadowStandeeCommands.size(), m_TorchShadowStandeeCommands.size(),
-        ctx.lighting.PointLightCount, m_TerrainScratch.size(), m_TerrainChunkScratch.size(), ctx.useHDRPostProcess
-    );
     return ctx;
 }
 
@@ -543,7 +537,6 @@ void SceneRenderer::RenderPassShadowMap(SceneRenderContext& ctx) {
     ctx.lighting.ShadowsEnabled = true;
     ctx.lighting.ShadowMapTextureID = ShadowMap::GetDepthTextureID();
     ctx.lighting.ShadowMapTexelSize = 1.0f / static_cast<float>(ShadowMap::GetResolution());
-    ENGINE_CORE_TRACE("SceneRenderer::RenderPassShadowMap: {} shadow casters", m_ShadowStandeeCommands.size());
 }
 
 void SceneRenderer::RenderPassTorchShadowMap(SceneRenderContext& ctx) {
@@ -604,8 +597,6 @@ void SceneRenderer::RenderPassTorchShadowMap(SceneRenderContext& ctx) {
     }
 
     TorchShadowMap::EndCapture();
-    ENGINE_CORE_TRACE("SceneRenderer::RenderPassTorchShadowMap: completed for torch at ({:.2f}, {:.2f}, {:.2f}) r={:.2f}",
-                      torchPos.x, torchPos.y, torchPos.z, shadowRadius);
 }
 
 void SceneRenderer::RenderPassGroundPlane(SceneRenderContext& ctx) {
@@ -804,8 +795,6 @@ void SceneRenderer::RenderPassScreenUI() {
 }
 
 void SceneRenderer::Render(Scene& scene, const PerspectiveCamera* overrideCamera) {
-    ENGINE_CORE_TRACE("SceneRenderer: Render (2.5D Diorama)");
-
     ResourceManager::ProcessPendingUploads();
     SceneRenderContext ctx = GatherRenderContext(scene, overrideCamera);
 

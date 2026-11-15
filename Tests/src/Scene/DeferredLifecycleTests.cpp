@@ -584,7 +584,7 @@ TEST(DeferredLifecycleTest, Box2DRuntimeBodyDestroyedOnEntityDelete) {
 
     // Verify entity has runtime body
     EXPECT_NE(rb2d->RuntimeBody, nullptr);
-    EXPECT_NE(collider->RuntimeFixture, nullptr);
+    EXPECT_NE(collider->RuntimeShape, nullptr);
 
     // Destroy entity during runtime
     scene.DestroyGameObject(entity);

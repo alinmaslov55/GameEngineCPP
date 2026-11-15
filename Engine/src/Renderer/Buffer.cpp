@@ -64,7 +64,6 @@ void VertexBuffer::Bind() const {
     if (m_RendererID == 0 || glad_glBindBuffer == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("VertexBuffer ID {} bound", m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
 }
 
@@ -72,7 +71,6 @@ void VertexBuffer::Unbind() const {
     if (glad_glBindBuffer == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("VertexBuffer ID {} unbound", m_RendererID);
     glBindBuffer(GL_ARRAY_BUFFER, 0);
 }
 
@@ -84,7 +82,6 @@ void VertexBuffer::SetSubData(const void* data, uint32_t size, uint32_t offset) 
     if (m_RendererID == 0 || glad_glBindBuffer == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("VertexBuffer ID {} SetSubData ({} bytes at offset {})", m_RendererID, size, offset);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
     glBufferSubData(GL_ARRAY_BUFFER, offset, size, data);
 }
@@ -93,7 +90,6 @@ void VertexBuffer::Orphan() {
     if (m_RendererID == 0 || glad_glBindBuffer == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("VertexBuffer ID {} Orphan (capacity: {} bytes)", m_RendererID, m_Capacity);
     glBindBuffer(GL_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ARRAY_BUFFER, m_Capacity, nullptr, GL_DYNAMIC_DRAW);
 }
@@ -142,7 +138,6 @@ void IndexBuffer::Bind() const {
     if (m_RendererID == 0 || glad_glBindBuffer == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("IndexBuffer ID {} bound", m_RendererID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_RendererID);
 }
 
@@ -150,7 +145,6 @@ void IndexBuffer::Unbind() const {
     if (glad_glBindBuffer == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("IndexBuffer ID {} unbound", m_RendererID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
 }
 

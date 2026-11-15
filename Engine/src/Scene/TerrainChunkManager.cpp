@@ -1,6 +1,8 @@
 #include "Engine/Scene/TerrainChunkManager.h"
+#include "Engine/Scene/TerrainHelpers.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Physics/PhysicsLayer.h"
+#include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/LightComponents.h"
@@ -188,35 +190,15 @@ glm::vec3 TerrainChunk::GetWorldOrigin(float groundY) const noexcept {
 }
 
 glm::u8vec4 TerrainChunk::GetSplatTexel(uint32_t px, uint32_t pz) const noexcept {
-    if (px >= SplatResolution || pz >= SplatResolution || SplatData.empty()) {
-        return { 255, 0, 0, 0 };
-    }
-    const size_t idx = (static_cast<size_t>(pz) * SplatResolution + px) * 4u;
-    return {
-        SplatData[idx + 0],
-        SplatData[idx + 1],
-        SplatData[idx + 2],
-        SplatData[idx + 3]
-    };
+    return TerrainHelpers::ReadSplatRgbaTexel(SplatData, SplatResolution, SplatResolution, px, pz, { 255, 0, 0, 0 });
 }
 
 glm::u8vec4 TerrainChunk::GetSplatTexel1(uint32_t px, uint32_t pz) const noexcept {
-    if (px >= SplatResolution || pz >= SplatResolution || SplatData1.empty()) {
-        return { 0, 0, 0, 0 };
-    }
-    const size_t idx = (static_cast<size_t>(pz) * SplatResolution + px) * 4u;
-    return {
-        SplatData1[idx + 0],
-        SplatData1[idx + 1],
-        SplatData1[idx + 2],
-        SplatData1[idx + 3]
-    };
+    return TerrainHelpers::ReadSplatRgbaTexel(SplatData1, SplatResolution, SplatResolution, px, pz, { 0, 0, 0, 0 });
 }
 
 std::array<uint8_t, TerrainComponent::MaxLayers> TerrainChunk::GetSplatTexel8(uint32_t px, uint32_t pz) const noexcept {
-    const glm::u8vec4 w0 = GetSplatTexel(px, pz);
-    const glm::u8vec4 w1 = GetSplatTexel1(px, pz);
-    return { w0.r, w0.g, w0.b, w0.a, w1.r, w1.g, w1.b, w1.a };
+    return TerrainHelpers::ReadSplatTexel8(SplatData, SplatData1, SplatResolution, SplatResolution, px, pz);
 }
 
 void TerrainChunk::SetSplatTexel(uint32_t px, uint32_t pz, const glm::u8vec4& weights) noexcept {
@@ -224,26 +206,9 @@ void TerrainChunk::SetSplatTexel(uint32_t px, uint32_t pz, const glm::u8vec4& we
 }
 
 void TerrainChunk::SetSplatTexel8(uint32_t px, uint32_t pz, const std::array<uint8_t, TerrainComponent::MaxLayers>& weights) noexcept {
-    if (px >= SplatResolution || pz >= SplatResolution) {
-        return;
+    if (TerrainHelpers::WriteSplatTexel8(SplatData, SplatData1, SplatResolution, SplatResolution, px, pz, weights)) {
+        MarkDirtyRect(px, pz, px, pz, true);
     }
-    std::array<float, TerrainComponent::MaxLayers> fw{};
-    for (uint32_t c = 0; c < TerrainComponent::MaxLayers; ++c) {
-        fw[c] = static_cast<float>(weights[c]);
-    }
-    const std::array<uint8_t, TerrainComponent::MaxLayers> norm = TerrainComponent::NormalizeWeights8(fw, 0u);
-    if (SplatData.size() < static_cast<size_t>(SplatResolution) * SplatResolution * 4u) {
-        SplatData.assign(static_cast<size_t>(SplatResolution) * SplatResolution * 4u, 0u);
-    }
-    if (SplatData1.size() < static_cast<size_t>(SplatResolution) * SplatResolution * 4u) {
-        SplatData1.assign(static_cast<size_t>(SplatResolution) * SplatResolution * 4u, 0u);
-    }
-    const size_t idx = (static_cast<size_t>(pz) * SplatResolution + px) * 4u;
-    for (uint32_t c = 0; c < 4u; ++c) {
-        SplatData[idx + c] = norm[c];
-        SplatData1[idx + c] = norm[c + 4u];
-    }
-    MarkDirtyRect(px, pz, px, pz, true);
 }
 
 void TerrainChunk::MarkDirtyRect(uint32_t minX, uint32_t minY, uint32_t maxX, uint32_t maxY, bool markModified) noexcept {
@@ -883,38 +848,23 @@ void TerrainChunkManager::SetEdgeDarkening(float darkening) noexcept {
 }
 
 void TerrainChunkManager::SetLayerTexture(uint32_t layerIndex, const std::shared_ptr<Texture>& texture) {
-    if (layerIndex >= TerrainComponent::MaxLayers) {
-        return;
-    }
-    if (texture) {
-        texture->SetWrapRepeat(true);
-    }
-    m_Layers[layerIndex].LayerTexture = texture;
+    TerrainHelpers::SetLayerTexture(m_Layers, layerIndex, texture);
 }
 
 void TerrainChunkManager::SetLayerHeightMapPath(uint32_t layerIndex, const std::string& path) {
-    if (layerIndex < TerrainComponent::MaxLayers) {
-        m_Layers[layerIndex].HeightMapPath = path;
-    }
+    TerrainHelpers::SetLayerHeightMapPath(m_Layers, layerIndex, path);
 }
 
 void TerrainChunkManager::SetLayerNormalMapPath(uint32_t layerIndex, const std::string& path) {
-    if (layerIndex < TerrainComponent::MaxLayers) {
-        m_Layers[layerIndex].NormalMapPath = path;
-    }
+    TerrainHelpers::SetLayerNormalMapPath(m_Layers, layerIndex, path);
 }
 
 void TerrainChunkManager::SetLayerTilingScale(uint32_t layerIndex, float tilingScale) noexcept {
-    if (layerIndex >= TerrainComponent::MaxLayers) {
-        return;
-    }
-    m_Layers[layerIndex].TilingScale = std::clamp(tilingScale, 0.02f, 20.0f);
+    TerrainHelpers::SetLayerTilingScale(m_Layers, layerIndex, tilingScale);
 }
 
 void TerrainChunkManager::SetLayerGlossiness(uint32_t layerIndex, float glossiness) noexcept {
-    if (layerIndex < TerrainComponent::MaxLayers) {
-        m_Layers[layerIndex].Glossiness = std::clamp(glossiness, 0.0f, 1.0f);
-    }
+    TerrainHelpers::SetLayerGlossiness(m_Layers, layerIndex, glossiness);
 }
 
 const TerrainLayer& TerrainChunkManager::GetLayer(uint32_t layerIndex) const noexcept {
@@ -1095,9 +1045,15 @@ uint64_t TerrainChunkManager::SpawnFirewallEntity(const glm::vec2& centerXZ) {
         return 0;
     }
 
-    GameObject* firewall = scene->CreateGameObject("TarFirewall");
+    static const std::shared_ptr<Prefab> s_FirewallPrefab = BuildTarFirewallPrefab();
+    if (!s_FirewallPrefab) {
+        return 0;
+    }
+
+    GameObject* firewall = scene->GetPoolManager().AcquirePooled(
+        "pool_tar_firewall", *s_FirewallPrefab, glm::vec3(centerXZ.x, 0.45f, centerXZ.y));
     if (!firewall) {
-        ENGINE_CORE_WARN("TerrainChunkManager::SpawnFirewallEntity: Failed to create TarFirewall at ({:.2f}, {:.2f})",
+        ENGINE_CORE_WARN("TerrainChunkManager::SpawnFirewallEntity: Failed to acquire TarFirewall at ({:.2f}, {:.2f})",
                          centerXZ.x, centerXZ.y);
         return 0;
     }
@@ -1105,25 +1061,6 @@ uint64_t TerrainChunkManager::SpawnFirewallEntity(const glm::vec2& centerXZ) {
     if (auto* t = firewall->GetTransform()) {
         t->position = glm::vec3(centerXZ.x, 0.45f, centerXZ.y);
         t->SnapshotPrevious();
-    }
-
-    auto* light = firewall->AddComponent<PointLightComponent>();
-    if (light) {
-        light->Color = glm::vec3(1.0f, 0.48f, 0.12f);
-        light->Intensity = 1.6f;
-        light->Radius = 2.4f;
-        light->Falloff = 1.2f;
-        light->FlickerSpeed = 14.0f;
-        light->FlickerAmount = 0.30f;
-        light->Semantic = LightSemantic::SafeLifeline;
-    }
-
-    auto* collider = firewall->AddComponent<CircleCollider2D>();
-    if (collider) {
-        collider->Radius = 0.35f;
-        collider->IsSensor = true;
-        collider->CategoryBits = PhysicsLayer::EnemyHitbox;
-        collider->MaskBits = PhysicsLayer::Player | PhysicsLayer::Enemy;
     }
 
     return firewall->GetUUID();
@@ -1136,89 +1073,37 @@ void TerrainChunkManager::ReleaseFirewallEntity(uint64_t uuid) {
     if (scene) {
         if (GameObject* go = scene->FindGameObjectByUUID(uuid)) {
             ENGINE_CORE_TRACE("TerrainChunkManager: Releasing TarFirewall entity (UUID: {})", uuid);
-            scene->DestroyGameObject(go);
+            scene->GetPoolManager().ReleaseToPool("pool_tar_firewall", go);
         }
     }
 }
 
 SurfaceSample TerrainChunkManager::SampleSurfaceAtXZ(float worldX, float worldZ) const noexcept {
-    SurfaceSample sample{};
     const ChunkCoord coord = WorldToChunk(worldX, worldZ);
     const TerrainChunk* chunk = GetChunk(coord);
-
-    std::array<float, TerrainComponent::MaxLayers> blendedWeights{};
-    float sumWeights = 0.0f;
+    const bool isBurning = m_FireGrid.IsBurningAtXZ(worldX, worldZ);
 
     if (chunk && chunk->IsResident() && !chunk->SplatData.empty() && chunk->SplatResolution >= 2u) {
         const float chunkOriginX = static_cast<float>(coord.cx) * ChunkSizeMeters;
         const float chunkOriginZ = static_cast<float>(coord.cz) * ChunkSizeMeters;
-        const float relX = worldX - chunkOriginX;
-        const float relZ = worldZ - chunkOriginZ;
+        const float u = std::clamp((worldX - chunkOriginX) / ChunkSizeMeters, 0.0f, 1.0f);
+        const float v = std::clamp((worldZ - chunkOriginZ) / ChunkSizeMeters, 0.0f, 1.0f);
 
-        const float u = std::clamp(relX / ChunkSizeMeters, 0.0f, 1.0f);
-        const float v = std::clamp(relZ / ChunkSizeMeters, 0.0f, 1.0f);
-
-        const uint32_t span = chunk->SplatResolution - 1u;
-        const float fx = u * static_cast<float>(span);
-        const float fz = v * static_cast<float>(span);
-
-        const auto x0 = static_cast<uint32_t>(std::floor(fx));
-        const auto z0 = static_cast<uint32_t>(std::floor(fz));
-        const uint32_t x1 = std::min(x0 + 1u, chunk->SplatResolution - 1u);
-        const uint32_t z1 = std::min(z0 + 1u, chunk->SplatResolution - 1u);
-
-        const float tx = fx - static_cast<float>(x0);
-        const float tz = fz - static_cast<float>(z0);
-
-        const auto w00 = chunk->GetSplatTexel8(x0, z0);
-        const auto w10 = chunk->GetSplatTexel8(x1, z0);
-        const auto w01 = chunk->GetSplatTexel8(x0, z1);
-        const auto w11 = chunk->GetSplatTexel8(x1, z1);
-
-        for (size_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
-            const float top = std::lerp(static_cast<float>(w00[i]), static_cast<float>(w10[i]), tx);
-            const float bot = std::lerp(static_cast<float>(w01[i]), static_cast<float>(w11[i]), tx);
-            const float val = std::lerp(top, bot, tz);
-            blendedWeights[i] = val;
-            sumWeights += val;
-        }
-    } else {
-        const BiomeSample bs = SampleBiomeAtXZ(worldX, worldZ);
-        const auto w8 = bs.ToSplat8();
-        for (size_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
-            blendedWeights[i] = static_cast<float>(w8[i]);
-            sumWeights += blendedWeights[i];
-        }
+        const float span = static_cast<float>(chunk->SplatResolution - 1u);
+        return TerrainHelpers::EvaluateBilinearSurfaceSample(
+            chunk->SplatData, chunk->SplatData1, chunk->SplatResolution, chunk->SplatResolution,
+            u * span, v * span, isBurning);
     }
 
-    if (sumWeights <= 1e-4f) {
-        blendedWeights[1] = 1.0f;
-        sumWeights = 1.0f;
-    }
-
-    const float invSum = 1.0f / sumWeights;
-    float maxWeight = -1.0f;
-    uint32_t dominantLayer = 1u;
-    float weightedDamping = 0.0f;
-    float weightedSpeed = 0.0f;
-
+    const BiomeSample bs = SampleBiomeAtXZ(worldX, worldZ);
+    const auto w8 = bs.ToSplat8();
+    std::array<float, TerrainComponent::MaxLayers> fallbackWeights{};
+    float sumWeights = 0.0f;
     for (size_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
-        const float normW = blendedWeights[i] * invSum;
-        if (normW > maxWeight) {
-            maxWeight = normW;
-            dominantLayer = static_cast<uint32_t>(i);
-        }
-        weightedDamping += normW * SurfacePhysics::LayerDamping[i];
-        weightedSpeed += normW * SurfacePhysics::LayerSpeedMultiplier[i];
+        fallbackWeights[i] = static_cast<float>(w8[i]);
+        sumWeights += fallbackWeights[i];
     }
-
-    sample.DominantBiome = SurfacePhysics::LayerToBiome(dominantLayer);
-    sample.LinearDamping = weightedDamping;
-    sample.MaxSpeedMultiplier = weightedSpeed;
-    sample.Flammability = std::clamp(blendedWeights[2] * invSum, 0.0f, 1.0f);
-    sample.IsBurning = m_FireGrid.IsBurningAtXZ(worldX, worldZ);
-
-    return sample;
+    return TerrainHelpers::EvaluateSurfaceFromWeights8(fallbackWeights, sumWeights, isBurning);
 }
 
 void TerrainChunkManager::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {

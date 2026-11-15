@@ -489,5 +489,13 @@ TEST(InputTest, GamepadRumbleClampingAndDisconnectedNoOp) {
     EXPECT_EQ(dur, 0u);
 }
 
+TEST(InputSystemTest, NormalizeGamepadAxisClampsExtremes) {
+    EXPECT_FLOAT_EQ(Engine::Input::NormalizeGamepadAxis(-32768), -1.0f);
+    EXPECT_FLOAT_EQ(Engine::Input::NormalizeGamepadAxis(-32767), -1.0f);
+    EXPECT_FLOAT_EQ(Engine::Input::NormalizeGamepadAxis(0), 0.0f);
+    EXPECT_NEAR(Engine::Input::NormalizeGamepadAxis(16384), 0.5f, 1e-3f);
+    EXPECT_FLOAT_EQ(Engine::Input::NormalizeGamepadAxis(32767), 1.0f);
+}
+
 } // namespace
 

@@ -64,7 +64,6 @@ void VertexArray::Bind() const {
     if (m_RendererID == 0 || glad_glBindVertexArray == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("VertexArray ID {} bound", m_RendererID);
     glBindVertexArray(m_RendererID);
 }
 
@@ -72,7 +71,6 @@ void VertexArray::Unbind() const {
     if (glad_glBindVertexArray == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("VertexArray ID {} unbound", m_RendererID);
     glBindVertexArray(0);
 }
 

@@ -1,4 +1,5 @@
 #include "Engine/Renderer/Framebuffer.h"
+#include "Engine/Renderer/GLUtils.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>
@@ -79,9 +80,7 @@ void Framebuffer::Invalidate() {
     glTexImage2D(GL_TEXTURE_2D, 0, GL_DEPTH24_STENCIL8, m_Specification.Width, m_Specification.Height, 0, GL_DEPTH_STENCIL, GL_UNSIGNED_INT_24_8, NULL);
     glFramebufferTexture2D(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_TEXTURE_2D, m_DepthAttachment, 0);
 
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        ENGINE_CORE_ERROR("Framebuffer is incomplete! Status: {:#x}", glCheckFramebufferStatus(GL_FRAMEBUFFER));
-    } else {
+    if (CheckFramebufferComplete("Framebuffer")) {
         ENGINE_CORE_INFO("Framebuffer initialized (ID: {}, {}x{})", m_RendererID, m_Specification.Width, m_Specification.Height);
     }
 
@@ -92,7 +91,6 @@ void Framebuffer::Bind() {
     if (m_RendererID == 0 || glad_glBindFramebuffer == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("Framebuffer ID {} bound ({}x{})", m_RendererID, m_Specification.Width, m_Specification.Height);
     glBindFramebuffer(GL_FRAMEBUFFER, m_RendererID);
     glViewport(0, 0, m_Specification.Width, m_Specification.Height);
 }
@@ -101,7 +99,6 @@ void Framebuffer::Unbind() {
     if (glad_glBindFramebuffer == nullptr) {
         return;
     }
-    ENGINE_CORE_TRACE("Framebuffer ID {} unbound", m_RendererID);
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 }
 

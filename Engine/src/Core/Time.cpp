@@ -146,9 +146,6 @@ void Time::Update() {
 
     s_DeltaTime = s_UnscaledDeltaTime * effectiveTimeScale;
     s_TotalTime += s_DeltaTime;
-
-    ENGINE_CORE_TRACE("Time::Update - DeltaTime: {:.4f}s, UnscaledDelta: {:.4f}s, Scale: {:.2f}, Total: {:.2f}s",
-                      s_DeltaTime, s_UnscaledDeltaTime, effectiveTimeScale, s_TotalTime);
 }
 
 } // namespace Engine

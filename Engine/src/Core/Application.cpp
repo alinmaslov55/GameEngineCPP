@@ -21,6 +21,20 @@
 
 namespace Engine {
 
+namespace {
+
+void ClearBackbuffer(const Window& window, const glm::vec4& color = {0.1f, 0.1f, 0.1f, 1.0f}) {
+    Renderer::SetViewport(
+        0, 0,
+        static_cast<uint32_t>(window.GetWidth()),
+        static_cast<uint32_t>(window.GetHeight())
+    );
+    Renderer::SetClearColor(color);
+    Renderer::Clear();
+}
+
+} // namespace
+
 Application* Application::s_Instance = nullptr;
 
 Application::Application() {
@@ -102,22 +116,10 @@ void Application::Run() {
             }
 
             // Prepare default window backbuffer for ImGui presentation
-            Renderer::SetViewport(
-                0, 0,
-                static_cast<uint32_t>(m_Window->GetWidth()),
-                static_cast<uint32_t>(m_Window->GetHeight())
-            );
-            Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
-            Renderer::Clear();
+            ClearBackbuffer(*m_Window);
 #else
             // Distribution mode: prepare default OS window backbuffer before layers render directly to it
-            Renderer::SetViewport(
-                0, 0,
-                static_cast<uint32_t>(m_Window->GetWidth()),
-                static_cast<uint32_t>(m_Window->GetHeight())
-            );
-            Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
-            Renderer::Clear();
+            ClearBackbuffer(*m_Window);
 
             for (auto& layer : m_Layers) {
                 layer->OnUpdate(deltaTime);
@@ -125,13 +127,7 @@ void Application::Run() {
 #endif
         } else {
             Update();
-            Renderer::SetViewport(
-                0, 0,
-                static_cast<uint32_t>(m_Window->GetWidth()),
-                static_cast<uint32_t>(m_Window->GetHeight())
-            );
-            Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
-            Renderer::Clear();
+            ClearBackbuffer(*m_Window);
             Renderer2D::ResetStats();
             SceneManager::Render();
         }
@@ -159,13 +155,11 @@ void Application::Run() {
 }
 
 void Application::Update() {
-    ENGINE_CORE_TRACE("Application::Update");
     Input::Update();
     SceneManager::Update(Time::GetDeltaTime());
 }
 
 void Application::Render() {
-    ENGINE_CORE_TRACE("Application::Render");
     Renderer::SetClearColor({0.1f, 0.1f, 0.1f, 1.0f});
     Renderer::Clear();
 

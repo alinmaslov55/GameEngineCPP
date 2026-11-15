@@ -46,6 +46,7 @@ public:
     static void BeginScene(const glm::mat4& projectionMatrix, bool depthTest = false, float defaultAlphaCutoff = 0.0f);
     static void EndScene();
     static void Flush();
+    static void NextBatch();
 
     static void SetDefaultAlphaCutoff(float alphaCutoff);
     static void SetWindData(const SceneWindData& wind);
@@ -151,7 +152,6 @@ public:
 
 private:
     static void StartBatch();
-    static void NextBatch();
     static void ApplyLightingUniforms(const SceneLightingData* lighting);
     static void ApplyWindUniforms(const SceneWindData* wind);
     static void SubmitVertices(const glm::vec3 positions[4],

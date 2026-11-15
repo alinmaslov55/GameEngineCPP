@@ -1,4 +1,5 @@
 #include "Engine/Renderer/Texture2DArray.h"
+#include "Engine/Renderer/GLUtils.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Utils/Logger.h"
 
@@ -186,17 +187,19 @@ Texture2DArray::Texture2DArray(uint32_t width,
         glTexParameterf(GL_TEXTURE_2D_ARRAY, GL_TEXTURE_MAX_ANISOTROPY_EXT, m_AppliedAnisotropy);
     }
 
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage3D(GL_TEXTURE_2D_ARRAY,
-                 0,
-                 GL_RGBA8,
-                 static_cast<GLsizei>(m_Width),
-                 static_cast<GLsizei>(m_Height),
-                 static_cast<GLsizei>(m_Layers),
-                 0,
-                 GL_RGBA,
-                 GL_UNSIGNED_BYTE,
-                 nullptr);
+    {
+        ScopedUnpackAlignment unpackAlign(1);
+        glTexImage3D(GL_TEXTURE_2D_ARRAY,
+                     0,
+                     GL_RGBA8,
+                     static_cast<GLsizei>(m_Width),
+                     static_cast<GLsizei>(m_Height),
+                     static_cast<GLsizei>(m_Layers),
+                     0,
+                     GL_RGBA,
+                     GL_UNSIGNED_BYTE,
+                     nullptr);
+    }
     glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
     glBindTexture(GL_TEXTURE_2D_ARRAY, 0);
 
@@ -241,8 +244,6 @@ Texture2DArray& Texture2DArray::operator=(Texture2DArray&& other) noexcept {
 
 void Texture2DArray::Bind(uint32_t slot) const {
     if (m_RendererID == 0 || !HasActiveGLArrayContext()) {
-        ENGINE_CORE_TRACE("Texture2DArray::Bind skipped (id={}, activeGL={})",
-                          m_RendererID, HasActiveGLArrayContext());
         return;
     }
     glActiveTexture(GL_TEXTURE0 + slot);
@@ -269,18 +270,20 @@ void Texture2DArray::SetLayerData(uint32_t layerIndex, const void* rgba8Data, bo
     }
 
     glBindTexture(GL_TEXTURE_2D_ARRAY, m_RendererID);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
-                    0,
-                    0,
-                    0,
-                    static_cast<GLint>(layerIndex),
-                    static_cast<GLsizei>(m_Width),
-                    static_cast<GLsizei>(m_Height),
-                    1,
-                    GL_RGBA,
-                    GL_UNSIGNED_BYTE,
-                    rgba8Data);
+    {
+        ScopedUnpackAlignment unpackAlign(1);
+        glTexSubImage3D(GL_TEXTURE_2D_ARRAY,
+                        0,
+                        0,
+                        0,
+                        static_cast<GLint>(layerIndex),
+                        static_cast<GLsizei>(m_Width),
+                        static_cast<GLsizei>(m_Height),
+                        1,
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        rgba8Data);
+    }
     if (generateMips && m_LinearFilter) {
         glGenerateMipmap(GL_TEXTURE_2D_ARRAY);
     }

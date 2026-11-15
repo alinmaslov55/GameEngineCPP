@@ -4,6 +4,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/SurfaceSample.h"
+#include "Engine/Physics/Box2DTask.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Core/ThreadAffinity.h"
 
@@ -188,22 +189,8 @@ public:
     [[nodiscard]] size_t GetStaticColliderCount() const noexcept;
 
     // Box2D task pool diagnostics facade
-    struct alignas(64) Box2DTask {
-        std::atomic<int> remaining{ 0 };
-        std::atomic<bool> done{ false };
-        std::atomic<bool> inUse{ false };
-        uint32_t taskIndex{ 0 };
-        void* chunks{ nullptr };
-
-        Box2DTask() = default;
-        Box2DTask(const Box2DTask&) = delete;
-        Box2DTask& operator=(const Box2DTask&) = delete;
-        Box2DTask(Box2DTask&&) = delete;
-        Box2DTask& operator=(Box2DTask&&) = delete;
-    };
-    static_assert(sizeof(Box2DTask) == 64, "Scene::Box2DTask size must equal 64 bytes for cache isolation");
-
-    static constexpr size_t kMaxBox2DTasks = 16;
+    using Box2DTask = ::Engine::Box2DTask;
+    static constexpr size_t kMaxBox2DTasks = Engine::kMaxBox2DTasks;
     [[nodiscard]] uint64_t GetBox2DParallelTasksDispatched() const noexcept;
     [[nodiscard]] uint64_t GetBox2DSerialTasksExecuted() const noexcept;
     [[nodiscard]] uint64_t GetBox2DTotalTasks() const noexcept;

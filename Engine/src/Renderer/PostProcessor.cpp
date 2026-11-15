@@ -1,4 +1,5 @@
 #include "Engine/Renderer/PostProcessor.h"
+#include "Engine/Renderer/GLUtils.h"
 #include "Engine/Renderer/Shader.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Utils/Logger.h"
@@ -133,9 +134,7 @@ void EnsureTargetsSized(uint32_t width, uint32_t height) {
                           static_cast<GLsizei>(safeH));
     glFramebufferRenderbuffer(GL_FRAMEBUFFER, GL_DEPTH_STENCIL_ATTACHMENT, GL_RENDERBUFFER, s_PPData->HDRDepthRBO);
 
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        ENGINE_CORE_ERROR("PostProcessor HDR FBO incomplete! Status: {:#x}", glCheckFramebufferStatus(GL_FRAMEBUFFER));
-    }
+    CheckFramebufferComplete("PostProcessor HDR");
 
     // 2. 5-Level Progressive GL_RGBA16F Bloom Pyramid (1/2, 1/4, 1/8, 1/16, 1/32)
     uint32_t mipW = safeW;
@@ -168,10 +167,7 @@ void EnsureTargetsSized(uint32_t width, uint32_t height) {
         glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
         glFramebufferTexture2D(GL_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, mip.TextureID, 0);
 
-        if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-            ENGINE_CORE_ERROR("PostProcessor Bloom Mip {} FBO incomplete! Status: {:#x}",
-                              i, glCheckFramebufferStatus(GL_FRAMEBUFFER));
-        }
+        CheckFramebufferComplete("PostProcessor Bloom Mip", static_cast<int>(i));
     }
 
     glBindRenderbuffer(GL_RENDERBUFFER, 0);
@@ -267,12 +263,15 @@ void PostProcessor::BeginHDRScene(uint32_t fallbackWidth,
                                   uint32_t fallbackHeight,
                                   const glm::vec3& clearColor) {
     if (!IsValid()) {
-        ENGINE_CORE_TRACE("PostProcessor::BeginHDRScene skipped (PostProcessor invalid or uninitialized)");
         return;
     }
 
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_PPData->SavedFBO);
     glGetIntegerv(GL_VIEWPORT, s_PPData->SavedViewport);
+    const GLboolean prevScissor = glIsEnabled(GL_SCISSOR_TEST);
+    if (prevScissor == GL_TRUE) {
+        glDisable(GL_SCISSOR_TEST);
+    }
 
     const uint32_t targetW = (s_PPData->SavedViewport[2] > 0)
         ? static_cast<uint32_t>(s_PPData->SavedViewport[2])
@@ -300,17 +299,70 @@ void PostProcessor::BeginHDRScene(uint32_t fallbackWidth,
                  1.0f);
     glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
+    if (prevScissor == GL_TRUE) {
+        glEnable(GL_SCISSOR_TEST);
+    }
+
     s_PPData->SceneActive = true;
 }
 
 void PostProcessor::EndHDRAndComposite(const PostProcessComponent& settings) {
     if (!IsValid() || !s_PPData->SceneActive) {
-        ENGINE_CORE_TRACE("PostProcessor::EndHDRAndComposite skipped (valid={}, sceneActive={})",
-                          IsValid(), s_PPData ? s_PPData->SceneActive : false);
         return;
     }
     s_PPData->SceneActive = false;
 
+    struct ScopedPostProcessGLState {
+        GLboolean depthTest = GL_FALSE;
+        GLboolean depthMask = GL_TRUE;
+        GLboolean blend = GL_FALSE;
+        GLboolean scissorTest = GL_FALSE;
+        GLint blendSrcRGB = GL_SRC_ALPHA;
+        GLint blendDstRGB = GL_ONE_MINUS_SRC_ALPHA;
+        GLint blendSrcAlpha = GL_ONE;
+        GLint blendDstAlpha = GL_ONE_MINUS_SRC_ALPHA;
+        GLint program = 0;
+        GLint vao = 0;
+        GLint activeTex = GL_TEXTURE0;
+
+        ScopedPostProcessGLState() noexcept {
+            depthTest = glIsEnabled(GL_DEPTH_TEST);
+            glGetBooleanv(GL_DEPTH_WRITEMASK, &depthMask);
+            blend = glIsEnabled(GL_BLEND);
+            scissorTest = glIsEnabled(GL_SCISSOR_TEST);
+            glGetIntegerv(GL_BLEND_SRC_RGB, &blendSrcRGB);
+            glGetIntegerv(GL_BLEND_DST_RGB, &blendDstRGB);
+            glGetIntegerv(GL_BLEND_SRC_ALPHA, &blendSrcAlpha);
+            glGetIntegerv(GL_BLEND_DST_ALPHA, &blendDstAlpha);
+            glGetIntegerv(GL_CURRENT_PROGRAM, &program);
+            glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &vao);
+            glGetIntegerv(GL_ACTIVE_TEXTURE, &activeTex);
+        }
+
+        ~ScopedPostProcessGLState() noexcept {
+            if (glad_glUseProgram != nullptr) {
+                glUseProgram(static_cast<GLuint>(program));
+            }
+            glBindVertexArray(static_cast<GLuint>(vao));
+            glActiveTexture(static_cast<GLenum>(activeTex));
+            glDepthMask(depthMask);
+            if (depthTest == GL_TRUE) glEnable(GL_DEPTH_TEST); else glDisable(GL_DEPTH_TEST);
+            if (scissorTest == GL_TRUE) glEnable(GL_SCISSOR_TEST); else glDisable(GL_SCISSOR_TEST);
+            if (blend == GL_TRUE) glEnable(GL_BLEND); else glDisable(GL_BLEND);
+            if (glad_glBlendFuncSeparate != nullptr) {
+                glBlendFuncSeparate(static_cast<GLenum>(blendSrcRGB),
+                                    static_cast<GLenum>(blendDstRGB),
+                                    static_cast<GLenum>(blendSrcAlpha),
+                                    static_cast<GLenum>(blendDstAlpha));
+            } else {
+                glBlendFunc(static_cast<GLenum>(blendSrcRGB), static_cast<GLenum>(blendDstRGB));
+            }
+        }
+    } glStateGuard;
+
+    if (glStateGuard.scissorTest == GL_TRUE) {
+        glDisable(GL_SCISSOR_TEST);
+    }
     glDisable(GL_DEPTH_TEST);
     glDepthMask(GL_FALSE);
     glDisable(GL_BLEND);
@@ -417,16 +469,11 @@ void PostProcessor::EndHDRAndComposite(const PostProcessComponent& settings) {
 
     glDrawArrays(GL_TRIANGLES, 0, 3);
 
-    // Restore clean baseline OpenGL state for Pass 4 (2D Screen-Space UI HUD)
-    glBindVertexArray(0);
+    // Unbind scratch texture slots; glStateGuard restores prior program/VAO/depth/blend/scissor state
     glActiveTexture(GL_TEXTURE1);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, 0);
-
-    glDepthMask(GL_TRUE);
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 }
 
 } // namespace Engine

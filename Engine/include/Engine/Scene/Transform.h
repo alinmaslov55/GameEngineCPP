@@ -2,8 +2,8 @@
 #define SCENE_TRANSFORM_H
 
 #include "Engine/Scene/Component.h"
-#include "Engine/Utils/Logger.h"
 
+#include <atomic>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <vector>
@@ -39,8 +39,6 @@ public:
         m_LastPosition = position;
         SetDirty();
         NotifySpatialTransformChanged();
-        ENGINE_CORE_TRACE("Transform::Translate by ({:.4f}, {:.4f}, {:.4f}) -> position: ({:.4f}, {:.4f}, {:.4f})",
-                          translation.x, translation.y, translation.z, position.x, position.y, position.z);
     }
 
     void Rotate(const glm::vec3& eulerAngles) {
@@ -48,8 +46,6 @@ public:
         m_LastRotation = rotation;
         SetDirty();
         NotifySpatialTransformChanged();
-        ENGINE_CORE_TRACE("Transform::Rotate by ({:.4f}, {:.4f}, {:.4f}) -> rotation: ({:.4f}, {:.4f}, {:.4f})",
-                          eulerAngles.x, eulerAngles.y, eulerAngles.z, rotation.x, rotation.y, rotation.z);
     }
 
     // Hierarchy management
@@ -84,7 +80,7 @@ public:
     // Matrices and world coordinate queries
     [[nodiscard]] glm::mat4 GetLocalMatrix() const noexcept;
     [[nodiscard]] glm::mat4 GetTransformMatrix() const noexcept { return GetWorldMatrix(); }
-    [[nodiscard]] const glm::mat4& GetWorldMatrix() const noexcept;
+    [[nodiscard]] glm::mat4 GetWorldMatrix() const noexcept;
 
     [[nodiscard]] glm::vec3 GetWorldPosition() const noexcept;
     void SetWorldPosition(const glm::vec3& worldPos) noexcept;
@@ -100,13 +96,13 @@ public:
     void SetDirty() const noexcept;
 
 private:
-    void UpdateDirtyFromAncestors() const noexcept;
     void NotifySpatialTransformChanged() const noexcept;
 
     Transform* m_Parent = nullptr;
     std::vector<Transform*> m_Children;
 
-    mutable bool m_WorldDirty = true;
+    mutable std::atomic_flag m_CacheLock = ATOMIC_FLAG_INIT;
+    mutable std::atomic<bool> m_WorldDirty{ true };
     mutable glm::mat4 m_CachedWorldMatrix{ 1.0f };
     mutable glm::vec3 m_LastPosition{ 0.0f };
     mutable glm::vec3 m_LastRotation{ 0.0f };

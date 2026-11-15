@@ -259,7 +259,6 @@ void Renderer2D::ApplyWindUniforms(const SceneWindData* wind) {
 
 void Renderer2D::BeginScene(const PerspectiveCamera& camera, bool depthTest, float defaultAlphaCutoff) {
     if (!s_Data) return;
-    ENGINE_CORE_TRACE("Renderer2D::BeginScene (PerspectiveCamera, Unlit)");
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(nullptr);
@@ -273,7 +272,6 @@ void Renderer2D::BeginScene(const PerspectiveCamera& camera,
                             bool depthTest,
                             float defaultAlphaCutoff) {
     if (!s_Data) return;
-    ENGINE_CORE_TRACE("Renderer2D::BeginScene (PerspectiveCamera, 2.5D Lit)");
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(&lighting);
@@ -284,7 +282,6 @@ void Renderer2D::BeginScene(const PerspectiveCamera& camera,
 
 void Renderer2D::BeginShadowPass(const glm::mat4& lightSpaceMatrix, float defaultAlphaCutoff) {
     if (!s_Data) return;
-    ENGINE_CORE_TRACE("Renderer2D::BeginShadowPass");
     Renderer::SetDepthTest(true);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(nullptr); // Unbinds ShadowMap from slot 15 to prevent FBO feedback loop
@@ -295,7 +292,6 @@ void Renderer2D::BeginShadowPass(const glm::mat4& lightSpaceMatrix, float defaul
 
 void Renderer2D::BeginScene(const OrthographicCamera& camera) {
     if (!s_Data) return;
-    ENGINE_CORE_TRACE("Renderer2D::BeginScene (OrthographicCamera)");
     Renderer::SetDepthTest(false);
     s_Data->DefaultAlphaCutoff = 0.0f;
     ApplyLightingUniforms(nullptr);
@@ -306,7 +302,6 @@ void Renderer2D::BeginScene(const OrthographicCamera& camera) {
 
 void Renderer2D::BeginScene(const glm::mat4& projectionMatrix, bool depthTest, float defaultAlphaCutoff) {
     if (!s_Data) return;
-    ENGINE_CORE_TRACE("Renderer2D::BeginScene (Projection Matrix)");
     Renderer::SetDepthTest(depthTest);
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(nullptr);
@@ -325,8 +320,6 @@ void Renderer2D::SetWindData(const SceneWindData& wind) {
     if (!s_Data) {
         return;
     }
-    ENGINE_CORE_TRACE("Renderer2D::SetWindData: WindActive={}, Strength={:.2f}, Speed={:.2f}",
-                      wind.WindActive, wind.Strength, wind.Speed);
     if (s_Data->QuadIndexCount > 0) {
         NextBatch();
     }
@@ -335,7 +328,6 @@ void Renderer2D::SetWindData(const SceneWindData& wind) {
 
 void Renderer2D::EndScene() {
     if (!s_Data) return;
-    ENGINE_CORE_TRACE("Renderer2D::EndScene");
     Flush();
 }
 
@@ -729,10 +721,7 @@ void SubmitStandeesInternal(
 
         const uint32_t batchCount = static_cast<uint32_t>(batchEnd - batchStart);
         if (batchCount == 0) {
-            Renderer2D::Flush();
-            data.QuadIndexCount = 0;
-            data.QuadVertexBufferPtr = data.QuadVertexBufferBase.get();
-            data.TextureSlotIndex = 1;
+            Renderer2D::NextBatch();
             continue;
         }
 
@@ -828,10 +817,7 @@ void SubmitStandeesInternal(
         cmdIndex = batchEnd;
 
         if (cmdIndex < totalCmds) {
-            Renderer2D::Flush();
-            data.QuadIndexCount = 0;
-            data.QuadVertexBufferPtr = data.QuadVertexBufferBase.get();
-            data.TextureSlotIndex = 1;
+            Renderer2D::NextBatch();
         }
     }
 }

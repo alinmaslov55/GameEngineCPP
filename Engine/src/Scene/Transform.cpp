@@ -10,18 +10,15 @@ namespace Engine {
 
 namespace {
 
-void DecomposeMatrix(const glm::mat4& transform, glm::vec3& outPos, glm::vec3& outRot, glm::vec3& outScale) {
-    outPos = glm::vec3(transform[3]);
-    outScale.x = glm::length(glm::vec3(transform[0]));
-    outScale.y = glm::length(glm::vec3(transform[1]));
-    outScale.z = glm::length(glm::vec3(transform[2]));
+glm::mat4 EulerDegreesToRotationMatrix(const glm::vec3& eulerDeg) noexcept {
+    return glm::rotate(glm::mat4(1.0f), glm::radians(eulerDeg.x), glm::vec3(1, 0, 0)) *
+           glm::rotate(glm::mat4(1.0f), glm::radians(eulerDeg.y), glm::vec3(0, 1, 0)) *
+           glm::rotate(glm::mat4(1.0f), glm::radians(eulerDeg.z), glm::vec3(0, 0, 1));
+}
 
-    glm::mat3 rotMat;
-    rotMat[0] = (outScale.x > 1e-6f) ? (glm::vec3(transform[0]) / outScale.x) : glm::vec3(1.0f, 0.0f, 0.0f);
-    rotMat[1] = (outScale.y > 1e-6f) ? (glm::vec3(transform[1]) / outScale.y) : glm::vec3(0.0f, 1.0f, 0.0f);
-    rotMat[2] = (outScale.z > 1e-6f) ? (glm::vec3(transform[2]) / outScale.z) : glm::vec3(0.0f, 0.0f, 1.0f);
-
-    float sy = rotMat[2][0];
+glm::vec3 DecomposeRotationMatrix(const glm::mat3& rotMat) noexcept {
+    glm::vec3 outRot(0.0f);
+    const float sy = std::clamp(rotMat[2][0], -1.0f, 1.0f);
     if (sy < 0.99999f) {
         if (sy > -0.99999f) {
             outRot.y = std::asin(sy);
@@ -37,8 +34,45 @@ void DecomposeMatrix(const glm::mat4& transform, glm::vec3& outPos, glm::vec3& o
         outRot.x = std::atan2(rotMat[0][1], rotMat[1][1]);
         outRot.z = 0.0f;
     }
-    outRot = glm::degrees(outRot);
+    return glm::degrees(outRot);
 }
+
+glm::mat3 ExtractOrthonormalRotation(const glm::mat4& transform, glm::vec3& outScale) noexcept {
+    outScale.x = glm::length(glm::vec3(transform[0]));
+    outScale.y = glm::length(glm::vec3(transform[1]));
+    outScale.z = glm::length(glm::vec3(transform[2]));
+
+    glm::mat3 rotMat;
+    rotMat[0] = (outScale.x > 1e-6f) ? (glm::vec3(transform[0]) / outScale.x) : glm::vec3(1.0f, 0.0f, 0.0f);
+    rotMat[1] = (outScale.y > 1e-6f) ? (glm::vec3(transform[1]) / outScale.y) : glm::vec3(0.0f, 1.0f, 0.0f);
+    rotMat[2] = (outScale.z > 1e-6f) ? (glm::vec3(transform[2]) / outScale.z) : glm::vec3(0.0f, 0.0f, 1.0f);
+    return rotMat;
+}
+
+void DecomposeMatrix(const glm::mat4& transform, glm::vec3& outPos, glm::vec3& outRot, glm::vec3& outScale) noexcept {
+    outPos = glm::vec3(transform[3]);
+    const glm::mat3 rotMat = ExtractOrthonormalRotation(transform, outScale);
+    outRot = DecomposeRotationMatrix(rotMat);
+}
+
+class ScopedAtomicSpinLock {
+public:
+    explicit ScopedAtomicSpinLock(std::atomic_flag& flag) noexcept
+        : m_Flag(flag) {
+        while (m_Flag.test_and_set(std::memory_order_acquire)) {
+        }
+    }
+
+    ~ScopedAtomicSpinLock() noexcept {
+        m_Flag.clear(std::memory_order_release);
+    }
+
+    ScopedAtomicSpinLock(const ScopedAtomicSpinLock&) = delete;
+    ScopedAtomicSpinLock& operator=(const ScopedAtomicSpinLock&) = delete;
+
+private:
+    std::atomic_flag& m_Flag;
+};
 
 } // namespace
 
@@ -71,9 +105,9 @@ bool Transform::IsDescendantOf(const Transform* ancestor) const noexcept {
 }
 
 void Transform::SetDirty() const noexcept {
-    m_WorldDirty = true;
+    m_WorldDirty.store(true, std::memory_order_release);
     for (auto* child : m_Children) {
-        if (child && !child->m_WorldDirty) {
+        if (child && !child->m_WorldDirty.load(std::memory_order_acquire)) {
             child->SetDirty();
         }
     }
@@ -138,38 +172,28 @@ bool Transform::SetParent(Transform* newParent, bool keepWorldTransform) {
 }
 
 glm::mat4 Transform::GetLocalMatrix() const noexcept {
-    glm::mat4 rotMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(rotation.x), glm::vec3(1, 0, 0)) *
-                          glm::rotate(glm::mat4(1.0f), glm::radians(rotation.y), glm::vec3(0, 1, 0)) *
-                          glm::rotate(glm::mat4(1.0f), glm::radians(rotation.z), glm::vec3(0, 0, 1));
-
     return glm::translate(glm::mat4(1.0f), position) *
-           rotMatrix *
+           EulerDegreesToRotationMatrix(rotation) *
            glm::scale(glm::mat4(1.0f), scale);
 }
 
-void Transform::UpdateDirtyFromAncestors() const noexcept {
-    if (m_Parent) {
-        m_Parent->UpdateDirtyFromAncestors();
-    }
+glm::mat4 Transform::GetWorldMatrix() const noexcept {
+    // Evaluate parent BEFORE acquiring m_CacheLock so locks never nest along the hierarchy
+    // and any untracked ancestor edits propagate SetDirty() before this node checks its flag.
+    const glm::mat4 parentWorld = m_Parent ? m_Parent->GetWorldMatrix() : glm::mat4(1.0f);
+
+    ScopedAtomicSpinLock lock(m_CacheLock);
     if (position != m_LastPosition || rotation != m_LastRotation || scale != m_LastScale) {
         m_LastPosition = position;
         m_LastRotation = rotation;
         m_LastScale = scale;
         SetDirty();
     }
-}
 
-const glm::mat4& Transform::GetWorldMatrix() const noexcept {
-    UpdateDirtyFromAncestors();
-
-    if (m_WorldDirty) {
+    if (m_WorldDirty.load(std::memory_order_acquire)) {
         const glm::mat4 localMatrix = GetLocalMatrix();
-        if (m_Parent) {
-            m_CachedWorldMatrix = m_Parent->GetWorldMatrix() * localMatrix;
-        } else {
-            m_CachedWorldMatrix = localMatrix;
-        }
-        m_WorldDirty = false;
+        m_CachedWorldMatrix = m_Parent ? (parentWorld * localMatrix) : localMatrix;
+        m_WorldDirty.store(false, std::memory_order_release);
     }
     return m_CachedWorldMatrix;
 }
@@ -207,8 +231,11 @@ void Transform::SetWorldRotation(const glm::vec3& worldRot) noexcept {
     if (!m_Parent) {
         rotation = worldRot;
     } else {
-        const glm::vec3 parentWorldRot = m_Parent->GetWorldRotation();
-        rotation = worldRot - parentWorldRot;
+        glm::vec3 unusedParentScale(1.0f);
+        const glm::mat3 parentRotMat = ExtractOrthonormalRotation(m_Parent->GetWorldMatrix(), unusedParentScale);
+        const glm::mat3 desiredWorldRotMat(EulerDegreesToRotationMatrix(worldRot));
+        const glm::mat3 localRotMat = glm::transpose(parentRotMat) * desiredWorldRotMat;
+        rotation = DecomposeRotationMatrix(localRotMat);
     }
     m_LastRotation = rotation;
     SetDirty();
@@ -225,14 +252,11 @@ glm::vec3 Transform::GetWorldScale() const noexcept {
 }
 
 glm::mat4 Transform::GetInterpolatedLocalMatrix(float alpha) const noexcept {
-    glm::vec3 interpPos = GetInterpolatedPosition(alpha);
-    glm::vec3 interpRot = GetInterpolatedRotation(alpha);
-    glm::mat4 rotMatrix = glm::rotate(glm::mat4(1.0f), glm::radians(interpRot.x), glm::vec3(1, 0, 0)) *
-                          glm::rotate(glm::mat4(1.0f), glm::radians(interpRot.y), glm::vec3(0, 1, 0)) *
-                          glm::rotate(glm::mat4(1.0f), glm::radians(interpRot.z), glm::vec3(0, 0, 1));
+    const glm::vec3 interpPos = GetInterpolatedPosition(alpha);
+    const glm::vec3 interpRot = GetInterpolatedRotation(alpha);
 
     return glm::translate(glm::mat4(1.0f), interpPos) *
-           rotMatrix *
+           EulerDegreesToRotationMatrix(interpRot) *
            glm::scale(glm::mat4(1.0f), scale);
 }
 

@@ -131,8 +131,8 @@ TEST(Box2DPhysicsTest, DynamicBodyFallsUnderGravityDuringRuntime) {
     ballRb->InitialLinearVelocityXZ = { 2.0f, 3.0f };
     auto* ballBox = ball->AddComponent<Engine::BoxCollider2D>();
     ballBox->size = { 1.0f, 1.0f };
-    ballBox->density = 1.0f;
-    ballBox->restitution = 0.5f;
+    ballBox->Density = 1.0f;
+    ballBox->Restitution = 0.5f;
 
     // Prior to OnRuntimeStart, Box2D body handles are nullptr
     EXPECT_EQ(ballRb->RuntimeBody, nullptr);
@@ -141,7 +141,7 @@ TEST(Box2DPhysicsTest, DynamicBodyFallsUnderGravityDuringRuntime) {
     scene.OnRuntimeStart();
     EXPECT_NE(ballRb->RuntimeBody, nullptr);
     EXPECT_NE(groundRb->RuntimeBody, nullptr);
-    EXPECT_NE(ballBox->RuntimeFixture, nullptr);
+    EXPECT_NE(ballBox->RuntimeShape, nullptr);
 
     const float initialY = ball->GetTransform()->position.y;
     EXPECT_FLOAT_EQ(initialY, 10.0f);
@@ -159,7 +159,7 @@ TEST(Box2DPhysicsTest, DynamicBodyFallsUnderGravityDuringRuntime) {
     scene.OnRuntimeStop();
     EXPECT_EQ(ballRb->RuntimeBody, nullptr);
     EXPECT_EQ(groundRb->RuntimeBody, nullptr);
-    EXPECT_EQ(ballBox->RuntimeFixture, nullptr);
+    EXPECT_EQ(ballBox->RuntimeShape, nullptr);
 }
 
 TEST(Box2DPhysicsTest, MultithreadedStepWithWorkerPool) {
@@ -201,9 +201,9 @@ TEST(Box2DPhysicsTest, MultithreadedStepWithWorkerPool) {
 
             auto* box = ball->AddComponent<Engine::BoxCollider2D>();
             box->size = { 0.8f, 0.8f };
-            box->density = 1.0f;
-            box->friction = 0.3f;
-            box->restitution = 0.2f;
+            box->Density = 1.0f;
+            box->Friction = 0.3f;
+            box->Restitution = 0.2f;
 
             bodies.push_back(ball);
         }

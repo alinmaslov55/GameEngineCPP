@@ -1,4 +1,5 @@
 #include "Engine/Renderer/ShadowMap.h"
+#include "Engine/Renderer/GLUtils.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>
@@ -84,9 +85,7 @@ void ShadowMap::Init(uint32_t resolution) {
     glDrawBuffer(GL_NONE);
     glReadBuffer(GL_NONE);
 
-    if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
-        ENGINE_CORE_ERROR("ShadowMap FBO incomplete! Status: {:#x}", glCheckFramebufferStatus(GL_FRAMEBUFFER));
-    }
+    CheckFramebufferComplete("ShadowMap");
 
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(prevFBO));
     glBindTexture(GL_TEXTURE_2D, 0);

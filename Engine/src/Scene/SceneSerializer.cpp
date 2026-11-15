@@ -220,6 +220,54 @@ void SerializeTilemap(const GameObject* go, json& compsJson) {
     compsJson["Tilemap"] = std::move(tilemapJson);
 }
 
+template<typename TerrainLike>
+json SerializeTerrainLayers(const TerrainLike* terrainLike) {
+    json layersJson = json::array();
+    for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
+        const auto& layer = terrainLike->GetLayer(i);
+        json layerJson = {
+            {"TilingScale", layer.TilingScale},
+            {"Glossiness", layer.Glossiness}
+        };
+        if (!layer.HeightMapPath.empty()) {
+            layerJson["HeightMapPath"] = ResourceManager::ToRelativePath(layer.HeightMapPath);
+        }
+        if (!layer.NormalMapPath.empty()) {
+            layerJson["NormalMapPath"] = ResourceManager::ToRelativePath(layer.NormalMapPath);
+        }
+        if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
+            layerJson["TexturePath"] = ResourceManager::ToRelativePath(layer.LayerTexture->GetFilepath());
+        }
+        layersJson.push_back(std::move(layerJson));
+    }
+    return layersJson;
+}
+
+template<typename TerrainLike>
+void DeserializeTerrainLayers(TerrainLike* terrainLike, const json& parentJson) {
+    if (!parentJson.contains("Layers") || !parentJson["Layers"].is_array()) {
+        return;
+    }
+    const auto& layersArr = parentJson["Layers"];
+    for (uint32_t i = 0; i < TerrainComponent::MaxLayers && i < layersArr.size(); ++i) {
+        const auto& lJson = layersArr[i];
+        terrainLike->SetLayerTilingScale(i, lJson.value("TilingScale", 0.45f));
+        terrainLike->SetLayerGlossiness(i, lJson.value("Glossiness", TerrainComponent::DefaultLayerGlossiness(i)));
+        if (lJson.contains("HeightMapPath") && lJson["HeightMapPath"].is_string()) {
+            terrainLike->SetLayerHeightMapPath(i, lJson["HeightMapPath"].get<std::string>());
+        }
+        if (lJson.contains("NormalMapPath") && lJson["NormalMapPath"].is_string()) {
+            terrainLike->SetLayerNormalMapPath(i, lJson["NormalMapPath"].get<std::string>());
+        }
+        if (lJson.contains("TexturePath") && lJson["TexturePath"].is_string()) {
+            const std::string texPath = lJson["TexturePath"].get<std::string>();
+            if (!texPath.empty()) {
+                terrainLike->SetLayerTexture(i, ResourceManager::Load<Texture>(texPath));
+            }
+        }
+    }
+}
+
 void SerializeTerrain(const GameObject* go, json& compsJson) {
     auto* terrain = go->GetComponent<TerrainComponent>();
     if (!terrain) return;
@@ -244,25 +292,7 @@ void SerializeTerrain(const GameObject* go, json& compsJson) {
         }
     }
 
-    json layersJson = json::array();
-    for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
-        const auto& layer = terrain->GetLayer(i);
-        json layerJson = {
-            {"TilingScale", layer.TilingScale},
-            {"Glossiness", layer.Glossiness}
-        };
-        if (!layer.HeightMapPath.empty()) {
-            layerJson["HeightMapPath"] = ResourceManager::ToRelativePath(layer.HeightMapPath);
-        }
-        if (!layer.NormalMapPath.empty()) {
-            layerJson["NormalMapPath"] = ResourceManager::ToRelativePath(layer.NormalMapPath);
-        }
-        if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
-            layerJson["TexturePath"] = ResourceManager::ToRelativePath(layer.LayerTexture->GetFilepath());
-        }
-        layersJson.push_back(std::move(layerJson));
-    }
-    terrainJson["Layers"] = std::move(layersJson);
+    terrainJson["Layers"] = SerializeTerrainLayers(terrain);
     compsJson["Terrain"] = std::move(terrainJson);
 }
 
@@ -289,25 +319,7 @@ void SerializeTerrainChunkManager(const GameObject* go, json& compsJson) {
         {"PoiSuperCellChunks", wg.PoiSuperCellChunks}
     };
 
-    json layersJson = json::array();
-    for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
-        const auto& layer = mgr->GetLayer(i);
-        json layerJson = {
-            {"TilingScale", layer.TilingScale},
-            {"Glossiness", layer.Glossiness}
-        };
-        if (!layer.HeightMapPath.empty()) {
-            layerJson["HeightMapPath"] = ResourceManager::ToRelativePath(layer.HeightMapPath);
-        }
-        if (!layer.NormalMapPath.empty()) {
-            layerJson["NormalMapPath"] = ResourceManager::ToRelativePath(layer.NormalMapPath);
-        }
-        if (layer.LayerTexture && !layer.LayerTexture->GetFilepath().empty()) {
-            layerJson["TexturePath"] = ResourceManager::ToRelativePath(layer.LayerTexture->GetFilepath());
-        }
-        layersJson.push_back(std::move(layerJson));
-    }
-    tcmJson["Layers"] = std::move(layersJson);
+    tcmJson["Layers"] = SerializeTerrainLayers(mgr);
 
     json modChunksJson = json::array();
     for (const auto& [coord, chunk] : mgr->GetChunks()) {
@@ -849,26 +861,7 @@ void DeserializeTerrain(GameObject* go, const json& trJson, const std::string& n
         terrain->LoadSplatmapFromPNG(ResourceManager::ResolvePath(splatPath));
     }
 
-    if (trJson.contains("Layers") && trJson["Layers"].is_array()) {
-        const auto& layersArr = trJson["Layers"];
-        for (uint32_t i = 0; i < TerrainComponent::MaxLayers && i < layersArr.size(); ++i) {
-            const auto& lJson = layersArr[i];
-            terrain->SetLayerTilingScale(i, lJson.value("TilingScale", 0.45f));
-            terrain->SetLayerGlossiness(i, lJson.value("Glossiness", TerrainComponent::DefaultLayerGlossiness(i)));
-            if (lJson.contains("HeightMapPath") && lJson["HeightMapPath"].is_string()) {
-                terrain->SetLayerHeightMapPath(i, lJson["HeightMapPath"].get<std::string>());
-            }
-            if (lJson.contains("NormalMapPath") && lJson["NormalMapPath"].is_string()) {
-                terrain->SetLayerNormalMapPath(i, lJson["NormalMapPath"].get<std::string>());
-            }
-            if (lJson.contains("TexturePath") && lJson["TexturePath"].is_string()) {
-                const std::string texPath = lJson["TexturePath"].get<std::string>();
-                if (!texPath.empty()) {
-                    terrain->SetLayerTexture(i, ResourceManager::Load<Texture>(texPath));
-                }
-            }
-        }
-    }
+    DeserializeTerrainLayers(terrain, trJson);
     ENGINE_CORE_DEBUG("SceneSerializer: Restored TerrainComponent on '{}' ({:.1f}x{:.1f}m, Splatmap={}x{})",
                       name, width, depth, splatW, splatH);
 }
@@ -899,26 +892,7 @@ void DeserializeTerrainChunkManager(GameObject* go, const json& tcmJson, const s
         mgr->ConfigureProceduralWorld(wgConfig);
     }
 
-    if (tcmJson.contains("Layers") && tcmJson["Layers"].is_array()) {
-        const auto& layersArr = tcmJson["Layers"];
-        for (uint32_t i = 0; i < TerrainComponent::MaxLayers && i < layersArr.size(); ++i) {
-            const auto& lJson = layersArr[i];
-            mgr->SetLayerTilingScale(i, lJson.value("TilingScale", 0.45f));
-            mgr->SetLayerGlossiness(i, lJson.value("Glossiness", TerrainComponent::DefaultLayerGlossiness(i)));
-            if (lJson.contains("HeightMapPath") && lJson["HeightMapPath"].is_string()) {
-                mgr->SetLayerHeightMapPath(i, lJson["HeightMapPath"].get<std::string>());
-            }
-            if (lJson.contains("NormalMapPath") && lJson["NormalMapPath"].is_string()) {
-                mgr->SetLayerNormalMapPath(i, lJson["NormalMapPath"].get<std::string>());
-            }
-            if (lJson.contains("TexturePath") && lJson["TexturePath"].is_string()) {
-                const std::string texPath = lJson["TexturePath"].get<std::string>();
-                if (!texPath.empty()) {
-                    mgr->SetLayerTexture(i, ResourceManager::Load<Texture>(texPath));
-                }
-            }
-        }
-    }
+    DeserializeTerrainLayers(mgr, tcmJson);
 
     if (tcmJson.contains("ModifiedChunks") && tcmJson["ModifiedChunks"].is_array()) {
         for (const auto& mcJson : tcmJson["ModifiedChunks"]) {

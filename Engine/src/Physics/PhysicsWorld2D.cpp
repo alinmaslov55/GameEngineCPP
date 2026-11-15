@@ -588,7 +588,7 @@ void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int 
                                           : (physWorld && physWorld->m_Box2DWorkerCount > 0 ? physWorld->m_Box2DWorkerCount - 1u : 0u);
         task(0, itemCount, callerWorker, taskContext);
         if (physWorld) {
-            ++physWorld->m_Box2DSerialTasksExecuted;
+            physWorld->m_Box2DSerialTasksExecuted.fetch_add(1, std::memory_order_relaxed);
         }
         return nullptr;
     }
@@ -609,13 +609,13 @@ void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int 
                                           ? static_cast<uint32_t>(currentWorker)
                                           : (physWorld->m_Box2DWorkerCount > 0 ? physWorld->m_Box2DWorkerCount - 1u : 0u);
         task(0, itemCount, callerWorker, taskContext);
-        ++physWorld->m_Box2DSerialTasksExecuted;
+        physWorld->m_Box2DSerialTasksExecuted.fetch_add(1, std::memory_order_relaxed);
         return nullptr;
     }
 
     taskSlot->remaining.store(chunkCount, std::memory_order_release);
     taskSlot->done.store(false, std::memory_order_release);
-    ++physWorld->m_Box2DParallelTasksDispatched;
+    physWorld->m_Box2DParallelTasksDispatched.fetch_add(1, std::memory_order_relaxed);
 
     const int baseSize = itemCount / chunkCount;
     const int remainder = itemCount % chunkCount;
@@ -709,8 +709,8 @@ void PhysicsWorld2D::OnRuntimeStop() {
     }
 
     ENGINE_CORE_INFO("PhysicsWorld2D: Stopping Box2D runtime physics (parallel tasks={}, serial tasks={}, tracked bodies={})",
-                     m_Box2DParallelTasksDispatched,
-                     m_Box2DSerialTasksExecuted,
+                     m_Box2DParallelTasksDispatched.load(std::memory_order_relaxed),
+                     m_Box2DSerialTasksExecuted.load(std::memory_order_relaxed),
                      m_PhysicsBodies.size());
 
     b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);

@@ -40,8 +40,6 @@ void ParticleSystem::Emit(const ParticleProps& particleProps) {
         m_PoolIndex = (m_PoolIndex + 1) % static_cast<uint32_t>(m_ParticlePool.size());
     }
 
-    ENGINE_CORE_TRACE("ParticleSystem: Emitting particle at ({:.2f}, {:.2f}, {:.2f}), pool index: {}",
-                        particleProps.position.x, particleProps.position.y, particleProps.position.z, targetIndex);
     Particle& particle = m_ParticlePool[targetIndex];
     particle.active = true;
     particle.position = particleProps.position;
@@ -64,8 +62,6 @@ void ParticleSystem::Emit(const ParticleProps& particleProps) {
 }
 
 void ParticleSystem::Update(float deltaTime) {
-    ENGINE_CORE_TRACE("ParticleSystem::Update (deltaTime: {:.4f}s)", deltaTime);
-
     if (AutoEmit && EmitRate > 0.0f && deltaTime > 0.0f) {
         m_EmitAccumulator = std::min(m_EmitAccumulator + deltaTime * EmitRate, 32.0f);
         glm::vec3 basePos{ 0.0f };

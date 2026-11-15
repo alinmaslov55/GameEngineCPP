@@ -1,4 +1,5 @@
 #include "Engine/Renderer/Texture.h"
+#include "Engine/Renderer/GLUtils.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
 #include <stb_image.h>
@@ -9,6 +10,40 @@ namespace Engine {
 namespace {
 bool HasActiveGLContext() {
     return glad_glGenTextures != nullptr && glad_glBindTexture != nullptr;
+}
+
+void ConfigureAndUploadTexture2D(uint32_t& rendererID,
+                                 int width,
+                                 int height,
+                                 const void* rgbaData,
+                                 bool linearFilter,
+                                 bool hasMipmaps,
+                                 bool repeatWrap) {
+    if (rendererID == 0) {
+        glGenTextures(1, &rendererID);
+    }
+
+    glBindTexture(GL_TEXTURE_2D, rendererID);
+
+    const GLint minFilter = linearFilter
+        ? (hasMipmaps ? GL_LINEAR_MIPMAP_LINEAR : GL_LINEAR)
+        : GL_NEAREST;
+    const GLint magFilter = linearFilter ? GL_LINEAR : GL_NEAREST;
+    const GLint wrap = repeatWrap ? GL_REPEAT : GL_CLAMP_TO_EDGE;
+
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+
+    {
+        ScopedUnpackAlignment unpackAlign(1);
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, width, height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaData);
+    }
+    if (hasMipmaps) {
+        glGenerateMipmap(GL_TEXTURE_2D);
+    }
+    glBindTexture(GL_TEXTURE_2D, 0);
 }
 } // namespace
 
@@ -36,24 +71,9 @@ Texture::Texture(const std::string& path)
         return;
     }
 
-    glGenTextures(1, &m_RendererID);
-    glBindTexture(GL_TEXTURE_2D, m_RendererID);
-
     // Keep small pixel-art atlases (< 64px, e.g. font_atlas.png) crisp with GL_NEAREST,
     // and use GL_LINEAR for high-resolution illustrated 2.5D diorama sprites & ground tiles.
-    const GLint minFilter = m_LinearFilter ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST;
-    const GLint magFilter = m_LinearFilter ? GL_LINEAR : GL_NEAREST;
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, localBuffer);
-    if (m_HasMipmaps) {
-        glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    glBindTexture(GL_TEXTURE_2D, 0);
+    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, localBuffer, m_LinearFilter, m_HasMipmaps, m_RepeatWrap);
 
     stbi_image_free(localBuffer);
 
@@ -78,20 +98,7 @@ Texture::Texture(uint32_t width,
         return;
     }
 
-    glGenTextures(1, &m_RendererID);
-    glBindTexture(GL_TEXTURE_2D, m_RendererID);
-
-    const GLint filter = linearFilter ? GL_LINEAR : GL_NEAREST;
-    const GLint wrap = repeatWrap ? GL_REPEAT : GL_CLAMP_TO_EDGE;
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
-
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaData);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, rgbaData, linearFilter, false, repeatWrap);
     m_IsLoaded = true;
 }
 
@@ -172,8 +179,10 @@ void Texture::SetData(const void* rgbaData, uint32_t sizeBytes) {
     }
 
     glBindTexture(GL_TEXTURE_2D, m_RendererID);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_Width, m_Height, GL_RGBA, GL_UNSIGNED_BYTE, rgbaData);
+    {
+        ScopedUnpackAlignment unpackAlign(1);
+        glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, m_Width, m_Height, GL_RGBA, GL_UNSIGNED_BYTE, rgbaData);
+    }
     if (m_HasMipmaps) {
         glGenerateMipmap(GL_TEXTURE_2D);
     }
@@ -198,16 +207,18 @@ void Texture::SetSubData(uint32_t xOffset,
     }
 
     glBindTexture(GL_TEXTURE_2D, m_RendererID);
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexSubImage2D(GL_TEXTURE_2D,
-                    0,
-                    static_cast<GLint>(xOffset),
-                    static_cast<GLint>(yOffset),
-                    static_cast<GLsizei>(width),
-                    static_cast<GLsizei>(height),
-                    GL_RGBA,
-                    GL_UNSIGNED_BYTE,
-                    rgbaSubData);
+    {
+        ScopedUnpackAlignment unpackAlign(1);
+        glTexSubImage2D(GL_TEXTURE_2D,
+                        0,
+                        static_cast<GLint>(xOffset),
+                        static_cast<GLint>(yOffset),
+                        static_cast<GLsizei>(width),
+                        static_cast<GLsizei>(height),
+                        GL_RGBA,
+                        GL_UNSIGNED_BYTE,
+                        rgbaSubData);
+    }
     if (m_HasMipmaps) {
         glGenerateMipmap(GL_TEXTURE_2D);
     }
@@ -218,7 +229,6 @@ void Texture::Bind(uint32_t slot) const {
     if (m_RendererID == 0 || !HasActiveGLContext()) {
         return;
     }
-    ENGINE_CORE_TRACE("Texture ID {} bound to slot {}", m_RendererID, slot);
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture(GL_TEXTURE_2D, m_RendererID);
 }
@@ -227,7 +237,6 @@ void Texture::Unbind() const {
     if (!HasActiveGLContext()) {
         return;
     }
-    ENGINE_CORE_TRACE("Texture ID {} unbound", m_RendererID);
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 
@@ -256,26 +265,7 @@ bool Texture::ReloadFromDisk() {
         return true;
     }
 
-    if (m_RendererID == 0) {
-        glGenTextures(1, &m_RendererID);
-    }
-
-    glBindTexture(GL_TEXTURE_2D, m_RendererID);
-    const GLint minFilter = m_LinearFilter ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST;
-    const GLint magFilter = m_LinearFilter ? GL_LINEAR : GL_NEAREST;
-    const GLint wrap = m_RepeatWrap ? GL_REPEAT : GL_CLAMP_TO_EDGE;
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
-
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, localBuffer);
-    if (m_HasMipmaps) {
-        glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    glBindTexture(GL_TEXTURE_2D, 0);
+    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, localBuffer, m_LinearFilter, m_HasMipmaps, m_RepeatWrap);
 
     stbi_image_free(localBuffer);
     ENGINE_CORE_INFO("Texture reloaded in-place: '{}' (ID: {}, {}x{})", m_Filepath, m_RendererID, m_Width, m_Height);
@@ -299,27 +289,7 @@ void Texture::PopulateFromData(int width, int height, int bpp, const void* rgbaD
         return;
     }
 
-    if (m_RendererID == 0) {
-        glGenTextures(1, &m_RendererID);
-    }
-
-    glBindTexture(GL_TEXTURE_2D, m_RendererID);
-
-    const GLint minFilter = m_LinearFilter ? GL_LINEAR_MIPMAP_LINEAR : GL_NEAREST;
-    const GLint magFilter = m_LinearFilter ? GL_LINEAR : GL_NEAREST;
-    const GLint wrap = m_RepeatWrap ? GL_REPEAT : GL_CLAMP_TO_EDGE;
-
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
-
-    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, m_Width, m_Height, 0, GL_RGBA, GL_UNSIGNED_BYTE, rgbaData);
-    if (m_HasMipmaps) {
-        glGenerateMipmap(GL_TEXTURE_2D);
-    }
-    glBindTexture(GL_TEXTURE_2D, 0);
+    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, rgbaData, m_LinearFilter, m_HasMipmaps, m_RepeatWrap);
 
     m_IsLoaded = true;
     ENGINE_CORE_INFO("Texture async upload complete: '{}' (ID: {}, {}x{}, BPP: {})",

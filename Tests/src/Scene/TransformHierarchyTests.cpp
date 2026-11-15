@@ -3,8 +3,10 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Core/JobSystem.h"
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
+#include <cmath>
 #include <memory>
 #include <vector>
 
@@ -291,6 +293,81 @@ TEST(TransformHierarchyTest, SceneSerializerParentChildRoundTrip) {
     EXPECT_NEAR(dstSwordWorldPos.x, 11.0f, 1e-4f);
     EXPECT_NEAR(dstSwordWorldPos.y, 22.0f, 1e-4f);
     EXPECT_NEAR(dstSwordWorldPos.z, 30.0f, 1e-4f);
+}
+
+TEST(TransformHierarchyTest, SetWorldRotationWithRotatedParent) {
+    auto scene = std::make_shared<Engine::Scene>("RotationCompositionScene");
+    auto* parent = scene->CreateGameObject("Parent");
+    auto* child = scene->CreateGameObject("Child");
+
+    auto* pTr = parent->GetTransform();
+    auto* cTr = child->GetTransform();
+    pTr->position = { 3.0f, -2.0f, 5.0f };
+    pTr->rotation = { 35.0f, -60.0f, 20.0f };
+    pTr->scale = { 2.0f, 2.0f, 2.0f };
+    cTr->position = { 1.0f, 0.5f, -0.5f };
+
+    ASSERT_TRUE(cTr->SetParent(pTr, false));
+
+    const glm::vec3 targetWorldRot = { -15.0f, 75.0f, 30.0f };
+    cTr->SetWorldRotation(targetWorldRot);
+
+    const glm::mat4 worldMat = cTr->GetWorldMatrix();
+    const glm::mat4 expectedRot =
+        glm::rotate(glm::mat4(1.0f), glm::radians(targetWorldRot.x), glm::vec3(1, 0, 0)) *
+        glm::rotate(glm::mat4(1.0f), glm::radians(targetWorldRot.y), glm::vec3(0, 1, 0)) *
+        glm::rotate(glm::mat4(1.0f), glm::radians(targetWorldRot.z), glm::vec3(0, 0, 1));
+
+    for (int col = 0; col < 3; ++col) {
+        const glm::vec3 actualAxis = glm::normalize(glm::vec3(worldMat[col]));
+        const glm::vec3 expectedAxis = glm::vec3(expectedRot[col]);
+        EXPECT_NEAR(actualAxis.x, expectedAxis.x, 1e-4f);
+        EXPECT_NEAR(actualAxis.y, expectedAxis.y, 1e-4f);
+        EXPECT_NEAR(actualAxis.z, expectedAxis.z, 1e-4f);
+    }
+}
+
+TEST(TransformHierarchyTest, ConcurrentGetWorldMatrixReadsAreRaceFree) {
+    Engine::JobSystem::Init(4);
+
+    auto scene = std::make_shared<Engine::Scene>("ConcurrentTransformScene");
+    auto* root = scene->CreateGameObject("Root");
+    auto* arm = scene->CreateGameObject("Arm");
+    auto* wrist = scene->CreateGameObject("Wrist");
+    auto* weapon = scene->CreateGameObject("Weapon");
+
+    auto* rootTr = root->GetTransform();
+    auto* armTr = arm->GetTransform();
+    auto* wristTr = wrist->GetTransform();
+    auto* weaponTr = weapon->GetTransform();
+
+    ASSERT_TRUE(armTr->SetParent(rootTr, false));
+    ASSERT_TRUE(wristTr->SetParent(armTr, false));
+    ASSERT_TRUE(weaponTr->SetParent(wristTr, false));
+
+    rootTr->position = { 4.0f, 1.0f, -3.0f };
+    rootTr->rotation = { 0.0f, 90.0f, 0.0f };
+    armTr->position = { 2.0f, 0.0f, 0.0f };
+    wristTr->position = { 0.0f, 3.0f, 0.0f };
+    weaponTr->position = { 0.0f, 0.0f, 1.5f };
+
+    // Reference world position on single thread first? Test cold dirty cache across parallel workers!
+    constexpr size_t kWorkers = 64;
+    std::vector<glm::vec3> positions(kWorkers, glm::vec3(0.0f));
+
+    Engine::JobSystem::ParallelFor(kWorkers, [&](size_t i) {
+        const glm::mat4 mat = weaponTr->GetWorldMatrix();
+        positions[i] = glm::vec3(mat[3]);
+    });
+
+    const glm::vec3 expected = weaponTr->GetWorldPosition();
+    for (size_t i = 0; i < kWorkers; ++i) {
+        EXPECT_NEAR(positions[i].x, expected.x, 1e-4f);
+        EXPECT_NEAR(positions[i].y, expected.y, 1e-4f);
+        EXPECT_NEAR(positions[i].z, expected.z, 1e-4f);
+    }
+
+    Engine::JobSystem::Shutdown();
 }
 
 } // namespace

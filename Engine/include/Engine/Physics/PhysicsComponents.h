@@ -195,35 +195,6 @@ public:
     glm::vec2 size = { 1.0f, 1.0f };   // Base footprint on the XZ ground plane (size.x = Width X, size.y = Depth Z)
     glm::vec2 offset = { 0.0f, 0.0f }; // Shift from Transform center on the XZ ground plane
 
-    // Backward-compatibility aliases for existing code and tests:
-    ShapeHandle& RuntimeFixture = RuntimeShape;
-    float& density = Density;
-    float& friction = Friction;
-    float& restitution = Restitution;
-
-    BoxCollider2D(const BoxCollider2D& other)
-        : Collider2D(other), size(other.size), offset(other.offset),
-          RuntimeFixture(RuntimeShape), density(Density), friction(Friction), restitution(Restitution) {}
-    BoxCollider2D(BoxCollider2D&& other) noexcept
-        : Collider2D(std::move(other)), size(other.size), offset(other.offset),
-          RuntimeFixture(RuntimeShape), density(Density), friction(Friction), restitution(Restitution) {}
-    BoxCollider2D& operator=(const BoxCollider2D& other) {
-        if (this != &other) {
-            Collider2D::operator=(other);
-            size = other.size;
-            offset = other.offset;
-        }
-        return *this;
-    }
-    BoxCollider2D& operator=(BoxCollider2D&& other) noexcept {
-        if (this != &other) {
-            Collider2D::operator=(std::move(other));
-            size = other.size;
-            offset = other.offset;
-        }
-        return *this;
-    }
-
     void BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) override;
 };
 

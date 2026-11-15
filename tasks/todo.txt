@@ -133,7 +133,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
 
 [P2] ARCHITECTURE, API CONSISTENCY & STATE HYGIENE
 --------------------------------------------------------------------------------
-[ ] 12. Fix OpenGL State Leaks & Unify Texture/FBO/Shader/Terrain Helpers
+[x] 12. Fix OpenGL State Leaks & Unify Texture/FBO/Shader/Terrain Helpers
     - Files: Engine/src/Renderer/PostProcessor.cpp, Engine/src/Renderer/ShadowMap.cpp (lines 87-89), Engine/src/Renderer/TorchShadowMap.cpp (lines 93-95), Engine/src/Renderer/Framebuffer.cpp (lines 72-73), Engine/src/Renderer/Renderer2D.cpp (lines 729-735, 828-833), Engine/src/Scene/TerrainComponent.cpp, Engine/src/Scene/TerrainChunkManager.cpp, Engine/src/Scene/SceneSerializer.cpp, Engine/include/Engine/Physics/PhysicsWorld2D.h (line 178), Engine/include/Engine/Physics/PhysicsComponents.h (lines 193-219)
     - Details:
       * Store `GLenum status = glCheckFramebufferStatus(GL_FRAMEBUFFER)` once across `Framebuffer`, `ShadowMap`, and `TorchShadowMap`.
@@ -142,7 +142,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
       * Extract shared material/splat/bilinear-sampling/JSON-serialization helpers between `TerrainComponent`, `TerrainChunkManager`, and `SceneSerializer`.
       * Remove dead `PhysicsWorld2D::m_FoliageInteractorGrid` and `BoxCollider2D`'s 4 pointer reference aliases (`RuntimeFixture`, `density`, `friction`, `restitution`).
 
-[ ] 13. Thread-Safety Polish & Trace-Log Noise Cleanup
+[x] 13. Thread-Safety Polish & Trace-Log Noise Cleanup
     - Files: Engine/src/Scene/Transform.cpp (lines 133-209), Engine/include/Engine/Physics/PhysicsWorld2D.h (lines 173-174), Engine/src/Scene/Scene.cpp (line 710), Engine/src/Renderer/Renderer2D.cpp, Engine/src/Renderer/Shader.cpp, Engine/src/Renderer/Renderer.cpp, Engine/src/Core/Time.cpp, Engine/src/Core/Input.cpp, Engine/src/Core/Window.cpp, Engine/src/Particles/ParticleSystem.cpp
     - Details:
       * Fix `Transform::SetWorldRotation()` to resolve via rotation matrices/quaternions rather than `worldRot - parentWorldRot` Euler subtraction, and eliminate mutable cache writes inside `const` hierarchy queries.

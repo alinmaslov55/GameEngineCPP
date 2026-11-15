@@ -182,7 +182,7 @@ TEST(TimeAndPhysicsStepTest, MultiFrameratePhysicsDeterminism) {
 
         auto* col = bodyObj->AddComponent<Engine::BoxCollider2D>();
         col->size = { 1.0f, 1.0f };
-        col->density = 1.0f;
+        col->Density = 1.0f;
 
         scene.OnRuntimeStart();
 

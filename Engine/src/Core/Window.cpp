@@ -62,7 +62,6 @@ Window::~Window() {
 }
 
 void Window::PollEvents() {
-    ENGINE_CORE_TRACE("Window::PollEvents");
     Input::BeginFrame();
 
     SDL_Event event;
@@ -114,7 +113,7 @@ void Window::PollEvents() {
                 break;
 
             case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
-                const float normalized = std::clamp(static_cast<float>(event.gaxis.value) / 32767.0f, -1.0f, 1.0f);
+                const float normalized = Input::NormalizeGamepadAxis(event.gaxis.value);
                 Input::OnGamepadAxisEvent(static_cast<SDL_GamepadAxis>(event.gaxis.axis), normalized);
                 break;
             }
@@ -136,7 +135,6 @@ void Window::PollEvents() {
 }
 
 void Window::SwapBuffers() {
-    ENGINE_CORE_TRACE("Window::SwapBuffers");
     SDL_GL_SwapWindow(m_Window);
 }
 

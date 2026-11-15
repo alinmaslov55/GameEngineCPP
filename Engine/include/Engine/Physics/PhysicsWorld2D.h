@@ -1,6 +1,7 @@
 #ifndef PHYSICS_PHYSICSWORLD2D_H
 #define PHYSICS_PHYSICSWORLD2D_H
 
+#include "Engine/Physics/Box2DTask.h"
 #include "Engine/Physics/PhysicsHandles.h"
 #include "Engine/Core/ThreadAffinity.h"
 #include <box2d/types.h>
@@ -29,34 +30,10 @@ struct RaycastHitXZ;
 /// body registration, and spatial queries.
 class PhysicsWorld2D {
 public:
-    static constexpr size_t kMaxChunksPerTask = 64;
+    using Box2DTask = ::Engine::Box2DTask;
+    static constexpr size_t kMaxChunksPerTask = kMaxChunksPerBox2DTask;
+    static constexpr size_t kMaxBox2DTasks = Engine::kMaxBox2DTasks;
     static constexpr int kMaxBox2DWorkers = 64; // Box2D v3 B2_MAX_WORKERS limit
-
-    struct alignas(64) Box2DTask {
-        struct ChunkPacket {
-            b2TaskCallback* task = nullptr;
-            int startIndex = 0;
-            int endIndex = 0;
-            void* taskContext = nullptr;
-            Box2DTask* parentTask = nullptr;
-            uint32_t workerLimit = 0;
-        };
-
-        std::atomic<int> remaining{ 0 };
-        std::atomic<bool> done{ false };
-        std::atomic<bool> inUse{ false };
-        uint32_t taskIndex{ 0 };
-        ChunkPacket* chunks{ nullptr };
-
-        Box2DTask() = default;
-        Box2DTask(const Box2DTask&) = delete;
-        Box2DTask& operator=(const Box2DTask&) = delete;
-        Box2DTask(Box2DTask&&) = delete;
-        Box2DTask& operator=(Box2DTask&&) = delete;
-    };
-    static_assert(sizeof(Box2DTask) == 64, "PhysicsWorld2D::Box2DTask size must equal 64 bytes for cache isolation");
-
-    static constexpr size_t kMaxBox2DTasks = 16;
     static constexpr float kSpatialCellSize = 2.0f;
 
     [[nodiscard]] static constexpr uint64_t GetCellKey(int32_t cx, int32_t cz) noexcept {
@@ -100,9 +77,15 @@ public:
     bool RaycastClosestXZ(glm::vec2 startXZ, glm::vec2 endXZ, uint64_t maskBits, RaycastHitXZ& outHit) const;
 
     // Task and spatial grid diagnostics
-    [[nodiscard]] uint64_t GetBox2DParallelTasksDispatched() const noexcept { return m_Box2DParallelTasksDispatched; }
-    [[nodiscard]] uint64_t GetBox2DSerialTasksExecuted() const noexcept { return m_Box2DSerialTasksExecuted; }
-    [[nodiscard]] uint64_t GetBox2DTotalTasks() const noexcept { return m_Box2DParallelTasksDispatched + m_Box2DSerialTasksExecuted; }
+    [[nodiscard]] uint64_t GetBox2DParallelTasksDispatched() const noexcept {
+        return m_Box2DParallelTasksDispatched.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] uint64_t GetBox2DSerialTasksExecuted() const noexcept {
+        return m_Box2DSerialTasksExecuted.load(std::memory_order_relaxed);
+    }
+    [[nodiscard]] uint64_t GetBox2DTotalTasks() const noexcept {
+        return GetBox2DParallelTasksDispatched() + GetBox2DSerialTasksExecuted();
+    }
     [[nodiscard]] const Box2DTask* GetBox2DTaskSlots() const noexcept { return m_Box2DTasks.data(); }
     [[nodiscard]] size_t GetBox2DTaskSlotCount() const noexcept { return kMaxBox2DTasks; }
 
@@ -192,12 +175,11 @@ private:
     // Box2D v3 multithreaded task management pool (zero heap allocation)
     alignas(64) std::array<Box2DTask, kMaxBox2DTasks> m_Box2DTasks;
     std::array<std::array<Box2DTask::ChunkPacket, kMaxChunksPerTask>, kMaxBox2DTasks> m_Box2DTaskChunks{};
-    uint64_t m_Box2DParallelTasksDispatched{ 0 };
-    uint64_t m_Box2DSerialTasksExecuted{ 0 };
+    std::atomic<uint64_t> m_Box2DParallelTasksDispatched{ 0 };
+    std::atomic<uint64_t> m_Box2DSerialTasksExecuted{ 0 };
 
-    // 2D Spatial Hash Grid for static colliders and foliage interactors
+    // 2D Spatial Hash Grid for static colliders
     std::unordered_map<uint64_t, std::vector<uint32_t>> m_StaticGrid;
-    std::unordered_map<uint64_t, std::vector<uint32_t>> m_FoliageInteractorGrid;
     std::vector<uint32_t> m_StaticTestedStamp;
     uint32_t m_SpatialQueryStamp{ 0 };
     bool m_StaticCollidersDirty{ true };

@@ -1240,5 +1240,36 @@ TEST(TerrainChunkManagerTest, TarFirewallEntityPooling) {
     EXPECT_EQ(scene.GetPoolManager().GetPoolFreeCount("pool_tar_firewall"), 0u);
 }
 
+TEST(TerrainSurfaceSamplingTest, TerrainComponentAndChunkManagerShareSurfaceEvaluation) {
+    Engine::Scene scene("SharedSurfaceEvalScene");
+
+    // 1. Finite TerrainComponent filled uniformly with Tar (layer 2)
+    auto* finiteGo = scene.CreateGameObject("FiniteTerrain");
+    auto* finiteTerrain = finiteGo->AddComponent<Engine::TerrainComponent>(16.0f, 16.0f, 16u, 16u);
+    finiteTerrain->FillLayer(2u);
+
+    // 2. Infinite TerrainChunkManager with chunk (0,0) filled uniformly with Tar (layer 2)
+    auto* chunkGo = scene.CreateGameObject("InfiniteTerrain");
+    auto* mgr = chunkGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 17u, 1, 2);
+    Engine::TerrainChunk& chunk = mgr->EnsureEditableChunk({ 0, 0 });
+    const std::array<uint8_t, Engine::TerrainComponent::MaxLayers> pureTar{ 0, 0, 255, 0, 0, 0, 0, 0 };
+    for (uint32_t pz = 0; pz < chunk.SplatResolution; ++pz) {
+        for (uint32_t px = 0; px < chunk.SplatResolution; ++px) {
+            chunk.SetSplatTexel8(px, pz, pureTar);
+        }
+    }
+
+    const Engine::SurfaceSample finiteSample = finiteTerrain->SampleSurfaceAtXZ(8.0f, 8.0f);
+    const Engine::SurfaceSample chunkSample = mgr->SampleSurfaceAtXZ(8.0f, 8.0f);
+
+    EXPECT_EQ(finiteSample.DominantBiome, Engine::BiomeType::TarBogs);
+    EXPECT_EQ(chunkSample.DominantBiome, finiteSample.DominantBiome);
+    EXPECT_FLOAT_EQ(chunkSample.LinearDamping, finiteSample.LinearDamping);
+    EXPECT_FLOAT_EQ(chunkSample.MaxSpeedMultiplier, finiteSample.MaxSpeedMultiplier);
+    EXPECT_FLOAT_EQ(chunkSample.Flammability, finiteSample.Flammability);
+    EXPECT_FALSE(finiteSample.IsBurning);
+    EXPECT_FALSE(chunkSample.IsBurning);
+}
+
 } // namespace
 

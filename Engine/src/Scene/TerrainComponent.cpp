@@ -1,4 +1,5 @@
 #include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Scene/TerrainHelpers.h"
 #include "Engine/Utils/Logger.h"
 
 #include <stb_image.h>
@@ -102,39 +103,26 @@ void TerrainComponent::SetEdgeDarkening(float darkening) {
 }
 
 void TerrainComponent::SetLayerTexture(uint32_t layerIndex, const std::shared_ptr<Texture>& texture) {
-    if (layerIndex >= MaxLayers) {
-        return;
+    TerrainHelpers::SetLayerTexture(m_Layers, layerIndex, texture);
+    if (layerIndex < MaxLayers) {
+        ENGINE_CORE_DEBUG("TerrainComponent: Set layer {} texture '{}'", layerIndex, texture ? texture->GetFilepath() : "nullptr");
     }
-    if (texture) {
-        texture->SetWrapRepeat(true);
-    }
-    m_Layers[layerIndex].LayerTexture = texture;
-    ENGINE_CORE_DEBUG("TerrainComponent: Set layer {} texture '{}'", layerIndex, texture ? texture->GetFilepath() : "nullptr");
 }
 
 void TerrainComponent::SetLayerHeightMapPath(uint32_t layerIndex, const std::string& path) {
-    if (layerIndex < MaxLayers) {
-        m_Layers[layerIndex].HeightMapPath = path;
-    }
+    TerrainHelpers::SetLayerHeightMapPath(m_Layers, layerIndex, path);
 }
 
 void TerrainComponent::SetLayerNormalMapPath(uint32_t layerIndex, const std::string& path) {
-    if (layerIndex < MaxLayers) {
-        m_Layers[layerIndex].NormalMapPath = path;
-    }
+    TerrainHelpers::SetLayerNormalMapPath(m_Layers, layerIndex, path);
 }
 
 void TerrainComponent::SetLayerTilingScale(uint32_t layerIndex, float tilingScale) {
-    if (layerIndex >= MaxLayers) {
-        return;
-    }
-    m_Layers[layerIndex].TilingScale = std::clamp(tilingScale, 0.02f, 20.0f);
+    TerrainHelpers::SetLayerTilingScale(m_Layers, layerIndex, tilingScale);
 }
 
 void TerrainComponent::SetLayerGlossiness(uint32_t layerIndex, float glossiness) {
-    if (layerIndex < MaxLayers) {
-        m_Layers[layerIndex].Glossiness = std::clamp(glossiness, 0.0f, 1.0f);
-    }
+    TerrainHelpers::SetLayerGlossiness(m_Layers, layerIndex, glossiness);
 }
 
 const TerrainLayer& TerrainComponent::GetLayer(uint32_t layerIndex) const {
@@ -238,35 +226,15 @@ void TerrainComponent::FillLayer(uint32_t layerIndex) {
 }
 
 glm::u8vec4 TerrainComponent::GetSplatTexel(uint32_t px, uint32_t pz) const {
-    if (px >= m_SplatWidth || pz >= m_SplatHeight || m_SplatData.empty()) {
-        return { 255, 0, 0, 0 };
-    }
-    const size_t idx = (static_cast<size_t>(pz) * m_SplatWidth + px) * 4u;
-    return {
-        m_SplatData[idx + 0],
-        m_SplatData[idx + 1],
-        m_SplatData[idx + 2],
-        m_SplatData[idx + 3]
-    };
+    return TerrainHelpers::ReadSplatRgbaTexel(m_SplatData, m_SplatWidth, m_SplatHeight, px, pz, { 255, 0, 0, 0 });
 }
 
 glm::u8vec4 TerrainComponent::GetSplatTexel1(uint32_t px, uint32_t pz) const {
-    if (px >= m_SplatWidth || pz >= m_SplatHeight || m_SplatData1.empty()) {
-        return { 0, 0, 0, 0 };
-    }
-    const size_t idx = (static_cast<size_t>(pz) * m_SplatWidth + px) * 4u;
-    return {
-        m_SplatData1[idx + 0],
-        m_SplatData1[idx + 1],
-        m_SplatData1[idx + 2],
-        m_SplatData1[idx + 3]
-    };
+    return TerrainHelpers::ReadSplatRgbaTexel(m_SplatData1, m_SplatWidth, m_SplatHeight, px, pz, { 0, 0, 0, 0 });
 }
 
 std::array<uint8_t, TerrainComponent::MaxLayers> TerrainComponent::GetSplatTexel8(uint32_t px, uint32_t pz) const {
-    const glm::u8vec4 w0 = GetSplatTexel(px, pz);
-    const glm::u8vec4 w1 = GetSplatTexel1(px, pz);
-    return { w0.r, w0.g, w0.b, w0.a, w1.r, w1.g, w1.b, w1.a };
+    return TerrainHelpers::ReadSplatTexel8(m_SplatData, m_SplatData1, m_SplatWidth, m_SplatHeight, px, pz);
 }
 
 void TerrainComponent::SetSplatTexel(uint32_t px, uint32_t pz, const glm::u8vec4& weights) {
@@ -274,21 +242,9 @@ void TerrainComponent::SetSplatTexel(uint32_t px, uint32_t pz, const glm::u8vec4
 }
 
 void TerrainComponent::SetSplatTexel8(uint32_t px, uint32_t pz, const std::array<uint8_t, MaxLayers>& weights) {
-    if (px >= m_SplatWidth || pz >= m_SplatHeight) {
-        return;
+    if (TerrainHelpers::WriteSplatTexel8(m_SplatData, m_SplatData1, m_SplatWidth, m_SplatHeight, px, pz, weights)) {
+        MarkDirtyRect(px, pz, px, pz, true);
     }
-    std::array<float, MaxLayers> floatWeights{};
-    for (uint32_t c = 0; c < MaxLayers; ++c) {
-        floatWeights[c] = static_cast<float>(weights[c]);
-    }
-    const std::array<uint8_t, MaxLayers> norm = NormalizeWeights8(floatWeights, 0u);
-    const size_t idx = (static_cast<size_t>(pz) * m_SplatWidth + px) * 4u;
-    for (uint32_t c = 0; c < 4u; ++c) {
-        m_SplatData[idx + c] = norm[c];
-        m_SplatData1[idx + c] = norm[c + 4u];
-    }
-
-    MarkDirtyRect(px, pz, px, pz, true);
 }
 
 bool TerrainComponent::PaintSplatBufferXZ(std::vector<uint8_t>& splatData0,
@@ -483,74 +439,21 @@ SurfaceSample TerrainComponent::SampleSurfaceAtXZ(float worldX,
                                                   float worldZ,
                                                   const glm::vec3& terrainOrigin,
                                                   const glm::vec3& terrainScale) const noexcept {
-    SurfaceSample sample{};
     if (m_SplatData.empty() || m_SplatWidth < 2u || m_SplatHeight < 2u) {
-        return sample;
+        return SurfaceSample{};
     }
 
     const float totalWidth = std::max(0.001f, m_Width * std::abs(terrainScale.x));
     const float totalDepth = std::max(0.001f, m_Depth * std::abs(terrainScale.z));
 
-    const float relX = worldX - terrainOrigin.x;
-    const float relZ = worldZ - terrainOrigin.z;
-
-    const float u = std::clamp(relX / totalWidth, 0.0f, 1.0f);
-    const float v = std::clamp(relZ / totalDepth, 0.0f, 1.0f);
+    const float u = std::clamp((worldX - terrainOrigin.x) / totalWidth, 0.0f, 1.0f);
+    const float v = std::clamp((worldZ - terrainOrigin.z) / totalDepth, 0.0f, 1.0f);
 
     const float fx = std::clamp(u * static_cast<float>(m_SplatWidth) - 0.5f, 0.0f, static_cast<float>(m_SplatWidth - 1u));
     const float fz = std::clamp(v * static_cast<float>(m_SplatHeight) - 0.5f, 0.0f, static_cast<float>(m_SplatHeight - 1u));
 
-    const auto x0 = static_cast<uint32_t>(std::floor(fx));
-    const auto z0 = static_cast<uint32_t>(std::floor(fz));
-    const uint32_t x1 = std::min(x0 + 1u, m_SplatWidth - 1u);
-    const uint32_t z1 = std::min(z0 + 1u, m_SplatHeight - 1u);
-
-    const float tx = fx - static_cast<float>(x0);
-    const float tz = fz - static_cast<float>(z0);
-
-    const auto w00 = GetSplatTexel8(x0, z0);
-    const auto w10 = GetSplatTexel8(x1, z0);
-    const auto w01 = GetSplatTexel8(x0, z1);
-    const auto w11 = GetSplatTexel8(x1, z1);
-
-    std::array<float, MaxLayers> blendedWeights{};
-    float sumWeights = 0.0f;
-    for (size_t i = 0; i < MaxLayers; ++i) {
-        const float top = std::lerp(static_cast<float>(w00[i]), static_cast<float>(w10[i]), tx);
-        const float bot = std::lerp(static_cast<float>(w01[i]), static_cast<float>(w11[i]), tx);
-        const float val = std::lerp(top, bot, tz);
-        blendedWeights[i] = val;
-        sumWeights += val;
-    }
-
-    if (sumWeights <= 1e-4f) {
-        blendedWeights[1] = 1.0f; // Default Ash Barrens
-        sumWeights = 1.0f;
-    }
-
-    float invSum = 1.0f / sumWeights;
-    float maxWeight = -1.0f;
-    uint32_t dominantLayer = 1u;
-    float weightedDamping = 0.0f;
-    float weightedSpeed = 0.0f;
-
-    for (size_t i = 0; i < MaxLayers; ++i) {
-        const float normW = blendedWeights[i] * invSum;
-        if (normW > maxWeight) {
-            maxWeight = normW;
-            dominantLayer = static_cast<uint32_t>(i);
-        }
-        weightedDamping += normW * SurfacePhysics::LayerDamping[i];
-        weightedSpeed += normW * SurfacePhysics::LayerSpeedMultiplier[i];
-    }
-
-    sample.DominantBiome = SurfacePhysics::LayerToBiome(dominantLayer);
-    sample.LinearDamping = weightedDamping;
-    sample.MaxSpeedMultiplier = weightedSpeed;
-    sample.Flammability = std::clamp(blendedWeights[2] * invSum, 0.0f, 1.0f);
-    sample.IsBurning = false;
-
-    return sample;
+    return TerrainHelpers::EvaluateBilinearSurfaceSample(
+        m_SplatData, m_SplatData1, m_SplatWidth, m_SplatHeight, fx, fz, false);
 }
 
 bool TerrainComponent::SaveSplatmapToPNG(const std::string& resolvedFilepath) {

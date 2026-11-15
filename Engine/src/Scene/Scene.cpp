@@ -786,7 +786,7 @@ uint64_t Scene::GetBox2DTotalTasks() const noexcept {
 }
 
 const Scene::Box2DTask* Scene::GetBox2DTaskSlots() const noexcept {
-    return m_PhysicsWorld ? reinterpret_cast<const Scene::Box2DTask*>(m_PhysicsWorld->GetBox2DTaskSlots()) : nullptr;
+    return m_PhysicsWorld ? m_PhysicsWorld->GetBox2DTaskSlots() : nullptr;
 }
 
 size_t Scene::GetBox2DTaskSlotCount() const noexcept {
