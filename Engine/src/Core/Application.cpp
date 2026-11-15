@@ -92,7 +92,7 @@ void Application::Run() {
 
         // 2. Update Engine / Layers
         Time::Update();
-        ResourceManager::ProcessPendingUploads();
+        ResourceManager::ProcessPendingUploads(4);
         const float deltaTime = Time::GetDeltaTime();
 
         if (!m_Layers.empty()) {

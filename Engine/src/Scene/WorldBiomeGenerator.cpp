@@ -307,8 +307,28 @@ POISpawnDesc WorldBiomeGenerator::ComputeSuperCellPOI(int32_t superX,
 }
 
 BiomeSample WorldBiomeGenerator::EvaluateBiomeAtXZ(float worldX,
-                                                     float worldZ,
-                                                     float chunkSizeMeters) const noexcept {
+                                                  float worldZ,
+                                                  float chunkSizeMeters) const noexcept {
+    const int32_t superChunks = std::max(1, m_Config.PoiSuperCellChunks);
+    const float superSize = static_cast<float>(superChunks) * std::max(1.0f, chunkSizeMeters);
+    const int32_t sx0 = static_cast<int32_t>(std::floor(worldX / superSize));
+    const int32_t sz0 = static_cast<int32_t>(std::floor(worldZ / superSize));
+
+    std::vector<POISpawnDesc> localPOIs;
+    localPOIs.reserve(9);
+    for (int32_t dsz = -1; dsz <= 1; ++dsz) {
+        for (int32_t dsx = -1; dsx <= 1; ++dsx) {
+            localPOIs.push_back(ComputeSuperCellPOI(sx0 + dsx, sz0 + dsz, chunkSizeMeters));
+        }
+    }
+    return EvaluateBiomeAtXZWithPOIs(worldX, worldZ, chunkSizeMeters, localPOIs);
+}
+
+BiomeSample WorldBiomeGenerator::EvaluateBiomeAtXZWithPOIs(float worldX,
+                                                         float worldZ,
+                                                         float chunkSizeMeters,
+                                                         const std::vector<POISpawnDesc>& candidatePOIs) const noexcept {
+    (void)chunkSizeMeters;
     const glm::vec2 warped = m_Noise.DomainWarp2D(worldX, worldZ, 6.0f);
     const float moisture = m_Noise.FBm2D(warped.x * 0.018f, warped.y * 0.018f);
     const float elevation = m_Noise.FBm2D(warped.x * 0.015f + 113.0f, warped.y * 0.015f - 71.0f);
@@ -360,24 +380,16 @@ BiomeSample WorldBiomeGenerator::EvaluateBiomeAtXZ(float worldX,
         weights[static_cast<size_t>(BiomeType::AshBarrens)] += safeMask * ashShare;
     }
 
-    // Rule 3: Macro-Grid POI 3.5m Cobblestone apron blending across nearby super-cells
-    const int32_t superChunks = std::max(1, m_Config.PoiSuperCellChunks);
-    const float superSize = static_cast<float>(superChunks) * std::max(1.0f, chunkSizeMeters);
-    const int32_t sx0 = static_cast<int32_t>(std::floor(worldX / superSize));
-    const int32_t sz0 = static_cast<int32_t>(std::floor(worldZ / superSize));
-
+    // Rule 3: Macro-Grid POI 3.5m Cobblestone apron blending across candidate POIs
     float maxApronBlend = 0.0f;
-    for (int32_t dsz = -1; dsz <= 1; ++dsz) {
-        for (int32_t dsx = -1; dsx <= 1; ++dsx) {
-            const POISpawnDesc poi = ComputeSuperCellPOI(sx0 + dsx, sz0 + dsz, chunkSizeMeters);
-            const float dx = worldX - poi.WorldPosition.x;
-            const float dz = worldZ - poi.WorldPosition.z;
-            const float distSq = dx * dx + dz * dz;
-            if (distSq < poi.ApronRadius * poi.ApronRadius) {
-                const float dist = std::sqrt(distSq);
-                const float blend = 1.0f - SmoothStep(poi.ApronRadius * 0.45f, poi.ApronRadius, dist);
-                maxApronBlend = std::max(maxApronBlend, blend);
-            }
+    for (const auto& poi : candidatePOIs) {
+        const float dx = worldX - poi.WorldPosition.x;
+        const float dz = worldZ - poi.WorldPosition.z;
+        const float distSq = dx * dx + dz * dz;
+        if (distSq < poi.ApronRadius * poi.ApronRadius) {
+            const float dist = std::sqrt(distSq);
+            const float blend = 1.0f - SmoothStep(poi.ApronRadius * 0.45f, poi.ApronRadius, dist);
+            maxApronBlend = std::max(maxApronBlend, blend);
         }
     }
 
@@ -416,6 +428,7 @@ BiomeSample WorldBiomeGenerator::EvaluateBiomeAtXZ(float worldX,
     sample.Elevation = elevation;
     return sample;
 }
+}
 
 void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
                                             int32_t cz,
@@ -437,30 +450,12 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
     outProps.clear();
     outPOIs.clear();
 
-    // 1. Evaluate node-aligned biome field + seamless 8-layer RGBA8 splatweights
-    for (uint32_t pz = 0; pz < res; ++pz) {
-        const float worldZ = static_cast<float>(static_cast<int64_t>(cz) * cellSpan + pz) * texelStep;
-        for (uint32_t px = 0; px < res; ++px) {
-            const float worldX = static_cast<float>(static_cast<int64_t>(cx) * cellSpan + px) * texelStep;
-            const BiomeSample sample = EvaluateBiomeAtXZ(worldX, worldZ, safeSize);
-            const size_t texelIdx = static_cast<size_t>(pz) * res + px;
-            outBiomeMap[texelIdx] = sample.DominantBiome;
-
-            const std::array<uint8_t, TerrainComponent::MaxLayers> w8 = sample.ToSplat8();
-            const size_t byteIdx = texelIdx * 4u;
-            for (uint32_t c = 0; c < 4u; ++c) {
-                outSplatRGBA[byteIdx + c] = w8[c];
-                outSplatRGBA1[byteIdx + c] = w8[c + 4u];
-            }
-        }
-    }
-
     const float chunkMinX = static_cast<float>(cx) * safeSize;
     const float chunkMaxX = chunkMinX + safeSize;
     const float chunkMinZ = static_cast<float>(cz) * safeSize;
     const float chunkMaxZ = chunkMinZ + safeSize;
 
-    // 2. Collect POIs owning this chunk & neighbor aprons overlapping chunk bounds
+    // 1. Collect POIs owning this chunk & neighbor aprons overlapping chunk bounds
     const int32_t superChunks = std::max(1, m_Config.PoiSuperCellChunks);
     const int32_t sxCenter = FloorDiv(cx, superChunks);
     const int32_t szCenter = FloorDiv(cz, superChunks);
@@ -482,6 +477,24 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
         }
     }
 
+    // 2. Evaluate node-aligned biome field + seamless 8-layer RGBA8 splatweights
+    for (uint32_t pz = 0; pz < res; ++pz) {
+        const float worldZ = static_cast<float>(static_cast<int64_t>(cz) * cellSpan + pz) * texelStep;
+        for (uint32_t px = 0; px < res; ++px) {
+            const float worldX = static_cast<float>(static_cast<int64_t>(cx) * cellSpan + px) * texelStep;
+            const BiomeSample sample = EvaluateBiomeAtXZWithPOIs(worldX, worldZ, safeSize, exclusionPOIs);
+            const size_t texelIdx = static_cast<size_t>(pz) * res + px;
+            outBiomeMap[texelIdx] = sample.DominantBiome;
+
+            const std::array<uint8_t, TerrainComponent::MaxLayers> w8 = sample.ToSplat8();
+            const size_t byteIdx = texelIdx * 4u;
+            for (uint32_t c = 0; c < 4u; ++c) {
+                outSplatRGBA[byteIdx + c] = w8[c];
+                outSplatRGBA1[byteIdx + c] = w8[c + 4u];
+            }
+        }
+    }
+
     // 3. Order-independent priority Poisson scatter across 3 size tiers
     static constexpr PropTierSpec kTiers[3] = {
         { 0x5449455230ULL, 3.2f, 0.00f, 0.88f, 0.88f, 1.18f, SelectTier0BlockerProp },
@@ -490,6 +503,14 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
     };
 
     std::vector<glm::vec2> nearbyTier0Trunks;
+
+    auto getDominantBiomeAt = [&](float wx, float wz) noexcept -> BiomeType {
+        const float u = std::clamp((wx - chunkMinX) / safeSize, 0.0f, 1.0f);
+        const float v = std::clamp((wz - chunkMinZ) / safeSize, 0.0f, 1.0f);
+        const uint32_t px = std::min(static_cast<uint32_t>(std::round(u * static_cast<float>(cellSpan))), cellSpan);
+        const uint32_t pz = std::min(static_cast<uint32_t>(std::round(v * static_cast<float>(cellSpan))), cellSpan);
+        return outBiomeMap[pz * res + px];
+    };
 
     auto scatterTier = [&](const PropTierSpec& spec, bool recordTrunks) {
         const float cellSpacing = spec.MinDist * 0.62f;
@@ -522,10 +543,10 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
                     continue;
                 }
 
-                const BiomeSample bio = EvaluateBiomeAtXZ(cand.PosXZ.x, cand.PosXZ.y, safeSize);
+                const BiomeType dominant = getDominantBiomeAt(cand.PosXZ.x, cand.PosXZ.y);
                 ProceduralPropKind propKind{};
                 bool propBlocking = false;
-                if (!spec.SelectProp(bio.DominantBiome, propKind, propBlocking)) {
+                if (!spec.SelectProp(dominant, propKind, propBlocking)) {
                     continue;
                 }
 
@@ -566,10 +587,10 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
                         if (IsInsideExclusionZone(nbr.PosXZ, m_Config.OriginSafeRadius, exclusionPOIs)) {
                             continue;
                         }
-                        const BiomeSample nbrBio = EvaluateBiomeAtXZ(nbr.PosXZ.x, nbr.PosXZ.y, safeSize);
+                        const BiomeType nbrDominant = getDominantBiomeAt(nbr.PosXZ.x, nbr.PosXZ.y);
                         ProceduralPropKind nbrKind{};
                         bool nbrBlocking = false;
-                        if (spec.SelectProp(nbrBio.DominantBiome, nbrKind, nbrBlocking)) {
+                        if (spec.SelectProp(nbrDominant, nbrKind, nbrBlocking)) {
                             beatenByNeighbor = true;
                             break;
                         }

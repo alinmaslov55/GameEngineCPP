@@ -135,4 +135,23 @@ TEST(ResourceManagerTest, ConcurrentLoadGetAndPathResolutionAreThreadSafe) {
     std::filesystem::remove_all(tempRoot, ec);
 }
 
+TEST(ResourceManagerTest, ResolvePathHitsCache) {
+    Engine::ResourceManager::ClearPathCache();
+    const std::string testPath = "textures/cached_check.png";
+    const auto info1 = Engine::ResourceManager::ResolvePathInfo(testPath);
+    EXPECT_FALSE(info1.ResolvedPath.empty());
+    EXPECT_FALSE(info1.CacheKey.empty());
+
+    // ResolvePath and ToRelativePath use the cached result
+    EXPECT_EQ(Engine::ResourceManager::ResolvePath(testPath), info1.ResolvedPath);
+    EXPECT_EQ(Engine::ResourceManager::ToRelativePath(testPath), info1.CacheKey);
+    Engine::ResourceManager::ClearPathCache();
+}
+
+TEST(ResourceManagerTest, BoundedUploadsWithDeque) {
+    // ProcessPendingUploads with 0 or empty queue returns 0 safely
+    EXPECT_EQ(Engine::ResourceManager::ProcessPendingUploads(0), 0u);
+    EXPECT_EQ(Engine::ResourceManager::ProcessPendingUploads(4), 0u);
+}
+
 } // namespace

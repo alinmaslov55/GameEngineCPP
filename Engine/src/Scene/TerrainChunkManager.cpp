@@ -140,6 +140,43 @@ std::shared_ptr<Prefab> BuildBuiltinPropPrefab(ProceduralPropKind kind) {
     return std::make_shared<Prefab>(std::move(entityJson));
 }
 
+std::shared_ptr<Prefab> BuildTarFirewallPrefab() {
+    nlohmann::json compsJson = {
+        { "Transform", {
+            { "Position", { 0.0f, 0.45f, 0.0f } },
+            { "Rotation", { 0.0f, 0.0f, 0.0f } },
+            { "Scale", { 1.0f, 1.0f, 1.0f } }
+        } },
+        { "PointLight", {
+            { "Color", { 1.0f, 0.48f, 0.12f } },
+            { "Intensity", 1.6f },
+            { "Radius", 2.4f },
+            { "Falloff", 1.2f },
+            { "Flicker", true },
+            { "FlickerSpeed", 14.0f },
+            { "FlickerAmount", 0.30f },
+            { "Semantic", static_cast<int>(LightSemantic::SafeLifeline) }
+        } },
+        { "CircleCollider2D", {
+            { "Radius", 0.35f },
+            { "IsSensor", true },
+            { "CategoryBits", static_cast<uint64_t>(PhysicsLayer::EnemyHitbox) },
+            { "MaskBits", static_cast<uint64_t>(PhysicsLayer::Player | PhysicsLayer::Enemy) }
+        } }
+    };
+
+    nlohmann::json entityJson = {
+        { "UUID", 1 },
+        { "Name", "TarFirewall" },
+        { "Tag", "Untagged" },
+        { "LayerMask", PhysicsLayer::Default },
+        { "ParentUUID", 0 },
+        { "Components", std::move(compsJson) }
+    };
+
+    return std::make_shared<Prefab>(std::move(entityJson));
+}
+
 } // namespace
 
 glm::vec3 TerrainChunk::GetWorldOrigin(float groundY) const noexcept {

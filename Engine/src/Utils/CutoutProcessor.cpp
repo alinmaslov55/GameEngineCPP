@@ -254,11 +254,11 @@ CutoutProcessResult CutoutProcessor::ProcessRGBAInPlace(std::vector<uint8_t>& rg
         }
 
         std::vector<uint8_t> prevRGBA = rgba;
-        std::vector<uint8_t> nextMask = validRGBMask;
+        std::vector<size_t> dilatedIndices;
+        dilatedIndices.reserve(totalPixels / 8);
 
         for (uint32_t pass = 0; pass < settings.AlphaBleedPasses; ++pass) {
-            prevRGBA = rgba;
-            nextMask = validRGBMask;
+            dilatedIndices.clear();
 
             for (uint32_t y = 0; y < height; ++y) {
                 for (uint32_t x = 0; x < width; ++x) {
@@ -292,11 +292,21 @@ CutoutProcessResult CutoutProcessor::ProcessRGBAInPlace(std::vector<uint8_t>& rg
                         rgba[center * 4u + 1] = static_cast<uint8_t>(std::clamp(std::round(sumG / weightSum), 0.0f, 255.0f));
                         rgba[center * 4u + 2] = static_cast<uint8_t>(std::clamp(std::round(sumB / weightSum), 0.0f, 255.0f));
                         // Preserve exact A == 0 (or original sub-threshold alpha) so silhouette never bloats
-                        nextMask[center] = 1u;
+                        dilatedIndices.push_back(center);
                     }
                 }
             }
-            validRGBMask.swap(nextMask);
+
+            if (dilatedIndices.empty()) {
+                break;
+            }
+
+            for (size_t idx : dilatedIndices) {
+                validRGBMask[idx] = 1u;
+                prevRGBA[idx * 4u + 0] = rgba[idx * 4u + 0];
+                prevRGBA[idx * 4u + 1] = rgba[idx * 4u + 1];
+                prevRGBA[idx * 4u + 2] = rgba[idx * 4u + 2];
+            }
         }
         ENGINE_CORE_DEBUG("CutoutProcessor: Completed {} alpha bleed dilation passes", settings.AlphaBleedPasses);
     }

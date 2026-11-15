@@ -102,6 +102,10 @@ private:
     PaintScorchedCallback m_PaintScorched;
     SpawnVisualCallback m_SpawnVisual;
     ReleaseVisualCallback m_ReleaseVisual;
+
+    std::vector<FireCellCoord> m_PendingIgnitionsScratch;
+    std::vector<FireCellCoord> m_PendingDecaysScratch;
+    std::vector<FireCellCoord> m_ExtinguishScratch;
 };
 
 } // namespace Engine

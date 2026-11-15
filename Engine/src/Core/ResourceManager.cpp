@@ -9,6 +9,7 @@
 #include <atomic>
 #include <chrono>
 #include <condition_variable>
+#include <deque>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -40,7 +41,7 @@ struct PendingTextureUpload {
 };
 
 std::mutex s_PendingUploadsMutex;
-std::vector<PendingTextureUpload> s_PendingUploads;
+std::deque<PendingTextureUpload> s_PendingUploads;
 std::mutex s_AsyncWaitMutex;
 std::condition_variable s_AsyncLoadCV;
 std::atomic<uint32_t> s_ActiveAsyncLoads{ 0 };
@@ -223,11 +224,11 @@ std::filesystem::path ResourceManager::DiscoverAssetRoot(const std::string& proj
 }
 
 std::string ResourceManager::ResolvePath(const std::string& filepath) {
-    return ResolvePathWithRoot(filepath, GetAssetRoot());
+    return ResolvePathInfo(filepath).ResolvedPath;
 }
 
 std::string ResourceManager::ToRelativePath(const std::string& filepath) {
-    return ToRelativePathWithRoot(filepath, GetAssetRoot());
+    return ResolvePathInfo(filepath).CacheKey;
 }
 
 ResourceManager::ResolvedPathInfo ResourceManager::ResolvePathInfo(const std::string& filepath) {
@@ -401,15 +402,17 @@ size_t ResourceManager::ProcessPendingUploads(uint32_t maxUploads) {
         }
 
         if (maxUploads == 0 || maxUploads >= s_PendingUploads.size()) {
-            batch = std::move(s_PendingUploads);
-            s_PendingUploads.clear();
+            batch.reserve(s_PendingUploads.size());
+            while (!s_PendingUploads.empty()) {
+                batch.push_back(std::move(s_PendingUploads.front()));
+                s_PendingUploads.pop_front();
+            }
         } else {
-            auto splitEnd = s_PendingUploads.begin() + maxUploads;
             batch.reserve(maxUploads);
-            batch.insert(batch.end(),
-                         std::make_move_iterator(s_PendingUploads.begin()),
-                         std::make_move_iterator(splitEnd));
-            s_PendingUploads.erase(s_PendingUploads.begin(), splitEnd);
+            for (uint32_t i = 0; i < maxUploads && !s_PendingUploads.empty(); ++i) {
+                batch.push_back(std::move(s_PendingUploads.front()));
+                s_PendingUploads.pop_front();
+            }
         }
     }
 

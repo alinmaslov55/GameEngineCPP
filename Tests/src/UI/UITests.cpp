@@ -43,6 +43,32 @@ TEST(FontTest, MissingCharacterWithoutFallbackReturnsEmpty) {
     EXPECT_FLOAT_EQ(emptyChar.advance, 0.0f);
 }
 
+TEST(FontTest, AsciiLookupAndSilentFallback) {
+    Engine::Font font;
+    Engine::Character charM;
+    charM.size = { 12.0f, 18.0f };
+    charM.advance = 14.0f;
+    font.AddCharacter('M', charM);
+
+    // O(1) table lookup
+    EXPECT_FLOAT_EQ(font.GetCharacter('M').advance, 14.0f);
+
+    // Space / newline / missing glyph lookup does not throw or crash and returns empty
+    const auto& spaceChar = font.GetCharacter(' ');
+    EXPECT_FLOAT_EQ(spaceChar.size.x, 0.0f);
+    EXPECT_FLOAT_EQ(spaceChar.advance, 0.0f);
+
+    // Now add '?'
+    Engine::Character questionMark;
+    questionMark.size = { 10.0f, 16.0f };
+    questionMark.advance = 12.0f;
+    font.AddCharacter('?', questionMark);
+
+    // Missing glyph falls back to '?'
+    EXPECT_FLOAT_EQ(font.GetCharacter(' ').advance, 12.0f);
+    EXPECT_FLOAT_EQ(font.GetCharacter('\n').advance, 12.0f);
+}
+
 TEST(UILabelTest, ComponentCreationAndProperties) {
     Engine::GameObject entity("TextEntity");
     auto font = std::make_shared<Engine::Font>();

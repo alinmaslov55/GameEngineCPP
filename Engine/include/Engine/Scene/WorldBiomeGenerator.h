@@ -122,6 +122,10 @@ public:
 
     [[nodiscard]] POISpawnDesc ComputeSuperCellPOI(int32_t superX, int32_t superZ, float chunkSizeMeters = 16.0f) const noexcept;
     [[nodiscard]] BiomeSample EvaluateBiomeAtXZ(float worldX, float worldZ, float chunkSizeMeters = 16.0f) const noexcept;
+    [[nodiscard]] BiomeSample EvaluateBiomeAtXZWithPOIs(float worldX,
+                                                         float worldZ,
+                                                         float chunkSizeMeters,
+                                                         const std::vector<POISpawnDesc>& candidatePOIs) const noexcept;
 
     void GenerateChunkData(int32_t cx,
                            int32_t cz,

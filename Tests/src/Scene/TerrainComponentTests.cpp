@@ -1006,22 +1006,23 @@ TEST(TerrainChunkManagerTest, OnDestroyReleasesAllTarFirewallEntities) {
 
     size_t spawnedFirewalls = 0;
     for (const auto& go : scene.GetGameObjects()) {
-        if (go && go->GetName() == "TarFirewall") {
+        if (go && go->GetName() == "TarFirewall" && go->IsActive()) {
             ++spawnedFirewalls;
         }
     }
     EXPECT_GT(spawnedFirewalls, 0u);
 
-    // Destroy the TerrainChunkManager component
+    // Destroy the TerrainChunkManager component: all firewalls returned to pool
     mgr->OnDestroy();
 
-    size_t remainingFirewalls = 0;
+    size_t remainingActiveFirewalls = 0;
     for (const auto& go : scene.GetGameObjects()) {
-        if (go && go->GetName() == "TarFirewall") {
-            ++remainingFirewalls;
+        if (go && go->GetName() == "TarFirewall" && go->IsActive()) {
+            ++remainingActiveFirewalls;
         }
     }
-    EXPECT_EQ(remainingFirewalls, 0u);
+    EXPECT_EQ(remainingActiveFirewalls, 0u);
+    EXPECT_EQ(scene.GetPoolManager().GetPoolFreeCount("pool_tar_firewall"), spawnedFirewalls);
     EXPECT_EQ(mgr->GetFireGrid().GetActiveFireCount(), 0u);
 }
 
@@ -1154,6 +1155,89 @@ TEST(SceneRendererOptimizationTest, FoliageGridReusesCapacityAndNoHeapThrashing)
     const size_t bucketCount2 = renderer.GetFoliageInteractorGrid().bucket_count();
     // Scratch map retains capacity across frames
     EXPECT_GE(bucketCount2, bucketCount1);
+}
+
+TEST(WorldBiomeGeneratorTest, BiomeMapMatchesDirectEvaluationAndPOIPruning) {
+    Engine::WorldGenConfig cfg;
+    cfg.Enabled = true;
+    cfg.Seed = 12345ULL;
+    cfg.SpawnSceneEntities = false;
+
+    Engine::WorldBiomeGenerator gen(cfg);
+    std::vector<uint8_t> splat0, splat1;
+    std::vector<Engine::BiomeType> biomeMap;
+    std::vector<Engine::PropSpawnDesc> props;
+    std::vector<Engine::POISpawnDesc> pois;
+
+    const uint32_t res = 33u;
+    const float chunkSize = 16.0f;
+    gen.GenerateChunkData(1, 1, chunkSize, res, splat0, splat1, biomeMap, props, pois);
+
+    ASSERT_EQ(biomeMap.size(), static_cast<size_t>(res) * res);
+
+    const float step = chunkSize / static_cast<float>(res - 1u);
+    for (uint32_t z = 0; z < res; z += 4) {
+        for (uint32_t x = 0; x < res; x += 4) {
+            const float wx = 1.0f * chunkSize + static_cast<float>(x) * step;
+            const float wz = 1.0f * chunkSize + static_cast<float>(z) * step;
+            const Engine::BiomeSample direct = gen.EvaluateBiomeAtXZ(wx, wz, chunkSize);
+            EXPECT_EQ(biomeMap[z * res + x], direct.DominantBiome);
+        }
+    }
+}
+
+TEST(TerrainFireGridTest, SimulatesWithoutHeapAllocations) {
+    Engine::TerrainFireGrid grid;
+    grid.ConfigureCallbacks(
+        [](float, float) { return 1.0f; },
+        [](const glm::vec2&, float, float) {}
+    );
+
+    grid.IgniteAtXZ({ 0.0f, 0.0f }, 1.0f);
+    grid.IgniteAtXZ({ 2.0f, 2.0f }, 1.0f);
+    EXPECT_GT(grid.GetActiveFireCount(), 0u);
+
+    for (int i = 0; i < 5; ++i) {
+        grid.Update(0.1f);
+    }
+    EXPECT_GT(grid.GetActiveFireCount(), 0u);
+
+    grid.ExtinguishInBoundsXZ({ -5.0f, -5.0f }, { 5.0f, 5.0f });
+    EXPECT_EQ(grid.GetActiveFireCount(), 0u);
+}
+
+TEST(TerrainChunkManagerTest, TarFirewallEntityPooling) {
+    Engine::Scene scene("FirewallPoolTest");
+    auto* terrainGo = scene.CreateGameObject("Terrain");
+    auto* mgr = terrainGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 33u, 1, 2);
+
+    Engine::WorldGenConfig cfg;
+    cfg.Enabled = true;
+    cfg.SpawnSceneEntities = true;
+    mgr->ConfigureProceduralWorld(cfg);
+
+    mgr->EnsureEditableChunk({ 0, 0 });
+    mgr->PaintMaterialWorld({ 8.0f, 8.0f }, 2u, 3.0f, 1.0f);
+    mgr->IgniteAtXZ({ 8.0f, 8.0f }, 1.5f);
+
+    EXPECT_GT(mgr->GetFireGrid().GetActiveFireCount(), 0u);
+
+    // Verify TarFirewall entities are acquired and tracked in EntityPoolManager
+    const size_t totalSpawned = scene.GetPoolManager().GetPoolTotalCount("pool_tar_firewall");
+    EXPECT_GT(totalSpawned, 0u);
+    EXPECT_EQ(scene.GetPoolManager().GetPoolFreeCount("pool_tar_firewall"), 0u);
+
+    // Extinguish: all firewalls returned to pool free list
+    mgr->ExtinguishAtXZ({ 8.0f, 8.0f }, 5.0f);
+    EXPECT_EQ(mgr->GetFireGrid().GetActiveFireCount(), 0u);
+    EXPECT_EQ(scene.GetPoolManager().GetPoolFreeCount("pool_tar_firewall"), totalSpawned);
+    EXPECT_EQ(scene.GetPoolManager().GetPoolTotalCount("pool_tar_firewall"), totalSpawned);
+
+    // Re-ignite: firewalls must be recycled from pool without instantiating any new GameObjects
+    mgr->IgniteAtXZ({ 8.0f, 8.0f }, 1.5f);
+    EXPECT_GT(mgr->GetFireGrid().GetActiveFireCount(), 0u);
+    EXPECT_EQ(scene.GetPoolManager().GetPoolTotalCount("pool_tar_firewall"), totalSpawned);
+    EXPECT_EQ(scene.GetPoolManager().GetPoolFreeCount("pool_tar_firewall"), 0u);
 }
 
 } // namespace

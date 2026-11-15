@@ -247,6 +247,8 @@ private:
     WorldGenConfig m_WorldGenConfig{};
     std::shared_ptr<const WorldBiomeGenerator> m_BiomeGenerator;
     std::array<std::shared_ptr<Prefab>, 9> m_PropPrefabs{};
+    std::shared_ptr<Prefab> m_FirewallPrefab;
+    std::vector<std::pair<ChunkCoord, TerrainChunk*>> m_EvictCandidatesScratch;
 
     std::array<TerrainLayer, TerrainComponent::MaxLayers> m_Layers{};
     float m_BlendSharpness = 0.68f;

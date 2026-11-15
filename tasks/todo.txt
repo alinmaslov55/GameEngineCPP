@@ -120,7 +120,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
     - Solution:
       * Route `Box2DEnqueueTask` chunks through `JobSystem::SubmitRawJob` using preallocated chunk state in `Box2DTask`, clamp `worldDef.workerCount` to `B2_MAX_WORKERS` (and `callerWorker` to `workerCount - 1`), cache active `TerrainChunkManager`/`TerrainComponent` pointers on `Scene`, cache last applied damping on `Rigidbody2D`, iterate only active physics/scripted entities in `FixedUpdate`, and deduplicate `m_ContactedPairsScratch` via sort+unique or flat hash set.
 
-[ ] 11. Remove WorldBiomeGenerator Redundant Work, Chunk Streaming Allocations, Unpooled Firewalls & Font Warn Flushes
+[x] 11. Remove WorldBiomeGenerator Redundant Work, Chunk Streaming Allocations, Unpooled Firewalls & Font Warn Flushes
     - Files: Engine/src/Scene/WorldBiomeGenerator.cpp (lines 430-480, 521-569), Engine/src/Scene/TerrainChunkManager.cpp (lines 525, 548-564, 600, 995-1035), Engine/src/Scene/TerrainFireGrid.cpp (lines 134-137), Engine/include/Engine/UI/Font.h (lines 24-50), Engine/src/Core/Application.cpp (line 93), Engine/src/Core/ResourceManager.cpp (lines 112-194, 305-306), Engine/src/Utils/CutoutProcessor.cpp (lines 255-295)
     - Root Cause:
       * `WorldBiomeGenerator::GenerateChunkData()` runs `EvaluateBiomeAtXZ` (including 9 super-cell POIs) for every 65x65 texel and re-evaluates it for every candidate and neighbor check in `scatterTier`, while populating unused `BiomeMap` (`4,225` bytes/chunk).

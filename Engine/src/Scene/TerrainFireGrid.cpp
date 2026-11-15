@@ -110,7 +110,8 @@ void TerrainFireGrid::ExtinguishInBoundsXZ(const glm::vec2& minXZ, const glm::ve
     const float minZ = std::min(minXZ.y, maxXZ.y);
     const float maxZ = std::max(minXZ.y, maxXZ.y);
 
-    std::vector<FireCellCoord> toRemove;
+    m_ExtinguishScratch.clear();
+    auto& toRemove = m_ExtinguishScratch;
     toRemove.reserve(m_ActiveCells.size());
 
     for (const auto& [coord, cell] : m_ActiveCells) {
@@ -192,8 +193,10 @@ void TerrainFireGrid::SimulateTick(float tickDt) {
         { -1,  1 }, {  0,  1 }, {  1,  1 }
     };
 
-    std::vector<FireCellCoord> pendingIgnitions;
-    std::vector<FireCellCoord> pendingDecays;
+    m_PendingIgnitionsScratch.clear();
+    m_PendingDecaysScratch.clear();
+    auto& pendingIgnitions = m_PendingIgnitionsScratch;
+    auto& pendingDecays = m_PendingDecaysScratch;
     pendingIgnitions.reserve(m_ActiveCells.size() * 4);
     pendingDecays.reserve(m_ActiveCells.size());
 
