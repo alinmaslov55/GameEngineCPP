@@ -490,8 +490,9 @@ public:
                     }
                     if constexpr (!std::is_final_v<CleanT> && !Detail::IsRegisteredPolymorphicBase<CleanT>()) {
                         return dynamic_cast<CleanT*>(c) != nullptr;
+                    } else {
+                        return false;
                     }
-                    return false;
                 }
             };
 
@@ -618,18 +619,6 @@ private:
     uint32_t m_ComponentIterationDepth{ 0 };
     uint16_t m_FixedUpdateComponentCount{ 0 };
 };
-
-inline void Component::SetEnabled(bool enabled) noexcept {
-    if (m_Enabled == enabled) return;
-    m_Enabled = enabled;
-    if (m_GameObject && m_GameObject->IsActiveInHierarchy()) {
-        if (m_Enabled) {
-            OnEnable();
-        } else {
-            OnDisable();
-        }
-    }
-}
 
 } // namespace Engine
 

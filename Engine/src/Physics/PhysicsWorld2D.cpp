@@ -444,7 +444,7 @@ void PhysicsWorld2D::DisableRuntimeBody(GameObject* go) {
     AssertMainThreadAffinity("PhysicsWorld2D::DisableRuntimeBody");
     if (!m_IsRuntimeRunning || !go) return;
 
-    auto disableHandle = [go](BodyHandle handle, const char* kind) {
+    auto disableHandle = [go](BodyHandle handle, [[maybe_unused]] const char* kind) {
         if (!handle.IsValid()) return;
         b2BodyId bodyId = b2LoadBodyId(handle.Value);
         if (b2Body_IsValid(bodyId) && b2Body_IsEnabled(bodyId)) {

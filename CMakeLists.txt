@@ -18,6 +18,25 @@ if(MSVC)
     add_compile_options($<$<CONFIG:Release>:/arch:AVX2>)
 endif()
 add_compile_definitions(GLM_FORCE_INTRINSICS)
+add_compile_definitions(_CRT_SECURE_NO_WARNINGS)
+
+# Strict Compiler Warnings Configuration
+if(MSVC)
+    set(ENGINE_COMPILER_WARNINGS
+        /W4
+        /wd4100 # unreferenced formal parameter (callback signatures and debug-only log parameters)
+        /wd4324 # structure was padded due to alignment specifier (intentional alignas(64) cache-line alignment)
+        /external:anglebrackets
+        /external:W0
+    )
+else()
+    set(ENGINE_COMPILER_WARNINGS
+        -Wall
+        -Wextra
+        -Wpedantic
+        -Wno-unused-parameter
+    )
+endif()
 
 # Build Configuration Options
 option(ENGINE_BUILD_EDITOR "Build the ImGui Editor UI" ON)

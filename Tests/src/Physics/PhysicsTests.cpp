@@ -58,7 +58,7 @@ TEST(IsometricPhysicsTest, JumpArcRisesAndReturnsToGroundLevel) {
     rb->GravityScaleY = 1.0f;
     rb->GroundLevelY = 0.0f;
 
-    auto* collider = player->AddComponent<Engine::BoxCollider2D>();
+    player->AddComponent<Engine::BoxCollider2D>();
     EXPECT_TRUE(rb->IsGrounded(transform->position.y));
 
     // Apply upward jump impulse
@@ -338,7 +338,7 @@ TEST(SpatialGrid2DTest, GridInvalidationAndDynamicRebuild) {
 
     auto* wall1 = scene.CreateGameObject("Wall1");
     wall1->GetTransform()->position = { 2.0f, 0.0f, 2.0f };
-    auto* col1 = wall1->AddComponent<Engine::BoxCollider2D>();
+    wall1->AddComponent<Engine::BoxCollider2D>();
 
     scene.Update(0.016f);
     EXPECT_FALSE(scene.IsSpatialGridDirty());
@@ -347,7 +347,7 @@ TEST(SpatialGrid2DTest, GridInvalidationAndDynamicRebuild) {
     // Adding another GameObject invalidates the grid
     auto* wall2 = scene.CreateGameObject("Wall2");
     wall2->GetTransform()->position = { 6.0f, 0.0f, 6.0f };
-    auto* col2 = wall2->AddComponent<Engine::BoxCollider2D>();
+    wall2->AddComponent<Engine::BoxCollider2D>();
 
     EXPECT_TRUE(scene.IsSpatialGridDirty());
 

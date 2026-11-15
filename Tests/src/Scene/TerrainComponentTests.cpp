@@ -997,7 +997,7 @@ TEST(TerrainChunkManagerTest, OnDestroyReleasesAllTarFirewallEntities) {
     cfg.SpawnSceneEntities = true;
     mgr->ConfigureProceduralWorld(cfg);
 
-    auto& chunk = mgr->EnsureEditableChunk({ 0, 0 });
+    mgr->EnsureEditableChunk({ 0, 0 });
     // Paint tar at (8.0, 8.0)
     mgr->PaintMaterialWorld({ 8.0f, 8.0f }, 2u, 3.0f, 1.0f);
     mgr->IgniteAtXZ({ 8.0f, 8.0f }, 1.5f);

@@ -12,6 +12,9 @@ endif()
 # Create the executable
 add_executable(EngineSandbox ${SANDBOX_SOURCES})
 
+# Apply strict compiler warnings
+target_compile_options(EngineSandbox PRIVATE ${ENGINE_COMPILER_WARNINGS})
+
 target_include_directories(EngineSandbox PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
 )

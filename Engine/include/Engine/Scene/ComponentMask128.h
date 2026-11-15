@@ -66,11 +66,11 @@ struct ComponentMask128 {
         return !(*this == o);
     }
 
-    [[nodiscard]] constexpr bool operator==(int zero) const noexcept {
+    [[nodiscard]] constexpr bool operator==(int /*zero*/) const noexcept {
         return (lo | hi) == 0;
     }
 
-    [[nodiscard]] constexpr bool operator!=(int zero) const noexcept {
+    [[nodiscard]] constexpr bool operator!=(int /*zero*/) const noexcept {
         return (lo | hi) != 0;
     }
 

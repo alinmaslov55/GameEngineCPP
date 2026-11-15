@@ -198,11 +198,11 @@ flowchart TD
 | **`PHY-05`** | Spatial Physics Queries & Selective Chronos Stasis | `DONE` | **P1** | W4 | `PHY-03` | `ECS-02` | `AIX-01`, Maul cleave, Chronos Rune |
 | **`INP-01`** | Edge-Triggered Input States & Action Binding Map | `DONE` | **P0** | W0 | *None (Root)* | `SAV-02` (save bindings) | `INP-02`, `UIX-04`, `SAV-02` |
 | **`INP-02`** | Ground-Plane Aim Resolver & Gamepad Haptics | `DONE` | **P1** | W1 | `INP-01`, `CAM-01` | `ECS-02` (pause mute) | Directional combat swings & drop placement |
-| **`LGT-01`** | Omnidirectional Point-Light Torch Shadow Casting | `TODO` | **P0** | W1 | `LGT-02` | `WindComponent` | `TER-03`, `RND-01` |
-| **`LGT-02`** | Expanded Priority-Sorted Point Light Pipeline | `TODO` | **P1** | W0 | *None (Root)* | `ECS-05` | `LGT-01`, `LGT-03`, `EDT-02` |
-| **`LGT-03`** | CPU Illumination & Umbral Visibility Query API | `TODO` | **P0** | W1 | `LGT-02` | `LGT-01` (line-of-light) | `AIX-02`, `UIX-04`, Torch survival rules |
-| **`TER-01`** | Infinite Chunked Terrain Streaming & Stitching | `TODO` | **P0** | W1 | `ECS-01` | `JobSystem` | `TER-02`, `TER-03`, `TER-04`, `UIX-04` |
-| **`TER-02`** | Seeded Perlin Biome Generator & Prop/POI Scatter | `TODO` | **P1** | W3 | `TER-01`, `ECS-04` | `SAV-01` (biome tables) | Procedural world & POI generation |
+| **`LGT-01`** | Omnidirectional Point-Light Torch Shadow Casting | `DONE` | **P0** | W1 | `LGT-02` | `WindComponent` | `TER-03`, `RND-01` |
+| **`LGT-02`** | Expanded Priority-Sorted Point Light Pipeline | `DONE` | **P1** | W0 | *None (Root)* | `ECS-05` | `LGT-01`, `LGT-03`, `EDT-02` |
+| **`LGT-03`** | CPU Illumination & Umbral Visibility Query API | `DONE` | **P0** | W1 | `LGT-02` | `LGT-01` (line-of-light) | `AIX-02`, `UIX-04`, Torch survival rules |
+| **`TER-01`** | Infinite Chunked Terrain Streaming & Stitching | `DONE` | **P0** | W1 | `ECS-01` | `JobSystem` | `TER-02`, `TER-03`, `TER-04`, `UIX-04` |
+| **`TER-02`** | Seeded Perlin Biome Generator & Prop/POI Scatter | `DONE` | **P1** | W3 | `TER-01`, `ECS-04` | `SAV-01` (biome tables) | Procedural world & POI generation |
 | **`TER-03`** | Array Height/Normal Splatmap & 5th Cobble Layer | `DONE` | **P1** | W2 | `TER-01`, `LGT-01` | `RND-02` (anisotropy) | `TER-04` |
 | **`TER-04`** | CPU Surface Sampler & Systemic Tar/Fire Grid | `DONE` | **P1** | W3 | `TER-01`, `TER-03`, `PHY-02` | `VFX-01`, `AUD-02` | `VFX-02`, Tar Siphon, Chalk slide, Footsteps |
 | **`RND-01`** | Cutout Combat Shader FX (Dissolve, Flash, Outline)| `TODO` | **P1** | W2 | `LGT-01` | `LGT-03` (Shadow Sight) | Death ash dissolve, hit-stun flash, Revenants |
@@ -761,7 +761,7 @@ flowchart TD
 ---
 
 #### `TER-04` — CPU Surface Sampler & Systemic Tar/Fire Grid
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W3`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W3`
 - **Dependencies:** Hard: `TER-01`, `TER-03`, `PHY-02` | Unlocks: `VFX-02`, Tar Siphon, Chalk physics, Footstep Foley
 - **Proposed C++ Specification:**
   ```cpp
@@ -1010,7 +1010,7 @@ flowchart TD
 ---
 
 #### `CAM-01` — Adaptive Hor+ (Landscape) & Vert+ (Portrait) FOV Projection
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `CAM-02`, `INP-02`, `EDT-01`
 - **Current Gap:** `PerspectiveCamera::RecalculateProjection()` (`PerspectiveCamera.cpp:74`) always locks vertical FOV (`32°`), crushing horizontal visibility in `9:16` / `10:16` Portrait orientations (`game_assets_specification.md` Section 2.2).
 - **Exact Projection Math (`PerspectiveCamera.cpp`):**

@@ -268,7 +268,7 @@ class MockMovementScript : public Engine::Component {
 public:
     glm::vec2 DesiredVelocity{ 0.0f, 0.0f };
 
-    void FixedUpdate(float fixedDt) override {
+    void FixedUpdate(float /*fixedDt*/) override {
         if (auto* rb = GetGameObject()->GetComponent<Engine::Rigidbody2D>()) {
             rb->SetVelocityXZ(DesiredVelocity);
         }

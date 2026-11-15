@@ -13,7 +13,7 @@ public:
 
     virtual void OnAttach() {}
     virtual void OnDetach() {}
-    virtual void OnUpdate(float deltaTime) {}
+    virtual void OnUpdate(float /*deltaTime*/) {}
 #ifdef ENGINE_BUILD_EDITOR
     virtual void OnImGuiRender() {}
 #endif

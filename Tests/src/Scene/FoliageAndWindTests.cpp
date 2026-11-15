@@ -59,7 +59,7 @@ TEST(WindAndMotionTest, WindFieldRootLockProximityPartingAndVolumePreservingSpri
     auto* rb = player->AddComponent<Engine::Rigidbody2D>();
     rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     rb->UseGravityY = true;
-    auto* collider = player->AddComponent<Engine::BoxCollider2D>();
+    player->AddComponent<Engine::BoxCollider2D>();
     auto* ss = player->AddComponent<Engine::SquashStretchComponent>();
 
     ss->TriggerImpulse(2.4f, 8.0f);

@@ -152,7 +152,7 @@ ENGINE CODE QUALITY, CORRECTNESS, PERFORMANCE & ARCHITECTURE ROADMAP
 
 [P3] BUILD SYSTEM, COMPILE-TIME HYGIENE & DOCS SYNC
 --------------------------------------------------------------------------------
-[ ] 14. Enable Strict Compiler Warnings, Precompiled Headers, Trim Empty Units & Sync docs/features.md Status Table
+[x] 14. Enable Strict Compiler Warnings, Precompiled Headers, Trim Empty Units & Sync docs/features.md Status Table
     - Files: CMakeLists.txt (lines 1-47), Engine/CMakeLists.txt (lines 1-35), Engine/src/Scene/Component.cpp, docs/features.md (lines 201-205, 1013)
     - Details:
       * Enable `/W4` (MSVC) and `-Wall -Wextra` (GCC/Clang) on Engine/Sandbox/Tests targets.

@@ -4,6 +4,9 @@ file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
 
 add_executable(EngineTests ${TEST_SOURCES})
 
+# Apply strict compiler warnings
+target_compile_options(EngineTests PRIVATE ${ENGINE_COMPILER_WARNINGS})
+
 target_link_libraries(EngineTests PRIVATE
     Engine
     GTest::gtest

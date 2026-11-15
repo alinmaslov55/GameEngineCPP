@@ -86,7 +86,7 @@ GameObject* EntityPoolManager::AcquirePooled(const std::string& poolKey, const P
         }
     }
 
-    const bool recycled = (instance != nullptr);
+    [[maybe_unused]] const bool recycled = (instance != nullptr);
     if (!instance) {
         instance = m_Scene->InstantiatePrefab(prefab, worldPos);
         if (instance) {

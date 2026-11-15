@@ -764,7 +764,7 @@ void DeserializeTransform(GameObject* go, const json& tJson, const std::string&)
     transform->SetDirty();
 }
 
-void DeserializeSpriteRenderer(GameObject* go, const json& srJson, const std::string& name) {
+void DeserializeSpriteRenderer(GameObject* go, const json& srJson, [[maybe_unused]] const std::string& name) {
     auto* sprite = go->AddComponent<SpriteRenderer>();
     if (srJson.contains("Color")) {
         sprite->SetColor(AsVec4(srJson["Color"], glm::vec4(1.0f)));

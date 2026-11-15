@@ -18,9 +18,9 @@ public:
     virtual void OnEnable() {}
     virtual void OnDisable() {}
     virtual void Start() {}
-    virtual void Update(float deltaTime) {}
-    virtual void FixedUpdate(float fixedDeltaTime) {}
-    virtual void LateUpdate(float deltaTime) {}
+    virtual void Update(float /*deltaTime*/) {}
+    virtual void FixedUpdate(float /*fixedDeltaTime*/) {}
+    virtual void LateUpdate(float /*deltaTime*/) {}
     virtual void OnDestroy() {}
 
     // Object Pooling Lifecycle Hooks

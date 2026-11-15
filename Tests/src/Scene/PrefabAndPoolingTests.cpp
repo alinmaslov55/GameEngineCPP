@@ -280,7 +280,7 @@ TEST(PrefabAndPoolingTest, PhysicsAndParticleStateResetOnRelease) {
     auto* bc2d = tpl->AddComponent<Engine::BoxCollider2D>();
     bc2d->size = { 1.0f, 1.0f };
 
-    auto* ps = tpl->AddComponent<Engine::ParticleSystem>(20u);
+    tpl->AddComponent<Engine::ParticleSystem>(20u);
 
     auto prefab = Engine::Prefab::CreateFromGameObject(tpl, true);
     scene->DestroyGameObject(tpl);
@@ -377,7 +377,7 @@ TEST(PrefabAndPoolingTest, DeepSubtreePoolReset_GrandchildrenAndDescendantsReset
     rb2d->InitialLinearVelocityXZ = { 2.0f, 3.0f };
     auto* boxCol = root->AddComponent<Engine::BoxCollider2D>();
     boxCol->size = { 1.0f, 1.0f };
-    auto* squash = root->AddComponent<Engine::SquashStretchComponent>();
+    root->AddComponent<Engine::SquashStretchComponent>();
 
     auto* child = scene->CreateGameObject("PooledChild");
     child->GetTransform()->SetParent(root->GetTransform(), false);
@@ -391,7 +391,7 @@ TEST(PrefabAndPoolingTest, DeepSubtreePoolReset_GrandchildrenAndDescendantsReset
     auto* grandchild = scene->CreateGameObject("PooledGrandchild");
     grandchild->GetTransform()->SetParent(child->GetTransform(), false);
     grandchild->GetTransform()->position = { 0.0f, 2.0f, 0.0f };
-    auto* gcPs = grandchild->AddComponent<Engine::ParticleSystem>(20u);
+    grandchild->AddComponent<Engine::ParticleSystem>(20u);
 
     // Snapshot hierarchy to prefab
     auto prefab = Engine::Prefab::CreateFromGameObject(root, true);
