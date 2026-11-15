@@ -207,7 +207,7 @@ flowchart TD
 | **`TER-04`** | CPU Surface Sampler & Systemic Tar/Fire Grid | `DONE` | **P1** | W3 | `TER-01`, `TER-03`, `PHY-02` | `VFX-01`, `AUD-02` | `VFX-02`, Tar Siphon, Chalk slide, Footsteps |
 | **`RND-01`** | Cutout Combat Shader FX (Dissolve, Flash, Outline)| `DONE` | **P1** | W2 | `LGT-01` | `LGT-03` (Shadow Sight) | Death ash dissolve, hit-stun flash, Revenants |
 | **`RND-02`** | Sprite Atlas Metadata Loader & Anisotropic Filter | `DONE` | **P1** | W0 | *None (Root)* | `ResourceManager` | `ANI-01`, `VFX-01`, `RND-03` |
-| **`RND-03`** | GPU Compressed Texture Pipeline (BC7 / KTX2) | `TODO` | **P2** | W2 | `RND-02` | `ANI-03` | 4K Master ~218 MB VRAM target |
+| **`RND-03`** | GPU Compressed Texture Pipeline (BC7 / KTX2) | `DONE` | **P2** | W2 | `RND-02` | `ANI-03` | 4K Master ~218 MB VRAM target |
 | **`ANI-01`** | Multi-Directional Animation State Machine & FlipX | `TODO` | **P0** | W1 | `RND-02`, `ANI-03` | `ECS-03` | `ANI-02` |
 | **`ANI-02`** | Frame-Accurate Animation Event Callbacks | `TODO` | **P1** | W2 | `ANI-01` | `AUD-02`, `PHY-05` | `EDT-03`, Hitbox/Foley frame sync |
 | **`ANI-03`** | Sprite-Sheet Cutout Normalization & Pivot Lock | `TODO` | **P1** | W0 | *None (Root)* | `CutoutProcessor` | `ANI-01` |
@@ -846,7 +846,7 @@ flowchart TD
 ---
 
 #### `RND-03` — GPU Compressed Texture Pipeline (BC7 / KTX2 / DDS)
-- **Status:** `TODO` | **Priority:** `P2` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P2` | **Wave:** `W2`
 - **Dependencies:** Hard: `RND-02` | Unlocks: Shipping 4K asset suite within `~218 MB` VRAM
 - **Current Gap:** `stbi_load` decodes everything to `32-bit RGBA8` (`4 MB` + `1.33 MB` mips per `1024x1024` sheet).
 - **Proposed C++ Specification:**

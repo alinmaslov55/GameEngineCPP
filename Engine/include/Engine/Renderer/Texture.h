@@ -4,10 +4,32 @@
 #include <string>
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace Engine {
+
+struct CompressedMipLevel {
+    int Width = 0;
+    int Height = 0;
+    uint32_t SizeBytes = 0;
+    const uint8_t* Data = nullptr;
+};
+
+struct DDSInfo {
+    bool Valid = false;
+    int Width = 0;
+    int Height = 0;
+    uint32_t MipCount = 1;
+    uint32_t GLFormat = 0;
+    uint32_t BytesPerBlock = 16;
+    std::vector<CompressedMipLevel> Mips;
+};
+
 class Texture {
 public:
+    using CompressedMipLevel = Engine::CompressedMipLevel;
+    using DDSInfo = Engine::DDSInfo;
+
     explicit Texture(const std::string& path);
     Texture(uint32_t width,
             uint32_t height,
@@ -46,8 +68,20 @@ public:
     [[nodiscard]] float GetAnisotropy() const noexcept { return m_Anisotropy; }
     [[nodiscard]] static float GetMaxSupportedAnisotropy() noexcept;
 
+    // Compressed Texture queries
+    [[nodiscard]] bool IsCompressed() const noexcept { return m_IsCompressed; }
+    [[nodiscard]] uint32_t GetMipCount() const noexcept { return m_MipCount; }
+    [[nodiscard]] uint32_t GetCompressedFormat() const noexcept { return m_CompressedGLFormat; }
+
+    [[nodiscard]] static bool IsDDS(const std::string& filepath) noexcept;
+    [[nodiscard]] static bool IsDDS(const void* data, size_t sizeBytes) noexcept;
+    [[nodiscard]] static DDSInfo ParseDDS(const void* data, size_t sizeBytes);
+
     // Replaces the texture content in-place with decoded pixel data and updates OpenGL state
     void PopulateFromData(int width, int height, int bpp, const void* rgbaData);
+
+    // Replaces texture content with pre-compressed mip chain data (BC7/BC5/BC4/BC1/BC3)
+    void PopulateFromCompressedData(int width, int height, uint32_t glFormat, const std::vector<CompressedMipLevel>& mips);
 
     // Creates an immediate 1x1 neutral white placeholder texture for async loading
     static std::shared_ptr<Texture> CreatePlaceholder(const std::string& filepath);
@@ -70,6 +104,9 @@ private:
     bool m_RepeatWrap = false;
     bool m_IsLoaded = false;
     float m_Anisotropy = 1.0f;
+    bool m_IsCompressed = false;
+    uint32_t m_MipCount = 1;
+    uint32_t m_CompressedGLFormat = 0;
 };
 } // namespace Engine
 

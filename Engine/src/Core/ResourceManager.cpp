@@ -6,10 +6,13 @@
 #include <SDL3/SDL.h>
 
 #include <system_error>
+#include <algorithm>
 #include <atomic>
+#include <cctype>
 #include <chrono>
 #include <condition_variable>
 #include <deque>
+#include <fstream>
 #include <iterator>
 #include <memory>
 #include <mutex>
@@ -35,10 +38,51 @@ struct StbiPixelDeleter {
 struct PendingTextureUpload {
     std::shared_ptr<Texture> TargetTexture;
     std::unique_ptr<unsigned char[], StbiPixelDeleter> PixelData;
+    std::vector<uint8_t> CompressedPayload;
     int Width = 0;
     int Height = 0;
     int BPP = 0;
+    bool IsCompressed = false;
 };
+
+std::string ResolveTextureDiskPath(const std::string& resolvedPath) {
+    if (resolvedPath.empty()) {
+        return resolvedPath;
+    }
+    std::filesystem::path p(resolvedPath);
+    std::string ext = p.extension().generic_string();
+    std::string extLower = ext;
+    std::transform(extLower.begin(), extLower.end(), extLower.begin(), [](unsigned char c) {
+        return static_cast<char>(std::tolower(c));
+    });
+
+    if (extLower == ".png" || extLower == ".jpg" || extLower == ".jpeg") {
+        std::filesystem::path ddsPath = p;
+        ddsPath.replace_extension(".dds");
+        std::error_code ecDds, ecPng;
+        bool ddsExists = std::filesystem::exists(ddsPath, ecDds);
+        bool pngExists = std::filesystem::exists(p, ecPng);
+        if (ddsExists && !pngExists) {
+            ENGINE_CORE_DEBUG("ResourceManager: Found pre-compressed DDS sibling '{}' (source '{}' not found)",
+                              ddsPath.generic_string(), resolvedPath);
+            return ddsPath.generic_string();
+        }
+        if (ddsExists && pngExists) {
+            auto ddsMtime = std::filesystem::last_write_time(ddsPath, ecDds);
+            auto pngMtime = std::filesystem::last_write_time(p, ecPng);
+            if (!ecDds && !ecPng && ddsMtime >= pngMtime) {
+                ENGINE_CORE_DEBUG("ResourceManager: Selecting newer/equal pre-compressed DDS sibling '{}' over '{}'",
+                                  ddsPath.generic_string(), resolvedPath);
+                return ddsPath.generic_string();
+            } else {
+                ENGINE_CORE_DEBUG("ResourceManager: Selecting newer source image '{}' over DDS sibling '{}'",
+                                  resolvedPath, ddsPath.generic_string());
+                return resolvedPath;
+            }
+        }
+    }
+    return resolvedPath;
+}
 
 std::mutex s_PendingUploadsMutex;
 std::deque<PendingTextureUpload> s_PendingUploads;
@@ -299,7 +343,8 @@ std::shared_ptr<Texture> ResourceManager::LoadTexture(const std::string& filepat
         }
     }
 
-    auto asset = std::make_shared<Texture>(info.ResolvedPath);
+    std::string actualDiskPath = ResolveTextureDiskPath(info.ResolvedPath);
+    auto asset = std::make_shared<Texture>(actualDiskPath);
 
     {
         std::lock_guard lock(AssetCache<Texture>::mutex);
@@ -314,7 +359,7 @@ std::shared_ptr<Texture> ResourceManager::LoadTexture(const std::string& filepat
         }
     }
 
-    ENGINE_CORE_INFO("ResourceManager: Loaded texture synchronously: '{}' (from '{}')", info.CacheKey, info.ResolvedPath);
+    ENGINE_CORE_INFO("ResourceManager: Loaded texture synchronously: '{}' (from '{}')", info.CacheKey, actualDiskPath);
     return asset;
 }
 
@@ -337,6 +382,8 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
         }
     }
 
+    std::string actualDiskPath = ResolveTextureDiskPath(info.ResolvedPath);
+
     // If JobSystem is not initialized with active workers, fallback to synchronous decode
     if (!JobSystem::IsInitialized() || JobSystem::GetWorkerCount() == 0) {
         ENGINE_CORE_DEBUG("ResourceManager::LoadTextureAsync falling back to synchronous load for '{}' (JobSystem inactive)",
@@ -355,7 +402,7 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
             return it->second;
         }
 
-        placeholder = Texture::CreatePlaceholder(info.ResolvedPath);
+        placeholder = Texture::CreatePlaceholder(actualDiskPath);
         cache[info.CacheKey] = placeholder;
     }
 
@@ -364,8 +411,70 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
     ENGINE_CORE_INFO("ResourceManager: Dispatched async load for '{}' (placeholder ID: {})",
                      info.CacheKey, placeholder->GetRendererID());
 
-    // Offload stbi_load to background worker thread; RAII loadGuard ensures count drops even on failure or teardown
-    JobSystem::Dispatch([placeholder, resolvedPath = info.ResolvedPath, cacheKey = info.CacheKey, loadGuard]() {
+    JobSystem::Dispatch([placeholder, resolvedPath = actualDiskPath, cacheKey = info.CacheKey, loadGuard]() {
+        if (Texture::IsDDS(resolvedPath)) {
+            std::ifstream file(resolvedPath, std::ios::binary | std::ios::ate);
+            if (!file) {
+                ENGINE_CORE_ERROR("ResourceManager::LoadTextureAsync: Failed to open DDS '{}'", resolvedPath);
+                std::lock_guard lock(AssetCache<Texture>::mutex);
+                auto& cache = AssetCache<Texture>::data;
+                auto it = cache.find(cacheKey);
+                if (it != cache.end() && it->second == placeholder) {
+                    cache.erase(it);
+                }
+                return;
+            }
+            std::streamsize fileSize = file.tellg();
+            if (fileSize < 128) {
+                ENGINE_CORE_ERROR("ResourceManager::LoadTextureAsync: DDS file too small '{}'", resolvedPath);
+                std::lock_guard lock(AssetCache<Texture>::mutex);
+                auto& cache = AssetCache<Texture>::data;
+                auto it = cache.find(cacheKey);
+                if (it != cache.end() && it->second == placeholder) {
+                    cache.erase(it);
+                }
+                return;
+            }
+            file.seekg(0, std::ios::beg);
+            std::vector<uint8_t> buffer(static_cast<size_t>(fileSize));
+            if (!file.read(reinterpret_cast<char*>(buffer.data()), fileSize)) {
+                ENGINE_CORE_ERROR("ResourceManager::LoadTextureAsync: Failed to read DDS '{}'", resolvedPath);
+                std::lock_guard lock(AssetCache<Texture>::mutex);
+                auto& cache = AssetCache<Texture>::data;
+                auto it = cache.find(cacheKey);
+                if (it != cache.end() && it->second == placeholder) {
+                    cache.erase(it);
+                }
+                return;
+            }
+
+            Texture::DDSInfo dds = Texture::ParseDDS(buffer.data(), buffer.size());
+            if (!dds.Valid) {
+                ENGINE_CORE_ERROR("ResourceManager::LoadTextureAsync: Failed to parse DDS '{}'", resolvedPath);
+                std::lock_guard lock(AssetCache<Texture>::mutex);
+                auto& cache = AssetCache<Texture>::data;
+                auto it = cache.find(cacheKey);
+                if (it != cache.end() && it->second == placeholder) {
+                    cache.erase(it);
+                }
+                return;
+            }
+
+            ENGINE_CORE_DEBUG("ResourceManager::LoadTextureAsync decoded DDS '{}' ({}x{}, mips={})", resolvedPath, dds.Width, dds.Height, dds.MipCount);
+            {
+                std::lock_guard lock(s_PendingUploadsMutex);
+                PendingTextureUpload upload;
+                upload.TargetTexture = placeholder;
+                upload.CompressedPayload = std::move(buffer);
+                upload.Width = dds.Width;
+                upload.Height = dds.Height;
+                upload.BPP = 4;
+                upload.IsCompressed = true;
+                s_PendingUploads.push_back(std::move(upload));
+            }
+            return;
+        }
+
         stbi_set_flip_vertically_on_load_thread(1);
         int w = 0, h = 0, bpp = 0;
         std::unique_ptr<unsigned char[], StbiPixelDeleter> pixelData(
@@ -386,7 +495,14 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
         ENGINE_CORE_DEBUG("ResourceManager::LoadTextureAsync decoded '{}' ({}x{}, bpp={})", resolvedPath, w, h, bpp);
         {
             std::lock_guard lock(s_PendingUploadsMutex);
-            s_PendingUploads.push_back({ placeholder, std::move(pixelData), w, h, bpp });
+            PendingTextureUpload upload;
+            upload.TargetTexture = placeholder;
+            upload.PixelData = std::move(pixelData);
+            upload.Width = w;
+            upload.Height = h;
+            upload.BPP = bpp;
+            upload.IsCompressed = false;
+            s_PendingUploads.push_back(std::move(upload));
         }
     });
 
@@ -418,10 +534,18 @@ size_t ResourceManager::ProcessPendingUploads(uint32_t maxUploads) {
 
     ENGINE_CORE_DEBUG("ResourceManager: Uploading {} decoded async textures to GPU", batch.size());
     for (auto& upload : batch) {
-        if (upload.TargetTexture && upload.PixelData) {
-            upload.TargetTexture->PopulateFromData(upload.Width, upload.Height, upload.BPP, upload.PixelData.get());
+        if (upload.TargetTexture) {
+            if (upload.IsCompressed && !upload.CompressedPayload.empty()) {
+                Texture::DDSInfo dds = Texture::ParseDDS(upload.CompressedPayload.data(), upload.CompressedPayload.size());
+                if (dds.Valid) {
+                    upload.TargetTexture->PopulateFromCompressedData(dds.Width, dds.Height, dds.GLFormat, dds.Mips);
+                }
+            } else if (upload.PixelData) {
+                upload.TargetTexture->PopulateFromData(upload.Width, upload.Height, upload.BPP, upload.PixelData.get());
+            }
         }
         upload.PixelData.reset();
+        upload.CompressedPayload.clear();
     }
 
     return batch.size();
