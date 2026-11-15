@@ -206,7 +206,7 @@ flowchart TD
 | **`TER-03`** | Array Height/Normal Splatmap & 5th Cobble Layer | `DONE` | **P1** | W2 | `TER-01`, `LGT-01` | `RND-02` (anisotropy) | `TER-04` |
 | **`TER-04`** | CPU Surface Sampler & Systemic Tar/Fire Grid | `DONE` | **P1** | W3 | `TER-01`, `TER-03`, `PHY-02` | `VFX-01`, `AUD-02` | `VFX-02`, Tar Siphon, Chalk slide, Footsteps |
 | **`RND-01`** | Cutout Combat Shader FX (Dissolve, Flash, Outline)| `DONE` | **P1** | W2 | `LGT-01` | `LGT-03` (Shadow Sight) | Death ash dissolve, hit-stun flash, Revenants |
-| **`RND-02`** | Sprite Atlas Metadata Loader & Anisotropic Filter | `TODO` | **P1** | W0 | *None (Root)* | `ResourceManager` | `ANI-01`, `VFX-01`, `RND-03` |
+| **`RND-02`** | Sprite Atlas Metadata Loader & Anisotropic Filter | `DONE` | **P1** | W0 | *None (Root)* | `ResourceManager` | `ANI-01`, `VFX-01`, `RND-03` |
 | **`RND-03`** | GPU Compressed Texture Pipeline (BC7 / KTX2) | `TODO` | **P2** | W2 | `RND-02` | `ANI-03` | 4K Master ~218 MB VRAM target |
 | **`ANI-01`** | Multi-Directional Animation State Machine & FlipX | `TODO` | **P0** | W1 | `RND-02`, `ANI-03` | `ECS-03` | `ANI-02` |
 | **`ANI-02`** | Frame-Accurate Animation Event Callbacks | `TODO` | **P1** | W2 | `ANI-01` | `AUD-02`, `PHY-05` | `EDT-03`, Hitbox/Foley frame sync |
@@ -819,7 +819,7 @@ flowchart TD
 ---
 
 #### `RND-02` — Sprite Atlas Metadata Loader & Anisotropic Filtering
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `ANI-01`, `VFX-01`, `RND-03`
 - **Current Gap:** `Texture.cpp` lacks anisotropic filtering (blurring `40°` pitched terrain & decals), and there is no `.atlas.json` sprite-sheet loader.
 - **Proposed C++ Specification:**

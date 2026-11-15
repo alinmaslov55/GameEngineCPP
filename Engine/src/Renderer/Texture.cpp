@@ -18,7 +18,8 @@ void ConfigureAndUploadTexture2D(uint32_t& rendererID,
                                  const void* rgbaData,
                                  bool linearFilter,
                                  bool hasMipmaps,
-                                 bool repeatWrap) {
+                                 bool repeatWrap,
+                                 float& outAnisotropy) {
     if (rendererID == 0) {
         glGenTextures(1, &rendererID);
     }
@@ -42,13 +43,37 @@ void ConfigureAndUploadTexture2D(uint32_t& rendererID,
     }
     if (hasMipmaps) {
         glGenerateMipmap(GL_TEXTURE_2D);
+        const float maxSupported = Texture::GetMaxSupportedAnisotropy();
+        const float targetAniso = std::min(8.0f, maxSupported);
+        if (targetAniso > 1.0f && glad_glTexParameterf != nullptr) {
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, targetAniso);
+            outAnisotropy = targetAniso;
+        } else {
+            outAnisotropy = 1.0f;
+        }
+    } else {
+        outAnisotropy = 1.0f;
     }
     glBindTexture(GL_TEXTURE_2D, 0);
 }
 } // namespace
 
+float Texture::GetMaxSupportedAnisotropy() noexcept {
+    static float s_MaxAnisotropy = []() {
+        if (!HasActiveGLContext()) {
+            return 1.0f;
+        }
+        float maxAniso = 1.0f;
+        if (glad_glGetFloatv != nullptr) {
+            glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
+        }
+        return std::max(1.0f, maxAniso);
+    }();
+    return s_MaxAnisotropy;
+}
+
 Texture::Texture(const std::string& path)
-    : m_RendererID(0), m_Filepath(path), m_Width(0), m_Height(0), m_BPP(0), m_IsLoaded(false) {
+    : m_RendererID(0), m_Filepath(path), m_Width(0), m_Height(0), m_BPP(0), m_IsLoaded(false), m_Anisotropy(1.0f) {
 
     ENGINE_CORE_INFO("Loading texture from: '{}'", path);
     stbi_set_flip_vertically_on_load_thread(1);
@@ -73,32 +98,35 @@ Texture::Texture(const std::string& path)
 
     // Keep small pixel-art atlases (< 64px, e.g. font_atlas.png) crisp with GL_NEAREST,
     // and use GL_LINEAR for high-resolution illustrated 2.5D diorama sprites & ground tiles.
-    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, localBuffer, m_LinearFilter, m_HasMipmaps, m_RepeatWrap);
+    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, localBuffer, m_LinearFilter, m_HasMipmaps, m_RepeatWrap, m_Anisotropy);
 
     stbi_image_free(localBuffer);
 
-    ENGINE_CORE_INFO("Texture loaded successfully: '{}' (ID: {}, {}x{}, BPP: {})", path, m_RendererID, m_Width, m_Height, m_BPP);
+    ENGINE_CORE_INFO("Texture loaded successfully: '{}' (ID: {}, {}x{}, BPP: {}, Aniso: {:.1f})",
+                     path, m_RendererID, m_Width, m_Height, m_BPP, m_Anisotropy);
 }
 
 Texture::Texture(uint32_t width,
                  uint32_t height,
                  const void* rgbaData,
                  bool linearFilter,
-                 bool repeatWrap)
+                 bool repeatWrap,
+                 bool hasMipmaps)
     : m_RendererID(0),
       m_Filepath(""),
       m_Width(static_cast<int>(width)),
       m_Height(static_cast<int>(height)),
       m_BPP(4),
       m_LinearFilter(linearFilter),
-      m_HasMipmaps(false),
+      m_HasMipmaps(hasMipmaps),
       m_RepeatWrap(repeatWrap),
-      m_IsLoaded(false) {
+      m_IsLoaded(false),
+      m_Anisotropy(1.0f) {
     if (width == 0 || height == 0 || !HasActiveGLContext()) {
         return;
     }
 
-    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, rgbaData, linearFilter, false, repeatWrap);
+    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, rgbaData, linearFilter, hasMipmaps, repeatWrap, m_Anisotropy);
     m_IsLoaded = true;
 }
 
@@ -121,7 +149,8 @@ Texture::Texture(Texture&& other) noexcept
       m_LinearFilter(other.m_LinearFilter),
       m_HasMipmaps(other.m_HasMipmaps),
       m_RepeatWrap(other.m_RepeatWrap),
-      m_IsLoaded(std::exchange(other.m_IsLoaded, false)) {
+      m_IsLoaded(std::exchange(other.m_IsLoaded, false)),
+      m_Anisotropy(other.m_Anisotropy) {
 }
 
 Texture& Texture::operator=(Texture&& other) noexcept {
@@ -138,6 +167,7 @@ Texture& Texture::operator=(Texture&& other) noexcept {
         m_HasMipmaps = other.m_HasMipmaps;
         m_RepeatWrap = other.m_RepeatWrap;
         m_IsLoaded = std::exchange(other.m_IsLoaded, false);
+        m_Anisotropy = other.m_Anisotropy;
     }
     return *this;
 }
@@ -153,7 +183,29 @@ void Texture::SetFilterLinear(bool linear) {
         : GL_NEAREST;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
+    if (m_HasMipmaps) {
+        const float maxSupported = GetMaxSupportedAnisotropy();
+        const float targetAniso = linear ? std::min(8.0f, maxSupported) : 1.0f;
+        if (targetAniso > 1.0f && glad_glTexParameterf != nullptr) {
+            glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, targetAniso);
+        }
+        m_Anisotropy = targetAniso;
+    }
     glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void Texture::SetAnisotropy(float aniso) {
+    if (!m_HasMipmaps) {
+        m_Anisotropy = 1.0f;
+        return;
+    }
+    const float maxSupported = GetMaxSupportedAnisotropy();
+    m_Anisotropy = std::clamp(aniso, 1.0f, maxSupported);
+    if (m_RendererID != 0 && HasActiveGLContext() && glad_glTexParameterf != nullptr) {
+        glBindTexture(GL_TEXTURE_2D, m_RendererID);
+        glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, m_Anisotropy);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
 }
 
 void Texture::SetWrapRepeat(bool repeat) {
@@ -265,10 +317,10 @@ bool Texture::ReloadFromDisk() {
         return true;
     }
 
-    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, localBuffer, m_LinearFilter, m_HasMipmaps, m_RepeatWrap);
+    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, localBuffer, m_LinearFilter, m_HasMipmaps, m_RepeatWrap, m_Anisotropy);
 
     stbi_image_free(localBuffer);
-    ENGINE_CORE_INFO("Texture reloaded in-place: '{}' (ID: {}, {}x{})", m_Filepath, m_RendererID, m_Width, m_Height);
+    ENGINE_CORE_INFO("Texture reloaded in-place: '{}' (ID: {}, {}x{}, Aniso: {:.1f})", m_Filepath, m_RendererID, m_Width, m_Height, m_Anisotropy);
     return true;
 }
 
@@ -289,7 +341,7 @@ void Texture::PopulateFromData(int width, int height, int bpp, const void* rgbaD
         return;
     }
 
-    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, rgbaData, m_LinearFilter, m_HasMipmaps, m_RepeatWrap);
+    ConfigureAndUploadTexture2D(m_RendererID, m_Width, m_Height, rgbaData, m_LinearFilter, m_HasMipmaps, m_RepeatWrap, m_Anisotropy);
 
     m_IsLoaded = true;
     ENGINE_CORE_INFO("Texture async upload complete: '{}' (ID: {}, {}x{}, BPP: {})",

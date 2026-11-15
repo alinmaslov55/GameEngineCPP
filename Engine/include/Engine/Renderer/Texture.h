@@ -13,7 +13,8 @@ public:
             uint32_t height,
             const void* rgbaData = nullptr,
             bool linearFilter = true,
-            bool repeatWrap = false);
+            bool repeatWrap = false,
+            bool hasMipmaps = false);
     ~Texture();
 
     Texture(const Texture&) = delete;
@@ -27,6 +28,7 @@ public:
 
     void SetFilterLinear(bool linear);
     void SetWrapRepeat(bool repeat);
+    void SetAnisotropy(float aniso);
 
     void SetData(const void* rgbaData, uint32_t sizeBytes);
     void SetSubData(uint32_t xOffset,
@@ -38,6 +40,11 @@ public:
 
     // Async loading support: queries whether image data has been decoded and uploaded to OpenGL
     [[nodiscard]] bool IsLoaded() const noexcept { return m_IsLoaded; }
+
+    // Anisotropic filtering queries
+    [[nodiscard]] bool HasMipmaps() const noexcept { return m_HasMipmaps; }
+    [[nodiscard]] float GetAnisotropy() const noexcept { return m_Anisotropy; }
+    [[nodiscard]] static float GetMaxSupportedAnisotropy() noexcept;
 
     // Replaces the texture content in-place with decoded pixel data and updates OpenGL state
     void PopulateFromData(int width, int height, int bpp, const void* rgbaData);
@@ -62,6 +69,7 @@ private:
     bool m_HasMipmaps = false;
     bool m_RepeatWrap = false;
     bool m_IsLoaded = false;
+    float m_Anisotropy = 1.0f;
 };
 } // namespace Engine
 
