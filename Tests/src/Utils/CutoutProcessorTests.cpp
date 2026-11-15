@@ -3,8 +3,11 @@
 #include "Engine/Utils/CutoutProcessor.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Renderer/Texture.h"
+#include "Engine/Renderer/SpriteAtlas.h"
+#include <stb_image.h>
 #include <stb_image_write.h>
 #include <filesystem>
+#include <fstream>
 #include <vector>
 
 namespace {
@@ -123,6 +126,271 @@ TEST(CutoutProcessorTest, ChromaGreenAndMagentaKeyingBottomFlushAndAlphaEdgeBlee
     EXPECT_EQ(resMag.ResolvedKeyMode, Engine::CutoutKeyMode::ChromaMagenta);
     EXPECT_EQ(getPixel(magImg, mw, 6u, mh - 1u).a, 255u);
     EXPECT_GT(getPixel(magImg, mw, 6u, mh - 1u).g, 160u); // Emerald green preserved intact!
+
+    std::filesystem::remove_all(tempDir, ec);
+}
+
+TEST(CutoutProcessorTest, ProcessAnimationStripNormalizesVaryingReachAndLocksPivot) {
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "cutout_strip_norm_test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+
+    auto setPx = [&](std::vector<uint8_t>& buf, uint32_t strideW, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255u) {
+        const size_t idx = (static_cast<size_t>(y) * strideW + x) * 4u;
+        buf[idx + 0] = r;
+        buf[idx + 1] = g;
+        buf[idx + 2] = b;
+        buf[idx + 3] = a;
+    };
+
+    const uint32_t frameW = 32u, frameH = 32u;
+    std::vector<std::filesystem::path> frameFiles;
+
+    // Create 4 frames on #00FF00 green screen:
+    // Torso in all 4 frames: x in [12..18], y in [10..24] (feet at y = 24)
+    // Frame 0 (idle): dagger at x in [17..19], y in [14..18]
+    // Frame 1 (windup back): axe raised back-left at x in [6..12], y in [4..12]
+    // Frame 2 (thrust wide reach): blade reaching wide right at x in [19..28], y in [12..16]
+    // Frame 3 (recovery): blade resting down at x in [16..19], y in [18..24]
+    for (int i = 0; i < 4; ++i) {
+        std::vector<uint8_t> frameData(static_cast<size_t>(frameW) * frameH * 4u, 0u);
+        for (uint32_t y = 0; y < frameH; ++y) {
+            for (uint32_t x = 0; x < frameW; ++x) {
+                setPx(frameData, frameW, x, y, 0u, 255u, 0u, 255u);
+            }
+        }
+        for (uint32_t y = 10; y <= 24; ++y) {
+            for (uint32_t x = 12; x <= 18; ++x) {
+                setPx(frameData, frameW, x, y, 120u, 80u, 40u, 255u);
+            }
+        }
+        if (i == 0) {
+            for (uint32_t y = 14; y <= 18; ++y) {
+                for (uint32_t x = 17; x <= 19; ++x) {
+                    setPx(frameData, frameW, x, y, 180u, 200u, 220u, 255u);
+                }
+            }
+        } else if (i == 1) {
+            for (uint32_t y = 4; y <= 12; ++y) {
+                for (uint32_t x = 6; x <= 12; ++x) {
+                    setPx(frameData, frameW, x, y, 180u, 200u, 220u, 255u);
+                }
+            }
+        } else if (i == 2) {
+            for (uint32_t y = 12; y <= 16; ++y) {
+                for (uint32_t x = 19; x <= 28; ++x) {
+                    setPx(frameData, frameW, x, y, 180u, 200u, 220u, 255u);
+                }
+            }
+        } else if (i == 3) {
+            for (uint32_t y = 18; y <= 24; ++y) {
+                for (uint32_t x = 16; x <= 19; ++x) {
+                    setPx(frameData, frameW, x, y, 180u, 200u, 220u, 255u);
+                }
+            }
+        }
+
+        const auto filePath = tempDir / ("hero_raw_" + std::to_string(i) + ".png");
+        stbi_flip_vertically_on_write(0);
+        ASSERT_NE(stbi_write_png(filePath.string().c_str(), static_cast<int>(frameW), static_cast<int>(frameH), 4, frameData.data(), static_cast<int>(frameW * 4u)), 0);
+        frameFiles.push_back(filePath);
+    }
+
+    const auto outSheetPng = tempDir / "hero_sheet.png";
+    const auto outAtlasJson = tempDir / "hero_sheet.atlas.json";
+
+    Engine::SheetCutoutSettings settings;
+    settings.BaseSettings.BackgroundMode = Engine::CutoutKeyMode::AutoDetectCorner;
+    settings.BaseSettings.HorizontalPaddingPx = 2u;
+    settings.BaseSettings.TopPaddingPx = 2u;
+    settings.BaseSettings.AlphaBleedPasses = 2u;
+    settings.LockSharedUnionBounds = true;
+    settings.LockBottomFootPivot = true;
+    settings.LockHorizontalCenter = true;
+    settings.FrameDurationMs = 80.0f;
+    settings.FrameNamePrefix = "spr_hero_chop";
+
+    const auto res = Engine::CutoutProcessor::ProcessAnimationStrip(frameFiles, outSheetPng, outAtlasJson, settings);
+    ASSERT_TRUE(res.Success);
+
+    EXPECT_EQ(res.ContentWidth, 23u);
+    EXPECT_EQ(res.ContentHeight, 21u);
+    EXPECT_EQ(res.OutputWidth, 108u);
+    EXPECT_EQ(res.OutputHeight, 23u);
+    EXPECT_TRUE(std::filesystem::exists(outSheetPng));
+    EXPECT_TRUE(std::filesystem::exists(outAtlasJson));
+
+    int loadedW = 0, loadedH = 0, loadedChannels = 0;
+    stbi_set_flip_vertically_on_load_thread(0);
+    unsigned char* sheetPixels = stbi_load(outSheetPng.string().c_str(), &loadedW, &loadedH, &loadedChannels, 4);
+    ASSERT_NE(sheetPixels, nullptr);
+    EXPECT_EQ(loadedW, 108);
+    EXPECT_EQ(loadedH, 23);
+
+    auto getSheetPx = [&](int x, int y) {
+        const size_t idx = (static_cast<size_t>(y) * static_cast<size_t>(loadedW) + static_cast<size_t>(x)) * 4u;
+        return glm::u8vec4(sheetPixels[idx + 0], sheetPixels[idx + 1], sheetPixels[idx + 2], sheetPixels[idx + 3]);
+    };
+
+    for (int i = 0; i < 4; ++i) {
+        const int cellOriginX = i * 27;
+        const int torsoX = cellOriginX + 11;
+        const auto torsoPx = getSheetPx(torsoX, 12);
+        EXPECT_EQ(torsoPx.a, 255u);
+        EXPECT_GT(torsoPx.r, 80u);
+
+        const auto footPx = getSheetPx(torsoX, 22);
+        EXPECT_EQ(footPx.a, 255u);
+    }
+
+    EXPECT_EQ(getSheetPx(0 * 27 + 24, 14).a, 0u);
+    EXPECT_EQ(getSheetPx(2 * 27 + 24, 14).a, 255u);
+
+    stbi_image_free(sheetPixels);
+
+    auto atlas = Engine::SpriteAtlas::LoadFromJSON(outAtlasJson.string());
+    ASSERT_NE(atlas, nullptr);
+    EXPECT_NE(atlas->GetFrame("spr_hero_chop_00"), nullptr);
+    EXPECT_NE(atlas->GetFrame("spr_hero_chop_01"), nullptr);
+    EXPECT_NE(atlas->GetFrame("spr_hero_chop_02"), nullptr);
+    EXPECT_NE(atlas->GetFrame("spr_hero_chop_03"), nullptr);
+
+    auto frames = atlas->GetFramesByPrefix("spr_hero_chop");
+    EXPECT_EQ(frames.size(), 4u);
+    EXPECT_FLOAT_EQ(frames[0]->DurationMs, 80.0f);
+    EXPECT_FLOAT_EQ(frames[0]->PivotNormalized.x, 0.5f);
+    EXPECT_FLOAT_EQ(frames[0]->PivotNormalized.y, 0.0f);
+
+    std::filesystem::remove_all(tempDir, ec);
+}
+
+TEST(CutoutProcessorTest, ProcessAnimationStripSingleSheetGridSlicing) {
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "cutout_grid_slice_test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+
+    auto setPx = [&](std::vector<uint8_t>& buf, uint32_t strideW, uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, uint8_t a = 255u) {
+        const size_t idx = (static_cast<size_t>(y) * strideW + x) * 4u;
+        buf[idx + 0] = r;
+        buf[idx + 1] = g;
+        buf[idx + 2] = b;
+        buf[idx + 3] = a;
+    };
+
+    const uint32_t gridW = 40u, gridH = 40u;
+    std::vector<uint8_t> gridImg(static_cast<size_t>(gridW) * gridH * 4u, 0u);
+    for (uint32_t y = 0; y < gridH; ++y) {
+        for (uint32_t x = 0; x < gridW; ++x) {
+            setPx(gridImg, gridW, x, y, 255u, 0u, 255u, 255u);
+        }
+    }
+
+    for (uint32_t y = 5; y <= 14; ++y) {
+        for (uint32_t x = 5; x <= 14; ++x) {
+            setPx(gridImg, gridW, x, y, 220u, 30u, 30u, 255u);
+        }
+    }
+    for (uint32_t y = 5; y <= 14; ++y) {
+        for (uint32_t x = 25; x <= 34; ++x) {
+            setPx(gridImg, gridW, x, y, 30u, 220u, 30u, 255u);
+        }
+    }
+    for (uint32_t y = 25; y <= 34; ++y) {
+        for (uint32_t x = 5; x <= 14; ++x) {
+            setPx(gridImg, gridW, x, y, 30u, 30u, 220u, 255u);
+        }
+    }
+    for (uint32_t y = 25; y <= 34; ++y) {
+        for (uint32_t x = 25; x <= 34; ++x) {
+            setPx(gridImg, gridW, x, y, 220u, 180u, 30u, 255u);
+        }
+    }
+
+    const auto inGridPng = tempDir / "grid_raw.png";
+    const auto outSheetPng = tempDir / "grid_sheet.png";
+    const auto outAtlasJson = tempDir / "grid_sheet.atlas.json";
+
+    stbi_flip_vertically_on_write(0);
+    ASSERT_NE(stbi_write_png(inGridPng.string().c_str(), static_cast<int>(gridW), static_cast<int>(gridH), 4, gridImg.data(), static_cast<int>(gridW * 4u)), 0);
+
+    Engine::SheetCutoutSettings settings;
+    settings.BaseSettings.BackgroundMode = Engine::CutoutKeyMode::AutoDetectCorner;
+    settings.Columns = 2u;
+    settings.Rows = 2u;
+    settings.BaseSettings.HorizontalPaddingPx = 1u;
+    settings.BaseSettings.TopPaddingPx = 1u;
+    settings.FrameNamePrefix = "prop_gem";
+
+    const auto res = Engine::CutoutProcessor::ProcessAnimationStrip({ inGridPng }, outSheetPng, outAtlasJson, settings);
+    ASSERT_TRUE(res.Success);
+    EXPECT_EQ(res.ResolvedKeyMode, Engine::CutoutKeyMode::ChromaMagenta);
+
+    auto atlas = Engine::SpriteAtlas::LoadFromJSON(outAtlasJson.string());
+    ASSERT_NE(atlas, nullptr);
+    auto frames = atlas->GetFramesByPrefix("prop_gem");
+    EXPECT_EQ(frames.size(), 4u);
+    EXPECT_NE(atlas->GetFrame("prop_gem_00"), nullptr);
+    EXPECT_NE(atlas->GetFrame("prop_gem_01"), nullptr);
+    EXPECT_NE(atlas->GetFrame("prop_gem_02"), nullptr);
+    EXPECT_NE(atlas->GetFrame("prop_gem_03"), nullptr);
+
+    std::filesystem::remove_all(tempDir, ec);
+}
+
+TEST(CutoutProcessorTest, ProcessAnimationStripAsyncExecutesInBackground) {
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "cutout_async_strip_test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+
+    const uint32_t frameW = 16u, frameH = 16u;
+    std::vector<uint8_t> frameData(static_cast<size_t>(frameW) * frameH * 4u, 0u);
+    for (uint32_t y = 0; y < frameH; ++y) {
+        for (uint32_t x = 0; x < frameW; ++x) {
+            const size_t idx = (static_cast<size_t>(y) * frameW + x) * 4u;
+            frameData[idx + 0] = 0u;
+            frameData[idx + 1] = 255u;
+            frameData[idx + 2] = 0u;
+            frameData[idx + 3] = 255u;
+        }
+    }
+    for (uint32_t y = 4; y <= 11; ++y) {
+        for (uint32_t x = 4; x <= 11; ++x) {
+            const size_t idx = (static_cast<size_t>(y) * frameW + x) * 4u;
+            frameData[idx + 0] = 255u;
+            frameData[idx + 1] = 255u;
+            frameData[idx + 2] = 255u;
+            frameData[idx + 3] = 255u;
+        }
+    }
+
+    const auto inFrame = tempDir / "async_frame_0.png";
+    const auto outSheet = tempDir / "async_sheet.png";
+    const auto outJson = tempDir / "async_sheet.atlas.json";
+
+    stbi_flip_vertically_on_write(0);
+    ASSERT_NE(stbi_write_png(inFrame.string().c_str(), static_cast<int>(frameW), static_cast<int>(frameH), 4, frameData.data(), static_cast<int>(frameW * 4u)), 0);
+
+    Engine::JobSystem::Init();
+
+    std::atomic<bool> completed{ false };
+    Engine::CutoutProcessResult asyncResult;
+
+    auto job = Engine::CutoutProcessor::ProcessAnimationStripAsync(
+        { inFrame },
+        outSheet,
+        outJson,
+        {},
+        [&](const Engine::CutoutProcessResult& res) {
+            asyncResult = res;
+            completed.store(true);
+        });
+
+    Engine::JobSystem::Wait(job);
+
+    EXPECT_TRUE(completed.load());
+    EXPECT_TRUE(asyncResult.Success);
+    EXPECT_TRUE(std::filesystem::exists(outSheet));
+    EXPECT_TRUE(std::filesystem::exists(outJson));
 
     std::filesystem::remove_all(tempDir, ec);
 }

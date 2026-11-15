@@ -42,6 +42,17 @@ struct CutoutProcessResult {
     std::string ErrorMessage;
 };
 
+struct SheetCutoutSettings {
+    CutoutProcessSettings BaseSettings;
+    uint32_t Columns = 0;              // Output grid columns (0 = auto 1-row horizontal strip)
+    uint32_t Rows = 0;                 // Slicing rows when input is a single sheet grid
+    bool LockSharedUnionBounds = true; // Computes union [minX..maxX, minY..maxY] across ALL frames
+    bool LockBottomFootPivot = true;   // Aligns union maxY to cell bottom (ground contact UV.y = 0)
+    bool LockHorizontalCenter = true;  // Centers the union content horizontally within each cell
+    float FrameDurationMs = 100.0f;    // Frame hold time in milliseconds for .atlas.json
+    std::string FrameNamePrefix = "";  // Optional prefix for frame naming (e.g. "spr_hero_chop")
+};
+
 class CutoutProcessor {
 public:
     // Processes an in-memory top-down RGBA8 image buffer (row 0 = top, row height-1 = bottom ground contact)
@@ -61,6 +72,22 @@ public:
                                       const std::filesystem::path& outputPath,
                                       const CutoutProcessSettings& settings = {},
                                       std::function<void(const CutoutProcessResult&)> onComplete = nullptr);
+
+    // Normalizes a multi-frame animation sequence into a composite sprite sheet with locked union bounds
+    // and bottom-flushed foot ground contact, exporting both sheet PNG and TexturePacker .atlas.json (ANI-03)
+    static CutoutProcessResult ProcessAnimationStrip(
+        const std::vector<std::filesystem::path>& inputFrameFiles,
+        const std::filesystem::path& outputSheetPng,
+        const std::filesystem::path& outputAtlasJson,
+        const SheetCutoutSettings& settings = {});
+
+    // Asynchronous worker-thread execution of ProcessAnimationStrip
+    static JobHandle ProcessAnimationStripAsync(
+        const std::vector<std::filesystem::path>& inputFrameFiles,
+        const std::filesystem::path& outputSheetPng,
+        const std::filesystem::path& outputAtlasJson,
+        const SheetCutoutSettings& settings = {},
+        std::function<void(const CutoutProcessResult&)> onComplete = nullptr);
 };
 
 } // namespace Engine

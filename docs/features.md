@@ -210,7 +210,7 @@ flowchart TD
 | **`RND-03`** | GPU Compressed Texture Pipeline (BC7 / KTX2) | `DONE` | **P2** | W2 | `RND-02` | `ANI-03` | 4K Master ~218 MB VRAM target |
 | **`ANI-01`** | Multi-Directional Animation State Machine & FlipX | `TODO` | **P0** | W1 | `RND-02`, `ANI-03` | `ECS-03` | `ANI-02` |
 | **`ANI-02`** | Frame-Accurate Animation Event Callbacks | `TODO` | **P1** | W2 | `ANI-01` | `AUD-02`, `PHY-05` | `EDT-03`, Hitbox/Foley frame sync |
-| **`ANI-03`** | Sprite-Sheet Cutout Normalization & Pivot Lock | `TODO` | **P1** | W0 | *None (Root)* | `CutoutProcessor` | `ANI-01` |
+| **`ANI-03`** | Sprite-Sheet Cutout Normalization & Pivot Lock | `DONE` | **P1** | W0 | *None (Root)* | `CutoutProcessor` | `ANI-01` |
 | **`VFX-01`** | Textured, Flipbook-Animated & Oriented Particles | `TODO` | **P0** | W1 | `RND-02` | `TER-04` (firewall) | Torch flame, shockwaves, bouncing splinters |
 | **`VFX-02`** | Ring-Buffered Ground Decal Pool | `TODO` | **P1** | W4 | `TER-04` | `RND-02` | Blood/ichor splatters & scorched craters |
 | **`CAM-01`** | Adaptive Hor+ (Landscape) & Vert+ (Portrait) FOV | `DONE` | **P1** | W0 | *None (Root)* | `PostProcessor` | `CAM-02`, `INP-02`, `EDT-01` |
@@ -917,7 +917,7 @@ flowchart TD
 ---
 
 #### `ANI-03` — Sprite-Sheet Cutout Normalization & Pivot Lock
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `ANI-01`
 - **Current Gap:** `CutoutProcessor::ProcessRGBAInPlace` (`CutoutProcessor.h`) independently crops each image to its tightest opaque pixel box. Running it independently on `8` frames of `spr_hero_chop` (where the axe swings wide right on frame 4) shifts the character's torso horizontally and alters aspect ratio per frame.
 - **Proposed C++ Specification:**
