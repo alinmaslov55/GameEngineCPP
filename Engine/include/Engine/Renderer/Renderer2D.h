@@ -59,6 +59,15 @@ public:
     static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<Texture>& texture, const glm::vec4& tintColor = glm::vec4(1.0f), float alphaCutoff = -1.0f, float emissive = 0.0f, float shadowReceiverOffset = 0.02f);
     static void DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubTexture2D>& subTexture, const glm::vec4& tintColor = glm::vec4(1.0f), float alphaCutoff = -1.0f, float emissive = 0.0f, float shadowReceiverOffset = 0.02f);
 
+    // Draw an arbitrary 4-vertex quad using explicit positions and texture coordinates (UI widgets, 9-slice, gauges)
+    static void DrawQuad(const glm::vec3 positions[4],
+                         const glm::vec2 texCoords[4],
+                         const std::shared_ptr<Texture>& texture,
+                         const glm::vec4& tintColor = glm::vec4(1.0f));
+    static void DrawQuad(const glm::vec3 positions[4],
+                         const glm::vec2 texCoords[4],
+                         const glm::vec4& tintColor = glm::vec4(1.0f));
+
     // Draw a ground-plane XZ aligned tile directly bypassing 4x4 matrix multiplications
     static void DrawGroundTile(const glm::vec3& center,
                                const glm::vec2& sizeXZ,

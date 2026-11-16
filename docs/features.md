@@ -216,7 +216,7 @@ flowchart TD
 | **`CAM-01`** | Adaptive Hor+ (Landscape) & Vert+ (Portrait) FOV | `DONE` | **P1** | W0 | *None (Root)* | `PostProcessor` | `CAM-02`, `INP-02`, `EDT-01` |
 | **`CAM-02`** | Damped Brawler Camera Rig & Perlin Trauma Shake | `DONE` | **P0** | W1 | `CAM-01`, `ECS-02` | `INP-02` (look-ahead) | Maul/Jiangshi/Wendigo impact feel |
 | **`UIX-01`** | Resolution-Independent Canvas, Anchors & Safe Area | `DONE` | **P0** | W0 | *None (Root)* | `CAM-01` | `UIX-02`, `UIX-03`, `EDT-01` |
-| **`UIX-02`** | 9-Slice Frames, Clipped Bars & Radial Gauges | `TODO` | **P1** | W1 | `UIX-01` | `INP-01` (gamepad nav) | `UIX-04`, HUD HP/Torch/Rune widgets |
+| **`UIX-02`** | 9-Slice Frames, Clipped Bars & Radial Gauges | `DONE` | **P1** | W1 | `UIX-01` | `INP-01` (gamepad nav) | `UIX-04`, HUD HP/Torch/Rune widgets |
 | **`UIX-03`** | BMFont (`.fnt`) Loader & Styled Text Layout | `TODO` | **P1** | W1 | `UIX-01` | `CAM-01` (world prompts) | Gothic HUD counters, Shrine upgrade cards |
 | **`UIX-04`** | Tactical Radial Drop Wheel & Fog-of-War Minimap | `TODO` | **P1** | W2 | `UIX-02`, `INP-01`, `TER-01`, `LGT-03` | `ECS-02` (wheel slow-mo) | Mid-combat building & chunk exploration |
 | **`AUD-01`** | OGG Vorbis Decoder & Streaming Music Playback | `TODO` | **P0** | W0 | *None (Root)* | `JobSystem` | `AUD-02`, `AUD-03` |
@@ -1093,7 +1093,7 @@ flowchart TD
 ---
 
 #### `UIX-02` — 9-Slice Frames, Clipped Progress Bars & Radial Sweep Gauges
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W1`
 - **Dependencies:** Hard: `UIX-01` | Unlocks: `UIX-04`, All ornate HUD frames & cooldowns
 - **Proposed C++ Specification (extending `UIPanel` / `UIWidgets`):**
   ```cpp
@@ -1482,7 +1482,7 @@ These 7 features only need a **20–30% minimal implementation** to make the Alp
 | **`ANI-01`** | `DONE` | Multi-directional state machine (Omni, 2-Way, 4-Way), 7° hysteresis deadband, variable frame holds, playback speed multiplier, priority one-shot interruption, horizontal/vertical UV mirroring & SceneSerializer round-trip. | Blend spaces & bone root motion. |
 | **`VFX-01`** | `TODO` | Textured/flipbook particle quads + `FlatGround` shockwave ring orientation. | Bouncing `Y`-floor debris physics (use simple gravity particles first). |
 | **`UIX-01`** | `DONE` | Basic top-left/bottom-center anchor math on `16:9` desktop viewport. | Portrait `9:16` layout switching & `5%` mobile safe-area inset. |
-| **`UIX-02`** | `TODO` | Simple `UIFillBar` UV cropping for HP bar, Torch Fuel bar, and Wood counter. | 9-slice ornate gothic frames and radial cooldown shader sweeps. |
+| **`UIX-02`** | `DONE` | Simple `UIFillBar` UV cropping for HP bar, Torch Fuel bar, and Wood counter. | 9-slice ornate gothic frames and radial cooldown shader sweeps. |
 | **`AIX-01`** | `TODO` | Simple seek toward player + neighbor separation vector (prevents enemy stacking). | 16-ray context-map obstacle avoidance & flank slot assignment. |
 | **`AIX-02`** | `TODO` | 4-state FSM (`Chase`, `Windup`, `Attack`, `Stunned`) + Jiangshi hop parabola. | Companion AI and complex multi-phase boss behaviors. |
 | **`EDT-02`** | `TODO` | `DrawDebugWireCircleXZ` & `DrawDebugWireArcXZ` for hitbox and torch-radius tuning. | Full Editor gizmo toolbar & terrain chunk grid overlays. |

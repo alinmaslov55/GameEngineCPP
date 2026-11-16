@@ -548,6 +548,32 @@ void Renderer2D::DrawQuad(const glm::mat4& transform, const std::shared_ptr<SubT
     }
 }
 
+void Renderer2D::DrawQuad(
+    const glm::vec3 positions[4],
+    const glm::vec2 texCoords[4],
+    const std::shared_ptr<Texture>& texture,
+    const glm::vec4& tintColor)
+{
+    if (!s_Data) return;
+
+    static const glm::vec3 kZeroWindParams[4] = {
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f },
+        { 0.0f, 0.0f, 0.0f }
+    };
+    uint32_t texID = (texture && texture->GetRendererID() != 0) ? texture->GetRendererID() : 0;
+    SubmitVertices(positions, texID, texCoords, tintColor, -1.0f, 0.0f, 0.02f, kZeroWindParams);
+}
+
+void Renderer2D::DrawQuad(
+    const glm::vec3 positions[4],
+    const glm::vec2 texCoords[4],
+    const glm::vec4& tintColor)
+{
+    DrawQuad(positions, texCoords, std::shared_ptr<Texture>(nullptr), tintColor);
+}
+
 void Renderer2D::DrawGroundTile(const glm::vec3& center,
                                const glm::vec2& sizeXZ,
                                const std::shared_ptr<SubTexture2D>& subTexture,

@@ -3,6 +3,7 @@
 #include "Engine/UI/UILabel.h"
 #include "Engine/UI/UIPanel.h"
 #include "Engine/UI/UICanvas.h"
+#include "Engine/UI/UIButtonComponent.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
@@ -366,6 +367,305 @@ TEST(UICanvasTest, SceneSerializerUIRectTransformRoundTrip) {
     EXPECT_FLOAT_EQ(dstLabel->rectTransform.Size.x, 150.0f);
     EXPECT_FLOAT_EQ(dstLabel->rectTransform.Size.y, 30.0f);
     EXPECT_EQ(dstLabel->rectTransform.ZOrder, 5);
+}
+
+TEST(UIPanelGeometryTest, NineSliceCornerProportionsAndAspectPreservation) {
+    Engine::UIPanel panel;
+    panel.renderMode = Engine::UIRenderMode::NineSlice;
+    panel.nineSliceBordersPx = { 32.0f, 32.0f, 32.0f, 32.0f }; // Left, Right, Top, Bottom
+    panel.color = glm::vec4(1.0f);
+
+    const glm::vec2 resolvedPos = { 100.0f, 50.0f };
+    const glm::vec2 resolvedSize = { 800.0f, 200.0f };
+    const auto quads = panel.GenerateQuads(resolvedPos, resolvedSize, 1.0f);
+
+    ASSERT_EQ(quads.size(), 9u);
+
+    auto quadWidth = [](const Engine::UIQuad& q) {
+        return q.Vertices[1].Position.x - q.Vertices[0].Position.x;
+    };
+    auto quadHeight = [](const Engine::UIQuad& q) {
+        return q.Vertices[3].Position.y - q.Vertices[0].Position.y;
+    };
+
+    // Row-major order (row 0 = bottom, row 1 = middle, row 2 = top):
+    // Quad 0: Bottom-Left corner
+    // Quad 2: Bottom-Right corner
+    // Quad 6: Top-Left corner
+    // Quad 8: Top-Right corner
+    // Quad 4: Center slice
+    EXPECT_FLOAT_EQ(quadWidth(quads[0]), 32.0f);
+    EXPECT_FLOAT_EQ(quadHeight(quads[0]), 32.0f);
+
+    EXPECT_FLOAT_EQ(quadWidth(quads[2]), 32.0f);
+    EXPECT_FLOAT_EQ(quadHeight(quads[2]), 32.0f);
+
+    EXPECT_FLOAT_EQ(quadWidth(quads[6]), 32.0f);
+    EXPECT_FLOAT_EQ(quadHeight(quads[6]), 32.0f);
+
+    EXPECT_FLOAT_EQ(quadWidth(quads[8]), 32.0f);
+    EXPECT_FLOAT_EQ(quadHeight(quads[8]), 32.0f);
+
+    // Center quad stretches to fill remaining space (800 - 64 = 736 wide, 200 - 64 = 136 tall)
+    EXPECT_FLOAT_EQ(quadWidth(quads[4]), 736.0f);
+    EXPECT_FLOAT_EQ(quadHeight(quads[4]), 136.0f);
+
+    // Edge slices stretch along one axis only
+    EXPECT_FLOAT_EQ(quadWidth(quads[1]), 736.0f); // Bottom edge
+    EXPECT_FLOAT_EQ(quadHeight(quads[1]), 32.0f);
+    EXPECT_FLOAT_EQ(quadWidth(quads[7]), 736.0f); // Top edge
+    EXPECT_FLOAT_EQ(quadHeight(quads[7]), 32.0f);
+    EXPECT_FLOAT_EQ(quadWidth(quads[3]), 32.0f);  // Left edge
+    EXPECT_FLOAT_EQ(quadHeight(quads[3]), 136.0f);
+    EXPECT_FLOAT_EQ(quadWidth(quads[5]), 32.0f);  // Right edge
+    EXPECT_FLOAT_EQ(quadHeight(quads[5]), 136.0f);
+
+    // Verify UV mapping (assuming 512x512 fallback texture: 32 / 512 = 0.0625, (512 - 32) / 512 = 0.9375)
+    // Quad 0 (Bottom-Left)
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].TexCoord.x, 0.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].TexCoord.y, 0.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[2].TexCoord.x, 0.0625f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[2].TexCoord.y, 0.0625f);
+
+    // Quad 8 (Top-Right)
+    EXPECT_FLOAT_EQ(quads[8].Vertices[0].TexCoord.x, 0.9375f);
+    EXPECT_FLOAT_EQ(quads[8].Vertices[0].TexCoord.y, 0.9375f);
+    EXPECT_FLOAT_EQ(quads[8].Vertices[2].TexCoord.x, 1.0f);
+    EXPECT_FLOAT_EQ(quads[8].Vertices[2].TexCoord.y, 1.0f);
+}
+
+TEST(UIPanelGeometryTest, RadialSweepCWQuadrantCoverage) {
+    Engine::UIPanel panel;
+    panel.renderMode = Engine::UIRenderMode::RadialSweepCW;
+    panel.color = glm::vec4(1.0f);
+
+    const glm::vec2 pos = { 100.0f, 100.0f };
+    const glm::vec2 size = { 200.0f, 200.0f };
+
+    // At FillAmount = 0.25f, covers exactly one quadrant (Quadrant 0: Top-Right)
+    panel.fillAmount = 0.25f;
+    auto quads = panel.GenerateQuads(pos, size);
+    ASSERT_EQ(quads.size(), 1u);
+
+    // Quadrant 0 covers [pos + 0.5*size .. pos + size] = [200..300, 200..300]
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].Position.x, 200.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].Position.y, 200.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[1].Position.x, 300.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[1].Position.y, 200.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[2].Position.x, 300.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[2].Position.y, 300.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[3].Position.x, 200.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[3].Position.y, 300.0f);
+
+    // UV coordinates cover [0.5..1.0, 0.5..1.0]
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].TexCoord.x, 0.5f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].TexCoord.y, 0.5f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[2].TexCoord.x, 1.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[2].TexCoord.y, 1.0f);
+
+    // At FillAmount = 0.50f, covers 2 quadrants (Top-Right and Bottom-Right)
+    panel.fillAmount = 0.50f;
+    quads = panel.GenerateQuads(pos, size);
+    EXPECT_EQ(quads.size(), 2u);
+
+    // At FillAmount = 0.75f, covers 3 quadrants
+    panel.fillAmount = 0.75f;
+    quads = panel.GenerateQuads(pos, size);
+    EXPECT_EQ(quads.size(), 3u);
+
+    // At FillAmount = 1.00f, covers all 4 quadrants
+    panel.fillAmount = 1.00f;
+    quads = panel.GenerateQuads(pos, size);
+    EXPECT_EQ(quads.size(), 4u);
+
+    // At FillAmount = 0.0f, covers 0 quads
+    panel.fillAmount = 0.0f;
+    quads = panel.GenerateQuads(pos, size);
+    EXPECT_EQ(quads.size(), 0u);
+}
+
+TEST(UIPanelGeometryTest, HorizontalAndVerticalFillClipping) {
+    Engine::UIPanel panel;
+    panel.color = glm::vec4(1.0f);
+
+    const glm::vec2 pos = { 50.0f, 50.0f };
+    const glm::vec2 size = { 200.0f, 100.0f };
+
+    // HorizontalFill standard (left-to-right)
+    panel.renderMode = Engine::UIRenderMode::HorizontalFill;
+    panel.fillAmount = 0.65f;
+    panel.invertFill = false;
+
+    auto quads = panel.GenerateQuads(pos, size);
+    ASSERT_EQ(quads.size(), 1u);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].Position.x, 50.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[1].Position.x, 50.0f + 130.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].TexCoord.x, 0.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[1].TexCoord.x, 0.65f);
+
+    // HorizontalFill inverted (right-to-left)
+    panel.invertFill = true;
+    quads = panel.GenerateQuads(pos, size);
+    ASSERT_EQ(quads.size(), 1u);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].Position.x, 50.0f + 200.0f - 130.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[1].Position.x, 250.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].TexCoord.x, 0.35f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[1].TexCoord.x, 1.0f);
+
+    // VerticalFill standard (bottom-to-top)
+    panel.renderMode = Engine::UIRenderMode::VerticalFill;
+    panel.fillAmount = 0.75f;
+    panel.invertFill = false;
+    quads = panel.GenerateQuads(pos, size);
+    ASSERT_EQ(quads.size(), 1u);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].Position.y, 50.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[2].Position.y, 50.0f + 75.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[0].TexCoord.y, 0.0f);
+    EXPECT_FLOAT_EQ(quads[0].Vertices[2].TexCoord.y, 0.75f);
+}
+
+TEST(UIButtonComponentTest, DirectionalFocusGraphNavigation) {
+    auto scene = std::make_shared<Engine::Scene>();
+
+    auto* leftObj = scene->CreateGameObject("LeftCard");
+    auto* midObj = scene->CreateGameObject("MidCard");
+    auto* rightObj = scene->CreateGameObject("RightCard");
+
+    auto* leftBtn = leftObj->AddComponent<Engine::UIButtonComponent>();
+    auto* midBtn = midObj->AddComponent<Engine::UIButtonComponent>();
+    auto* rightBtn = rightObj->AddComponent<Engine::UIButtonComponent>();
+
+    leftBtn->SetNeighbors(0, 0, 0, midObj->GetUUID());
+    midBtn->SetNeighbors(0, 0, leftObj->GetUUID(), rightObj->GetUUID());
+    rightBtn->SetNeighbors(0, 0, midObj->GetUUID(), 0);
+
+    Engine::UIButtonComponent::SetFocusedButton(leftBtn);
+    EXPECT_EQ(Engine::UIButtonComponent::GetFocusedButton(), leftBtn);
+    EXPECT_TRUE(leftBtn->IsFocused());
+    EXPECT_FALSE(midBtn->IsFocused());
+
+    // Navigate Right: Left -> Mid
+    EXPECT_TRUE(Engine::UIButtonComponent::NavigateFocus(Engine::UIFocusDirection::Right, *scene));
+    EXPECT_EQ(Engine::UIButtonComponent::GetFocusedButton(), midBtn);
+    EXPECT_FALSE(leftBtn->IsFocused());
+    EXPECT_TRUE(midBtn->IsFocused());
+
+    // Navigate Right: Mid -> Right
+    EXPECT_TRUE(Engine::UIButtonComponent::NavigateFocus(Engine::UIFocusDirection::Right, *scene));
+    EXPECT_EQ(Engine::UIButtonComponent::GetFocusedButton(), rightBtn);
+    EXPECT_TRUE(rightBtn->IsFocused());
+
+    // Navigate Right from Right (no right neighbor): remains on Right
+    EXPECT_FALSE(Engine::UIButtonComponent::NavigateFocus(Engine::UIFocusDirection::Right, *scene));
+    EXPECT_EQ(Engine::UIButtonComponent::GetFocusedButton(), rightBtn);
+
+    // Navigate Left: Right -> Mid
+    EXPECT_TRUE(Engine::UIButtonComponent::NavigateFocus(Engine::UIFocusDirection::Left, *scene));
+    EXPECT_EQ(Engine::UIButtonComponent::GetFocusedButton(), midBtn);
+
+    Engine::UIButtonComponent::ClearFocus();
+    EXPECT_EQ(Engine::UIButtonComponent::GetFocusedButton(), nullptr);
+    EXPECT_FALSE(midBtn->IsFocused());
+}
+
+TEST(UIButtonComponentTest, ClickAndAutoTintModulation) {
+    auto scene = std::make_shared<Engine::Scene>();
+    auto* obj = scene->CreateGameObject("TestBtn");
+
+    auto* panel = obj->AddComponent<Engine::UIPanel>(glm::vec2(0.0f), glm::vec2(100.0f), glm::vec4(1.0f));
+    auto* btn = obj->AddComponent<Engine::UIButtonComponent>();
+
+    btn->NormalTint = glm::vec4(1.0f, 1.0f, 1.0f, 1.0f);
+    btn->HoverTint = glm::vec4(1.15f, 1.15f, 1.15f, 1.0f);
+    btn->PressedTint = glm::vec4(0.85f, 0.85f, 0.85f, 1.0f);
+    btn->DisabledTint = glm::vec4(0.5f, 0.5f, 0.5f, 0.6f);
+    btn->FocusedTint = glm::vec4(1.25f, 1.20f, 0.85f, 1.0f);
+
+    btn->SetState(Engine::ButtonState::Hovered);
+    EXPECT_EQ(panel->color, btn->HoverTint);
+
+    btn->SetState(Engine::ButtonState::Pressed);
+    EXPECT_EQ(panel->color, btn->PressedTint);
+
+    btn->SetState(Engine::ButtonState::Normal);
+    btn->SetFocused(true);
+    EXPECT_EQ(panel->color, btn->FocusedTint);
+
+    btn->Interactable = false;
+    btn->SetState(Engine::ButtonState::Disabled);
+    EXPECT_EQ(panel->color, btn->DisabledTint);
+
+    // Click callback test
+    btn->Interactable = true;
+    bool clicked = false;
+    btn->OnClick = [&]() { clicked = true; };
+
+    btn->Click();
+    EXPECT_TRUE(clicked);
+
+    clicked = false;
+    Engine::UIButtonComponent::SetFocusedButton(btn);
+    EXPECT_TRUE(Engine::UIButtonComponent::SubmitActiveFocus());
+    EXPECT_TRUE(clicked);
+
+    Engine::UIButtonComponent::ClearFocus();
+}
+
+TEST(UIButtonComponentTest, SceneSerializerRoundTrip) {
+    auto sourceScene = std::make_shared<Engine::Scene>();
+    auto* obj = sourceScene->CreateGameObject("ButtonEntity");
+    const uint64_t btnUUID = obj->GetUUID();
+
+    auto* panel = obj->AddComponent<Engine::UIPanel>(glm::vec2(20.0f, 30.0f), glm::vec2(200.0f, 60.0f), glm::vec4(1.0f));
+    panel->renderMode = Engine::UIRenderMode::NineSlice;
+    panel->nineSliceBordersPx = { 24.0f, 24.0f, 16.0f, 16.0f };
+    panel->fillAmount = 0.85f;
+    panel->invertFill = true;
+
+    auto* btn = obj->AddComponent<Engine::UIButtonComponent>();
+    btn->NormalTint = { 0.9f, 0.9f, 0.9f, 1.0f };
+    btn->HoverTint = { 1.2f, 1.2f, 1.2f, 1.0f };
+    btn->PressedTint = { 0.7f, 0.7f, 0.7f, 1.0f };
+    btn->DisabledTint = { 0.4f, 0.4f, 0.4f, 0.5f };
+    btn->FocusedTint = { 1.3f, 1.1f, 0.8f, 1.0f };
+    btn->Interactable = true;
+    btn->AutoTintPanel = true;
+    btn->UpNeighborUUID = 1111ull;
+    btn->DownNeighborUUID = 2222ull;
+    btn->LeftNeighborUUID = 3333ull;
+    btn->RightNeighborUUID = 4444ull;
+
+    const std::string serializedJson = Engine::SceneSerializer(sourceScene).SerializeToString();
+
+    auto destScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(destScene).DeserializeFromString(serializedJson));
+
+    auto* dstObj = destScene->FindGameObjectByUUID(btnUUID);
+    ASSERT_NE(dstObj, nullptr);
+
+    auto* dstPanel = dstObj->GetComponent<Engine::UIPanel>();
+    ASSERT_NE(dstPanel, nullptr);
+    EXPECT_EQ(dstPanel->renderMode, Engine::UIRenderMode::NineSlice);
+    EXPECT_FLOAT_EQ(dstPanel->nineSliceBordersPx.x, 24.0f);
+    EXPECT_FLOAT_EQ(dstPanel->nineSliceBordersPx.y, 24.0f);
+    EXPECT_FLOAT_EQ(dstPanel->nineSliceBordersPx.z, 16.0f);
+    EXPECT_FLOAT_EQ(dstPanel->nineSliceBordersPx.w, 16.0f);
+    EXPECT_FLOAT_EQ(dstPanel->fillAmount, 0.85f);
+    EXPECT_TRUE(dstPanel->invertFill);
+
+    auto* dstBtn = dstObj->GetComponent<Engine::UIButtonComponent>();
+    ASSERT_NE(dstBtn, nullptr);
+    EXPECT_FLOAT_EQ(dstBtn->NormalTint.r, 0.9f);
+    EXPECT_FLOAT_EQ(dstBtn->HoverTint.r, 1.2f);
+    EXPECT_FLOAT_EQ(dstBtn->PressedTint.r, 0.7f);
+    EXPECT_FLOAT_EQ(dstBtn->DisabledTint.r, 0.4f);
+    EXPECT_FLOAT_EQ(dstBtn->FocusedTint.r, 1.3f);
+    EXPECT_TRUE(dstBtn->Interactable);
+    EXPECT_TRUE(dstBtn->AutoTintPanel);
+    EXPECT_EQ(dstBtn->UpNeighborUUID, 1111ull);
+    EXPECT_EQ(dstBtn->DownNeighborUUID, 2222ull);
+    EXPECT_EQ(dstBtn->LeftNeighborUUID, 3333ull);
+    EXPECT_EQ(dstBtn->RightNeighborUUID, 4444ull);
 }
 
 } // namespace

@@ -15,6 +15,7 @@
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/UI/UIPanel.h"
 #include "Engine/UI/UILabel.h"
+#include "Engine/UI/UIButtonComponent.h"
 #include "Engine/Audio/AudioSource.h"
 #include "Engine/Animation/Animator.h"
 #include "Engine/Utils/Logger.h"
@@ -606,7 +607,11 @@ void SerializeUIPanels(const GameObject* go, json& compsJson) {
             {"Position", ToJson(panel->position)},
             {"Size",     ToJson(panel->size)},
             {"Color",    ToJson(panel->color)},
-            {"UseRectTransform", panel->useRectTransform}
+            {"UseRectTransform", panel->useRectTransform},
+            {"RenderMode", static_cast<int>(panel->renderMode)},
+            {"NineSliceBordersPx", ToJson(panel->nineSliceBordersPx)},
+            {"FillAmount", panel->fillAmount},
+            {"InvertFill", panel->invertFill}
         };
         if (panel->useRectTransform) {
             panelJson["RectTransform"] = {
@@ -626,6 +631,25 @@ void SerializeUIPanels(const GameObject* go, json& compsJson) {
         panelsJson.push_back(std::move(panelJson));
     }
     compsJson["UIPanels"] = std::move(panelsJson);
+}
+
+void SerializeUIButtonComponent(const GameObject* go, json& compsJson) {
+    auto* btn = go->GetComponent<UIButtonComponent>();
+    if (!btn) return;
+
+    compsJson["UIButtonComponent"] = {
+        {"NormalTint", ToJson(btn->NormalTint)},
+        {"HoverTint", ToJson(btn->HoverTint)},
+        {"PressedTint", ToJson(btn->PressedTint)},
+        {"DisabledTint", ToJson(btn->DisabledTint)},
+        {"FocusedTint", ToJson(btn->FocusedTint)},
+        {"Interactable", btn->Interactable},
+        {"AutoTintPanel", btn->AutoTintPanel},
+        {"UpNeighborUUID", btn->UpNeighborUUID},
+        {"DownNeighborUUID", btn->DownNeighborUUID},
+        {"LeftNeighborUUID", btn->LeftNeighborUUID},
+        {"RightNeighborUUID", btn->RightNeighborUUID}
+    };
 }
 
 void SerializeUILabels(const GameObject* go, json& compsJson) {
@@ -782,6 +806,7 @@ static const ComponentSerializerFn s_ComponentSerializers[] = {
     SerializeCameraComponent,
     SerializeUIPanels,
     SerializeUILabels,
+    SerializeUIButtonComponent,
     SerializeAudioSource,
     SerializeAnimator
 };
@@ -1239,6 +1264,28 @@ void DeserializeSingleUIPanel(GameObject* go, const json& panelJson) {
         panel->rectTransform.ZOrder = rtJson.value("ZOrder", 0);
         panel->rectTransform.IgnoreSafeArea = rtJson.value("IgnoreSafeArea", false);
     }
+    panel->renderMode = static_cast<UIRenderMode>(panelJson.value("RenderMode", 0));
+    if (panelJson.contains("NineSliceBordersPx")) {
+        panel->nineSliceBordersPx = AsVec4(panelJson["NineSliceBordersPx"], panel->nineSliceBordersPx);
+    }
+    panel->fillAmount = panelJson.value("FillAmount", 1.0f);
+    panel->invertFill = panelJson.value("InvertFill", false);
+}
+
+void DeserializeUIButtonComponent(GameObject* go, const json& j, const std::string&) {
+    if (!j.is_object()) return;
+    auto* btn = go->AddComponent<UIButtonComponent>();
+    if (j.contains("NormalTint")) btn->NormalTint = AsVec4(j["NormalTint"], btn->NormalTint);
+    if (j.contains("HoverTint")) btn->HoverTint = AsVec4(j["HoverTint"], btn->HoverTint);
+    if (j.contains("PressedTint")) btn->PressedTint = AsVec4(j["PressedTint"], btn->PressedTint);
+    if (j.contains("DisabledTint")) btn->DisabledTint = AsVec4(j["DisabledTint"], btn->DisabledTint);
+    if (j.contains("FocusedTint")) btn->FocusedTint = AsVec4(j["FocusedTint"], btn->FocusedTint);
+    btn->Interactable = j.value("Interactable", true);
+    btn->AutoTintPanel = j.value("AutoTintPanel", true);
+    btn->UpNeighborUUID = j.value("UpNeighborUUID", uint64_t(0));
+    btn->DownNeighborUUID = j.value("DownNeighborUUID", uint64_t(0));
+    btn->LeftNeighborUUID = j.value("LeftNeighborUUID", uint64_t(0));
+    btn->RightNeighborUUID = j.value("RightNeighborUUID", uint64_t(0));
 }
 
 void DeserializeUIPanels(GameObject* go, const json& j, const std::string&) {
@@ -1419,6 +1466,8 @@ static const ComponentDeserializerEntry s_ComponentDeserializers[] = {
     { "UIPanel",          DeserializeUIPanels },
     { "UILabels",         DeserializeUILabels },
     { "UILabel",          DeserializeUILabels },
+    { "UIButtonComponent", DeserializeUIButtonComponent },
+    { "UIButton",          DeserializeUIButtonComponent },
     { "AudioSource",      DeserializeAudioSource },
     { "Animator",         DeserializeAnimator },
 };

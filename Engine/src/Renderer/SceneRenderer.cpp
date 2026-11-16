@@ -803,6 +803,8 @@ void SceneRenderer::RenderPassScreenUI() {
             return (a && b) ? (a->rectTransform.ZOrder < b->rectTransform.ZOrder) : (a != nullptr);
         });
 
+    const float dpiScale = UICanvas::ComputeScaleFactor(m_ViewportWidth, m_ViewportHeight);
+
     for (UIPanel* uiPanel : m_UIPanelScratch) {
         if (!uiPanel) continue;
 
@@ -812,17 +814,28 @@ void SceneRenderer::RenderPassScreenUI() {
             UICanvas::ResolveScreenRect(uiPanel->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
         }
 
-        glm::mat4 uiTransform = glm::translate(glm::mat4(1.0f), glm::vec3(pos, 0.0f)) *
-                                glm::scale(glm::mat4(1.0f), glm::vec3(sz, 1.0f));
+        const auto quads = uiPanel->GenerateQuads(pos, sz, dpiScale);
+        for (const auto& quad : quads) {
+            const glm::vec3 positions[4] = {
+                { quad.Vertices[0].Position.x, quad.Vertices[0].Position.y, 0.0f },
+                { quad.Vertices[1].Position.x, quad.Vertices[1].Position.y, 0.0f },
+                { quad.Vertices[2].Position.x, quad.Vertices[2].Position.y, 0.0f },
+                { quad.Vertices[3].Position.x, quad.Vertices[3].Position.y, 0.0f }
+            };
+            const glm::vec2 texCoords[4] = {
+                quad.Vertices[0].TexCoord,
+                quad.Vertices[1].TexCoord,
+                quad.Vertices[2].TexCoord,
+                quad.Vertices[3].TexCoord
+            };
 
-        if (uiPanel->texture) {
-            Renderer2D::DrawQuad(uiTransform, uiPanel->texture, uiPanel->color);
-        } else {
-            Renderer2D::DrawQuad(uiTransform, uiPanel->color);
+            if (uiPanel->texture) {
+                Renderer2D::DrawQuad(positions, texCoords, uiPanel->texture, quad.Color);
+            } else {
+                Renderer2D::DrawQuad(positions, texCoords, quad.Color);
+            }
         }
     }
-
-    const float dpiScale = UICanvas::ComputeScaleFactor(m_ViewportWidth, m_ViewportHeight);
 
     for (UILabel* uiLabel : m_UILabelScratch) {
         if (!uiLabel || !uiLabel->font) continue;
