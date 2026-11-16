@@ -3,8 +3,11 @@
 
 #include <cstdint>
 #include <glm/vec2.hpp>
+#include <glm/vec3.hpp>
 
 namespace Engine {
+
+class PerspectiveCamera;
 
 enum class UIAnchor : uint8_t {
     BottomLeft = 0, BottomCenter, BottomRight,
@@ -33,6 +36,15 @@ public:
 
     static void ResolveScreenRect(const UIRectTransform& rect, uint32_t viewportW, uint32_t viewportH,
                                   glm::vec2& outBottomLeftPx, glm::vec2& outSizePx) noexcept;
+
+    // World-to-Screen & World-to-Canvas projection helpers for floating prompts & indicators
+    static bool WorldToScreenPixels(const glm::vec3& worldPos, const PerspectiveCamera& camera,
+                                    uint32_t viewportW, uint32_t viewportH,
+                                    glm::vec2& outScreenPx) noexcept;
+
+    static bool WorldToCanvasPosition(const glm::vec3& worldPos, const PerspectiveCamera& camera,
+                                      uint32_t viewportW, uint32_t viewportH,
+                                      glm::vec2& outCanvasPos) noexcept;
 };
 
 } // namespace Engine

@@ -1,4 +1,5 @@
 #include "Engine/UI/UICanvas.h"
+#include "Engine/Renderer/PerspectiveCamera.h"
 #include <algorithm>
 
 namespace Engine {
@@ -87,6 +88,48 @@ void UICanvas::ResolveScreenRect(const UIRectTransform& rect, uint32_t viewportW
     const glm::vec2 scaledOffset = rect.AnchoredOffset * scale;
     outBottomLeftPx.x = anchorX + scaledOffset.x - (rect.Pivot.x * outSizePx.x);
     outBottomLeftPx.y = anchorY + scaledOffset.y - (rect.Pivot.y * outSizePx.y);
+}
+
+bool UICanvas::WorldToScreenPixels(const glm::vec3& worldPos, const PerspectiveCamera& camera,
+                                   uint32_t viewportW, uint32_t viewportH,
+                                   glm::vec2& outScreenPx) noexcept {
+    if (viewportW == 0 || viewportH == 0) {
+        outScreenPx = glm::vec2(0.0f);
+        return false;
+    }
+
+    const glm::mat4& vp = camera.GetViewProjectionMatrix();
+    const glm::vec4 clipPos = vp * glm::vec4(worldPos, 1.0f);
+
+    // Behind camera or on/behind near clip plane
+    if (clipPos.w <= 0.001f) {
+        outScreenPx = glm::vec2(0.0f);
+        return false;
+    }
+
+    const glm::vec3 ndc = glm::vec3(clipPos) / clipPos.w;
+    outScreenPx.x = (ndc.x * 0.5f + 0.5f) * static_cast<float>(viewportW);
+    outScreenPx.y = (ndc.y * 0.5f + 0.5f) * static_cast<float>(viewportH);
+    return true;
+}
+
+bool UICanvas::WorldToCanvasPosition(const glm::vec3& worldPos, const PerspectiveCamera& camera,
+                                     uint32_t viewportW, uint32_t viewportH,
+                                     glm::vec2& outCanvasPos) noexcept {
+    glm::vec2 screenPx{ 0.0f };
+    if (!WorldToScreenPixels(worldPos, camera, viewportW, viewportH, screenPx)) {
+        outCanvasPos = glm::vec2(0.0f);
+        return false;
+    }
+
+    const float scale = ComputeScaleFactor(viewportW, viewportH);
+    if (scale <= 0.0001f) {
+        outCanvasPos = screenPx;
+        return true;
+    }
+
+    outCanvasPos = screenPx / scale;
+    return true;
 }
 
 } // namespace Engine

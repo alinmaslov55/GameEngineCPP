@@ -23,6 +23,12 @@ public:
     float scale = 1.0f;
     glm::vec4 color = { 1.0f, 1.0f, 1.0f, 1.0f };
 
+    TextAlignH alignment = TextAlignH::Left;
+    float maxWrapWidth = 0.0f; // > 0 enables greedy word-wrapping in Reference Units
+    bool dropShadow = true;
+    glm::vec2 shadowOffset{ 2.0f, -2.0f };
+    glm::vec4 shadowColor{ 0.04f, 0.02f, 0.06f, 0.85f };
+
     UILabel() = default;
 
     UILabel(const std::string& str, const std::shared_ptr<Font>& f, const UIRectTransform& rect, const glm::vec4& col = glm::vec4(1.0f))

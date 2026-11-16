@@ -663,7 +663,12 @@ void SerializeUILabels(const GameObject* go, json& compsJson) {
             {"Position", ToJson(label->position)},
             {"Scale",    label->scale},
             {"Color",    ToJson(label->color)},
-            {"UseRectTransform", label->useRectTransform}
+            {"UseRectTransform", label->useRectTransform},
+            {"Alignment", static_cast<int>(label->alignment)},
+            {"MaxWrapWidth", label->maxWrapWidth},
+            {"DropShadow", label->dropShadow},
+            {"ShadowOffset", ToJson(label->shadowOffset)},
+            {"ShadowColor", ToJson(label->shadowColor)}
         };
         if (label->useRectTransform) {
             labelJson["RectTransform"] = {
@@ -680,6 +685,9 @@ void SerializeUILabels(const GameObject* go, json& compsJson) {
 
         if (label->font) {
             json fontJson;
+            if (!label->font->GetFilepath().empty()) {
+                fontJson["BMFontPath"] = ResourceManager::ToRelativePath(label->font->GetFilepath());
+            }
             if (label->font->atlasTexture) {
                 fontJson["AtlasTexturePath"] = ResourceManager::ToRelativePath(label->font->atlasTexture->GetFilepath());
             }
@@ -1305,6 +1313,10 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
     std::shared_ptr<Font> font = nullptr;
     if (labelJson.contains("Font") && labelJson["Font"].is_object()) {
         const auto& fontJson = labelJson["Font"];
+        std::string bmFontPath;
+        if (fontJson.contains("BMFontPath") && fontJson["BMFontPath"].is_string()) {
+            bmFontPath = fontJson["BMFontPath"].get<std::string>();
+        }
         std::string atlasPath;
         if (fontJson.contains("AtlasTexturePath") && fontJson["AtlasTexturePath"].is_string()) {
             atlasPath = fontJson["AtlasTexturePath"].get<std::string>();
@@ -1313,11 +1325,21 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
         static std::mutex s_FontCacheMutex;
         static std::unordered_map<std::string, std::shared_ptr<Font>> s_FontCache;
 
-        if (!atlasPath.empty()) {
+        const std::string& cacheKey = !bmFontPath.empty() ? bmFontPath : atlasPath;
+
+        if (!cacheKey.empty()) {
             std::lock_guard<std::mutex> lock(s_FontCacheMutex);
-            auto it = s_FontCache.find(atlasPath);
+            auto it = s_FontCache.find(cacheKey);
             if (it != s_FontCache.end()) {
                 font = it->second;
+            }
+        }
+
+        if (!font && !bmFontPath.empty() && std::filesystem::exists(bmFontPath)) {
+            font = Font::LoadBMFont(bmFontPath);
+            if (font && !cacheKey.empty()) {
+                std::lock_guard<std::mutex> lock(s_FontCacheMutex);
+                s_FontCache[cacheKey] = font;
             }
         }
 
@@ -1345,9 +1367,9 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
                     font->AddCharacter(chStr[0], ch);
                 }
             }
-            if (!atlasPath.empty()) {
+            if (!cacheKey.empty()) {
                 std::lock_guard<std::mutex> lock(s_FontCacheMutex);
-                s_FontCache[atlasPath] = font;
+                s_FontCache[cacheKey] = font;
             }
         }
     }
@@ -1356,6 +1378,15 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
     label->scale = labelJson.value("Scale", 1.0f);
     if (labelJson.contains("Color")) {
         label->color = AsVec4(labelJson["Color"], label->color);
+    }
+    label->alignment = static_cast<TextAlignH>(labelJson.value("Alignment", 0));
+    label->maxWrapWidth = labelJson.value("MaxWrapWidth", 0.0f);
+    label->dropShadow = labelJson.value("DropShadow", true);
+    if (labelJson.contains("ShadowOffset")) {
+        label->shadowOffset = AsVec2(labelJson["ShadowOffset"], label->shadowOffset);
+    }
+    if (labelJson.contains("ShadowColor")) {
+        label->shadowColor = AsVec4(labelJson["ShadowColor"], label->shadowColor);
     }
     label->useRectTransform = labelJson.value("UseRectTransform", false);
     if (labelJson.contains("RectTransform")) {

@@ -217,7 +217,7 @@ flowchart TD
 | **`CAM-02`** | Damped Brawler Camera Rig & Perlin Trauma Shake | `DONE` | **P0** | W1 | `CAM-01`, `ECS-02` | `INP-02` (look-ahead) | Maul/Jiangshi/Wendigo impact feel |
 | **`UIX-01`** | Resolution-Independent Canvas, Anchors & Safe Area | `DONE` | **P0** | W0 | *None (Root)* | `CAM-01` | `UIX-02`, `UIX-03`, `EDT-01` |
 | **`UIX-02`** | 9-Slice Frames, Clipped Bars & Radial Gauges | `DONE` | **P1** | W1 | `UIX-01` | `INP-01` (gamepad nav) | `UIX-04`, HUD HP/Torch/Rune widgets |
-| **`UIX-03`** | BMFont (`.fnt`) Loader & Styled Text Layout | `TODO` | **P1** | W1 | `UIX-01` | `CAM-01` (world prompts) | Gothic HUD counters, Shrine upgrade cards |
+| **`UIX-03`** | BMFont (`.fnt`) Loader & Styled Text Layout | `DONE` | **P1** | W1 | `UIX-01` | `CAM-01` (world prompts) | Gothic HUD counters, Shrine upgrade cards |
 | **`UIX-04`** | Tactical Radial Drop Wheel & Fog-of-War Minimap | `TODO` | **P1** | W2 | `UIX-02`, `INP-01`, `TER-01`, `LGT-03` | `ECS-02` (wheel slow-mo) | Mid-combat building & chunk exploration |
 | **`AUD-01`** | OGG Vorbis Decoder & Streaming Music Playback | `TODO` | **P0** | W0 | *None (Root)* | `JobSystem` | `AUD-02`, `AUD-03` |
 | **`AUD-02`** | Polyphonic Mixer, Buses, Pitch & 3D Panning | `TODO` | **P0** | W1 | `AUD-01` | `TER-04` (surface foley) | `AUD-03`, `SAV-02` |
@@ -1114,7 +1114,7 @@ flowchart TD
 ---
 
 #### `UIX-03` — BMFont (`.fnt`) Loader & Styled Text Layout
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W1`
 - **Dependencies:** Hard: `UIX-01` | Unlocks: `font_gothic_diorama.fnt` typography & world prompts
 - **Current Gap:** `Font` (`Font.h`) has no `.fnt` file parser, kerning table, multi-line wrapping, alignment, or text drop-shadow.
 - **Proposed C++ Specification:**

@@ -4,6 +4,7 @@
 #include "Engine/UI/UIPanel.h"
 #include "Engine/UI/UICanvas.h"
 #include "Engine/UI/UIButtonComponent.h"
+#include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
@@ -666,6 +667,169 @@ TEST(UIButtonComponentTest, SceneSerializerRoundTrip) {
     EXPECT_EQ(dstBtn->DownNeighborUUID, 2222ull);
     EXPECT_EQ(dstBtn->LeftNeighborUUID, 3333ull);
     EXPECT_EQ(dstBtn->RightNeighborUUID, 4444ull);
+}
+
+TEST(FontBMFontTest, ParseSampleAngelCodeFntHeadless) {
+    const std::string sampleFnt =
+        "info face=\"GothicDiorama\" size=32 bold=0 italic=0 charset=\"\" unicode=1 stretchH=100 smooth=1 aa=1 padding=0,0,0,0 spacings=0,0\n"
+        "common lineHeight=40 base=30 scaleW=512 scaleH=512 pages=1 packed=0\n"
+        "page id=0 file=\"font_gothic_diorama.png\"\n"
+        "chars count=2\n"
+        "char id=65 x=10 y=20 width=30 height=40 xoffset=2 yoffset=5 xadvance=32 page=0 chnl=15\n"
+        "char id=86 x=50 y=20 width=30 height=40 xoffset=1 yoffset=5 xadvance=32 page=0 chnl=15\n"
+        "kernings count=1\n"
+        "kerning first=65 second=86 amount=-4\n";
+
+    auto font = Engine::Font::LoadBMFontFromMemory(sampleFnt, nullptr);
+    ASSERT_NE(font, nullptr);
+
+    EXPECT_FLOAT_EQ(font->GetLineHeight(), 40.0f);
+    EXPECT_FLOAT_EQ(font->GetBase(), 30.0f);
+
+    // Kerning verification
+    EXPECT_FLOAT_EQ(font->GetKerning('A', 'V'), -4.0f);
+    EXPECT_FLOAT_EQ(font->GetKerning('V', 'A'), 0.0f);
+
+    // Glyph 'A' metrics
+    const auto& glyphA = font->GetCharacter('A');
+    EXPECT_FLOAT_EQ(glyphA.size.x, 30.0f);
+    EXPECT_FLOAT_EQ(glyphA.size.y, 40.0f);
+    EXPECT_FLOAT_EQ(glyphA.bearing.x, 2.0f);
+    EXPECT_FLOAT_EQ(glyphA.bearing.y, 30.0f - 5.0f); // base - yoffset = 25
+    EXPECT_FLOAT_EQ(glyphA.advance, 32.0f);
+
+    ASSERT_NE(glyphA.subTexture, nullptr);
+    // UV slicing: u = [10/512, 40/512], v = [1.0 - 60/512, 1.0 - 20/512]
+    EXPECT_NEAR(glyphA.subTexture->GetMin().x, 10.0f / 512.0f, 1e-5f);
+    EXPECT_NEAR(glyphA.subTexture->GetMax().x, 40.0f / 512.0f, 1e-5f);
+    EXPECT_NEAR(glyphA.subTexture->GetMin().y, 1.0f - (60.0f / 512.0f), 1e-5f);
+    EXPECT_NEAR(glyphA.subTexture->GetMax().y, 1.0f - (20.0f / 512.0f), 1e-5f);
+}
+
+TEST(FontBMFontTest, MultiLineWordWrappingAndWidthBounds) {
+    const std::string sampleFnt =
+        "common lineHeight=30 base=24 scaleW=512 scaleH=512\n"
+        "chars count=3\n"
+        "char id=65 x=0 y=0 width=20 height=24 xoffset=0 yoffset=0 xadvance=20\n" // 'A'
+        "char id=86 x=0 y=0 width=20 height=24 xoffset=0 yoffset=0 xadvance=20\n" // 'V'
+        "char id=32 x=0 y=0 width=0 height=0 xoffset=0 yoffset=0 xadvance=10\n";   // space ' '
+
+    auto font = Engine::Font::LoadBMFontFromMemory(sampleFnt, nullptr);
+    ASSERT_NE(font, nullptr);
+
+    // Each "AV" is 40px wide, space is 10px wide.
+    // "AV AV AV":
+    // Word 1: "AV" (40px)
+    // Space: (10px) -> cursor at 50px
+    // Word 2: "AV" (40px) -> fits within 100px (cursor reaches 90px)
+    // Space: (10px) -> cursor at 100px
+    // Word 3: "AV" (40px) -> 100 + 40 = 140px > 100px wrap width -> wraps to next line!
+    const auto layout = font->ComputeLayout("AV AV AV", glm::vec2(0.0f), 1.0f, 100.0f, Engine::TextAlignH::Left);
+
+    EXPECT_EQ(layout.lineCount, 2u);
+    EXPECT_LE(layout.bounds.x, 100.0f);
+    EXPECT_FLOAT_EQ(layout.bounds.y, 60.0f); // 2 lines * 30 lineHeight
+    EXPECT_EQ(layout.glyphs.size(), 6u);     // 3 'A's and 3 'V's
+}
+
+TEST(FontBMFontTest, CenterAndRightAlignmentOffsets) {
+    const std::string sampleFnt =
+        "common lineHeight=30 base=24 scaleW=512 scaleH=512\n"
+        "chars count=2\n"
+        "char id=65 x=0 y=0 width=30 height=24 xoffset=0 yoffset=0 xadvance=30\n"
+        "char id=86 x=0 y=0 width=30 height=24 xoffset=0 yoffset=0 xadvance=30\n";
+
+    auto font = Engine::Font::LoadBMFontFromMemory(sampleFnt, nullptr);
+    ASSERT_NE(font, nullptr);
+
+    // "AV" is 60px wide. Max container width = 160px.
+    // Left alignment: start at 0.0f
+    const auto leftLayout = font->ComputeLayout("AV", glm::vec2(0.0f), 1.0f, 160.0f, Engine::TextAlignH::Left);
+    ASSERT_EQ(leftLayout.glyphs.size(), 2u);
+    EXPECT_FLOAT_EQ(leftLayout.glyphs[0].position.x, 0.0f);
+    EXPECT_FLOAT_EQ(leftLayout.glyphs[1].position.x, 30.0f);
+
+    // Center alignment: offset = (160 - 60) * 0.5 = 50px
+    const auto centerLayout = font->ComputeLayout("AV", glm::vec2(0.0f), 1.0f, 160.0f, Engine::TextAlignH::Center);
+    ASSERT_EQ(centerLayout.glyphs.size(), 2u);
+    EXPECT_FLOAT_EQ(centerLayout.glyphs[0].position.x, 50.0f);
+    EXPECT_FLOAT_EQ(centerLayout.glyphs[1].position.x, 80.0f);
+
+    // Right alignment: offset = (160 - 60) = 100px
+    const auto rightLayout = font->ComputeLayout("AV", glm::vec2(0.0f), 1.0f, 160.0f, Engine::TextAlignH::Right);
+    ASSERT_EQ(rightLayout.glyphs.size(), 2u);
+    EXPECT_FLOAT_EQ(rightLayout.glyphs[0].position.x, 100.0f);
+    EXPECT_FLOAT_EQ(rightLayout.glyphs[1].position.x, 130.0f);
+}
+
+TEST(UICanvasTest, WorldToCanvasPositionProjection) {
+    // Camera positioned at (0, 0, 10), looking at (0, 0, 0)
+    Engine::PerspectiveCamera camera(60.0f, 16.0f / 9.0f, 0.1f, 500.0f);
+    camera.SetFocalPoint(glm::vec3(0.0f, 0.0f, 0.0f));
+    camera.SetDistance(10.0f);
+    camera.SetPitchDegrees(0.0f);
+    camera.SetYawDegrees(0.0f);
+
+    glm::vec2 screenPx{ 0.0f };
+    // Origin (0, 0, 0) should project directly onto screen center
+    const bool inFront = Engine::UICanvas::WorldToScreenPixels(glm::vec3(0.0f, 0.0f, 0.0f), camera, 1920, 1080, screenPx);
+    EXPECT_TRUE(inFront);
+    EXPECT_NEAR(screenPx.x, 960.0f, 1.0f);
+    EXPECT_NEAR(screenPx.y, 540.0f, 1.0f);
+
+    // World to Canvas at 4K resolution (3840x2160)
+    glm::vec2 canvasPos{ 0.0f };
+    const bool canvasInFront = Engine::UICanvas::WorldToCanvasPosition(glm::vec3(0.0f, 0.0f, 0.0f), camera, 3840, 2160, canvasPos);
+    EXPECT_TRUE(canvasInFront);
+    // At 4K, ComputeScaleFactor = 2.0. Screen center is (1920, 1080).
+    // Canvas position in 1080p reference units: (1920, 1080) / 2.0 = (960, 540)!
+    EXPECT_NEAR(canvasPos.x, 960.0f, 1.0f);
+    EXPECT_NEAR(canvasPos.y, 540.0f, 1.0f);
+
+    // Behind camera test: camera is at (0, 0, 10) facing -Z towards (0, 0, 0).
+    // Point at (0, 0, 20) is behind camera.
+    glm::vec2 behindPx{ 0.0f };
+    const bool behindResult = Engine::UICanvas::WorldToScreenPixels(glm::vec3(0.0f, 0.0f, 20.0f), camera, 1920, 1080, behindPx);
+    EXPECT_FALSE(behindResult);
+}
+
+TEST(UILabelTest, StyledTextSceneSerializerRoundTrip) {
+    auto sourceScene = std::make_shared<Engine::Scene>();
+    auto* go = sourceScene->CreateGameObject("PromptLabel");
+    const uint64_t goUUID = go->GetUUID();
+
+    auto* label = go->AddComponent<Engine::UILabel>();
+    label->text = "[E] Feed 10 Wood (0/10)";
+    label->position = { 100.0f, 200.0f };
+    label->scale = 1.25f;
+    label->color = { 1.0f, 0.9f, 0.8f, 1.0f };
+    label->alignment = Engine::TextAlignH::Center;
+    label->maxWrapWidth = 250.0f;
+    label->dropShadow = true;
+    label->shadowOffset = { 3.0f, -3.0f };
+    label->shadowColor = { 0.1f, 0.05f, 0.1f, 0.9f };
+
+    const std::string serializedJson = Engine::SceneSerializer(sourceScene).SerializeToString();
+
+    auto destScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(destScene).DeserializeFromString(serializedJson));
+
+    auto* dstObj = destScene->FindGameObjectByUUID(goUUID);
+    ASSERT_NE(dstObj, nullptr);
+
+    auto* dstLabel = dstObj->GetComponent<Engine::UILabel>();
+    ASSERT_NE(dstLabel, nullptr);
+    EXPECT_EQ(dstLabel->text, "[E] Feed 10 Wood (0/10)");
+    EXPECT_FLOAT_EQ(dstLabel->scale, 1.25f);
+    EXPECT_FLOAT_EQ(dstLabel->color.r, 1.0f);
+    EXPECT_FLOAT_EQ(dstLabel->color.g, 0.9f);
+    EXPECT_EQ(dstLabel->alignment, Engine::TextAlignH::Center);
+    EXPECT_FLOAT_EQ(dstLabel->maxWrapWidth, 250.0f);
+    EXPECT_TRUE(dstLabel->dropShadow);
+    EXPECT_FLOAT_EQ(dstLabel->shadowOffset.x, 3.0f);
+    EXPECT_FLOAT_EQ(dstLabel->shadowOffset.y, -3.0f);
+    EXPECT_FLOAT_EQ(dstLabel->shadowColor.r, 0.1f);
+    EXPECT_FLOAT_EQ(dstLabel->shadowColor.a, 0.9f);
 }
 
 } // namespace

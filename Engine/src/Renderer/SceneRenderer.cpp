@@ -838,31 +838,79 @@ void SceneRenderer::RenderPassScreenUI() {
     }
 
     for (UILabel* uiLabel : m_UILabelScratch) {
-        if (!uiLabel || !uiLabel->font) continue;
+        if (!uiLabel || !uiLabel->font || uiLabel->text.empty()) continue;
 
-        float cursorX = uiLabel->position.x;
-        float cursorY = uiLabel->position.y;
+        glm::vec2 startPos = uiLabel->position;
         float effectiveScale = uiLabel->scale;
+        float maxWrap = uiLabel->maxWrapWidth;
 
         if (uiLabel->useRectTransform) {
             glm::vec2 resolvedPos, resolvedSize;
             UICanvas::ResolveScreenRect(uiLabel->rectTransform, m_ViewportWidth, m_ViewportHeight, resolvedPos, resolvedSize);
-            cursorX = resolvedPos.x;
-            cursorY = resolvedPos.y;
+            startPos = resolvedPos;
             effectiveScale = uiLabel->scale * dpiScale;
+            if (maxWrap > 0.0f) {
+                maxWrap *= dpiScale;
+            } else if (resolvedSize.x > 0.0f && uiLabel->alignment != TextAlignH::Left) {
+                maxWrap = resolvedSize.x;
+            }
         }
 
-        for (char c : uiLabel->text) {
-            const Character& ch = uiLabel->font->GetCharacter(c);
-            float xPos = cursorX + (ch.bearing.x * effectiveScale);
-            float yPos = cursorY - ((ch.size.y - ch.bearing.y) * effectiveScale);
-            glm::vec2 currentSize = ch.size * effectiveScale;
+        const TextLayoutResult layout = uiLabel->font->ComputeLayout(
+            uiLabel->text,
+            startPos,
+            effectiveScale,
+            maxWrap,
+            uiLabel->alignment
+        );
 
-            glm::mat4 charTransform = glm::translate(glm::mat4(1.0f), glm::vec3(xPos, yPos, 0.0f)) *
-                                      glm::scale(glm::mat4(1.0f), glm::vec3(currentSize, 1.0f));
+        // Pass 1: Drop Shadow
+        if (uiLabel->dropShadow && uiLabel->shadowColor.a > 0.0f) {
+            const glm::vec2 sOffset = uiLabel->shadowOffset * dpiScale;
+            for (const auto& glyph : layout.glyphs) {
+                const glm::vec3 positions[4] = {
+                    { glyph.position.x + sOffset.x,                glyph.position.y + sOffset.y,                0.0f },
+                    { glyph.position.x + glyph.size.x + sOffset.x, glyph.position.y + sOffset.y,                0.0f },
+                    { glyph.position.x + glyph.size.x + sOffset.x, glyph.position.y + glyph.size.y + sOffset.y, 0.0f },
+                    { glyph.position.x + sOffset.x,                glyph.position.y + glyph.size.y + sOffset.y, 0.0f }
+                };
 
-            Renderer2D::DrawQuad(charTransform, ch.subTexture, uiLabel->color);
-            cursorX += (ch.advance * effectiveScale);
+                if (glyph.subTexture && glyph.subTexture->GetTexture()) {
+                    const glm::vec2 texCoords[4] = {
+                        { glyph.subTexture->GetMin().x, glyph.subTexture->GetMin().y },
+                        { glyph.subTexture->GetMax().x, glyph.subTexture->GetMin().y },
+                        { glyph.subTexture->GetMax().x, glyph.subTexture->GetMax().y },
+                        { glyph.subTexture->GetMin().x, glyph.subTexture->GetMax().y }
+                    };
+                    Renderer2D::DrawQuad(positions, texCoords, glyph.subTexture->GetTexture(), uiLabel->shadowColor);
+                } else {
+                    static const glm::vec2 kDefaultUV[4] = { {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} };
+                    Renderer2D::DrawQuad(positions, kDefaultUV, uiLabel->shadowColor);
+                }
+            }
+        }
+
+        // Pass 2: Main Text
+        for (const auto& glyph : layout.glyphs) {
+            const glm::vec3 positions[4] = {
+                { glyph.position.x,                glyph.position.y,                0.0f },
+                { glyph.position.x + glyph.size.x, glyph.position.y,                0.0f },
+                { glyph.position.x + glyph.size.x, glyph.position.y + glyph.size.y, 0.0f },
+                { glyph.position.x,                glyph.position.y + glyph.size.y, 0.0f }
+            };
+
+            if (glyph.subTexture && glyph.subTexture->GetTexture()) {
+                const glm::vec2 texCoords[4] = {
+                    { glyph.subTexture->GetMin().x, glyph.subTexture->GetMin().y },
+                    { glyph.subTexture->GetMax().x, glyph.subTexture->GetMin().y },
+                    { glyph.subTexture->GetMax().x, glyph.subTexture->GetMax().y },
+                    { glyph.subTexture->GetMin().x, glyph.subTexture->GetMax().y }
+                };
+                Renderer2D::DrawQuad(positions, texCoords, glyph.subTexture->GetTexture(), uiLabel->color);
+            } else {
+                static const glm::vec2 kDefaultUV[4] = { {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} };
+                Renderer2D::DrawQuad(positions, kDefaultUV, uiLabel->color);
+            }
         }
     }
 
