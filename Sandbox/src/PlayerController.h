@@ -130,6 +130,7 @@ public:
 
         if (isMoving) {
             ENGINE_DEBUG("PlayerController moving: ({:.2f}, {:.2f}, {:.2f})", movement.x, movement.y, movement.z);
+            m_LastFacingXZ = { movement.x, movement.z };
 
             if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid()) {
                 rb->SetVelocityXZ(movement.x * moveSpeed, movement.z * moveSpeed);
@@ -137,7 +138,7 @@ public:
                 transform->Translate(movement * moveSpeed * deltaTime);
             }
 
-            if (animator) animator->Play("Walk");
+            if (animator) animator->PlayState("Walk", m_LastFacingXZ);
 
             if (auto* particleSystem = GetGameObject()->GetComponent<Engine::ParticleSystem>()) {
                 m_DustProps.position = transform->position;
@@ -148,12 +149,13 @@ public:
             if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid()) {
                 rb->SetVelocityXZ(0.0f, 0.0f);
             }
-            if (animator) animator->Play("Idle");
+            if (animator) animator->PlayState("Idle", m_LastFacingXZ);
         }
     }
 
 private:
     float m_FallbackVerticalVelocity = 0.0f;
+    glm::vec2 m_LastFacingXZ{ 0.0f, 1.0f };
 };
 
 #endif // PLAYER_CONTROLLER_H

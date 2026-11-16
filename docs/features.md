@@ -208,7 +208,7 @@ flowchart TD
 | **`RND-01`** | Cutout Combat Shader FX (Dissolve, Flash, Outline)| `DONE` | **P1** | W2 | `LGT-01` | `LGT-03` (Shadow Sight) | Death ash dissolve, hit-stun flash, Revenants |
 | **`RND-02`** | Sprite Atlas Metadata Loader & Anisotropic Filter | `DONE` | **P1** | W0 | *None (Root)* | `ResourceManager` | `ANI-01`, `VFX-01`, `RND-03` |
 | **`RND-03`** | GPU Compressed Texture Pipeline (BC7 / KTX2) | `DONE` | **P2** | W2 | `RND-02` | `ANI-03` | 4K Master ~218 MB VRAM target |
-| **`ANI-01`** | Multi-Directional Animation State Machine & FlipX | `TODO` | **P0** | W1 | `RND-02`, `ANI-03` | `ECS-03` | `ANI-02` |
+| **`ANI-01`** | Multi-Directional Animation State Machine & FlipX | `DONE` | **P0** | W1 | `RND-02`, `ANI-03` | `ECS-03` | `ANI-02` |
 | **`ANI-02`** | Frame-Accurate Animation Event Callbacks | `TODO` | **P1** | W2 | `ANI-01` | `AUD-02`, `PHY-05` | `EDT-03`, Hitbox/Foley frame sync |
 | **`ANI-03`** | Sprite-Sheet Cutout Normalization & Pivot Lock | `DONE` | **P1** | W0 | *None (Root)* | `CutoutProcessor` | `ANI-01` |
 | **`VFX-01`** | Textured, Flipbook-Animated & Oriented Particles | `TODO` | **P0** | W1 | `RND-02` | `TER-04` (firewall) | Torch flame, shockwaves, bouncing splinters |
@@ -862,7 +862,7 @@ flowchart TD
 ---
 
 #### `ANI-01` — Multi-Directional Animation State Machine & Horizontal Flip
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `RND-02`, `ANI-03` | Unlocks: `ANI-02`
 - **Current Gap:** `SpriteRenderer` (`SpriteRenderer.h`) has no `FlipX` / `FlipY` flag; `Animator` (`Animator.h`) only maps flat string names to uniform-rate loops with no directional resolution, speed scaling, or one-shot completion transitions.
 - **Proposed C++ Specification:**
@@ -1479,7 +1479,7 @@ These 7 features only need a **20–30% minimal implementation** to make the Alp
 
 | Codename | Status | Minimal Alpha Subset | What to Defer to Post-Alpha |
 | :--- | :---: | :--- | :--- |
-| **`ANI-01`** | `TODO` | Basic frame-stepping + `FlipX` mirror for Left/Right movement & attack clips. | Full 4-way directional state graph & blend parameters. |
+| **`ANI-01`** | `DONE` | Multi-directional state machine (Omni, 2-Way, 4-Way), 7° hysteresis deadband, variable frame holds, playback speed multiplier, priority one-shot interruption, horizontal/vertical UV mirroring & SceneSerializer round-trip. | Blend spaces & bone root motion. |
 | **`VFX-01`** | `TODO` | Textured/flipbook particle quads + `FlatGround` shockwave ring orientation. | Bouncing `Y`-floor debris physics (use simple gravity particles first). |
 | **`UIX-01`** | `TODO` | Basic top-left/bottom-center anchor math on `16:9` desktop viewport. | Portrait `9:16` layout switching & `5%` mobile safe-area inset. |
 | **`UIX-02`** | `TODO` | Simple `UIFillBar` UV cropping for HP bar, Torch Fuel bar, and Wood counter. | 9-slice ornate gothic frames and radial cooldown shader sweeps. |

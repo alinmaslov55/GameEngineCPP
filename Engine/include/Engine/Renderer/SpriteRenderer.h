@@ -42,6 +42,12 @@ public:
     }
     const std::shared_ptr<SubTexture2D>& GetSubTexture() const { return m_SubTexture; }
 
+    [[nodiscard]] bool GetFlipX() const noexcept { return m_FlipX; }
+    void SetFlipX(bool flip) noexcept { m_FlipX = flip; }
+
+    [[nodiscard]] bool GetFlipY() const noexcept { return m_FlipY; }
+    void SetFlipY(bool flip) noexcept { m_FlipY = flip; }
+
     BillboardMode GetBillboardMode() const { return m_BillboardMode; }
     void SetBillboardMode(BillboardMode mode) {
         m_BillboardMode = mode;
@@ -157,6 +163,8 @@ private:
     float m_FlashColorMode = 0.0f;
     bool m_RenderSilhouette = false;
     glm::vec4 m_SilhouetteColor{ 0.25f, 0.35f, 0.85f, 0.28f };
+    bool m_FlipX = false;
+    bool m_FlipY = false;
 };
 } // namespace Engine
 

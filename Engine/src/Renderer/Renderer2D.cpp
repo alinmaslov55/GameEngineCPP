@@ -829,19 +829,31 @@ void SubmitStandeesInternal(
                 }
             }
 
-            const glm::vec2* uv = defaultTexCoords.data();
-            glm::vec2 subUV[4];
-            if (sprite) {
-                if (const auto& subTexture = sprite->GetSubTexture()) {
-                    const glm::vec2 min = subTexture->GetMin();
-                    const glm::vec2 max = subTexture->GetMax();
-                    subUV[0] = { min.x, min.y };
-                    subUV[1] = { max.x, min.y };
-                    subUV[2] = { max.x, max.y };
-                    subUV[3] = { min.x, max.y };
-                    uv = subUV;
-                }
+            glm::vec2 resolvedUV[4];
+            if (sprite && sprite->GetSubTexture()) {
+                const auto& subTexture = sprite->GetSubTexture();
+                const glm::vec2 min = subTexture->GetMin();
+                const glm::vec2 max = subTexture->GetMax();
+                resolvedUV[0] = { min.x, min.y };
+                resolvedUV[1] = { max.x, min.y };
+                resolvedUV[2] = { max.x, max.y };
+                resolvedUV[3] = { min.x, max.y };
+            } else {
+                resolvedUV[0] = defaultTexCoords[0];
+                resolvedUV[1] = defaultTexCoords[1];
+                resolvedUV[2] = defaultTexCoords[2];
+                resolvedUV[3] = defaultTexCoords[3];
             }
+
+            if (sprite && sprite->GetFlipX()) {
+                std::swap(resolvedUV[0].x, resolvedUV[1].x);
+                std::swap(resolvedUV[3].x, resolvedUV[2].x);
+            }
+            if (sprite && sprite->GetFlipY()) {
+                std::swap(resolvedUV[0].y, resolvedUV[3].y);
+                std::swap(resolvedUV[1].y, resolvedUV[2].y);
+            }
+            const glm::vec2* uv = resolvedUV;
 
             const float proxBend = (isShadowPass || isTorchShadowPass) ? cmd.shadowProximityBend : cmd.camProximityBend;
             const glm::vec3 wind[4] = {

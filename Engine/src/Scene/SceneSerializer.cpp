@@ -162,6 +162,8 @@ void SerializeSpriteRenderer(const GameObject* go, json& compsJson) {
     spriteJson["FlashColorMode"] = spriteRenderer->GetFlashColorMode();
     spriteJson["RenderSilhouette"] = spriteRenderer->GetRenderSilhouette();
     spriteJson["SilhouetteColor"] = ToJson(spriteRenderer->GetSilhouetteColor());
+    spriteJson["FlipX"] = spriteRenderer->GetFlipX();
+    spriteJson["FlipY"] = spriteRenderer->GetFlipY();
 
     if (auto tex = spriteRenderer->GetTexture()) {
         spriteJson["TexturePath"] = ResourceManager::ToRelativePath(tex->GetFilepath());
@@ -679,15 +681,30 @@ void SerializeAnimator(const GameObject* go, json& compsJson) {
 
     json animJson;
     animJson["CurrentClip"] = animator->GetCurrentClipName();
+    animJson["DirectionalScheme"] = static_cast<int>(animator->GetDirectionalScheme());
+    animJson["PlaybackSpeed"] = animator->GetPlaybackSpeed();
+    animJson["HysteresisDegrees"] = animator->GetHysteresisDegrees();
+    animJson["CurrentFlipX"] = animator->GetCurrentFlipX();
+    animJson["CurrentFacingDirection"] = static_cast<int>(animator->GetCurrentFacingDirection());
     json clipsJson = json::array();
 
     for (const auto& [clipName, clipPtr] : animator->GetClips()) {
         if (!clipPtr) continue;
         json framesJson = json::array();
-        for (const auto& frame : clipPtr->frames) {
-            json fJson = SerializeSubTexture(frame);
-            if (!fJson.is_null()) {
-                framesJson.push_back(std::move(fJson));
+        if (!clipPtr->Frames.empty()) {
+            for (const auto& af : clipPtr->Frames) {
+                json fJson = SerializeSubTexture(af.SubTex);
+                if (!fJson.is_null()) {
+                    fJson["DurationSeconds"] = af.DurationSeconds;
+                    framesJson.push_back(std::move(fJson));
+                }
+            }
+        } else {
+            for (const auto& frame : clipPtr->frames) {
+                json fJson = SerializeSubTexture(frame);
+                if (!fJson.is_null()) {
+                    framesJson.push_back(std::move(fJson));
+                }
             }
         }
         clipsJson.push_back({
@@ -787,6 +804,8 @@ void DeserializeSpriteRenderer(GameObject* go, const json& srJson, [[maybe_unuse
     sprite->SetFlashAmount(srJson.value("FlashAmount", 0.0f));
     sprite->SetFlashColorMode(srJson.value("FlashColorMode", 0.0f));
     sprite->SetRenderSilhouette(srJson.value("RenderSilhouette", false));
+    sprite->SetFlipX(srJson.value("FlipX", false));
+    sprite->SetFlipY(srJson.value("FlipY", false));
     if (srJson.contains("SilhouetteColor")) {
         sprite->SetSilhouetteColor(AsVec4(srJson["SilhouetteColor"], glm::vec4(0.2f, 0.4f, 0.9f, 0.28f)));
     }
@@ -1264,6 +1283,12 @@ void DeserializeAudioSource(GameObject* go, const json& audioJson, const std::st
 
 void DeserializeAnimator(GameObject* go, const json& animJson, const std::string&) {
     auto* animator = go->AddComponent<Animator>();
+    animator->SetDirectionalScheme(static_cast<DirectionalScheme>(animJson.value("DirectionalScheme", 2)));
+    animator->SetPlaybackSpeed(animJson.value("PlaybackSpeed", 1.0f));
+    animator->SetHysteresisDegrees(animJson.value("HysteresisDegrees", 7.0f));
+    animator->SetCurrentFlipX(animJson.value("CurrentFlipX", false));
+    animator->SetCurrentFacingDirection(static_cast<FacingDirection>(animJson.value("CurrentFacingDirection", 0)));
+
     if (animJson.contains("Clips") && animJson["Clips"].is_array()) {
         for (const auto& clipJson : animJson["Clips"]) {
             std::string clipName = clipJson.value("Name", "");
@@ -1274,7 +1299,8 @@ void DeserializeAnimator(GameObject* go, const json& animJson, const std::string
             if (clipJson.contains("Frames") && clipJson["Frames"].is_array()) {
                 for (const auto& frameJson : clipJson["Frames"]) {
                     if (auto frameSubTex = DeserializeSubTexture(frameJson)) {
-                        clip->AddFrame(frameSubTex);
+                        float frameDur = frameJson.value("DurationSeconds", -1.0f);
+                        clip->AddFrame(frameSubTex, frameDur);
                     }
                 }
             }
