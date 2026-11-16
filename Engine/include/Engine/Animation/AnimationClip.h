@@ -2,11 +2,19 @@
 #define ANIMATION_ANIMATIONCLIP_H
 
 #include "Engine/Renderer/SubTexture2D.h"
+#include <glm/vec2.hpp>
 #include <vector>
 #include <memory>
 #include <string>
+#include <string_view>
 
 namespace Engine {
+
+struct AnimationEvent {
+    uint32_t FrameIndex = 0;
+    std::string EventID;            // e.g., "HitboxActive", "HitboxEnd", "Footstep", "ChopImpact", "Slam"
+    glm::vec2 SocketOffset{ 0.0f }; // Local spawn offset (meters) relative to sprite root/pivot
+};
 
 struct AnimationFrame {
     std::shared_ptr<SubTexture2D> SubTex = nullptr;
@@ -37,6 +45,9 @@ struct AnimationClip {
     float frameDuration = 0.1f; // Default time per frame in seconds
     bool loop = true;
 
+    // Events associated with this clip
+    std::vector<AnimationEvent> Events;
+
     AnimationClip(const std::string& clipName, float duration, bool isLooping = true)
         : name(clipName), frameDuration(duration), loop(isLooping) {}
 
@@ -52,6 +63,21 @@ struct AnimationClip {
         frames.push_back(frame.SubTex);
         Frames.push_back(frame);
     }
+
+    void AddEvent(const AnimationEvent& ev) {
+        Events.push_back(ev);
+    }
+
+    void AddEvent(uint32_t frameIndex, std::string_view eventID, const glm::vec2& socketOffset = { 0.0f, 0.0f }) {
+        AnimationEvent ev;
+        ev.FrameIndex = frameIndex;
+        ev.EventID = std::string(eventID);
+        ev.SocketOffset = socketOffset;
+        Events.push_back(std::move(ev));
+    }
+
+    [[nodiscard]] const std::vector<AnimationEvent>& GetEvents() const noexcept { return Events; }
+    void ClearEvents() noexcept { Events.clear(); }
 
     [[nodiscard]] float GetTotalDuration() const noexcept {
         float total = 0.0f;

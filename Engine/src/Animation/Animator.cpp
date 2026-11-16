@@ -50,6 +50,7 @@ void Animator::Play(const std::string& clipName) {
     m_CurrentFrameIndex = 0;
     m_IsOneShotPlaying = false;
     m_OneShotPriority = 0;
+    m_Frame0Fired = false;
 
     if (auto* go = GetGameObject()) {
         if (auto* sr = go->GetComponent<SpriteRenderer>()) {
@@ -66,6 +67,55 @@ void Animator::Stop() noexcept {
     ResetState();
 }
 
+uint32_t Animator::AddEventListener(AnimEventCallback callback) {
+    if (!callback) {
+        return 0;
+    }
+    const uint32_t handle = m_NextListenerHandle++;
+    m_EventListeners.emplace_back(handle, std::move(callback));
+    return handle;
+}
+
+bool Animator::RemoveEventListener(uint32_t handle) {
+    auto it = std::remove_if(m_EventListeners.begin(), m_EventListeners.end(),
+        [handle](const auto& pair) { return pair.first == handle; });
+    if (it != m_EventListeners.end()) {
+        m_EventListeners.erase(it, m_EventListeners.end());
+        return true;
+    }
+    return false;
+}
+
+void Animator::ClearEventListeners() noexcept {
+    m_EventListeners.clear();
+}
+
+void Animator::TriggerFrameEvents(uint32_t frameIndex) {
+    if (!m_CurrentClip || m_EventListeners.empty() || m_CurrentClip->Events.empty()) {
+        return;
+    }
+
+    for (const auto& ev : m_CurrentClip->Events) {
+        if (ev.FrameIndex == frameIndex) {
+            DispatchEvent(ev);
+        }
+    }
+}
+
+void Animator::DispatchEvent(const AnimationEvent& ev) {
+    if (m_EventListeners.empty()) {
+        return;
+    }
+
+    // Take a snapshot copy of the listeners for re-entrancy safety
+    auto snapshot = m_EventListeners;
+    for (const auto& [handle, callback] : snapshot) {
+        if (callback) {
+            callback(ev.EventID, ev);
+        }
+    }
+}
+
 void Animator::ResetState() noexcept {
     m_CurrentClip = nullptr;
     m_CurrentClipName.clear();
@@ -77,6 +127,7 @@ void Animator::ResetState() noexcept {
     m_OneShotFallbackState = "Idle";
     m_QueuedLoopState.clear();
     m_CurrentFlipX = false;
+    m_Frame0Fired = false;
 }
 
 void Animator::GetCameraBasis(glm::vec3& outRightXZ, glm::vec3& outForwardXZ) const {
@@ -318,6 +369,7 @@ void Animator::PlayState(std::string_view stateName, const glm::vec2& facingXZ, 
             m_CurrentFrameIndex = 0;
             m_IsOneShotPlaying = false;
             m_OneShotPriority = 0;
+            m_Frame0Fired = false;
         }
     }
 
@@ -359,6 +411,7 @@ void Animator::PlayOneShot(std::string_view stateName, const glm::vec2& facingXZ
         m_CurrentClipName = resolvedClipName;
         m_CurrentTime = 0.0f;
         m_CurrentFrameIndex = 0;
+        m_Frame0Fired = false;
     } else {
         m_IsOneShotPlaying = false;
         m_OneShotPriority = 0;
@@ -377,6 +430,17 @@ void Animator::Update(float deltaTime) {
         : m_CurrentClip->frames.size();
     if (frameCount == 0) {
         return;
+    }
+
+    // Trigger Frame 0 events on the very first update of this clip/cycle
+    if (!m_Frame0Fired && m_CurrentFrameIndex == 0) {
+        m_Frame0Fired = true;
+        const auto clipBefore = m_CurrentClip;
+        TriggerFrameEvents(0);
+        if (!m_CurrentClip || m_CurrentClip != clipBefore) {
+            UpdateSpriteRenderer();
+            return;
+        }
     }
 
     const float effectiveDelta = deltaTime * m_PlaybackSpeed;
@@ -403,6 +467,7 @@ void Animator::Update(float deltaTime) {
                 m_OneShotPriority = 0;
                 m_CurrentFrameIndex = static_cast<uint32_t>(frameCount - 1);
                 m_CurrentTime = 0.0f;
+                m_Frame0Fired = false;
 
                 std::string returnState = m_QueuedLoopState;
                 m_QueuedLoopState.clear();
@@ -426,10 +491,23 @@ void Animator::Update(float deltaTime) {
                 break;
             } else if (m_CurrentClip->loop) {
                 m_CurrentFrameIndex = 0;
+                const auto clipBefore = m_CurrentClip;
+                TriggerFrameEvents(0);
+                if (!m_CurrentClip || m_CurrentClip != clipBefore) {
+                    UpdateSpriteRenderer();
+                    return;
+                }
             } else {
                 m_CurrentFrameIndex = static_cast<uint32_t>(frameCount - 1);
                 m_CurrentTime = 0.0f;
                 break;
+            }
+        } else {
+            const auto clipBefore = m_CurrentClip;
+            TriggerFrameEvents(m_CurrentFrameIndex);
+            if (!m_CurrentClip || m_CurrentClip != clipBefore) {
+                UpdateSpriteRenderer();
+                return;
             }
         }
         currentDuration = getFrameDuration(m_CurrentFrameIndex);

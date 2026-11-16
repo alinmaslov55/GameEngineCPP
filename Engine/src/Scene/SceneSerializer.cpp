@@ -707,12 +707,25 @@ void SerializeAnimator(const GameObject* go, json& compsJson) {
                 }
             }
         }
-        clipsJson.push_back({
+        json cEntry = {
             {"Name", clipPtr->name},
             {"FrameDuration", clipPtr->frameDuration},
             {"Loop", clipPtr->loop},
             {"Frames", std::move(framesJson)}
-        });
+        };
+        if (!clipPtr->Events.empty()) {
+            json eventsArr = json::array();
+            for (const auto& ev : clipPtr->Events) {
+                eventsArr.push_back({
+                    {"FrameIndex", ev.FrameIndex},
+                    {"EventID", ev.EventID},
+                    {"SocketOffsetX", ev.SocketOffset.x},
+                    {"SocketOffsetY", ev.SocketOffset.y}
+                });
+            }
+            cEntry["Events"] = std::move(eventsArr);
+        }
+        clipsJson.push_back(std::move(cEntry));
     }
     animJson["Clips"] = std::move(clipsJson);
     compsJson["Animator"] = std::move(animJson);
@@ -1302,6 +1315,17 @@ void DeserializeAnimator(GameObject* go, const json& animJson, const std::string
                         float frameDur = frameJson.value("DurationSeconds", -1.0f);
                         clip->AddFrame(frameSubTex, frameDur);
                     }
+                }
+            }
+
+            if (clipJson.contains("Events") && clipJson["Events"].is_array()) {
+                for (const auto& evJson : clipJson["Events"]) {
+                    AnimationEvent ev;
+                    ev.FrameIndex = evJson.value("FrameIndex", 0u);
+                    ev.EventID = evJson.value("EventID", "");
+                    ev.SocketOffset.x = evJson.value("SocketOffsetX", 0.0f);
+                    ev.SocketOffset.y = evJson.value("SocketOffsetY", 0.0f);
+                    clip->AddEvent(ev);
                 }
             }
             animator->AddClip(clip);

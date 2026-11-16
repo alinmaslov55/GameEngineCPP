@@ -209,7 +209,7 @@ flowchart TD
 | **`RND-02`** | Sprite Atlas Metadata Loader & Anisotropic Filter | `DONE` | **P1** | W0 | *None (Root)* | `ResourceManager` | `ANI-01`, `VFX-01`, `RND-03` |
 | **`RND-03`** | GPU Compressed Texture Pipeline (BC7 / KTX2) | `DONE` | **P2** | W2 | `RND-02` | `ANI-03` | 4K Master ~218 MB VRAM target |
 | **`ANI-01`** | Multi-Directional Animation State Machine & FlipX | `DONE` | **P0** | W1 | `RND-02`, `ANI-03` | `ECS-03` | `ANI-02` |
-| **`ANI-02`** | Frame-Accurate Animation Event Callbacks | `TODO` | **P1** | W2 | `ANI-01` | `AUD-02`, `PHY-05` | `EDT-03`, Hitbox/Foley frame sync |
+| **`ANI-02`** | Frame-Accurate Animation Event Callbacks | `DONE` | **P1** | W2 | `ANI-01` | `AUD-02`, `PHY-05` | `EDT-03`, Hitbox/Foley frame sync |
 | **`ANI-03`** | Sprite-Sheet Cutout Normalization & Pivot Lock | `DONE` | **P1** | W0 | *None (Root)* | `CutoutProcessor` | `ANI-01` |
 | **`VFX-01`** | Textured, Flipbook-Animated & Oriented Particles | `TODO` | **P0** | W1 | `RND-02` | `TER-04` (firewall) | Torch flame, shockwaves, bouncing splinters |
 | **`VFX-02`** | Ring-Buffered Ground Decal Pool | `TODO` | **P1** | W4 | `TER-04` | `RND-02` | Blood/ichor splatters & scorched craters |
@@ -896,7 +896,7 @@ flowchart TD
 ---
 
 #### `ANI-02` — Frame-Accurate Animation Event Callbacks
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `ANI-01` | Unlocks: `EDT-03`, Combat hitbox & foley synchronization
 - **Proposed C++ Specification:**
   ```cpp

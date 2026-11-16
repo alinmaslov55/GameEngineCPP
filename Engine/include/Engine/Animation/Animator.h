@@ -4,6 +4,9 @@
 #include "Engine/Scene/Component.h"
 #include "Engine/Animation/AnimationClip.h"
 #include <algorithm>
+#include <functional>
+#include <vector>
+#include <utility>
 #include <glm/vec2.hpp>
 #include <glm/vec3.hpp>
 #include <unordered_map>
@@ -17,6 +20,8 @@ class SpriteRenderer;
 
 class Animator final : public Component {
 public:
+    using AnimEventCallback = std::function<void(std::string_view eventID, const AnimationEvent& ev)>;
+
     Animator() = default;
     ~Animator() override = default;
 
@@ -54,6 +59,17 @@ public:
     [[nodiscard]] bool GetCurrentFlipX() const noexcept { return m_CurrentFlipX; }
     void SetCurrentFlipX(bool flipX) noexcept { m_CurrentFlipX = flipX; }
 
+    // Animation event listener API
+    uint32_t AddEventListener(AnimEventCallback callback);
+    bool RemoveEventListener(uint32_t handle);
+    void ClearEventListeners() noexcept;
+    [[nodiscard]] size_t GetEventListenerCount() const noexcept { return m_EventListeners.size(); }
+
+    // Returns local socket offset mirrored horizontally if the standee is flipped
+    [[nodiscard]] glm::vec2 GetEventSocketOffset(const AnimationEvent& ev) const noexcept {
+        return m_CurrentFlipX ? glm::vec2(-ev.SocketOffset.x, ev.SocketOffset.y) : ev.SocketOffset;
+    }
+
     void OnPoolAcquire() override { ResetState(); }
     void OnPoolRelease() override { ResetState(); }
     void Update(float deltaTime) override;
@@ -73,6 +89,8 @@ private:
     void UpdateSpriteRenderer();
     std::string ResolveClipName(std::string_view stateName, FacingDirection dir) const;
     void GetCameraBasis(glm::vec3& outRightXZ, glm::vec3& outForwardXZ) const;
+    void TriggerFrameEvents(uint32_t frameIndex);
+    void DispatchEvent(const AnimationEvent& ev);
 
 private:
     std::unordered_map<std::string, std::shared_ptr<AnimationClip>> m_Clips;
@@ -95,6 +113,11 @@ private:
     int m_OneShotPriority = 0;
     std::string m_OneShotFallbackState = "Idle";
     std::string m_QueuedLoopState = "";
+
+    // Event listener callbacks & frame tracking
+    std::vector<std::pair<uint32_t, AnimEventCallback>> m_EventListeners;
+    uint32_t m_NextListenerHandle = 1;
+    bool m_Frame0Fired = false;
 };
 
 } // namespace Engine
