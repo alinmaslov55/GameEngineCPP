@@ -605,8 +605,21 @@ void SerializeUIPanels(const GameObject* go, json& compsJson) {
         json panelJson = {
             {"Position", ToJson(panel->position)},
             {"Size",     ToJson(panel->size)},
-            {"Color",    ToJson(panel->color)}
+            {"Color",    ToJson(panel->color)},
+            {"UseRectTransform", panel->useRectTransform}
         };
+        if (panel->useRectTransform) {
+            panelJson["RectTransform"] = {
+                {"Anchor", static_cast<int>(panel->rectTransform.Anchor)},
+                {"PortraitAnchorOverride", static_cast<int>(panel->rectTransform.PortraitAnchorOverride)},
+                {"UsePortraitOverride", panel->rectTransform.UsePortraitOverride},
+                {"Pivot", ToJson(panel->rectTransform.Pivot)},
+                {"AnchoredOffset", ToJson(panel->rectTransform.AnchoredOffset)},
+                {"Size", ToJson(panel->rectTransform.Size)},
+                {"ZOrder", panel->rectTransform.ZOrder},
+                {"IgnoreSafeArea", panel->rectTransform.IgnoreSafeArea}
+            };
+        }
         if (panel->texture) {
             panelJson["TexturePath"] = ResourceManager::ToRelativePath(panel->texture->GetFilepath());
         }
@@ -625,8 +638,21 @@ void SerializeUILabels(const GameObject* go, json& compsJson) {
             {"Text",     label->text},
             {"Position", ToJson(label->position)},
             {"Scale",    label->scale},
-            {"Color",    ToJson(label->color)}
+            {"Color",    ToJson(label->color)},
+            {"UseRectTransform", label->useRectTransform}
         };
+        if (label->useRectTransform) {
+            labelJson["RectTransform"] = {
+                {"Anchor", static_cast<int>(label->rectTransform.Anchor)},
+                {"PortraitAnchorOverride", static_cast<int>(label->rectTransform.PortraitAnchorOverride)},
+                {"UsePortraitOverride", label->rectTransform.UsePortraitOverride},
+                {"Pivot", ToJson(label->rectTransform.Pivot)},
+                {"AnchoredOffset", ToJson(label->rectTransform.AnchoredOffset)},
+                {"Size", ToJson(label->rectTransform.Size)},
+                {"ZOrder", label->rectTransform.ZOrder},
+                {"IgnoreSafeArea", label->rectTransform.IgnoreSafeArea}
+            };
+        }
 
         if (label->font) {
             json fontJson;
@@ -1201,6 +1227,18 @@ void DeserializeSingleUIPanel(GameObject* go, const json& panelJson) {
             panel->texture = ResourceManager::Load<Texture>(texPath);
         }
     }
+    panel->useRectTransform = panelJson.value("UseRectTransform", false);
+    if (panelJson.contains("RectTransform")) {
+        const auto& rtJson = panelJson["RectTransform"];
+        panel->rectTransform.Anchor = static_cast<UIAnchor>(rtJson.value("Anchor", 0));
+        panel->rectTransform.PortraitAnchorOverride = static_cast<UIAnchor>(rtJson.value("PortraitAnchorOverride", 0));
+        panel->rectTransform.UsePortraitOverride = rtJson.value("UsePortraitOverride", false);
+        if (rtJson.contains("Pivot")) panel->rectTransform.Pivot = AsVec2(rtJson["Pivot"], panel->rectTransform.Pivot);
+        if (rtJson.contains("AnchoredOffset")) panel->rectTransform.AnchoredOffset = AsVec2(rtJson["AnchoredOffset"], panel->rectTransform.AnchoredOffset);
+        if (rtJson.contains("Size")) panel->rectTransform.Size = AsVec2(rtJson["Size"], panel->rectTransform.Size);
+        panel->rectTransform.ZOrder = rtJson.value("ZOrder", 0);
+        panel->rectTransform.IgnoreSafeArea = rtJson.value("IgnoreSafeArea", false);
+    }
 }
 
 void DeserializeUIPanels(GameObject* go, const json& j, const std::string&) {
@@ -1271,6 +1309,18 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
     label->scale = labelJson.value("Scale", 1.0f);
     if (labelJson.contains("Color")) {
         label->color = AsVec4(labelJson["Color"], label->color);
+    }
+    label->useRectTransform = labelJson.value("UseRectTransform", false);
+    if (labelJson.contains("RectTransform")) {
+        const auto& rtJson = labelJson["RectTransform"];
+        label->rectTransform.Anchor = static_cast<UIAnchor>(rtJson.value("Anchor", 0));
+        label->rectTransform.PortraitAnchorOverride = static_cast<UIAnchor>(rtJson.value("PortraitAnchorOverride", 0));
+        label->rectTransform.UsePortraitOverride = rtJson.value("UsePortraitOverride", false);
+        if (rtJson.contains("Pivot")) label->rectTransform.Pivot = AsVec2(rtJson["Pivot"], label->rectTransform.Pivot);
+        if (rtJson.contains("AnchoredOffset")) label->rectTransform.AnchoredOffset = AsVec2(rtJson["AnchoredOffset"], label->rectTransform.AnchoredOffset);
+        if (rtJson.contains("Size")) label->rectTransform.Size = AsVec2(rtJson["Size"], label->rectTransform.Size);
+        label->rectTransform.ZOrder = rtJson.value("ZOrder", 0);
+        label->rectTransform.IgnoreSafeArea = rtJson.value("IgnoreSafeArea", false);
     }
 }
 

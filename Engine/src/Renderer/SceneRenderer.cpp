@@ -793,11 +793,27 @@ void SceneRenderer::RenderPassScreenUI() {
 
     Renderer2D::BeginScene(uiProjection, /*depthTest=*/false, /*defaultAlphaCutoff=*/0.0f);
 
+    std::stable_sort(m_UIPanelScratch.begin(), m_UIPanelScratch.end(),
+        [](const UIPanel* a, const UIPanel* b) {
+            return (a && b) ? (a->rectTransform.ZOrder < b->rectTransform.ZOrder) : (a != nullptr);
+        });
+
+    std::stable_sort(m_UILabelScratch.begin(), m_UILabelScratch.end(),
+        [](const UILabel* a, const UILabel* b) {
+            return (a && b) ? (a->rectTransform.ZOrder < b->rectTransform.ZOrder) : (a != nullptr);
+        });
+
     for (UIPanel* uiPanel : m_UIPanelScratch) {
         if (!uiPanel) continue;
 
-        glm::mat4 uiTransform = glm::translate(glm::mat4(1.0f), glm::vec3(uiPanel->position, 0.0f)) *
-                                glm::scale(glm::mat4(1.0f), glm::vec3(uiPanel->size, 1.0f));
+        glm::vec2 pos = uiPanel->position;
+        glm::vec2 sz  = uiPanel->size;
+        if (uiPanel->useRectTransform) {
+            UICanvas::ResolveScreenRect(uiPanel->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
+        }
+
+        glm::mat4 uiTransform = glm::translate(glm::mat4(1.0f), glm::vec3(pos, 0.0f)) *
+                                glm::scale(glm::mat4(1.0f), glm::vec3(sz, 1.0f));
 
         if (uiPanel->texture) {
             Renderer2D::DrawQuad(uiTransform, uiPanel->texture, uiPanel->color);
@@ -806,23 +822,34 @@ void SceneRenderer::RenderPassScreenUI() {
         }
     }
 
+    const float dpiScale = UICanvas::ComputeScaleFactor(m_ViewportWidth, m_ViewportHeight);
+
     for (UILabel* uiLabel : m_UILabelScratch) {
         if (!uiLabel || !uiLabel->font) continue;
 
         float cursorX = uiLabel->position.x;
         float cursorY = uiLabel->position.y;
+        float effectiveScale = uiLabel->scale;
+
+        if (uiLabel->useRectTransform) {
+            glm::vec2 resolvedPos, resolvedSize;
+            UICanvas::ResolveScreenRect(uiLabel->rectTransform, m_ViewportWidth, m_ViewportHeight, resolvedPos, resolvedSize);
+            cursorX = resolvedPos.x;
+            cursorY = resolvedPos.y;
+            effectiveScale = uiLabel->scale * dpiScale;
+        }
 
         for (char c : uiLabel->text) {
             const Character& ch = uiLabel->font->GetCharacter(c);
-            float xPos = cursorX + (ch.bearing.x * uiLabel->scale);
-            float yPos = cursorY - ((ch.size.y - ch.bearing.y) * uiLabel->scale);
-            glm::vec2 currentSize = ch.size * uiLabel->scale;
+            float xPos = cursorX + (ch.bearing.x * effectiveScale);
+            float yPos = cursorY - ((ch.size.y - ch.bearing.y) * effectiveScale);
+            glm::vec2 currentSize = ch.size * effectiveScale;
 
             glm::mat4 charTransform = glm::translate(glm::mat4(1.0f), glm::vec3(xPos, yPos, 0.0f)) *
                                       glm::scale(glm::mat4(1.0f), glm::vec3(currentSize, 1.0f));
 
             Renderer2D::DrawQuad(charTransform, ch.subTexture, uiLabel->color);
-            cursorX += (ch.advance * uiLabel->scale);
+            cursorX += (ch.advance * effectiveScale);
         }
     }
 
