@@ -28,6 +28,8 @@ class Tilemap;
 class ParticleSystem;
 class UIPanel;
 class UILabel;
+class UIMinimapComponent;
+class UIRadialWheelComponent;
 
 struct SceneRenderContext {
     const PerspectiveCamera* activeCam = nullptr;
@@ -108,6 +110,8 @@ private:
     std::vector<ParticleSystem*> m_ParticleScratch;
     std::vector<UIPanel*> m_UIPanelScratch;
     std::vector<UILabel*> m_UILabelScratch;
+    std::vector<UIMinimapComponent*> m_UIMinimapScratch;
+    std::vector<UIRadialWheelComponent*> m_UIRadialWheelScratch;
     std::unordered_map<uint64_t, std::vector<uint32_t>> m_FoliageInteractorGrid;
 };
 

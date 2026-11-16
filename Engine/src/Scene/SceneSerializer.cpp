@@ -16,6 +16,8 @@
 #include "Engine/UI/UIPanel.h"
 #include "Engine/UI/UILabel.h"
 #include "Engine/UI/UIButtonComponent.h"
+#include "Engine/UI/UIMinimapComponent.h"
+#include "Engine/UI/UIRadialWheelComponent.h"
 #include "Engine/Audio/AudioSource.h"
 #include "Engine/Animation/Animator.h"
 #include "Engine/Utils/Logger.h"
@@ -652,6 +654,68 @@ void SerializeUIButtonComponent(const GameObject* go, json& compsJson) {
     };
 }
 
+void SerializeUIMinimapComponent(const GameObject* go, json& compsJson) {
+    auto* minimap = go->GetComponent<UIMinimapComponent>();
+    if (!minimap) return;
+
+    json minimapJson = {
+        {"UseRectTransform", minimap->useRectTransform},
+        {"PinSize", minimap->pinSize},
+        {"FrameColor", ToJson(minimap->frameColor)},
+        {"PlayerPinColor", ToJson(minimap->playerPinColor)}
+    };
+    if (minimap->useRectTransform) {
+        minimapJson["RectTransform"] = {
+            {"Anchor", static_cast<int>(minimap->rectTransform.Anchor)},
+            {"PortraitAnchorOverride", static_cast<int>(minimap->rectTransform.PortraitAnchorOverride)},
+            {"UsePortraitOverride", minimap->rectTransform.UsePortraitOverride},
+            {"Pivot", ToJson(minimap->rectTransform.Pivot)},
+            {"AnchoredOffset", ToJson(minimap->rectTransform.AnchoredOffset)},
+            {"Size", ToJson(minimap->rectTransform.Size)},
+            {"ZOrder", minimap->rectTransform.ZOrder},
+            {"IgnoreSafeArea", minimap->rectTransform.IgnoreSafeArea}
+        };
+    }
+    if (minimap->frameTexture) {
+        minimapJson["FrameTexturePath"] = ResourceManager::ToRelativePath(minimap->frameTexture->GetFilepath());
+    }
+    compsJson["UIMinimapComponent"] = std::move(minimapJson);
+}
+
+void SerializeUIRadialWheelComponent(const GameObject* go, json& compsJson) {
+    auto* wheel = go->GetComponent<UIRadialWheelComponent>();
+    if (!wheel) return;
+
+    json wheelJson = {
+        {"UseRectTransform", wheel->useRectTransform},
+        {"SlowMoTimeScale", wheel->SlowMoTimeScale},
+        {"AvailableWood", wheel->AvailableWood}
+    };
+    if (wheel->useRectTransform) {
+        wheelJson["RectTransform"] = {
+            {"Anchor", static_cast<int>(wheel->rectTransform.Anchor)},
+            {"PortraitAnchorOverride", static_cast<int>(wheel->rectTransform.PortraitAnchorOverride)},
+            {"UsePortraitOverride", wheel->rectTransform.UsePortraitOverride},
+            {"Pivot", ToJson(wheel->rectTransform.Pivot)},
+            {"AnchoredOffset", ToJson(wheel->rectTransform.AnchoredOffset)},
+            {"Size", ToJson(wheel->rectTransform.Size)},
+            {"ZOrder", wheel->rectTransform.ZOrder},
+            {"IgnoreSafeArea", wheel->rectTransform.IgnoreSafeArea}
+        };
+    }
+    json slotsJson = json::array();
+    for (const auto& slot : wheel->Slots) {
+        slotsJson.push_back({
+            {"Item", static_cast<int>(slot.Item)},
+            {"Name", slot.Name},
+            {"WoodCost", slot.WoodCost},
+            {"ShortcutKey", slot.ShortcutKey}
+        });
+    }
+    wheelJson["Slots"] = std::move(slotsJson);
+    compsJson["UIRadialWheelComponent"] = std::move(wheelJson);
+}
+
 void SerializeUILabels(const GameObject* go, json& compsJson) {
     auto uiLabels = go->GetComponents<UILabel>();
     if (uiLabels.empty()) return;
@@ -815,6 +879,8 @@ static const ComponentSerializerFn s_ComponentSerializers[] = {
     SerializeUIPanels,
     SerializeUILabels,
     SerializeUIButtonComponent,
+    SerializeUIMinimapComponent,
+    SerializeUIRadialWheelComponent,
     SerializeAudioSource,
     SerializeAnimator
 };
@@ -1296,6 +1362,62 @@ void DeserializeUIButtonComponent(GameObject* go, const json& j, const std::stri
     btn->RightNeighborUUID = j.value("RightNeighborUUID", uint64_t(0));
 }
 
+void DeserializeUIMinimapComponent(GameObject* go, const json& j, const std::string&) {
+    if (!j.is_object()) return;
+    auto* minimap = go->AddComponent<UIMinimapComponent>();
+    minimap->useRectTransform = j.value("UseRectTransform", true);
+    minimap->pinSize = j.value("PinSize", 8.0f);
+    if (j.contains("FrameColor")) minimap->frameColor = AsVec4(j["FrameColor"], minimap->frameColor);
+    if (j.contains("PlayerPinColor")) minimap->playerPinColor = AsVec4(j["PlayerPinColor"], minimap->playerPinColor);
+    if (j.contains("RectTransform")) {
+        const auto& rtJson = j["RectTransform"];
+        minimap->rectTransform.Anchor = static_cast<UIAnchor>(rtJson.value("Anchor", 0));
+        minimap->rectTransform.PortraitAnchorOverride = static_cast<UIAnchor>(rtJson.value("PortraitAnchorOverride", 0));
+        minimap->rectTransform.UsePortraitOverride = rtJson.value("UsePortraitOverride", false);
+        if (rtJson.contains("Pivot")) minimap->rectTransform.Pivot = AsVec2(rtJson["Pivot"], minimap->rectTransform.Pivot);
+        if (rtJson.contains("AnchoredOffset")) minimap->rectTransform.AnchoredOffset = AsVec2(rtJson["AnchoredOffset"], minimap->rectTransform.AnchoredOffset);
+        if (rtJson.contains("Size")) minimap->rectTransform.Size = AsVec2(rtJson["Size"], minimap->rectTransform.Size);
+        minimap->rectTransform.ZOrder = rtJson.value("ZOrder", 20);
+        minimap->rectTransform.IgnoreSafeArea = rtJson.value("IgnoreSafeArea", false);
+    }
+    if (j.contains("FrameTexturePath") && j["FrameTexturePath"].is_string()) {
+        std::string path = j["FrameTexturePath"].get<std::string>();
+        if (!path.empty()) {
+            minimap->frameTexture = ResourceManager::Load<Texture>(path);
+        }
+    }
+}
+
+void DeserializeUIRadialWheelComponent(GameObject* go, const json& j, const std::string&) {
+    if (!j.is_object()) return;
+    auto* wheel = go->AddComponent<UIRadialWheelComponent>();
+    wheel->useRectTransform = j.value("UseRectTransform", true);
+    wheel->SlowMoTimeScale = j.value("SlowMoTimeScale", 0.15f);
+    wheel->AvailableWood = j.value("AvailableWood", 0u);
+    if (j.contains("RectTransform")) {
+        const auto& rtJson = j["RectTransform"];
+        wheel->rectTransform.Anchor = static_cast<UIAnchor>(rtJson.value("Anchor", 0));
+        wheel->rectTransform.PortraitAnchorOverride = static_cast<UIAnchor>(rtJson.value("PortraitAnchorOverride", 0));
+        wheel->rectTransform.UsePortraitOverride = rtJson.value("UsePortraitOverride", false);
+        if (rtJson.contains("Pivot")) wheel->rectTransform.Pivot = AsVec2(rtJson["Pivot"], wheel->rectTransform.Pivot);
+        if (rtJson.contains("AnchoredOffset")) wheel->rectTransform.AnchoredOffset = AsVec2(rtJson["AnchoredOffset"], wheel->rectTransform.AnchoredOffset);
+        if (rtJson.contains("Size")) wheel->rectTransform.Size = AsVec2(rtJson["Size"], wheel->rectTransform.Size);
+        wheel->rectTransform.ZOrder = rtJson.value("ZOrder", 100);
+        wheel->rectTransform.IgnoreSafeArea = rtJson.value("IgnoreSafeArea", false);
+    }
+    if (j.contains("Slots") && j["Slots"].is_array()) {
+        size_t idx = 0;
+        for (const auto& slotJson : j["Slots"]) {
+            if (idx >= wheel->Slots.size()) break;
+            wheel->Slots[idx].Item = static_cast<RadialWheelItem>(slotJson.value("Item", 0));
+            wheel->Slots[idx].Name = slotJson.value("Name", wheel->Slots[idx].Name);
+            wheel->Slots[idx].WoodCost = slotJson.value("WoodCost", wheel->Slots[idx].WoodCost);
+            wheel->Slots[idx].ShortcutKey = slotJson.value("ShortcutKey", wheel->Slots[idx].ShortcutKey);
+            idx++;
+        }
+    }
+}
+
 void DeserializeUIPanels(GameObject* go, const json& j, const std::string&) {
     if (j.is_array()) {
         for (const auto& panelJson : j) {
@@ -1499,6 +1621,10 @@ static const ComponentDeserializerEntry s_ComponentDeserializers[] = {
     { "UILabel",          DeserializeUILabels },
     { "UIButtonComponent", DeserializeUIButtonComponent },
     { "UIButton",          DeserializeUIButtonComponent },
+    { "UIMinimapComponent", DeserializeUIMinimapComponent },
+    { "UIMinimap",          DeserializeUIMinimapComponent },
+    { "UIRadialWheelComponent", DeserializeUIRadialWheelComponent },
+    { "UIRadialWheel",          DeserializeUIRadialWheelComponent },
     { "AudioSource",      DeserializeAudioSource },
     { "Animator",         DeserializeAnimator },
 };

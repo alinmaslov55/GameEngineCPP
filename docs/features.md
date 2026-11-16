@@ -218,7 +218,7 @@ flowchart TD
 | **`UIX-01`** | Resolution-Independent Canvas, Anchors & Safe Area | `DONE` | **P0** | W0 | *None (Root)* | `CAM-01` | `UIX-02`, `UIX-03`, `EDT-01` |
 | **`UIX-02`** | 9-Slice Frames, Clipped Bars & Radial Gauges | `DONE` | **P1** | W1 | `UIX-01` | `INP-01` (gamepad nav) | `UIX-04`, HUD HP/Torch/Rune widgets |
 | **`UIX-03`** | BMFont (`.fnt`) Loader & Styled Text Layout | `DONE` | **P1** | W1 | `UIX-01` | `CAM-01` (world prompts) | Gothic HUD counters, Shrine upgrade cards |
-| **`UIX-04`** | Tactical Radial Drop Wheel & Fog-of-War Minimap | `TODO` | **P1** | W2 | `UIX-02`, `INP-01`, `TER-01`, `LGT-03` | `ECS-02` (wheel slow-mo) | Mid-combat building & chunk exploration |
+| **`UIX-04`** | Tactical Radial Drop Wheel & Fog-of-War Minimap | `DONE` | **P1** | W2 | `UIX-02`, `INP-01`, `TER-01`, `LGT-03` | `ECS-02` (wheel slow-mo) | Mid-combat building & chunk exploration |
 | **`AUD-01`** | OGG Vorbis Decoder & Streaming Music Playback | `TODO` | **P0** | W0 | *None (Root)* | `JobSystem` | `AUD-02`, `AUD-03` |
 | **`AUD-02`** | Polyphonic Mixer, Buses, Pitch & 3D Panning | `TODO` | **P0** | W1 | `AUD-01` | `TER-04` (surface foley) | `AUD-03`, `SAV-02` |
 | **`AUD-03`** | Multi-Stem Adaptive Music Director | `TODO` | **P1** | W2 | `AUD-01`, `AUD-02` | `LGT-03` (fuel % state) | Dynamic 3-layer Ash Frenzy soundtrack |
@@ -1143,7 +1143,7 @@ flowchart TD
 ---
 
 #### `UIX-04` — Tactical Radial Drop Wheel & Circular Fog-of-War Minimap
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `UIX-02`, `INP-01`, `TER-01`, `LGT-03` | Soft: `ECS-02`
 - **Proposed C++ Specification:**
   - **`UIRadialWheelComponent`:**

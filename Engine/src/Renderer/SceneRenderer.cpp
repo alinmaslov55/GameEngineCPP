@@ -20,6 +20,8 @@
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/UI/UIPanel.h"
 #include "Engine/UI/UILabel.h"
+#include "Engine/UI/UIMinimapComponent.h"
+#include "Engine/UI/UIRadialWheelComponent.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Core/Time.h"
 #include "Engine/Utils/Logger.h"
@@ -127,6 +129,8 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     static const auto kParticleMask = Detail::GetComponentTypeMask<ParticleSystem>();
     static const auto kUIPanelMask = Detail::GetComponentTypeMask<UIPanel>();
     static const auto kUILabelMask = Detail::GetComponentTypeMask<UILabel>();
+    static const auto kUIMinimapMask = Detail::GetComponentTypeMask<UIMinimapComponent>();
+    static const auto kUIRadialWheelMask = Detail::GetComponentTypeMask<UIRadialWheelComponent>();
 
     ctx.activeCam = overrideCamera;
     if (!ctx.activeCam) {
@@ -192,6 +196,8 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     m_ParticleScratch.clear();
     m_UIPanelScratch.clear();
     m_UILabelScratch.clear();
+    m_UIMinimapScratch.clear();
+    m_UIRadialWheelScratch.clear();
 
     // Pass 1: Scene-level singletons, point lights, global wind field, and dynamic foliage colliders
     for (auto& gameObject : gameObjects) {
@@ -509,6 +515,18 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
         if (mask & kUILabelMask) {
             for (auto* label : gameObject->GetComponents<UILabel>()) {
                 m_UILabelScratch.push_back(label);
+            }
+        }
+
+        if (mask & kUIMinimapMask) {
+            for (auto* minimap : gameObject->GetComponents<UIMinimapComponent>()) {
+                m_UIMinimapScratch.push_back(minimap);
+            }
+        }
+
+        if (mask & kUIRadialWheelMask) {
+            for (auto* wheel : gameObject->GetComponents<UIRadialWheelComponent>()) {
+                m_UIRadialWheelScratch.push_back(wheel);
             }
         }
     }
@@ -910,6 +928,70 @@ void SceneRenderer::RenderPassScreenUI() {
             } else {
                 static const glm::vec2 kDefaultUV[4] = { {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} };
                 Renderer2D::DrawQuad(positions, kDefaultUV, uiLabel->color);
+            }
+        }
+    }
+
+    // Pass: Minimap HUD widgets
+    for (UIMinimapComponent* minimap : m_UIMinimapScratch) {
+        if (!minimap) continue;
+        glm::vec2 pos = { 0.0f, 0.0f };
+        glm::vec2 sz  = { 220.0f, 220.0f };
+        if (minimap->useRectTransform) {
+            UICanvas::ResolveScreenRect(minimap->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
+        }
+
+        const auto quads = minimap->GenerateQuads(pos, sz, dpiScale);
+        for (const auto& quad : quads) {
+            const glm::vec3 positions[4] = {
+                { quad.Vertices[0].Position.x, quad.Vertices[0].Position.y, 0.0f },
+                { quad.Vertices[1].Position.x, quad.Vertices[1].Position.y, 0.0f },
+                { quad.Vertices[2].Position.x, quad.Vertices[2].Position.y, 0.0f },
+                { quad.Vertices[3].Position.x, quad.Vertices[3].Position.y, 0.0f }
+            };
+            const glm::vec2 texCoords[4] = {
+                quad.Vertices[0].TexCoord,
+                quad.Vertices[1].TexCoord,
+                quad.Vertices[2].TexCoord,
+                quad.Vertices[3].TexCoord
+            };
+
+            if (minimap->fogSystem && minimap->fogSystem->GetFogTexture() && minimap->fogSystem->GetFogTexture()->GetRendererID() != 0) {
+                Renderer2D::DrawQuad(positions, texCoords, minimap->fogSystem->GetFogTexture(), quad.Color);
+            } else {
+                Renderer2D::DrawQuad(positions, texCoords, quad.Color);
+            }
+        }
+    }
+
+    // Pass: Tactical Radial Drop Wheels (when open)
+    for (UIRadialWheelComponent* wheel : m_UIRadialWheelScratch) {
+        if (!wheel || !wheel->IsOpen) continue;
+        glm::vec2 pos = { 0.0f, 0.0f };
+        glm::vec2 sz  = { 360.0f, 360.0f };
+        if (wheel->useRectTransform) {
+            UICanvas::ResolveScreenRect(wheel->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
+        }
+
+        const auto quads = wheel->GenerateQuads(pos, sz, dpiScale);
+        for (const auto& quad : quads) {
+            const glm::vec3 positions[4] = {
+                { quad.Vertices[0].Position.x, quad.Vertices[0].Position.y, 0.0f },
+                { quad.Vertices[1].Position.x, quad.Vertices[1].Position.y, 0.0f },
+                { quad.Vertices[2].Position.x, quad.Vertices[2].Position.y, 0.0f },
+                { quad.Vertices[3].Position.x, quad.Vertices[3].Position.y, 0.0f }
+            };
+            const glm::vec2 texCoords[4] = {
+                quad.Vertices[0].TexCoord,
+                quad.Vertices[1].TexCoord,
+                quad.Vertices[2].TexCoord,
+                quad.Vertices[3].TexCoord
+            };
+
+            if (wheel->WheelTexture && wheel->WheelTexture->GetRendererID() != 0) {
+                Renderer2D::DrawQuad(positions, texCoords, wheel->WheelTexture, quad.Color);
+            } else {
+                Renderer2D::DrawQuad(positions, texCoords, quad.Color);
             }
         }
     }
