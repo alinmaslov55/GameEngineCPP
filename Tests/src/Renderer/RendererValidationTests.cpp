@@ -1,12 +1,12 @@
 #include <gtest/gtest.h>
-#include "Engine/Renderer/Buffer.h"
-#include "Engine/Renderer/Framebuffer.h"
+#include "Engine/Renderer/RHI/Buffer.h"
+#include "Engine/Renderer/RHI/Framebuffer.h"
 #include "Engine/Renderer/PostProcessor.h"
 #include "Engine/Renderer/Renderer2D.h"
-#include "Engine/Renderer/Shader.h"
+#include "Engine/Renderer/RHI/Shader.h"
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/Texture2DArray.h"
-#include "Engine/Renderer/VertexArray.h"
+#include "Engine/Renderer/RHI/VertexArray.h"
 #include "Engine/Utils/Logger.h"
 
 #include <cstdint>

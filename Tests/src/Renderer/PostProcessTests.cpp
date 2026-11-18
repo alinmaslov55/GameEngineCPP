@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "Engine/Scene/PostProcessComponent.h"
+#include "Engine/Scene/Components/PostProcessComponent.h"
 #include "Engine/Renderer/PostProcessor.h"
 #include <cmath>
 

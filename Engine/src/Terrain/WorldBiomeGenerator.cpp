@@ -1,5 +1,5 @@
-#include "Engine/Scene/WorldBiomeGenerator.h"
-#include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Terrain/WorldBiomeGenerator.h"
+#include "Engine/Terrain/TerrainComponent.h"
 #include "Engine/Utils/Logger.h"
 
 #include <algorithm>

@@ -3,8 +3,8 @@
 
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Renderer/SceneLighting.h"
-#include "Engine/Scene/TerrainComponent.h"
-#include "Engine/Scene/TerrainChunkManager.h"
+#include "Engine/Terrain/TerrainComponent.h"
+#include "Engine/Terrain/TerrainChunkManager.h"
 
 #include <glm/glm.hpp>
 

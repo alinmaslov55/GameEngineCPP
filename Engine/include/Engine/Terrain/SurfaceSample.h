@@ -1,7 +1,7 @@
 #ifndef SCENE_SURFACESAMPLE_H
 #define SCENE_SURFACESAMPLE_H
 
-#include "Engine/Scene/WorldBiomeGenerator.h"
+#include "Engine/Terrain/WorldBiomeGenerator.h"
 #include <cstdint>
 
 namespace Engine {

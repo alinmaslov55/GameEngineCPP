@@ -5,7 +5,7 @@
 #include "Panels/TilePalettePanel.h"
 
 #include <Engine/Renderer/EditorCamera.h>
-#include <Engine/Renderer/Framebuffer.h>
+#include <Engine/Renderer/RHI/Framebuffer.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Scene.h>
 

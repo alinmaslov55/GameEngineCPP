@@ -1,7 +1,7 @@
 #ifndef RENDERER_POSTPROCESSOR_H
 #define RENDERER_POSTPROCESSOR_H
 
-#include "Engine/Scene/PostProcessComponent.h"
+#include "Engine/Scene/Components/PostProcessComponent.h"
 
 #include <cstdint>
 #include <glm/glm.hpp>

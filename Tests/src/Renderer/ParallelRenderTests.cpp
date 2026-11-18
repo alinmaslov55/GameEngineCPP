@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
-#include "Engine/Scene/StandeeCommand.h"
+#include "Engine/Renderer/StandeeCommand.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Core/JobSystem.h"

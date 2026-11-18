@@ -4,7 +4,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/Scene.h"
-#include "Engine/Scene/SurfaceSample.h"
+#include "Engine/Terrain/SurfaceSample.h"
 #include "Engine/Utils/Logger.h"
 #include "PhysicsInternalHelpers.h"
 

@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "Engine/Scene/Tilemap.h"
+#include "Engine/Terrain/Tilemap.h"
 
 namespace {
 

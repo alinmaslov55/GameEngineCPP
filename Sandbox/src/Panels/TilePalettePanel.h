@@ -3,7 +3,7 @@
 
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Scene.h>
-#include <Engine/Scene/TerrainComponent.h>
+#include <Engine/Terrain/TerrainComponent.h>
 
 #include <cstdint>
 #include <memory>

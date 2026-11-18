@@ -4,7 +4,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/LightQuerySystem.h"
-#include "Engine/Scene/SurfaceSample.h"
+#include "Engine/Terrain/SurfaceSample.h"
 #include "Engine/Physics/Box2DTask.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Core/ThreadAffinity.h"

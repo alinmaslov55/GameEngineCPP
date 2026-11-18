@@ -1,14 +1,14 @@
-#include "Panels/InspectorPanel.h"
+#include "Panels/Inspector/InspectorPanel.h"
 
 #include <Engine/Core/ResourceManager.h>
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/Texture.h>
-#include <Engine/Scene/CameraComponent.h>
-#include <Engine/Scene/FoliageWindComponents.h>
+#include <Engine/Scene/Components/CameraComponent.h>
+#include <Engine/Scene/Components/FoliageWindComponents.h>
 #include <Engine/Scene/GameObject.h>
-#include <Engine/Scene/LightComponents.h>
-#include <Engine/Scene/PostProcessComponent.h>
+#include <Engine/Scene/Components/LightComponents.h>
+#include <Engine/Scene/Components/PostProcessComponent.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Utils/Logger.h>
 

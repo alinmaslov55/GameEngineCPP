@@ -7,10 +7,10 @@
 #include <Engine/Core/ResourceManager.h>
 #include <Engine/ImGui/ImGuiLayer.h>
 #include <Engine/Particles/ParticleSystem.h>
-#include <Engine/Renderer/Renderer.h>
+#include <Engine/Renderer/RHI/Renderer.h>
 #include <Engine/Renderer/Renderer2D.h>
 #include <Engine/Renderer/TerrainRenderer.h>
-#include <Engine/Scene/FoliageWindComponents.h>
+#include <Engine/Scene/Components/FoliageWindComponents.h>
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/SceneSerializer.h>
 #include <Engine/Utils/Logger.h>

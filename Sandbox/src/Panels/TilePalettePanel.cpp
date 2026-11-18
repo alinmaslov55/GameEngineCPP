@@ -1,7 +1,7 @@
 #include "Panels/TilePalettePanel.h"
 
-#include <Engine/Scene/Tilemap.h>
-#include <Engine/Scene/TerrainChunkManager.h>
+#include <Engine/Terrain/Tilemap.h>
+#include <Engine/Terrain/TerrainChunkManager.h>
 #include <Engine/Utils/Logger.h>
 
 #include <imgui.h>

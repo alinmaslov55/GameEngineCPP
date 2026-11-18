@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/Components/LightComponents.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
@@ -8,7 +8,7 @@
 #include "Engine/Physics/PhysicsLayer.h"
 #include "Engine/Renderer/SceneLighting.h"
 #include "Engine/Renderer/SceneRenderer.h"
-#include "Engine/Renderer/Renderer.h"
+#include "Engine/Renderer/RHI/Renderer.h"
 #include "Engine/Renderer/ShadowMap.h"
 #include "Engine/Renderer/TorchShadowMap.h"
 #include <cmath>

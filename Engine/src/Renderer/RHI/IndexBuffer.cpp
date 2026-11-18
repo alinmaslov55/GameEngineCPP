@@ -1,4 +1,4 @@
-#include "Engine/Renderer/IndexBuffer.h"
+#include "Engine/Renderer/RHI/IndexBuffer.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>

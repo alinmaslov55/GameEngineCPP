@@ -2,7 +2,7 @@
 #define SCENE_WORLDBIOMEGENERATOR_H
 
 #include "Engine/Math/NoiseGenerator.h"
-#include "Engine/Scene/WorldGenTypes.h"
+#include "Engine/Terrain/WorldGenTypes.h"
 
 #include <cstdint>
 #include <vector>

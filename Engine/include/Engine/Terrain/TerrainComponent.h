@@ -3,7 +3,7 @@
 
 #include "Engine/Scene/Component.h"
 #include "Engine/Renderer/Texture.h"
-#include "Engine/Scene/SurfaceSample.h"
+#include "Engine/Terrain/SurfaceSample.h"
 
 #include <array>
 #include <cstdint>

@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
-#include "Engine/Scene/TerrainComponent.h"
-#include "Engine/Scene/TerrainChunkManager.h"
-#include "Engine/Scene/WorldBiomeGenerator.h"
+#include "Engine/Terrain/TerrainComponent.h"
+#include "Engine/Terrain/TerrainChunkManager.h"
+#include "Engine/Terrain/WorldBiomeGenerator.h"
 #include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/Scene.h"
@@ -12,8 +12,8 @@
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Renderer/Texture2DArray.h"
-#include "Engine/Scene/CameraComponent.h"
-#include "Engine/Scene/FoliageWindComponents.h"
+#include "Engine/Scene/Components/CameraComponent.h"
+#include "Engine/Scene/Components/FoliageWindComponents.h"
 #include <array>
 #include <cmath>
 #include <filesystem>

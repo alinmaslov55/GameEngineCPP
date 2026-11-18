@@ -1,4 +1,4 @@
-#include "Engine/Renderer/VertexArray.h"
+#include "Engine/Renderer/RHI/VertexArray.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
 #include <utility>

@@ -1,7 +1,7 @@
 #ifndef RENDERER_RENDERER_H
 #define RENDERER_RENDERER_H
 
-#include "Engine/Renderer/VertexArray.h"
+#include "Engine/Renderer/RHI/VertexArray.h"
 #include "Engine/Renderer/SceneLighting.h"
 
 #include <cstdint>

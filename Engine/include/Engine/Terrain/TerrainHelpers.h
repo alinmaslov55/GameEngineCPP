@@ -1,8 +1,8 @@
 #ifndef SCENE_TERRAINHELPERS_H
 #define SCENE_TERRAINHELPERS_H
 
-#include "Engine/Scene/TerrainComponent.h"
-#include "Engine/Scene/SurfaceSample.h"
+#include "Engine/Terrain/TerrainComponent.h"
+#include "Engine/Terrain/SurfaceSample.h"
 
 #include <algorithm>
 #include <array>

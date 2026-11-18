@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "Engine/Renderer/Buffer.h"
+#include "Engine/Renderer/RHI/Buffer.h"
 
 namespace {
 

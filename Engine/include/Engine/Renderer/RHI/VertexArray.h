@@ -2,7 +2,7 @@
 #define RENDERER_VERTEXARRAY_H
 #include <memory>
 #include <vector>
-#include "Engine/Renderer/Buffer.h"
+#include "Engine/Renderer/RHI/Buffer.h"
 
 namespace Engine {
 class VertexArray {

@@ -1,5 +1,5 @@
-#include "Engine/Renderer/Renderer.h"
-#include "Engine/Renderer/Buffer.h"
+#include "Engine/Renderer/RHI/Renderer.h"
+#include "Engine/Renderer/RHI/Buffer.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
 #include <algorithm>

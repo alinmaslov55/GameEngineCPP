@@ -1,4 +1,4 @@
-#include "Engine/Scene/CameraComponent.h"
+#include "Engine/Scene/Components/CameraComponent.h"
 #include "Engine/Core/Time.h"
 #include "Engine/Utils/Logger.h"
 

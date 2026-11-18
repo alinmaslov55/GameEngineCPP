@@ -1,6 +1,6 @@
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/DDSLoader.h"
-#include "Engine/Renderer/GLUtils.h"
+#include "Engine/Renderer/RHI/GLUtils.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
 #include <stb_image.h>

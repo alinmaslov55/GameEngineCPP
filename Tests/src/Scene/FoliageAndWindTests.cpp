@@ -1,5 +1,5 @@
 #include <gtest/gtest.h>
-#include "Engine/Scene/FoliageWindComponents.h"
+#include "Engine/Scene/Components/FoliageWindComponents.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"

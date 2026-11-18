@@ -3,7 +3,7 @@
 
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Renderer/SceneLighting.h"
-#include "Engine/Scene/StandeeCommand.h"
+#include "Engine/Renderer/StandeeCommand.h"
 
 #include <vector>
 #include <unordered_map>

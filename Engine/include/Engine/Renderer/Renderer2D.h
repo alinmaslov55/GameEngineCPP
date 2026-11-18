@@ -6,7 +6,7 @@
 #include "Engine/Renderer/SceneLighting.h"
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/SubTexture2D.h"
-#include "Engine/Scene/StandeeCommand.h"
+#include "Engine/Renderer/StandeeCommand.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Math/BillboardMath.h"
 

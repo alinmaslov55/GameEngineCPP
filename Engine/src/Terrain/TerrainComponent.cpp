@@ -1,5 +1,5 @@
-#include "Engine/Scene/TerrainComponent.h"
-#include "Engine/Scene/TerrainHelpers.h"
+#include "Engine/Terrain/TerrainComponent.h"
+#include "Engine/Terrain/TerrainHelpers.h"
 #include "Engine/Utils/Logger.h"
 
 #include <stb_image.h>

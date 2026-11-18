@@ -2,7 +2,7 @@
 #define SCENE_PROCEDURALPROPFACTORY_H
 
 #include "Engine/Scene/EntityTag.h"
-#include "Engine/Scene/WorldBiomeGenerator.h"
+#include "Engine/Terrain/WorldBiomeGenerator.h"
 
 #include <cstdint>
 #include <glm/vec2.hpp>

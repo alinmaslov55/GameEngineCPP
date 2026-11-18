@@ -1,6 +1,6 @@
 #include "Engine/UI/MinimapFogSystem.h"
 #include "Engine/Scene/Scene.h"
-#include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/Components/LightComponents.h"
 #include "Engine/Scene/GameObject.h"
 #include <algorithm>
 #include <cmath>

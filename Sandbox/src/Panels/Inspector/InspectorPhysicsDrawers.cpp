@@ -1,4 +1,4 @@
-#include "Panels/InspectorPanel.h"
+#include "Panels/Inspector/InspectorPanel.h"
 
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Physics/PhysicsLayer.h>

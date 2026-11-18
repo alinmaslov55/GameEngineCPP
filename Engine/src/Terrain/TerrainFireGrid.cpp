@@ -1,4 +1,4 @@
-#include "Engine/Scene/TerrainFireGrid.h"
+#include "Engine/Terrain/TerrainFireGrid.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glm/geometric.hpp>

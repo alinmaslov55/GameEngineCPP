@@ -6,10 +6,10 @@
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/TerrainRenderer.h>
 #include <Engine/Renderer/Texture.h>
-#include <Engine/Scene/FoliageWindComponents.h>
-#include <Engine/Scene/TerrainComponent.h>
-#include <Engine/Scene/TerrainChunkManager.h>
-#include <Engine/Scene/Tilemap.h>
+#include <Engine/Scene/Components/FoliageWindComponents.h>
+#include <Engine/Terrain/TerrainComponent.h>
+#include <Engine/Terrain/TerrainChunkManager.h>
+#include <Engine/Terrain/Tilemap.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Utils/Logger.h>
 

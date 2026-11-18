@@ -5,7 +5,7 @@
 #include "Engine/Physics/PhysicsWorld2D.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
-#include "Engine/Scene/Tilemap.h"
+#include "Engine/Terrain/Tilemap.h"
 #include "Engine/Scene/Transform.h"
 #include <box2d/box2d.h>
 

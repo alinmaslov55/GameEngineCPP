@@ -3,7 +3,7 @@
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/GameObject.h"
-#include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Terrain/TerrainComponent.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Utils/Logger.h"
 

@@ -1,5 +1,5 @@
-#include "Engine/Renderer/Framebuffer.h"
-#include "Engine/Renderer/GLUtils.h"
+#include "Engine/Renderer/RHI/Framebuffer.h"
+#include "Engine/Renderer/RHI/GLUtils.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>

@@ -1,7 +1,7 @@
 #ifndef RENDERER_VERTEXBUFFER_H
 #define RENDERER_VERTEXBUFFER_H
 
-#include "Engine/Renderer/BufferLayout.h"
+#include "Engine/Renderer/RHI/BufferLayout.h"
 
 #include <cstdint>
 #include <span>

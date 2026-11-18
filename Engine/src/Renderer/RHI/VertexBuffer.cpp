@@ -1,4 +1,4 @@
-#include "Engine/Renderer/VertexBuffer.h"
+#include "Engine/Renderer/RHI/VertexBuffer.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>

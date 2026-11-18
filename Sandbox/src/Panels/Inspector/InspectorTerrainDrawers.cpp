@@ -1,11 +1,11 @@
-#include "Panels/InspectorPanel.h"
+#include "Panels/Inspector/InspectorPanel.h"
 
 #include <Engine/Core/ResourceManager.h>
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/GameObject.h>
-#include <Engine/Scene/TerrainChunkManager.h>
-#include <Engine/Scene/TerrainComponent.h>
-#include <Engine/Scene/Tilemap.h>
+#include <Engine/Terrain/TerrainChunkManager.h>
+#include <Engine/Terrain/TerrainComponent.h>
+#include <Engine/Terrain/Tilemap.h>
 #include <Engine/Utils/Logger.h>
 
 #include <imgui.h>

@@ -2,7 +2,7 @@
 #include "Engine/Core/Time.h"
 #include "Engine/Physics/PhysicsQueries.h"
 #include "Engine/Scene/GameObject.h"
-#include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/Components/LightComponents.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Transform.h"
 

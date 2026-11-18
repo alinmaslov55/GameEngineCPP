@@ -3,7 +3,7 @@
 
 #include "Panels/ConsolePanel.h"
 #include "Panels/ContentBrowserPanel.h"
-#include "Panels/InspectorPanel.h"
+#include "Panels/Inspector/InspectorPanel.h"
 #include "Panels/ProfilerPanel.h"
 #include "Panels/SceneHierarchyPanel.h"
 #include "Panels/SceneViewportPanel.h"
@@ -11,7 +11,7 @@
 
 #include <Engine/Core/Layer.h>
 #include <Engine/Renderer/EditorCamera.h>
-#include <Engine/Renderer/Framebuffer.h>
+#include <Engine/Renderer/RHI/Framebuffer.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Scene.h>
 

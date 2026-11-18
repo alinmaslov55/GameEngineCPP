@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Renderer/SpriteRenderer.h"
-#include "Engine/Scene/StandeeCommand.h"
+#include "Engine/Renderer/StandeeCommand.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/SceneSerializer.h"

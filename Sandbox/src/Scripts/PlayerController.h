@@ -7,7 +7,7 @@
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Scene/Component.h>
-#include <Engine/Scene/FoliageWindComponents.h>
+#include <Engine/Scene/Components/FoliageWindComponents.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/Transform.h>

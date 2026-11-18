@@ -2,7 +2,7 @@
 #define UI_MINIMAPFOGSYSTEM_H
 
 #include "Engine/Renderer/Texture.h"
-#include "Engine/Scene/WorldBiomeGenerator.h"
+#include "Engine/Terrain/WorldBiomeGenerator.h"
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <memory>

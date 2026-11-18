@@ -1,6 +1,6 @@
 #include "Engine/Renderer/PostProcessor.h"
-#include "Engine/Renderer/GLUtils.h"
-#include "Engine/Renderer/Shader.h"
+#include "Engine/Renderer/RHI/GLUtils.h"
+#include "Engine/Renderer/RHI/Shader.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Utils/Logger.h"
 

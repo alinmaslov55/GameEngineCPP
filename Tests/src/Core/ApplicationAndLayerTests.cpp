@@ -4,7 +4,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
 #include "Engine/Scene/GameObject.h"
-#include "Engine/Scene/Tilemap.h"
+#include "Engine/Terrain/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include <filesystem>
 #include <memory>

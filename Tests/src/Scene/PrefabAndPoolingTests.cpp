@@ -5,11 +5,11 @@
 #include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Renderer/SpriteRenderer.h"
-#include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/Components/LightComponents.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Animation/Animator.h"
-#include "Engine/Scene/FoliageWindComponents.h"
+#include "Engine/Scene/Components/FoliageWindComponents.h"
 
 #include <box2d/box2d.h>
 #include <filesystem>

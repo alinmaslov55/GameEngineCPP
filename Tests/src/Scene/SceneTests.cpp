@@ -4,7 +4,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Physics/PhysicsWorld2D.h"
 #include "Engine/Physics/PhysicsComponents.h"
-#include "Engine/Scene/TerrainComponent.h"
+#include "Engine/Terrain/TerrainComponent.h"
 
 #include <thread>
 #include <type_traits>

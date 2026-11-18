@@ -1,7 +1,7 @@
-#include "Engine/Scene/ProceduralPropFactory.h"
+#include "Engine/Terrain/ProceduralPropFactory.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Physics/PhysicsLayer.h"
-#include "Engine/Scene/LightComponents.h"
+#include "Engine/Scene/Components/LightComponents.h"
 #include "Engine/Scene/Prefab.h"
 
 #include <nlohmann/json.hpp>

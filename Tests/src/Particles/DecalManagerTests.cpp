@@ -2,7 +2,7 @@
 #include "Engine/Particles/DecalManager.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Scene/Scene.h"
-#include "Engine/Scene/TerrainChunkManager.h"
+#include "Engine/Terrain/TerrainChunkManager.h"
 
 #include <cmath>
 

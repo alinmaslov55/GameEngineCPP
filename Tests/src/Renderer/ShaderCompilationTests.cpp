@@ -1,7 +1,7 @@
 #include <gtest/gtest.h>
 #include <glad/glad.h>
 #include <SDL3/SDL.h>
-#include "Engine/Renderer/Shader.h"
+#include "Engine/Renderer/RHI/Shader.h"
 #include <filesystem>
 #include <memory>
 

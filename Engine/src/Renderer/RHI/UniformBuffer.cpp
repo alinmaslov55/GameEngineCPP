@@ -1,4 +1,4 @@
-#include "Engine/Renderer/UniformBuffer.h"
+#include "Engine/Renderer/RHI/UniformBuffer.h"
 #include "Engine/Utils/Logger.h"
 
 #include <glad/glad.h>

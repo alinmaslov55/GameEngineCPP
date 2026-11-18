@@ -1,7 +1,7 @@
 #include "Scene/DemoScene.h"
 
-#include "CameraController.h"
-#include "PlayerController.h"
+#include "Scripts/CameraController.h"
+#include "Scripts/PlayerController.h"
 
 #include <Engine/Audio/AudioClip.h>
 #include <Engine/Audio/AudioSource.h>
@@ -11,12 +11,12 @@
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/SubTexture2D.h>
 #include <Engine/Renderer/Texture.h>
-#include <Engine/Scene/FoliageWindComponents.h>
-#include <Engine/Scene/LightComponents.h>
-#include <Engine/Scene/PostProcessComponent.h>
+#include <Engine/Scene/Components/FoliageWindComponents.h>
+#include <Engine/Scene/Components/LightComponents.h>
+#include <Engine/Scene/Components/PostProcessComponent.h>
 #include <Engine/Scene/SceneSerializer.h>
-#include <Engine/Scene/TerrainComponent.h>
-#include <Engine/Scene/Tilemap.h>
+#include <Engine/Terrain/TerrainComponent.h>
+#include <Engine/Terrain/Tilemap.h>
 #include <Engine/UI/Font.h>
 #include <Engine/UI/UILabel.h>
 #include <Engine/UI/UIPanel.h>
