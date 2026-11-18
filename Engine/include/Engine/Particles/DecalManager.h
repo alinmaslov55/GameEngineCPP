@@ -1,7 +1,7 @@
 #ifndef PARTICLES_DECALMANAGER_H
 #define PARTICLES_DECALMANAGER_H
 
-#include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Math/Frustum.h"
 #include "Engine/Renderer/SubTexture2D.h"
 
 #include <cstdint>

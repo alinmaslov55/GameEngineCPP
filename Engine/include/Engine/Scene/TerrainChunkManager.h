@@ -1,7 +1,7 @@
 #ifndef SCENE_TERRAINCHUNKMANAGER_H
 #define SCENE_TERRAINCHUNKMANAGER_H
 
-#include "Engine/Core/JobSystem.h"
+#include "Engine/Core/JobHandle.h"
 #include "Engine/Scene/Component.h"
 #include "Engine/Scene/TerrainComponent.h"
 #include "Engine/Scene/WorldBiomeGenerator.h"

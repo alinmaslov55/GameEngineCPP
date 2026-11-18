@@ -56,7 +56,7 @@
             "Name": "Sun Light",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1025016698434669245
+            "UUID": 10047128050284763949
         },
         {
             "Components": {
@@ -119,7 +119,7 @@
             "Name": "Post Process Volume",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 5820510859076178013
+            "UUID": 2044931868424019930
         },
         {
             "Components": {
@@ -157,7 +157,7 @@
             "Name": "Wind Zone",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13824837944985826556
+            "UUID": 13596653260830455072
         },
         {
             "Components": {
@@ -231,7 +231,7 @@
             "Name": "Terrain",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3522951692436498533
+            "UUID": 13608862262809397939
         },
         {
             "Components": {
@@ -517,7 +517,7 @@
             "Name": "Map",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 2768898762278711642
+            "UUID": 13359855545474200916
         },
         {
             "Components": {
@@ -545,8 +545,22 @@
                 },
                 "ParticleSystem": {
                     "AutoEmit": false,
+                    "CollideGroundY": false,
                     "EmissiveParticles": false,
                     "EmitRate": 8.0,
+                    "Flipbook": {
+                        "Columns": 1,
+                        "CyclesOverLifetime": 1.0,
+                        "Enabled": false,
+                        "RandomStartFrame": false,
+                        "Rows": 1,
+                        "TotalFrames": 1
+                    },
+                    "GravityY": 0.0,
+                    "GroundBounceRestitution": 0.4000000059604645,
+                    "GroundPlaneY": 0.019999999552965164,
+                    "LinearDrag": 0.0,
+                    "Orientation": 0,
                     "PoolSize": 500,
                     "SpawnOffset": [
                         0.0,
@@ -567,6 +581,8 @@
                             0.0
                         ],
                         "LifeTime": 1.149999976158142,
+                        "RandomRotation": true,
+                        "Rotation": 0.0,
                         "SizeBegin": 0.11999999731779099,
                         "SizeEnd": 0.019999999552965164,
                         "SizeVariation": 0.03999999910593033,
@@ -639,6 +655,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -686,7 +704,7 @@
             "Name": "Player",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 7739188174949604364
+            "UUID": 12201940418912102142
         },
         {
             "Components": {
@@ -743,6 +761,8 @@
                     "Emissive": 0.2800000011920929,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -777,7 +797,7 @@
             "Name": "Cult Shrine",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 10644103264772826740
+            "UUID": 4119651650940909555
         },
         {
             "Components": {
@@ -802,8 +822,22 @@
                 },
                 "ParticleSystem": {
                     "AutoEmit": true,
+                    "CollideGroundY": false,
                     "EmissiveParticles": true,
                     "EmitRate": 7.0,
+                    "Flipbook": {
+                        "Columns": 1,
+                        "CyclesOverLifetime": 1.0,
+                        "Enabled": false,
+                        "RandomStartFrame": false,
+                        "Rows": 1,
+                        "TotalFrames": 1
+                    },
+                    "GravityY": 0.0,
+                    "GroundBounceRestitution": 0.4000000059604645,
+                    "GroundPlaneY": 0.019999999552965164,
+                    "LinearDrag": 0.0,
+                    "Orientation": 0,
                     "PoolSize": 120,
                     "SpawnOffset": [
                         0.0,
@@ -824,6 +858,8 @@
                             0.0
                         ],
                         "LifeTime": 1.149999976158142,
+                        "RandomRotation": true,
+                        "Rotation": 0.0,
                         "SizeBegin": 0.09000000357627869,
                         "SizeEnd": 0.014999999664723873,
                         "SizeVariation": 0.029999999329447746,
@@ -873,6 +909,8 @@
                     "Emissive": 0.8500000238418579,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -907,7 +945,7 @@
             "Name": "Ritual Brazier 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 9478010786549431587
+            "UUID": 7026219209082689638
         },
         {
             "Components": {
@@ -932,8 +970,22 @@
                 },
                 "ParticleSystem": {
                     "AutoEmit": true,
+                    "CollideGroundY": false,
                     "EmissiveParticles": true,
                     "EmitRate": 7.0,
+                    "Flipbook": {
+                        "Columns": 1,
+                        "CyclesOverLifetime": 1.0,
+                        "Enabled": false,
+                        "RandomStartFrame": false,
+                        "Rows": 1,
+                        "TotalFrames": 1
+                    },
+                    "GravityY": 0.0,
+                    "GroundBounceRestitution": 0.4000000059604645,
+                    "GroundPlaneY": 0.019999999552965164,
+                    "LinearDrag": 0.0,
+                    "Orientation": 0,
                     "PoolSize": 120,
                     "SpawnOffset": [
                         0.0,
@@ -954,6 +1006,8 @@
                             0.0
                         ],
                         "LifeTime": 1.149999976158142,
+                        "RandomRotation": true,
+                        "Rotation": 0.0,
                         "SizeBegin": 0.09000000357627869,
                         "SizeEnd": 0.014999999664723873,
                         "SizeVariation": 0.029999999329447746,
@@ -1003,6 +1057,8 @@
                     "Emissive": 0.8500000238418579,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1037,7 +1093,7 @@
             "Name": "Ritual Brazier 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13717931975815293870
+            "UUID": 6781967426181750105
         },
         {
             "Components": {
@@ -1075,6 +1131,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1109,7 +1167,7 @@
             "Name": "Pine Tree 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 14829223771100713072
+            "UUID": 13452235877249489613
         },
         {
             "Components": {
@@ -1147,6 +1205,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1181,7 +1241,7 @@
             "Name": "Pine Tree 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3290425356455371356
+            "UUID": 10260438694620576084
         },
         {
             "Components": {
@@ -1219,6 +1279,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1253,7 +1315,7 @@
             "Name": "Pine Tree 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 4889819988097767587
+            "UUID": 8671289197051842846
         },
         {
             "Components": {
@@ -1291,6 +1353,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1325,7 +1389,7 @@
             "Name": "Pine Tree 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8135267537276952247
+            "UUID": 8205192603134625522
         },
         {
             "Components": {
@@ -1363,6 +1427,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1397,7 +1463,7 @@
             "Name": "Pine Tree 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 9735519155339297563
+            "UUID": 1582252826150650120
         },
         {
             "Components": {
@@ -1435,6 +1501,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1469,7 +1537,7 @@
             "Name": "Pine Tree 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 5853488379079205700
+            "UUID": 13011611988272950965
         },
         {
             "Components": {
@@ -1507,6 +1575,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1541,7 +1611,7 @@
             "Name": "Pine Tree 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17722674707035007447
+            "UUID": 5750373039346462337
         },
         {
             "Components": {
@@ -1579,6 +1649,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1613,7 +1685,7 @@
             "Name": "Pine Tree 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 10030363368894155545
+            "UUID": 9942952647737343700
         },
         {
             "Components": {
@@ -1651,6 +1723,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1685,7 +1759,7 @@
             "Name": "Pine Tree 9",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 16248571257557469670
+            "UUID": 14783671599110128111
         },
         {
             "Components": {
@@ -1704,6 +1778,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1738,7 +1814,7 @@
             "Name": "Berry Bush 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 12138314357463046287
+            "UUID": 16120721995399794832
         },
         {
             "Components": {
@@ -1757,6 +1833,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1791,7 +1869,7 @@
             "Name": "Berry Bush 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 3111500056206451698
+            "UUID": 12413187261138891179
         },
         {
             "Components": {
@@ -1810,6 +1888,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1844,7 +1924,7 @@
             "Name": "Berry Bush 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17010094833950931835
+            "UUID": 11375947587764522287
         },
         {
             "Components": {
@@ -1863,6 +1943,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1897,7 +1979,7 @@
             "Name": "Berry Bush 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 16138846181680929660
+            "UUID": 11713865193933718660
         },
         {
             "Components": {
@@ -1916,6 +1998,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -1950,7 +2034,7 @@
             "Name": "Berry Bush 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 11773188449993203016
+            "UUID": 6734563363604330877
         },
         {
             "Components": {
@@ -1969,6 +2053,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2003,7 +2089,7 @@
             "Name": "Berry Bush 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 13356455005891467346
+            "UUID": 10884844176216344443
         },
         {
             "Components": {
@@ -2022,6 +2108,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2056,7 +2144,7 @@
             "Name": "Berry Bush 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 995588359205066591
+            "UUID": 13038986104151051415
         },
         {
             "Components": {
@@ -2075,6 +2163,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2109,7 +2199,7 @@
             "Name": "Berry Bush 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1203490254811623499
+            "UUID": 17775951303849115018
         },
         {
             "Components": {
@@ -2147,6 +2237,8 @@
                     "Emissive": 0.1599999964237213,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2194,7 +2286,7 @@
             "Name": "Cult Banner 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1173634764289826159
+            "UUID": 3049559918313581408
         },
         {
             "Components": {
@@ -2232,6 +2324,8 @@
                     "Emissive": 0.1599999964237213,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2279,7 +2373,7 @@
             "Name": "Cult Banner 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 6346479344376896421
+            "UUID": 7088494042744215396
         },
         {
             "Components": {
@@ -2298,6 +2392,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2332,7 +2428,7 @@
             "Name": "Tall Grass 1",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 784478717384757175
+            "UUID": 18125347998268358691
         },
         {
             "Components": {
@@ -2351,6 +2447,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2385,7 +2483,7 @@
             "Name": "Tall Grass 2",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8445406265382504549
+            "UUID": 15358067554074972832
         },
         {
             "Components": {
@@ -2404,6 +2502,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2438,7 +2538,7 @@
             "Name": "Tall Grass 3",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1701272325387072486
+            "UUID": 15838881231923778403
         },
         {
             "Components": {
@@ -2457,6 +2557,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2491,7 +2593,7 @@
             "Name": "Tall Grass 4",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 1681788547052905582
+            "UUID": 11149116939112758783
         },
         {
             "Components": {
@@ -2510,6 +2612,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2544,7 +2648,7 @@
             "Name": "Tall Grass 5",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 514216440450800974
+            "UUID": 9233834011265949019
         },
         {
             "Components": {
@@ -2563,6 +2667,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2597,7 +2703,7 @@
             "Name": "Tall Grass 6",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 9414154259939324391
+            "UUID": 735900417430778895
         },
         {
             "Components": {
@@ -2616,6 +2722,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2650,7 +2758,7 @@
             "Name": "Tall Grass 7",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 310918675879323388
+            "UUID": 11589490083473103187
         },
         {
             "Components": {
@@ -2669,6 +2777,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2703,7 +2813,7 @@
             "Name": "Tall Grass 8",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 17874034912142348386
+            "UUID": 11084181913830317308
         },
         {
             "Components": {
@@ -2722,6 +2832,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2756,7 +2868,7 @@
             "Name": "Tall Grass 9",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 10613173661938045816
+            "UUID": 10794221196876444204
         },
         {
             "Components": {
@@ -2775,6 +2887,8 @@
                     "Emissive": 0.0,
                     "FlashAmount": 0.0,
                     "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
                     "ReceiveLighting": true,
                     "RenderSilhouette": false,
                     "SilhouetteColor": [
@@ -2809,7 +2923,7 @@
             "Name": "Tall Grass 10",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 15085535639889571950
+            "UUID": 10222119657050828305
         },
         {
             "Components": {
@@ -2832,12 +2946,14 @@
                 },
                 "UILabels": [
                     {
+                        "Alignment": 0,
                         "Color": [
                             1.0,
                             1.0,
                             1.0,
                             1.0
                         ],
+                        "DropShadow": true,
                         "Font": {
                             "AtlasTexturePath": "font_atlas.png",
                             "Characters": [
@@ -2912,12 +3028,24 @@
                                 }
                             ]
                         },
+                        "MaxWrapWidth": 0.0,
                         "Position": [
                             38.0,
                             670.0
                         ],
                         "Scale": 1.0,
-                        "Text": "HP:"
+                        "ShadowColor": [
+                            0.03999999910593033,
+                            0.019999999552965164,
+                            0.05999999865889549,
+                            0.8500000238418579
+                        ],
+                        "ShadowOffset": [
+                            2.0,
+                            -2.0
+                        ],
+                        "Text": "HP:",
+                        "UseRectTransform": false
                     }
                 ],
                 "UIPanels": [
@@ -2928,14 +3056,24 @@
                             0.15000000596046448,
                             0.9200000166893005
                         ],
+                        "FillAmount": 1.0,
+                        "InvertFill": false,
+                        "NineSliceBordersPx": [
+                            16.0,
+                            16.0,
+                            16.0,
+                            16.0
+                        ],
                         "Position": [
                             130.0,
                             675.0
                         ],
+                        "RenderMode": 0,
                         "Size": [
                             200.0,
                             22.0
-                        ]
+                        ],
+                        "UseRectTransform": false
                     },
                     {
                         "Color": [
@@ -2944,14 +3082,24 @@
                             0.18000000715255737,
                             1.0
                         ],
+                        "FillAmount": 1.0,
+                        "InvertFill": false,
+                        "NineSliceBordersPx": [
+                            16.0,
+                            16.0,
+                            16.0,
+                            16.0
+                        ],
                         "Position": [
                             105.0,
                             675.0
                         ],
+                        "RenderMode": 0,
                         "Size": [
                             150.0,
                             18.0
-                        ]
+                        ],
+                        "UseRectTransform": false
                     }
                 ]
             },
@@ -2959,7 +3107,7 @@
             "Name": "HUD",
             "ParentUUID": 0,
             "Tag": "Untagged",
-            "UUID": 8845944498675209527
+            "UUID": 5391820795454226760
         }
     ],
     "OrthographicSize": 5.0,

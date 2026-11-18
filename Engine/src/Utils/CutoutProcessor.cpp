@@ -1,4 +1,5 @@
 #include "Engine/Utils/CutoutProcessor.h"
+#include "Engine/Core/JobSystem.h"
 #include "Engine/Utils/Logger.h"
 
 #include <stb_image.h>

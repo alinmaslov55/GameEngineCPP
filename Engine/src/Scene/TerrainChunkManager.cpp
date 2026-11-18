@@ -1,4 +1,5 @@
 #include "Engine/Scene/TerrainChunkManager.h"
+#include "Engine/Core/JobSystem.h"
 #include "Engine/Scene/TerrainHelpers.h"
 #include "Engine/Scene/ProceduralPropFactory.h"
 #include "Engine/Particles/DecalManager.h"

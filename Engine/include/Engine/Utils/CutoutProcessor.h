@@ -1,7 +1,7 @@
 #ifndef UTILS_CUTOUTPROCESSOR_H
 #define UTILS_CUTOUTPROCESSOR_H
 
-#include "Engine/Core/JobSystem.h"
+#include "Engine/Core/JobHandle.h"
 
 #include <cstdint>
 #include <filesystem>

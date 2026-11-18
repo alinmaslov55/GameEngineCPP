@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include <glm/glm.hpp>
 #include "Engine/Utils/CutoutProcessor.h"
+#include "Engine/Core/JobSystem.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/SpriteAtlas.h"
