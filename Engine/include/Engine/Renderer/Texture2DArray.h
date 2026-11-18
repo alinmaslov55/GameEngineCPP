@@ -1,6 +1,8 @@
 #ifndef RENDERER_TEXTURE2DARRAY_H
 #define RENDERER_TEXTURE2DARRAY_H
 
+#include "Engine/Renderer/TerrainTexturePacker.h"
+
 #include <array>
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -8,12 +10,6 @@
 #include <vector>
 
 namespace Engine {
-
-struct ResolvedTerrainMaps {
-    std::string DiffusePath;
-    std::string HeightPath;
-    std::string NormalPath;
-};
 
 /// @brief OpenGL 4.1 Core 2D Texture Array (`GL_TEXTURE_2D_ARRAY`) with mipmapping,
 /// GL_REPEAT wrapping, optional anisotropic filtering, and headless safety.

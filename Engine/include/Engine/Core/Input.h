@@ -1,6 +1,8 @@
 #ifndef CORE_INPUT_H
 #define CORE_INPUT_H
 
+#include "Engine/Core/InputActionMap.h"
+
 #include <SDL3/SDL.h>
 #include <glm/glm.hpp>
 
@@ -15,16 +17,6 @@ class PerspectiveCamera;
 enum class InputDeviceMode : uint8_t {
     KeyboardMouse = 0,
     Gamepad = 1
-};
-
-struct ActionBinding {
-    SDL_Scancode PrimaryKey = SDL_SCANCODE_UNKNOWN;
-    SDL_Scancode SecondaryKey = SDL_SCANCODE_UNKNOWN;
-    int MouseButton = 0; // 0 = none, SDL_BUTTON_LEFT, SDL_BUTTON_RIGHT, etc.
-    SDL_GamepadButton PadButton = SDL_GAMEPAD_BUTTON_INVALID;
-    SDL_GamepadAxis PadTriggerAxis = SDL_GAMEPAD_AXIS_INVALID; // > 0.5f threshold for LT/RT
-
-    bool operator==(const ActionBinding&) const = default;
 };
 
 class Input {

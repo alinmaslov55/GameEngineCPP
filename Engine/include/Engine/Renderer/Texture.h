@@ -1,29 +1,14 @@
 #ifndef RENDERER_TEXTURE_H
 #define RENDERER_TEXTURE_H
 
+#include "Engine/Renderer/DDSLoader.h"
+
 #include <string>
 #include <cstdint>
 #include <memory>
 #include <vector>
 
 namespace Engine {
-
-struct CompressedMipLevel {
-    int Width = 0;
-    int Height = 0;
-    uint32_t SizeBytes = 0;
-    const uint8_t* Data = nullptr;
-};
-
-struct DDSInfo {
-    bool Valid = false;
-    int Width = 0;
-    int Height = 0;
-    uint32_t MipCount = 1;
-    uint32_t GLFormat = 0;
-    uint32_t BytesPerBlock = 16;
-    std::vector<CompressedMipLevel> Mips;
-};
 
 class Texture {
 public:

@@ -212,7 +212,7 @@ flowchart TD
 | **`ANI-02`** | Frame-Accurate Animation Event Callbacks | `DONE` | **P1** | W2 | `ANI-01` | `AUD-02`, `PHY-05` | `EDT-03`, Hitbox/Foley frame sync |
 | **`ANI-03`** | Sprite-Sheet Cutout Normalization & Pivot Lock | `DONE` | **P1** | W0 | *None (Root)* | `CutoutProcessor` | `ANI-01` |
 | **`VFX-01`** | Textured, Flipbook-Animated & Oriented Particles | `DONE` | **P0** | W1 | `RND-02` | `TER-04` (firewall) | Torch flame, shockwaves, bouncing splinters |
-| **`VFX-02`** | Ring-Buffered Ground Decal Pool | `TODO` | **P1** | W4 | `TER-04` | `RND-02` | Blood/ichor splatters & scorched craters |
+| **`VFX-02`** | Ring-Buffered Ground Decal Pool | `DONE` | **P1** | W4 | `TER-04` | `RND-02` | Blood/ichor splatters & scorched craters |
 | **`CAM-01`** | Adaptive Hor+ (Landscape) & Vert+ (Portrait) FOV | `DONE` | **P1** | W0 | *None (Root)* | `PostProcessor` | `CAM-02`, `INP-02`, `EDT-01` |
 | **`CAM-02`** | Damped Brawler Camera Rig & Perlin Trauma Shake | `DONE` | **P0** | W1 | `CAM-01`, `ECS-02` | `INP-02` (look-ahead) | Maul/Jiangshi/Wendigo impact feel |
 | **`UIX-01`** | Resolution-Independent Canvas, Anchors & Safe Area | `DONE` | **P0** | W0 | *None (Root)* | `CAM-01` | `UIX-02`, `UIX-03`, `EDT-01` |
@@ -978,7 +978,7 @@ flowchart TD
 ---
 
 #### `VFX-02` — Ring-Buffered Ground Decal Pool
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W4`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W4`
 - **Dependencies:** Hard: `TER-04` | Unlocks: High-volume blood splatters & scorched craters
 - **Current Gap:** Spawning persistent ground splatters (`vfx_blood_splatter_*`, `decal_burn_scars.png`) as `GameObject`s pollutes scene entity iteration and component lookup tables.
 - **Proposed C++ Specification:**

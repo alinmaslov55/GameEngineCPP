@@ -3,6 +3,7 @@
 
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/EntityTag.h"
+#include "Engine/Scene/LightQuerySystem.h"
 #include "Engine/Scene/SurfaceSample.h"
 #include "Engine/Physics/Box2DTask.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
@@ -31,30 +32,6 @@ class Prefab;
 class TerrainChunkManager;
 class TerrainComponent;
 struct RaycastHitXZ;
-
-/// @brief CPU illumination query result evaluated on the XZ gameplay plane (LGT-03).
-struct IlluminationSample {
-    float SafeIntensity = 0.0f;               // Sum of SafeLifeline smoothstep attenuations at worldXZ
-    float HazardIntensity = 0.0f;             // Sum of DeceptiveHazard attenuations
-    float PrimaryTorchNormalizedDist = 999.0f; // distXZ / TorchRadius (< 1.0 = inside torch circle)
-    GameObject* DominantSafeSource = nullptr; // Highest-contributing SafeLifeline entity at worldXZ
-    float NeutralIntensity = 0.0f;            // Sum of NeutralShrine attenuations
-
-    [[nodiscard]] bool IsInSafeLight(float threshold = 0.05f) const noexcept {
-        return SafeIntensity >= threshold;
-    }
-
-    [[nodiscard]] bool IsInSearingRim(float innerRatio = 0.82f) const noexcept {
-        return PrimaryTorchNormalizedDist >= innerRatio && PrimaryTorchNormalizedDist <= 1.02f;
-    }
-};
-
-/// @brief Optional modifiers for detailed CPU illumination queries (flicker & line-of-light occlusion).
-struct IlluminationQueryOptions {
-    bool CheckLineOfLight = false;           // Casts XZ ray against OccluderMaskBits via PhysicsQueries
-    uint64_t OccluderMaskBits = (1ULL << 1); // Matches PhysicsLayer::Environment
-    bool IncludeFlicker = false;             // Scales by EvaluateEffectiveIntensity(Time::GetTotalTime(), uuid)
-};
 
 /// @brief Core Scene orchestrator coordinating entity lifecycle (ECS), UUID indexing,
 /// and delegating physics, object pooling, and rendering pipelines to cohesive subsystems.
@@ -92,6 +69,7 @@ public:
     [[nodiscard]] size_t GetEntityUUIDMapCount() const noexcept { return m_EntityUUIDMap.size(); }
     [[nodiscard]] size_t GetTempChildrenScratchCapacity() const noexcept { return m_TempChildrenScratch.capacity(); }
     [[nodiscard]] const std::vector<std::unique_ptr<GameObject>>& GetGameObjects() const noexcept { return m_GameObjects; }
+    [[nodiscard]] const std::vector<std::unique_ptr<GameObject>>& GetPendingSpawnGameObjects() const noexcept { return m_PendingSpawnQueue; }
 
     // Iteration safety guard
     [[nodiscard]] bool IsIteratingEntities() const noexcept { return m_IterationDepth > 0; }
