@@ -63,7 +63,7 @@ public:
         if (SDL_GetAudioStreamAvailable(m_Stream) > 0) return;
         
         ENGINE_CORE_TRACE("AudioSource: Playing audio");
-        SDL_PutAudioStreamData(m_Stream, m_Clip->GetBuffer(), m_Clip->GetLength());
+        SDL_PutAudioStreamData(m_Stream, m_Clip->GetBuffer(), static_cast<int>(m_Clip->GetLength()));
         SDL_ResumeAudioStreamDevice(m_Stream);
     }
 

@@ -13,6 +13,8 @@
 
 namespace Engine {
 
+class AudioClip;
+
 // Internal templated cache to hold specific asset types
 template<typename T>
 struct AssetCache {
@@ -52,6 +54,9 @@ public:
 
     // Loads a texture synchronously (blocking calling thread until decode & upload complete).
     [[nodiscard]] static std::shared_ptr<Texture> LoadTexture(const std::string& filepath);
+
+    // Loads and caches an AudioClip (.wav or .ogg Vorbis) via the shared AudioClip asset cache.
+    [[nodiscard]] static std::shared_ptr<AudioClip> LoadAudioClip(const std::string& filepath);
 
     // Configures whether generic Load<Texture>() defaults to asynchronous background loading.
     static void SetAsyncTextureLoading(bool enabled) noexcept;

@@ -1,5 +1,6 @@
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Core/JobSystem.h"
+#include "Engine/Audio/AudioClip.h"
 #include "Engine/Renderer/Texture.h"
 
 #include <stb_image.h>
@@ -582,6 +583,10 @@ void ResourceManager::WaitForPendingUploads() {
 
 uint32_t ResourceManager::GetPendingUploadCount() noexcept {
     return s_ActiveAsyncLoads.load(std::memory_order_acquire);
+}
+
+std::shared_ptr<AudioClip> ResourceManager::LoadAudioClip(const std::string& filepath) {
+    return Load<AudioClip>(filepath);
 }
 
 } // namespace Engine

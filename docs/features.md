@@ -219,7 +219,7 @@ flowchart TD
 | **`UIX-02`** | 9-Slice Frames, Clipped Bars & Radial Gauges | `DONE` | **P1** | W1 | `UIX-01` | `INP-01` (gamepad nav) | `UIX-04`, HUD HP/Torch/Rune widgets |
 | **`UIX-03`** | BMFont (`.fnt`) Loader & Styled Text Layout | `DONE` | **P1** | W1 | `UIX-01` | `CAM-01` (world prompts) | Gothic HUD counters, Shrine upgrade cards |
 | **`UIX-04`** | Tactical Radial Drop Wheel & Fog-of-War Minimap | `DONE` | **P1** | W2 | `UIX-02`, `INP-01`, `TER-01`, `LGT-03` | `ECS-02` (wheel slow-mo) | Mid-combat building & chunk exploration |
-| **`AUD-01`** | OGG Vorbis Decoder & Streaming Music Playback | `TODO` | **P0** | W0 | *None (Root)* | `JobSystem` | `AUD-02`, `AUD-03` |
+| **`AUD-01`** | OGG Vorbis Decoder & Streaming Music Playback | `DONE` | **P0** | W0 | *None (Root)* | `JobSystem` | `AUD-02`, `AUD-03` |
 | **`AUD-02`** | Polyphonic Mixer, Buses, Pitch & 3D Panning | `TODO` | **P0** | W1 | `AUD-01` | `TER-04` (surface foley) | `AUD-03`, `SAV-02` |
 | **`AUD-03`** | Multi-Stem Adaptive Music Director | `TODO` | **P1** | W2 | `AUD-01`, `AUD-02` | `LGT-03` (fuel % state) | Dynamic 3-layer Ash Frenzy soundtrack |
 | **`AIX-01`** | Horde Steering, Separation & Obstacle Avoidance | `TODO` | **P1** | W4 | `PHY-05`, `ECS-05` | `TER-04` (avoid fire) | 40+ Ghoul/Thrall swarm encirclement |
@@ -1162,7 +1162,7 @@ flowchart TD
 ---
 
 #### `AUD-01` — OGG Vorbis Decoder & Streaming Music Playback
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `AUD-02`, `AUD-03`
 - **Current Gap:** `AudioClip` (`AudioClip.h:14`) only calls `SDL_LoadWAV`. All music tracks in the spec (`mus_explore_ambience.ogg`, `mus_combat_frenzy.ogg`, `mus_sanctuary_hub.ogg`) are **320 kbps OGG Vorbis**!
 - **Proposed C++ Specification (`stb_vorbis` + `SDL3`):**

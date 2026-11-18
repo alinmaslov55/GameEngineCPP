@@ -10,6 +10,14 @@ endif()
 # Create the Engine as a static library
 add_library(Engine STATIC ${ENGINE_SOURCES})
 
+# Compile third-party stb_vorbis.c without Engine PCH so internal macros (L, C, R) cannot collide
+if(EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/src/Audio/stb_vorbis.cpp")
+    set_source_files_properties(
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/Audio/stb_vorbis.cpp"
+        PROPERTIES SKIP_PRECOMPILE_HEADERS ON
+    )
+endif()
+
 # Apply strict compiler warnings
 target_compile_options(Engine PRIVATE ${ENGINE_COMPILER_WARNINGS})
 

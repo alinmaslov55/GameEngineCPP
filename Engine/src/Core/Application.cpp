@@ -107,6 +107,7 @@ void Application::Run() {
         // 2. Update Engine / Layers
         Time::Update();
         ResourceManager::ProcessPendingUploads(4);
+        AudioManager::Update();
         const float deltaTime = Time::GetDeltaTime();
 
         if (!m_Layers.empty()) {
