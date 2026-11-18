@@ -84,20 +84,23 @@ public:
                                const glm::vec4& tintColor = glm::vec4(1.0f),
                                float alphaCutoff = 0.0f,
                                float emissive = 0.0f,
-                               float shadowReceiverOffset = 0.02f);
+                               float shadowReceiverOffset = 0.02f,
+                               float rotationYRadians = 0.0f);
     static void DrawGroundTile(const glm::vec3& center,
                                const glm::vec2& sizeXZ,
                                const std::shared_ptr<Texture>& texture,
                                const glm::vec4& tintColor = glm::vec4(1.0f),
                                float alphaCutoff = 0.0f,
                                float emissive = 0.0f,
-                               float shadowReceiverOffset = 0.02f);
+                               float shadowReceiverOffset = 0.02f,
+                               float rotationYRadians = 0.0f);
     static void DrawGroundTile(const glm::vec3& center,
                                const glm::vec2& sizeXZ,
                                const glm::vec4& color = glm::vec4(1.0f),
                                float alphaCutoff = 0.0f,
                                float emissive = 0.0f,
-                               float shadowReceiverOffset = 0.02f);
+                               float shadowReceiverOffset = 0.02f,
+                               float rotationYRadians = 0.0f);
 
     // Draw a bottom-center anchored 3D upright billboard ("cardboard standee")
     static void DrawBillboard(const glm::vec3& anchorPosition,

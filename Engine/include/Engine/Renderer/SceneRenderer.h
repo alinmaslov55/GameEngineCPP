@@ -26,6 +26,7 @@ class TerrainComponent;
 class TerrainChunkManager;
 class Tilemap;
 class ParticleSystem;
+class DecalManager;
 class UIPanel;
 class UILabel;
 class UIMinimapComponent;
@@ -37,6 +38,7 @@ struct SceneRenderContext {
     const DirectionalLightComponent* dirLight = nullptr;
     const PostProcessComponent* postProcess = nullptr;
     const WindComponent* windComp = nullptr;
+    DecalManager* decalManager = nullptr;
     float totalTime = 0.0f;
     float physicsAlpha = 0.0f;
     bool useHDRPostProcess = false;

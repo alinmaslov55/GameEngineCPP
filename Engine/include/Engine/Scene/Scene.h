@@ -26,6 +26,7 @@ namespace Engine {
 class PhysicsWorld2D;
 class EntityPoolManager;
 class SceneRenderer;
+class DecalManager;
 class Prefab;
 class TerrainChunkManager;
 class TerrainComponent;
@@ -74,6 +75,8 @@ public:
     [[nodiscard]] const EntityPoolManager& GetPoolManager() const noexcept;
     [[nodiscard]] SceneRenderer& GetRenderer() noexcept;
     [[nodiscard]] const SceneRenderer& GetRenderer() const noexcept;
+    [[nodiscard]] DecalManager& GetDecalManager() noexcept;
+    [[nodiscard]] const DecalManager& GetDecalManager() const noexcept;
 
     // Entity lifecycle and UUID lookup
     GameObject* CreateGameObject(const std::string& name);
@@ -225,6 +228,7 @@ private:
     std::unique_ptr<PhysicsWorld2D> m_PhysicsWorld;
     std::unique_ptr<EntityPoolManager> m_PoolManager;
     std::unique_ptr<SceneRenderer> m_Renderer;
+    std::unique_ptr<DecalManager> m_DecalManager;
 
     std::vector<Transform*> m_TempChildrenScratch;
     std::unordered_map<uint64_t, GameObject*> m_EntityUUIDMap;

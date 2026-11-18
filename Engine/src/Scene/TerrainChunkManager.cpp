@@ -1,6 +1,7 @@
 #include "Engine/Scene/TerrainChunkManager.h"
 #include "Engine/Scene/TerrainHelpers.h"
 #include "Engine/Core/ResourceManager.h"
+#include "Engine/Particles/DecalManager.h"
 #include "Engine/Physics/PhysicsLayer.h"
 #include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/EntityTag.h"
@@ -592,6 +593,11 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
                 static_cast<float>(coord.cz + 1) * ChunkSizeMeters
             };
             m_FireGrid.ExtinguishInBoundsXZ(minXZ, maxXZ);
+            if (auto* owner = GetGameObject()) {
+                if (auto* scene = owner->GetScene()) {
+                    scene->GetDecalManager().ClearInChunk(coord.cx, coord.cz, ChunkSizeMeters);
+                }
+            }
             m_Chunks.erase(coord);
         }
     }

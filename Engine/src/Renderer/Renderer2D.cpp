@@ -27,6 +27,34 @@ static const glm::vec2 kDefaultTexCoords[4] = {
     { 1.0f, 1.0f },
     { 0.0f, 1.0f }
 };
+
+inline void BuildGroundQuadCorners(const glm::vec3& center,
+                                   const glm::vec2& sizeXZ,
+                                   float rotationYRadians,
+                                   glm::vec3 outPositions[4]) noexcept {
+    const float hx = 0.5f * sizeXZ.x;
+    const float hz = 0.5f * sizeXZ.y;
+    const float y = center.y;
+
+    if (std::abs(rotationYRadians) <= 1e-4f) {
+        outPositions[0] = { center.x - hx, y, center.z + hz };
+        outPositions[1] = { center.x + hx, y, center.z + hz };
+        outPositions[2] = { center.x + hx, y, center.z - hz };
+        outPositions[3] = { center.x - hx, y, center.z - hz };
+        return;
+    }
+
+    const float c = std::cos(rotationYRadians);
+    const float s = std::sin(rotationYRadians);
+    // CCW rotation around +Y matching glm::rotate(+Y, rotationYRadians)
+    const glm::vec3 halfR{ c * hx, 0.0f, -s * hx };
+    const glm::vec3 halfU{ -s * hz, 0.0f, -c * hz };
+
+    outPositions[0] = center - halfR - halfU;
+    outPositions[1] = center + halfR - halfU;
+    outPositions[2] = center + halfR + halfU;
+    outPositions[3] = center - halfR + halfU;
+}
 } // namespace
 
 void ComputeBillboardCorners(const glm::vec3& anchorPosition,
@@ -628,7 +656,8 @@ void Renderer2D::DrawGroundTile(const glm::vec3& center,
                                const glm::vec4& tintColor,
                                float alphaCutoff,
                                float emissive,
-                               float shadowReceiverOffset) {
+                               float shadowReceiverOffset,
+                               float rotationYRadians) {
     static const glm::vec3 kZeroWindParams[4] = {
         { 0.0f, 0.0f, 0.0f },
         { 0.0f, 0.0f, 0.0f },
@@ -636,16 +665,8 @@ void Renderer2D::DrawGroundTile(const glm::vec3& center,
         { 0.0f, 0.0f, 0.0f }
     };
 
-    const float hx = 0.5f * sizeXZ.x;
-    const float hz = 0.5f * sizeXZ.y;
-    const float y = center.y;
-
-    const glm::vec3 positions[4] = {
-        { center.x - hx, y, center.z + hz },
-        { center.x + hx, y, center.z + hz },
-        { center.x + hx, y, center.z - hz },
-        { center.x - hx, y, center.z - hz }
-    };
+    glm::vec3 positions[4];
+    BuildGroundQuadCorners(center, sizeXZ, rotationYRadians, positions);
 
     if (subTexture && subTexture->GetTexture() && subTexture->GetTexture()->GetRendererID() != 0) {
         const glm::vec2 min = subTexture->GetMin();
@@ -668,7 +689,8 @@ void Renderer2D::DrawGroundTile(const glm::vec3& center,
                                const glm::vec4& tintColor,
                                float alphaCutoff,
                                float emissive,
-                               float shadowReceiverOffset) {
+                               float shadowReceiverOffset,
+                               float rotationYRadians) {
     static const glm::vec3 kZeroWindParams[4] = {
         { 0.0f, 0.0f, 0.0f },
         { 0.0f, 0.0f, 0.0f },
@@ -676,16 +698,8 @@ void Renderer2D::DrawGroundTile(const glm::vec3& center,
         { 0.0f, 0.0f, 0.0f }
     };
 
-    const float hx = 0.5f * sizeXZ.x;
-    const float hz = 0.5f * sizeXZ.y;
-    const float y = center.y;
-
-    const glm::vec3 positions[4] = {
-        { center.x - hx, y, center.z + hz },
-        { center.x + hx, y, center.z + hz },
-        { center.x + hx, y, center.z - hz },
-        { center.x - hx, y, center.z - hz }
-    };
+    glm::vec3 positions[4];
+    BuildGroundQuadCorners(center, sizeXZ, rotationYRadians, positions);
 
     uint32_t texID = (texture && texture->GetRendererID() != 0) ? texture->GetRendererID() : 0;
     SubmitVertices(positions, texID, kDefaultTexCoords, tintColor, alphaCutoff, emissive, shadowReceiverOffset, kZeroWindParams);
@@ -696,8 +710,9 @@ void Renderer2D::DrawGroundTile(const glm::vec3& center,
                                const glm::vec4& color,
                                float alphaCutoff,
                                float emissive,
-                               float shadowReceiverOffset) {
-    DrawGroundTile(center, sizeXZ, std::shared_ptr<Texture>(nullptr), color, alphaCutoff, emissive, shadowReceiverOffset);
+                               float shadowReceiverOffset,
+                               float rotationYRadians) {
+    DrawGroundTile(center, sizeXZ, std::shared_ptr<Texture>(nullptr), color, alphaCutoff, emissive, shadowReceiverOffset, rotationYRadians);
 }
 
 void Renderer2D::DrawBillboard(const glm::vec3& anchorPosition,

@@ -18,6 +18,7 @@
 #include "Engine/Scene/TerrainChunkManager.h"
 #include "Engine/Scene/Tilemap.h"
 #include "Engine/Particles/ParticleSystem.h"
+#include "Engine/Particles/DecalManager.h"
 #include "Engine/UI/UIPanel.h"
 #include "Engine/UI/UILabel.h"
 #include "Engine/UI/UIMinimapComponent.h"
@@ -114,6 +115,7 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
     SceneRenderContext ctx;
     ctx.totalTime = Time::GetTotalTime();
     ctx.physicsAlpha = scene.GetPhysicsAlpha();
+    ctx.decalManager = &scene.GetDecalManager();
 
     static const auto kCameraMask = Detail::GetComponentTypeMask<CameraComponent>();
     static const auto kDirLightMask = Detail::GetComponentTypeMask<DirectionalLightComponent>();
@@ -732,7 +734,17 @@ void SceneRenderer::RenderPassGroundPlane(SceneRenderContext& ctx) {
         }
     }
 
-    Renderer2D::EndScene();
+    // Render ring-buffered ground decals (blood splatters, scorched craters) with depth write OFF
+    // so fading translucent edges never punch holes in underlying decals
+    if (ctx.decalManager && ctx.decalManager->GetActiveCount() > 0u) {
+        Renderer2D::Flush();
+        Renderer::SetDepthMask(false);
+        ctx.decalManager->Render(ctx.activeCam->GetFrustum());
+        Renderer2D::EndScene();
+        Renderer::SetDepthMask(true);
+    } else {
+        Renderer2D::EndScene();
+    }
     Renderer::SetPolygonOffset(false);
 }
 

@@ -1,5 +1,6 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Core/Time.h"
+#include "Engine/Particles/DecalManager.h"
 #include "Engine/Physics/PhysicsQueries.h"
 #include "Engine/Physics/PhysicsWorld2D.h"
 #include "Engine/Renderer/SceneRenderer.h"
@@ -29,7 +30,8 @@ Scene::Scene(const std::string& name)
     : m_Name(name),
       m_PhysicsWorld(std::make_unique<PhysicsWorld2D>(this)),
       m_PoolManager(std::make_unique<EntityPoolManager>(this)),
-      m_Renderer(std::make_unique<SceneRenderer>()) {
+      m_Renderer(std::make_unique<SceneRenderer>()),
+      m_DecalManager(std::make_unique<DecalManager>(512u)) {
     m_TempChildrenScratch.reserve(64);
     ENGINE_CORE_INFO("Scene created: '{}'", m_Name);
 }
@@ -107,6 +109,8 @@ EntityPoolManager& Scene::GetPoolManager() noexcept { return *m_PoolManager; }
 const EntityPoolManager& Scene::GetPoolManager() const noexcept { return *m_PoolManager; }
 SceneRenderer& Scene::GetRenderer() noexcept { return *m_Renderer; }
 const SceneRenderer& Scene::GetRenderer() const noexcept { return *m_Renderer; }
+DecalManager& Scene::GetDecalManager() noexcept { return *m_DecalManager; }
+const DecalManager& Scene::GetDecalManager() const noexcept { return *m_DecalManager; }
 
 // ============================================================================
 // Entity Lifecycle and UUID Indexing
@@ -550,6 +554,10 @@ void Scene::Update(float deltaTime) {
     if (m_PhysicsWorld && !m_PhysicsWorld->IsRuntimeRunning()) {
         m_PhysicsWorld->UpdateNonRuntime(deltaTime);
     }
+
+    if (m_DecalManager) {
+        m_DecalManager->Update(deltaTime);
+    }
 }
 
 void Scene::Render(const PerspectiveCamera* overrideCamera) {
@@ -596,6 +604,7 @@ void Scene::OnRuntimeStart() {
 
 void Scene::OnRuntimeStop() {
     if (m_PhysicsWorld) m_PhysicsWorld->OnRuntimeStop();
+    if (m_DecalManager) m_DecalManager->Clear();
 }
 
 void Scene::UpdateRuntime(float deltaTime) {
