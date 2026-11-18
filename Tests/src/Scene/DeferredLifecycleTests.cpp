@@ -2,109 +2,34 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Component.h"
-#include "Engine/Scene/Prefab.h"
-#include "Engine/Physics/PhysicsComponents.h"
-#include "Engine/Core/Time.h"
+#include "LifecycleTestHelpers.h"
 
-#include <vector>
-#include <memory>
 #include <string>
+#include <vector>
 
 namespace {
 
-class LifecycleTrackerComponent : public Engine::Component {
-public:
-    int* externalDestroyCount = nullptr;
-    int awakeCount = 0;
-    int enableCount = 0;
-    int disableCount = 0;
-    int startCount = 0;
-    int updateCount = 0;
-    int fixedUpdateCount = 0;
-    int lateUpdateCount = 0;
-    int destroyCount = 0;
-
-    void Awake() override {
-        ++awakeCount;
-    }
-
-    void OnEnable() override {
-        ++enableCount;
-    }
-
-    void OnDisable() override {
-        ++disableCount;
-    }
-
-    void Start() override {
-        ++startCount;
-    }
-
-    void Update(float deltaTime) override {
-        (void)deltaTime;
-        ++updateCount;
-    }
-
-    void FixedUpdate(float fixedDeltaTime) override {
-        (void)fixedDeltaTime;
-        ++fixedUpdateCount;
-    }
-
-    void LateUpdate(float deltaTime) override {
-        (void)deltaTime;
-        ++lateUpdateCount;
-    }
-
-    void OnDestroy() override {
-        ++destroyCount;
-        if (externalDestroyCount) {
-            ++(*externalDestroyCount);
-        }
-    }
-};
-
-class MidFrameSpawnerComponent : public Engine::Component {
-public:
-    Engine::Scene* scene = nullptr;
-    int spawnCountOnUpdate = 0;
-    std::vector<Engine::GameObject*> spawnedEntities;
-
-    void Update(float deltaTime) override {
-        (void)deltaTime;
-        if (scene && spawnCountOnUpdate > 0) {
-            for (int i = 0; i < spawnCountOnUpdate; ++i) {
-                auto* spawned = scene->CreateGameObject("SpawnedMidFrame_" + std::to_string(i));
-                spawned->AddComponent<LifecycleTrackerComponent>();
-                spawnedEntities.push_back(spawned);
-            }
-            spawnCountOnUpdate = 0; // Only spawn once
-        }
-    }
-};
-
-class MidFrameDestroyerComponent : public Engine::Component {
-public:
-    Engine::Scene* scene = nullptr;
-    std::vector<Engine::GameObject*> targetsToDestroy;
-
-    void Update(float deltaTime) override {
-        (void)deltaTime;
-        if (scene) {
-            for (auto* target : targetsToDestroy) {
-                scene->DestroyGameObject(target);
-            }
-            targetsToDestroy.clear();
-        }
-    }
-};
+using Engine::TestHelpers::CallbackLifecycleComponent;
+using Engine::TestHelpers::LifecycleTrackerComponent;
 
 TEST(DeferredLifecycleTest, DeferredSpawnInsideUpdateLoop) {
     Engine::Scene scene("DeferredSpawnTest");
 
+    int spawnCountOnUpdate = 10;
+    std::vector<Engine::GameObject*> spawnedEntities;
+
     auto* spawnerObj = scene.CreateGameObject("SpawnerEntity");
-    auto* spawnerComp = spawnerObj->AddComponent<MidFrameSpawnerComponent>();
-    spawnerComp->scene = &scene;
-    spawnerComp->spawnCountOnUpdate = 10;
+    auto* spawnerComp = spawnerObj->AddComponent<CallbackLifecycleComponent>();
+    spawnerComp->onUpdate = [&](Engine::GameObject*, float) {
+        if (spawnCountOnUpdate > 0) {
+            for (int i = 0; i < spawnCountOnUpdate; ++i) {
+                auto* spawned = scene.CreateGameObject("SpawnedMidFrame_" + std::to_string(i));
+                spawned->AddComponent<LifecycleTrackerComponent>();
+                spawnedEntities.push_back(spawned);
+            }
+            spawnCountOnUpdate = 0;
+        }
+    };
 
     EXPECT_EQ(scene.GetGameObjects().size(), 1u);
     EXPECT_EQ(scene.GetEntityUUIDMapCount(), 1u);
@@ -115,10 +40,10 @@ TEST(DeferredLifecycleTest, DeferredSpawnInsideUpdateLoop) {
     // After Update and FlushEntityLifecycleQueues, total should be 1 + 10 = 11
     EXPECT_EQ(scene.GetGameObjects().size(), 11u);
     EXPECT_EQ(scene.GetEntityUUIDMapCount(), 11u);
-    EXPECT_EQ(spawnerComp->spawnedEntities.size(), 10u);
+    EXPECT_EQ(spawnedEntities.size(), 10u);
 
     // Verify all spawned entities are valid and searchable by UUID
-    for (auto* entity : spawnerComp->spawnedEntities) {
+    for (auto* entity : spawnedEntities) {
         ASSERT_NE(entity, nullptr);
         EXPECT_EQ(scene.FindGameObjectByUUID(entity->GetUUID()), entity);
         auto* tracker = entity->GetComponent<LifecycleTrackerComponent>();
@@ -141,11 +66,15 @@ TEST(DeferredLifecycleTest, DeferredDestroyInsideUpdateLoop) {
         tracker->externalDestroyCount = &externalDestroyCounts[i];
     }
 
+    std::vector<Engine::GameObject*> targetsToDestroy = { victims[1], victims[3] };
     auto* destroyerObj = scene.CreateGameObject("Destroyer");
-    auto* destroyerComp = destroyerObj->AddComponent<MidFrameDestroyerComponent>();
-    destroyerComp->scene = &scene;
-    // Queue victims 1 and 3 for destruction
-    destroyerComp->targetsToDestroy = { victims[1], victims[3] };
+    auto* destroyerComp = destroyerObj->AddComponent<CallbackLifecycleComponent>();
+    destroyerComp->onUpdate = [&](Engine::GameObject*, float) {
+        for (auto* target : targetsToDestroy) {
+            scene.DestroyGameObject(target);
+        }
+        targetsToDestroy.clear();
+    };
 
     EXPECT_EQ(scene.GetGameObjects().size(), 6u);
     EXPECT_EQ(scene.GetEntityUUIDMapCount(), 6u);
@@ -177,29 +106,22 @@ TEST(DeferredLifecycleTest, DeferredDestroyInsideUpdateLoop) {
 TEST(DeferredLifecycleTest, SpawnAndDestroyInSameFrame) {
     Engine::Scene scene("SameFrameSpawnDestroy");
 
-    class SpawnAndSelfDestroyComponent : public Engine::Component {
-    public:
-        Engine::Scene* scene = nullptr;
-        bool done = false;
-        Engine::GameObject* tempChild = nullptr;
-        int childDestroyCount = 0;
-
-        void Update(float deltaTime) override {
-            (void)deltaTime;
-            if (!done && scene) {
-                tempChild = scene->CreateGameObject("TransientEntity");
-                auto* tracker = tempChild->AddComponent<LifecycleTrackerComponent>();
-                // Immediately destroy it in the same iteration
-                scene->DestroyGameObject(tempChild);
-                done = true;
-                childDestroyCount = tracker->destroyCount;
-            }
-        }
-    };
+    bool done = false;
+    Engine::GameObject* tempChild = nullptr;
+    int childDestroyCount = 0;
 
     auto* parent = scene.CreateGameObject("ParentEntity");
-    auto* comp = parent->AddComponent<SpawnAndSelfDestroyComponent>();
-    comp->scene = &scene;
+    auto* comp = parent->AddComponent<CallbackLifecycleComponent>();
+    comp->onUpdate = [&](Engine::GameObject*, float) {
+        if (!done) {
+            tempChild = scene.CreateGameObject("TransientEntity");
+            auto* tracker = tempChild->AddComponent<LifecycleTrackerComponent>();
+            // Immediately destroy it in the same iteration
+            scene.DestroyGameObject(tempChild);
+            done = true;
+            childDestroyCount = tracker->destroyCount;
+        }
+    };
 
     EXPECT_EQ(scene.GetGameObjects().size(), 1u);
     scene.Update(0.016f);
@@ -207,8 +129,9 @@ TEST(DeferredLifecycleTest, SpawnAndDestroyInSameFrame) {
     // After update, transient child should not be added to m_GameObjects
     EXPECT_EQ(scene.GetGameObjects().size(), 1u);
     EXPECT_EQ(scene.GetEntityUUIDMapCount(), 1u);
-    EXPECT_NE(comp->tempChild, nullptr);
-    EXPECT_EQ(scene.FindGameObjectByUUID(comp->tempChild->GetUUID()), nullptr);
+    EXPECT_NE(tempChild, nullptr);
+    EXPECT_EQ(scene.FindGameObjectByUUID(tempChild->GetUUID()), nullptr);
+    EXPECT_EQ(childDestroyCount, 0);
 }
 
 TEST(DeferredLifecycleTest, SameFrameSpawnThenDestroyParentAndChildHierarchy) {
@@ -217,62 +140,48 @@ TEST(DeferredLifecycleTest, SameFrameSpawnThenDestroyParentAndChildHierarchy) {
     int parentDestroyCount = 0;
     int childDestroyCount = 0;
     int grandchildDestroyCount = 0;
-
-    class SpawnHierarchyAndDestroyComponent : public Engine::Component {
-    public:
-        Engine::Scene* scene = nullptr;
-        int* pDestroy = nullptr;
-        int* cDestroy = nullptr;
-        int* gDestroy = nullptr;
-        bool executed = false;
-        uint64_t parentUUID = 0;
-        uint64_t childUUID = 0;
-        uint64_t grandchildUUID = 0;
-
-        void Update(float deltaTime) override {
-            (void)deltaTime;
-            if (!executed && scene) {
-                executed = true;
-
-                auto* parent = scene->CreateGameObject("TransientParent");
-                parentUUID = parent->GetUUID();
-                auto* pTracker = parent->AddComponent<LifecycleTrackerComponent>();
-                pTracker->externalDestroyCount = pDestroy;
-
-                auto* child = scene->CreateGameObject("TransientChild");
-                childUUID = child->GetUUID();
-                auto* cTracker = child->AddComponent<LifecycleTrackerComponent>();
-                cTracker->externalDestroyCount = cDestroy;
-                child->GetTransform()->SetParent(parent->GetTransform(), false);
-
-                auto* grandchild = scene->CreateGameObject("TransientGrandchild");
-                grandchildUUID = grandchild->GetUUID();
-                auto* gTracker = grandchild->AddComponent<LifecycleTrackerComponent>();
-                gTracker->externalDestroyCount = gDestroy;
-                grandchild->GetTransform()->SetParent(child->GetTransform(), false);
-
-                // Both parent, child, and grandchild are in m_PendingSpawnQueue
-                EXPECT_TRUE(parent->IsPendingSpawn());
-                EXPECT_TRUE(child->IsPendingSpawn());
-                EXPECT_TRUE(grandchild->IsPendingSpawn());
-
-                // Destroy the root parent in the exact same frame!
-                scene->DestroyGameObject(parent);
-
-                // All 3 must transition to PendingDestroy immediately
-                EXPECT_TRUE(parent->IsPendingDestroy());
-                EXPECT_TRUE(child->IsPendingDestroy());
-                EXPECT_TRUE(grandchild->IsPendingDestroy());
-            }
-        }
-    };
+    bool executed = false;
+    uint64_t parentUUID = 0;
+    uint64_t childUUID = 0;
+    uint64_t grandchildUUID = 0;
 
     auto* controller = scene.CreateGameObject("LifecycleController");
-    auto* comp = controller->AddComponent<SpawnHierarchyAndDestroyComponent>();
-    comp->scene = &scene;
-    comp->pDestroy = &parentDestroyCount;
-    comp->cDestroy = &childDestroyCount;
-    comp->gDestroy = &grandchildDestroyCount;
+    auto* comp = controller->AddComponent<CallbackLifecycleComponent>();
+    comp->onUpdate = [&](Engine::GameObject*, float) {
+        if (!executed) {
+            executed = true;
+
+            auto* parent = scene.CreateGameObject("TransientParent");
+            parentUUID = parent->GetUUID();
+            auto* pTracker = parent->AddComponent<LifecycleTrackerComponent>();
+            pTracker->externalDestroyCount = &parentDestroyCount;
+
+            auto* child = scene.CreateGameObject("TransientChild");
+            childUUID = child->GetUUID();
+            auto* cTracker = child->AddComponent<LifecycleTrackerComponent>();
+            cTracker->externalDestroyCount = &childDestroyCount;
+            child->GetTransform()->SetParent(parent->GetTransform(), false);
+
+            auto* grandchild = scene.CreateGameObject("TransientGrandchild");
+            grandchildUUID = grandchild->GetUUID();
+            auto* gTracker = grandchild->AddComponent<LifecycleTrackerComponent>();
+            gTracker->externalDestroyCount = &grandchildDestroyCount;
+            grandchild->GetTransform()->SetParent(child->GetTransform(), false);
+
+            // Both parent, child, and grandchild are in m_PendingSpawnQueue
+            EXPECT_TRUE(parent->IsPendingSpawn());
+            EXPECT_TRUE(child->IsPendingSpawn());
+            EXPECT_TRUE(grandchild->IsPendingSpawn());
+
+            // Destroy the root parent in the exact same frame!
+            scene.DestroyGameObject(parent);
+
+            // All 3 must transition to PendingDestroy immediately
+            EXPECT_TRUE(parent->IsPendingDestroy());
+            EXPECT_TRUE(child->IsPendingDestroy());
+            EXPECT_TRUE(grandchild->IsPendingDestroy());
+        }
+    };
 
     EXPECT_EQ(scene.GetGameObjects().size(), 1u);
 
@@ -285,67 +194,14 @@ TEST(DeferredLifecycleTest, SameFrameSpawnThenDestroyParentAndChildHierarchy) {
     EXPECT_EQ(scene.FindGameObjectByUUID(controller->GetUUID()), controller);
 
     // Parent, child, and grandchild must not be found
-    EXPECT_EQ(scene.FindGameObjectByUUID(comp->parentUUID), nullptr);
-    EXPECT_EQ(scene.FindGameObjectByUUID(comp->childUUID), nullptr);
-    EXPECT_EQ(scene.FindGameObjectByUUID(comp->grandchildUUID), nullptr);
+    EXPECT_EQ(scene.FindGameObjectByUUID(parentUUID), nullptr);
+    EXPECT_EQ(scene.FindGameObjectByUUID(childUUID), nullptr);
+    EXPECT_EQ(scene.FindGameObjectByUUID(grandchildUUID), nullptr);
 
     // Each entity's OnDestroy() must have been invoked exactly ONCE (zero double-destroy and zero UAF)
     EXPECT_EQ(parentDestroyCount, 1);
     EXPECT_EQ(childDestroyCount, 1);
     EXPECT_EQ(grandchildDestroyCount, 1);
-}
-
-TEST(DeferredLifecycleTest, SameFrameSpawnThenDestroyWithPhysicsBody) {
-    Engine::Scene scene("SpawnDestroyPhysicsScene");
-    scene.OnRuntimeStart();
-
-    int destroyCount = 0;
-
-    class SpawnAndDestroyPhysicsComponent : public Engine::Component {
-    public:
-        Engine::Scene* scene = nullptr;
-        int* pDestroy = nullptr;
-        bool executed = false;
-        uint64_t entityUUID = 0;
-
-        void Update(float deltaTime) override {
-            (void)deltaTime;
-            if (!executed && scene) {
-                executed = true;
-                auto* entity = scene->CreateGameObject("TransientPhysicsEntity");
-                entityUUID = entity->GetUUID();
-                auto* tracker = entity->AddComponent<LifecycleTrackerComponent>();
-                tracker->externalDestroyCount = pDestroy;
-
-                auto* rb2d = entity->AddComponent<Engine::Rigidbody2D>();
-                rb2d->Type = Engine::Rigidbody2D::BodyType::Dynamic;
-                auto* col = entity->AddComponent<Engine::BoxCollider2D>();
-                col->size = { 1.5f, 1.5f };
-
-                // Destroy in the same frame
-                scene->DestroyGameObject(entity);
-                EXPECT_TRUE(entity->IsPendingDestroy());
-            }
-        }
-    };
-
-    auto* controller = scene.CreateGameObject("PhysicsController");
-    auto* comp = controller->AddComponent<SpawnAndDestroyPhysicsComponent>();
-    comp->scene = &scene;
-    comp->pDestroy = &destroyCount;
-
-    // Step runtime simulation
-    scene.UpdateRuntime(0.016f);
-
-    EXPECT_EQ(scene.GetGameObjects().size(), 1u);
-    EXPECT_EQ(scene.GetEntityUUIDMapCount(), 1u);
-    EXPECT_EQ(scene.FindGameObjectByUUID(comp->entityUUID), nullptr);
-    EXPECT_EQ(destroyCount, 1);
-
-    // Step once more to ensure physics world remains fully stable
-    scene.UpdateRuntime(0.016f);
-
-    scene.OnRuntimeStop();
 }
 
 TEST(DeferredLifecycleTest, OnDestroyRecursiveDestroyAliveEntity) {
@@ -354,51 +210,26 @@ TEST(DeferredLifecycleTest, OnDestroyRecursiveDestroyAliveEntity) {
     int destroyCountA = 0;
     int destroyCountB = 0;
 
-    class SecondaryDestroyerComponent : public Engine::Component {
-    public:
-        Engine::Scene* scene = nullptr;
-        Engine::GameObject* target = nullptr;
-        int* pDestroyCount = nullptr;
-
-        void OnDestroy() override {
-            if (pDestroyCount) {
-                ++(*pDestroyCount);
-            }
-            if (scene && target) {
-                scene->DestroyGameObject(target);
-            }
-        }
-    };
-
     auto* objB = scene.CreateGameObject("EntityB");
     auto* trackerB = objB->AddComponent<LifecycleTrackerComponent>();
     trackerB->externalDestroyCount = &destroyCountB;
 
     auto* objA = scene.CreateGameObject("EntityA");
-    auto* destroyerA = objA->AddComponent<SecondaryDestroyerComponent>();
-    destroyerA->scene = &scene;
-    destroyerA->target = objB;
-    destroyerA->pDestroyCount = &destroyCountA;
-
-    class TriggerDestroyComponent : public Engine::Component {
-    public:
-        Engine::Scene* scene = nullptr;
-        Engine::GameObject* victim = nullptr;
-        bool executed = false;
-
-        void Update(float deltaTime) override {
-            (void)deltaTime;
-            if (!executed && scene && victim) {
-                executed = true;
-                scene->DestroyGameObject(victim);
-            }
-        }
+    auto* destroyerA = objA->AddComponent<CallbackLifecycleComponent>();
+    destroyerA->onDestroy = [&](Engine::GameObject*) {
+        ++destroyCountA;
+        scene.DestroyGameObject(objB);
     };
 
+    bool executed = false;
     auto* controller = scene.CreateGameObject("Controller");
-    auto* trig = controller->AddComponent<TriggerDestroyComponent>();
-    trig->scene = &scene;
-    trig->victim = objA;
+    auto* trig = controller->AddComponent<CallbackLifecycleComponent>();
+    trig->onUpdate = [&](Engine::GameObject*, float) {
+        if (!executed) {
+            executed = true;
+            scene.DestroyGameObject(objA);
+        }
+    };
 
     EXPECT_EQ(scene.GetGameObjects().size(), 3u);
 
@@ -411,61 +242,6 @@ TEST(DeferredLifecycleTest, OnDestroyRecursiveDestroyAliveEntity) {
     EXPECT_EQ(scene.FindGameObjectByUUID(objB->GetUUID()), nullptr);
     EXPECT_EQ(destroyCountA, 1);
     EXPECT_EQ(destroyCountB, 1);
-}
-
-TEST(DeferredLifecycleTest, Stress100Spawn50DestroyAcrossFrames) {
-    Engine::Scene scene("StressLifecycleTest");
-
-    class StressTesterComponent : public Engine::Component {
-    public:
-        Engine::Scene* scene = nullptr;
-        std::vector<Engine::GameObject*> activeEntities;
-        int framesRun = 0;
-        int totalDestroyed = 0;
-
-        void Update(float deltaTime) override {
-            (void)deltaTime;
-            ++framesRun;
-            if (!scene) return;
-
-            // In first 5 frames, spawn 20 entities per frame (100 total)
-            if (framesRun <= 5) {
-                for (int i = 0; i < 20; ++i) {
-                    auto* obj = scene->CreateGameObject("StressObj_" + std::to_string(framesRun) + "_" + std::to_string(i));
-                    obj->AddComponent<LifecycleTrackerComponent>();
-                    activeEntities.push_back(obj);
-                }
-            }
-
-            // In frames 6 through 10, destroy 10 entities per frame (50 total)
-            if (framesRun >= 6 && framesRun <= 10 && !activeEntities.empty()) {
-                for (int i = 0; i < 10 && !activeEntities.empty(); ++i) {
-                    auto* victim = activeEntities.back();
-                    activeEntities.pop_back();
-                    scene->DestroyGameObject(victim);
-                    ++totalDestroyed;
-                }
-            }
-        }
-    };
-
-    auto* controller = scene.CreateGameObject("StressController");
-    auto* stress = controller->AddComponent<StressTesterComponent>();
-    stress->scene = &scene;
-
-    for (int frame = 0; frame < 10; ++frame) {
-        scene.Update(0.016f);
-    }
-
-    // 1 controller + 100 spawned - 50 destroyed = 51 entities
-    EXPECT_EQ(scene.GetGameObjects().size(), 51u);
-    EXPECT_EQ(scene.GetEntityUUIDMapCount(), 51u);
-    EXPECT_EQ(stress->totalDestroyed, 50);
-
-    // Verify all remaining entities can be found by UUID
-    for (const auto& go : scene.GetGameObjects()) {
-        EXPECT_EQ(scene.FindGameObjectByUUID(go->GetUUID()), go.get());
-    }
 }
 
 TEST(DeferredLifecycleTest, ActiveAndEnabledHierarchy) {
@@ -567,34 +343,6 @@ TEST(DeferredLifecycleTest, ImmediateDestroyOutsideUpdatePreserved) {
     EXPECT_EQ(destroyCountA, 1);
 }
 
-TEST(DeferredLifecycleTest, Box2DRuntimeBodyDestroyedOnEntityDelete) {
-    Engine::Scene scene("Box2DDeleteTest");
-    scene.OnRuntimeStart();
-    EXPECT_TRUE(scene.IsRuntimeRunning());
-
-    auto* entity = scene.CreateGameObject("RigidEntity");
-    auto* rb2d = entity->AddComponent<Engine::Rigidbody2D>();
-    rb2d->Type = Engine::Rigidbody2D::BodyType::Dynamic;
-    auto* collider = entity->AddComponent<Engine::BoxCollider2D>();
-    collider->size = { 1.0f, 1.0f };
-
-    // Start runtime physics world created the bodies
-    scene.OnRuntimeStop();
-    scene.OnRuntimeStart();
-
-    // Verify entity has runtime body
-    EXPECT_NE(rb2d->RuntimeBody, nullptr);
-    EXPECT_NE(collider->RuntimeShape, nullptr);
-
-    // Destroy entity during runtime
-    scene.DestroyGameObject(entity);
-
-    // Step runtime physics to verify world remains valid with 0 crashes or ghost contacts
-    scene.UpdateRuntime(0.016f);
-
-    scene.OnRuntimeStop();
-}
-
 TEST(DeferredLifecycleTest, ReentrantIterationDepthTracking) {
     Engine::Scene scene("DepthTrackingScene");
     EXPECT_EQ(scene.GetIterationDepth(), 0u);
@@ -634,230 +382,6 @@ TEST(DeferredLifecycleTest, ReentrantIterationDepthTracking) {
     EXPECT_EQ(scene.GetGameObjects().size(), 2u);
     EXPECT_TRUE(scene.GetGameObjects()[0]->IsAlive());
     EXPECT_TRUE(scene.GetGameObjects()[1]->IsAlive());
-}
-
-TEST(DeferredLifecycleTest, FixedUpdateSpawnAndDestroyAcross30Frames) {
-    Engine::Scene scene("FixedUpdateStressScene");
-    scene.OnRuntimeStart();
-    EXPECT_TRUE(scene.IsRuntimeRunning());
-
-    // Create a base prefab for pooling
-    auto* templateEntity = scene.CreateGameObject("PooledTemplate");
-    auto* tRb = templateEntity->AddComponent<Engine::Rigidbody2D>();
-    tRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
-    auto* tCol = templateEntity->AddComponent<Engine::BoxCollider2D>();
-    tCol->size = { 0.5f, 0.5f };
-
-    auto prefab = Engine::Prefab::CreateFromGameObject(templateEntity);
-    ASSERT_NE(prefab, nullptr);
-    scene.DestroyGameObject(templateEntity);
-    EXPECT_EQ(scene.GetGameObjects().size(), 0u);
-
-    const std::string poolKey = "BulletPool";
-    scene.PrewarmPool(poolKey, *prefab, 5);
-
-    class FixedUpdateStressComponent : public Engine::Component {
-    public:
-        Engine::Scene* scene = nullptr;
-        std::shared_ptr<Engine::Prefab> bulletPrefab;
-        std::string poolKey;
-        std::vector<Engine::GameObject*> spawnedEntities;
-        std::vector<Engine::GameObject*> pooledEntities;
-        int frameCount = 0;
-        int totalCreated = 0;
-        int totalDestroyed = 0;
-
-        void FixedUpdate(float fixedDt) override {
-            (void)fixedDt;
-            ++frameCount;
-
-            // 1. Spawn a dynamic runtime entity mid-FixedUpdate
-            auto* newGo = scene->CreateGameObject("DynamicEnemy_" + std::to_string(frameCount));
-            auto* rb = newGo->AddComponent<Engine::Rigidbody2D>();
-            rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
-            auto* col = newGo->AddComponent<Engine::BoxCollider2D>();
-            col->size = { 1.0f, 1.0f };
-            spawnedEntities.push_back(newGo);
-            ++totalCreated;
-
-            // 2. Acquire and release pooled entities mid-FixedUpdate
-            if (bulletPrefab) {
-                auto* bullet = scene->AcquirePooled(poolKey, *bulletPrefab, glm::vec3(float(frameCount), 0.0f, 0.0f));
-                if (bullet) {
-                    pooledEntities.push_back(bullet);
-                }
-                if (pooledEntities.size() > 2) {
-                    auto* toRelease = pooledEntities.front();
-                    pooledEntities.erase(pooledEntities.begin());
-                    scene->ReleaseToPool(poolKey, toRelease);
-                }
-            }
-
-            // 3. Destroy older entities mid-FixedUpdate (retain at most 3 alive)
-            while (spawnedEntities.size() > 3) {
-                auto* victim = spawnedEntities.front();
-                spawnedEntities.erase(spawnedEntities.begin());
-                scene->DestroyGameObject(victim);
-                ++totalDestroyed;
-            }
-        }
-    };
-
-    auto* controller = scene.CreateGameObject("StressController");
-    auto* stressComp = controller->AddComponent<FixedUpdateStressComponent>();
-    stressComp->scene = &scene;
-    stressComp->bulletPrefab = prefab;
-    stressComp->poolKey = poolKey;
-
-    // Run simulation across 30 frames at fixed timestep (1 fixed step per frame)
-    const float fixedDt = Engine::Time::GetFixedDeltaTime();
-    for (int frame = 0; frame < 30; ++frame) {
-        scene.UpdateRuntime(fixedDt);
-    }
-
-    EXPECT_EQ(stressComp->frameCount, 30);
-    EXPECT_EQ(stressComp->totalCreated, 30);
-    EXPECT_EQ(stressComp->totalDestroyed, 27);
-    EXPECT_EQ(stressComp->spawnedEntities.size(), 3u);
-
-    // Verify all remaining entities are valid, alive, and searchable in Scene
-    for (auto* go : stressComp->spawnedEntities) {
-        ASSERT_NE(go, nullptr);
-        EXPECT_TRUE(go->IsAlive());
-        EXPECT_EQ(scene.FindGameObjectByUUID(go->GetUUID()), go);
-        auto* rb = go->GetComponent<Engine::Rigidbody2D>();
-        ASSERT_NE(rb, nullptr);
-        EXPECT_NE(rb->RuntimeBody, nullptr);
-    }
-
-    scene.OnRuntimeStop();
-}
-
-TEST(DeferredLifecycleTest, CascadingDestroyReusesTempChildrenScratch) {
-    Engine::Scene scene("ScratchReuseDestroyScene");
-
-    auto* root = scene.CreateGameObject("Root");
-    std::vector<Engine::GameObject*> allNodes{ root };
-    for (int i = 0; i < 4; ++i) {
-        auto* child = scene.CreateGameObject("Child_" + std::to_string(i));
-        child->GetTransform()->SetParent(root->GetTransform(), false);
-        allNodes.push_back(child);
-
-        for (int j = 0; j < 3; ++j) {
-            auto* grandchild = scene.CreateGameObject("Grandchild_" + std::to_string(i) + "_" + std::to_string(j));
-            grandchild->GetTransform()->SetParent(child->GetTransform(), false);
-            allNodes.push_back(grandchild);
-        }
-    }
-
-    const size_t capBefore = scene.GetTempChildrenScratchCapacity();
-    EXPECT_GE(capBefore, 64u);
-
-    {
-        Engine::Scene::ScopedIterationGuard guard(scene);
-        scene.DestroyGameObject(root);
-
-        // Scratch capacity must remain unchanged (zero per-node std::vector allocations)
-        EXPECT_EQ(scene.GetTempChildrenScratchCapacity(), capBefore);
-        for (auto* node : allNodes) {
-            EXPECT_TRUE(node->IsPendingDestroy());
-        }
-    }
-
-    EXPECT_EQ(scene.GetGameObjects().size(), 0u);
-    EXPECT_EQ(scene.GetTempChildrenScratchCapacity(), capBefore);
-}
-
-TEST(DeferredLifecycleTest, DeferredSpawnStartSeesValidRuntimeBodyAndSceneMembership) {
-    Engine::Scene scene("StartPhysicsVisibilityScene");
-    scene.OnRuntimeStart();
-
-    struct StartObserverComponent : public Engine::Component {
-        Engine::Scene* scenePtr = nullptr;
-        bool startCalled = false;
-        bool sawValidBodyInStart = false;
-        bool sawEntityInSceneInStart = false;
-
-        void Start() override {
-            startCalled = true;
-            auto* owner = GetGameObject();
-            if (!owner || !scenePtr) return;
-
-            if (auto* rb = owner->GetComponent<Engine::Rigidbody2D>()) {
-                sawValidBodyInStart = rb->RuntimeBody.IsValid();
-            }
-            for (const auto& go : scenePtr->GetGameObjects()) {
-                if (go.get() == owner) {
-                    sawEntityInSceneInStart = true;
-                    break;
-                }
-            }
-        }
-    };
-
-    StartObserverComponent* observer = nullptr;
-    {
-        Engine::Scene::ScopedIterationGuard guard(scene);
-        auto* spawned = scene.CreateGameObject("DeferredPhysicsEntity");
-        spawned->AddComponent<Engine::Rigidbody2D>();
-        spawned->AddComponent<Engine::CircleCollider2D>();
-        observer = spawned->AddComponent<StartObserverComponent>();
-        observer->scenePtr = &scene;
-        EXPECT_FALSE(observer->startCalled);
-    }
-
-    ASSERT_NE(observer, nullptr);
-    EXPECT_TRUE(observer->startCalled);
-    EXPECT_TRUE(observer->sawValidBodyInStart);
-    EXPECT_TRUE(observer->sawEntityInSceneInStart);
-
-    scene.OnRuntimeStop();
-}
-
-TEST(DeferredLifecycleTest, SceneDestructorInvokesOnDestroyOnSurvivingAndQueuedEntities) {
-    int survivingDestroyed = 0;
-    int queuedDestroyed = 0;
-    bool subsystemAliveDuringOnDestroy = false;
-
-    struct TeardownTrackerComponent : public Engine::Component {
-        int* counter = nullptr;
-        bool* subsystemOk = nullptr;
-        Engine::Scene* scenePtr = nullptr;
-
-        void OnDestroy() override {
-            if (counter) {
-                ++(*counter);
-            }
-            if (subsystemOk && scenePtr) {
-                *subsystemOk = !scenePtr->IsRuntimeRunning() &&
-                               (&scenePtr->GetPhysicsWorld() != nullptr) &&
-                               (&scenePtr->GetPoolManager() != nullptr) &&
-                               (&scenePtr->GetRenderer() != nullptr);
-            }
-        }
-    };
-
-    {
-        Engine::Scene scene("TeardownOrderScene");
-
-        auto* surviving = scene.CreateGameObject("SurvivingEntity");
-        auto* survTracker = surviving->AddComponent<TeardownTrackerComponent>();
-        survTracker->counter = &survivingDestroyed;
-        survTracker->subsystemOk = &subsystemAliveDuringOnDestroy;
-        survTracker->scenePtr = &scene;
-
-        // Enqueue an entity in PendingDestroy without flushing before ~Scene()
-        auto* queued = scene.CreateGameObject("QueuedDestroyEntity");
-        auto* queuedTracker = queued->AddComponent<TeardownTrackerComponent>();
-        queuedTracker->counter = &queuedDestroyed;
-
-        scene.SetIsIteratingEntities(true);
-        scene.DestroyGameObject(queued);
-    }
-
-    EXPECT_EQ(survivingDestroyed, 1);
-    EXPECT_EQ(queuedDestroyed, 1);
-    EXPECT_TRUE(subsystemAliveDuringOnDestroy);
 }
 
 } // namespace

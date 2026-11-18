@@ -9,6 +9,8 @@
 
 namespace {
 
+class VisualDummyComponent : public Engine::Component {};
+
 TEST(BoxCollider2DTest, DefaultValuesAndMaterials) {
     Engine::BoxCollider2D collider;
     EXPECT_EQ(collider.size, glm::vec2(1.0f, 1.0f));
@@ -364,8 +366,6 @@ TEST(SpatialGrid2DTest, GridInvalidationAndDynamicRebuild) {
 }
 
 TEST(SpatialGrid2DTest, NonPhysicsAndDynamicEntitiesNeverDirtyStaticGrid) {
-    class VisualDummyComponent : public Engine::Component {};
-
     Engine::Scene scene("StaticDirtyHeuristicScene");
 
     // Seed an initial static wall and settle the grid
@@ -461,8 +461,6 @@ TEST(SpatialGrid2DTest, NonPhysicsAndDynamicEntitiesNeverDirtyStaticGrid) {
 }
 
 TEST(SpatialGrid2DTest, StaticColliderAndTilemapMovementInvalidatesGrid) {
-    class VisualDummyComponent : public Engine::Component {};
-
     Engine::Scene scene("StaticMovementInvalidationScene");
 
     auto* wall = scene.CreateGameObject("StaticWall");
