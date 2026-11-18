@@ -211,7 +211,7 @@ flowchart TD
 | **`ANI-01`** | Multi-Directional Animation State Machine & FlipX | `DONE` | **P0** | W1 | `RND-02`, `ANI-03` | `ECS-03` | `ANI-02` |
 | **`ANI-02`** | Frame-Accurate Animation Event Callbacks | `DONE` | **P1** | W2 | `ANI-01` | `AUD-02`, `PHY-05` | `EDT-03`, Hitbox/Foley frame sync |
 | **`ANI-03`** | Sprite-Sheet Cutout Normalization & Pivot Lock | `DONE` | **P1** | W0 | *None (Root)* | `CutoutProcessor` | `ANI-01` |
-| **`VFX-01`** | Textured, Flipbook-Animated & Oriented Particles | `TODO` | **P0** | W1 | `RND-02` | `TER-04` (firewall) | Torch flame, shockwaves, bouncing splinters |
+| **`VFX-01`** | Textured, Flipbook-Animated & Oriented Particles | `DONE` | **P0** | W1 | `RND-02` | `TER-04` (firewall) | Torch flame, shockwaves, bouncing splinters |
 | **`VFX-02`** | Ring-Buffered Ground Decal Pool | `TODO` | **P1** | W4 | `TER-04` | `RND-02` | Blood/ichor splatters & scorched craters |
 | **`CAM-01`** | Adaptive Hor+ (Landscape) & Vert+ (Portrait) FOV | `DONE` | **P1** | W0 | *None (Root)* | `PostProcessor` | `CAM-02`, `INP-02`, `EDT-01` |
 | **`CAM-02`** | Damped Brawler Camera Rig & Perlin Trauma Shake | `DONE` | **P0** | W1 | `CAM-01`, `ECS-02` | `INP-02` (look-ahead) | Maul/Jiangshi/Wendigo impact feel |
@@ -944,7 +944,7 @@ flowchart TD
 ---
 
 #### `VFX-01` — Textured, Flipbook-Animated & Oriented Particles
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `RND-02` | Unlocks: Torch fire flipbook, flat shockwaves, weapon trails, wood splinters
 - **Current Gap:** `ParticleSystem` (`ParticleSystem.h`) has no `Texture` reference, no UV animation, and forces all quads to face `camRight` / `camUp` (`Scene.cpp:1077`).
 - **Proposed C++ Specification:**

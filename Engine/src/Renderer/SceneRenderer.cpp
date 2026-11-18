@@ -794,7 +794,10 @@ void SceneRenderer::RenderPassParticles(SceneRenderContext& ctx) {
             activeCount,
             ctx.activeCam->GetRight(),
             ctx.activeCam->GetUp(),
-            particleEmissive
+            particleEmissive,
+            particleSystem->ParticleTexture.get(),
+            particleSystem->Orientation,
+            particleSystem->Flipbook
         );
     }
 

@@ -381,6 +381,18 @@ void InspectorPanel::DrawParticleSystem(Engine::ParticleSystem& particleSystem, 
     ImGui::Text("Active Particles: %u / %zu",
                 particleSystem.GetActiveParticleCount(),
                 particleSystem.GetParticles().size());
+
+    const char* texLabel = (particleSystem.ParticleTexture && !particleSystem.ParticleTexture->GetFilepath().empty())
+        ? particleSystem.ParticleTexture->GetFilepath().c_str()
+        : "None (Solid Color)";
+    ImGui::Text("Texture: %s", texLabel);
+
+    static const char* kOrientations[] = { "CameraBillboard", "FlatGroundXZ", "VelocityAligned" };
+    int orientationIdx = static_cast<int>(particleSystem.Orientation);
+    if (ImGui::Combo("Orientation", &orientationIdx, kOrientations, 3)) {
+        particleSystem.Orientation = static_cast<Engine::ParticleOrientation>(orientationIdx);
+    }
+
     ImGui::Checkbox("Auto Emit", &particleSystem.AutoEmit);
     ImGui::SameLine();
     ImGui::Checkbox("Emissive Glow", &particleSystem.EmissiveParticles);
@@ -388,13 +400,57 @@ void InspectorPanel::DrawParticleSystem(Engine::ParticleSystem& particleSystem, 
         ImGui::SliderFloat("Emit Rate (/s)", &particleSystem.EmitRate, 0.5f, 60.0f, "%.1f");
         ImGui::DragFloat3("Spawn Offset", &particleSystem.SpawnOffset.x, 0.05f);
     }
-    if (ImGui::Button("Emit Test Particles")) {
+
+    if (ImGui::TreeNodeEx("Ballistics & Ground Collision", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::DragFloat("Gravity Y", &particleSystem.GravityY, 0.25f, -60.0f, 60.0f, "%.2f");
+        ImGui::DragFloat("Linear Drag", &particleSystem.LinearDrag, 0.05f, 0.0f, 20.0f, "%.2f");
+        ImGui::Checkbox("Collide Ground Y", &particleSystem.CollideGroundY);
+        if (particleSystem.CollideGroundY) {
+            ImGui::DragFloat("Ground Plane Y", &particleSystem.GroundPlaneY, 0.01f, -5.0f, 5.0f, "%.3f");
+            ImGui::SliderFloat("Bounce Restitution", &particleSystem.GroundBounceRestitution, 0.0f, 1.0f, "%.2f");
+        }
+        ImGui::TreePop();
+    }
+
+    if (ImGui::TreeNodeEx("Flipbook Animation", ImGuiTreeNodeFlags_DefaultOpen)) {
+        auto& fb = particleSystem.Flipbook;
+        ImGui::Checkbox("Enable Flipbook", &fb.Enabled);
+        if (fb.Enabled) {
+            int cols = static_cast<int>(fb.Columns);
+            int rows = static_cast<int>(fb.Rows);
+            int total = static_cast<int>(fb.TotalFrames);
+            if (ImGui::DragInt("Columns", &cols, 1.0f, 1, 16)) {
+                fb.Columns = static_cast<uint32_t>(std::max(1, cols));
+            }
+            if (ImGui::DragInt("Rows", &rows, 1.0f, 1, 16)) {
+                fb.Rows = static_cast<uint32_t>(std::max(1, rows));
+            }
+            const int maxFrames = static_cast<int>(fb.Columns * fb.Rows);
+            if (ImGui::DragInt("Total Frames", &total, 1.0f, 1, maxFrames)) {
+                fb.TotalFrames = static_cast<uint32_t>(std::clamp(total, 1, maxFrames));
+            }
+            ImGui::DragFloat("Cycles / Lifetime", &fb.CyclesOverLifetime, 0.05f, 0.1f, 16.0f, "%.2f");
+            ImGui::Checkbox("Random Start Frame", &fb.RandomStartFrame);
+        }
+        ImGui::TreePop();
+    }
+
+    if (ImGui::Button("Emit Test Particle")) {
         Engine::ParticleProps props = particleSystem.TemplateProps;
         if (auto* t = entity->GetTransform()) {
-            props.position = t->position + particleSystem.SpawnOffset;
+            props.position = t->GetWorldPosition() + particleSystem.SpawnOffset;
         }
         particleSystem.Emit(props);
         ENGINE_DEBUG("Inspector: Emitted test particle on '{}'", entity->GetName());
+    }
+    ImGui::SameLine();
+    if (ImGui::Button("Emit Burst (16)")) {
+        Engine::ParticleProps props = particleSystem.TemplateProps;
+        if (auto* t = entity->GetTransform()) {
+            props.position = t->GetWorldPosition() + particleSystem.SpawnOffset;
+        }
+        particleSystem.EmitBurst(props, 16u);
+        ENGINE_DEBUG("Inspector: Emitted burst of 16 particles on '{}'", entity->GetName());
     }
 }
 

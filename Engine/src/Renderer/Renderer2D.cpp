@@ -55,6 +55,54 @@ void ComputeBillboardCorners(const glm::vec3& anchorPosition,
     outPositions[3] = center - halfR + halfU;
 }
 
+void ComputeParticleCorners(const glm::vec3& position,
+                            const glm::vec3& velocity,
+                            float size,
+                            float rotationRadians,
+                            ParticleOrientation orientation,
+                            const glm::vec3& camRight,
+                            const glm::vec3& camUp,
+                            std::span<glm::vec3, 4> outPositions) noexcept {
+    const float halfSize = 0.5f * size;
+    glm::vec3 r = camRight;
+    glm::vec3 u = camUp;
+    bool applyRotation = true;
+
+    if (orientation == ParticleOrientation::FlatGroundXZ) {
+        r = { 1.0f, 0.0f, 0.0f };
+        u = { 0.0f, 0.0f, -1.0f };
+    } else if (orientation == ParticleOrientation::VelocityAligned) {
+        const float velLenSq = glm::dot(velocity, velocity);
+        if (velLenSq > 1e-6f) {
+            const glm::vec3 velDir = velocity * (1.0f / std::sqrt(velLenSq));
+            const glm::vec3 viewNormal = glm::cross(camRight, camUp);
+            const glm::vec3 sideRaw = glm::cross(velDir, viewNormal);
+            const float sideLenSq = glm::dot(sideRaw, sideRaw);
+            if (sideLenSq > 1e-6f) {
+                r = sideRaw * (1.0f / std::sqrt(sideLenSq));
+                u = velDir;
+                applyRotation = false;
+            }
+        }
+    }
+
+    if (applyRotation && std::abs(rotationRadians) > 1e-4f) {
+        const float c = std::cos(rotationRadians);
+        const float s = std::sin(rotationRadians);
+        const glm::vec3 rotR = r * c + u * s;
+        const glm::vec3 rotU = -r * s + u * c;
+        r = rotR;
+        u = rotU;
+    }
+
+    const glm::vec3 halfR = r * halfSize;
+    const glm::vec3 halfU = u * halfSize;
+    outPositions[0] = position - halfR - halfU;
+    outPositions[1] = position + halfR - halfU;
+    outPositions[2] = position + halfR + halfU;
+    outPositions[3] = position - halfR + halfU;
+}
+
 struct Renderer2DStorage {
     static constexpr uint32_t MaxQuads = 10000;
     static constexpr uint32_t MaxVertices = MaxQuads * 4;
@@ -959,11 +1007,17 @@ void Renderer2D::DrawParticlesParallel(
     uint32_t count,
     const glm::vec3& camRight,
     const glm::vec3& camUp,
-    float emissive)
+    float emissive,
+    const Texture* texture,
+    ParticleOrientation orientation,
+    const FlipbookConfig& flipbook)
 {
     if (!particles || count == 0 || !s_Data) {
         return;
     }
+
+    const uint32_t texID = (texture && texture->GetRendererID() != 0) ? texture->GetRendererID() : 0u;
+    const float shadowOffset = (orientation == ParticleOrientation::FlatGroundXZ) ? 0.02f : 0.25f;
 
     size_t offset = 0;
     while (offset < count) {
@@ -971,6 +1025,25 @@ void Renderer2D::DrawParticlesParallel(
         if (currentQuads >= Renderer2DStorage::MaxQuads) {
             NextBatch();
             continue;
+        }
+
+        // Resolve shared particle texture slot on the main thread before parallel worker dispatch
+        float texSlot = 0.0f;
+        if (texID != 0u) {
+            for (uint32_t s = 1; s < s_Data->TextureSlotIndex; ++s) {
+                if (s_Data->TextureSlots[s] == texID) {
+                    texSlot = static_cast<float>(s);
+                    break;
+                }
+            }
+            if (texSlot == 0.0f) {
+                if (s_Data->TextureSlotIndex >= Renderer2DStorage::MaxTextureSlots) {
+                    NextBatch();
+                    continue;
+                }
+                texSlot = static_cast<float>(s_Data->TextureSlotIndex);
+                s_Data->TextureSlots[s_Data->TextureSlotIndex++] = texID;
+            }
         }
 
         const uint32_t remainingInBatch = Renderer2DStorage::MaxQuads - currentQuads;
@@ -982,6 +1055,7 @@ void Renderer2D::DrawParticlesParallel(
         s_Data->Stats.QuadCount += batchCount;
 
         const ParticleSystem::Particle* batchParticles = &particles[offset];
+        const FlipbookConfig flipbookCopy = flipbook;
 
         JobSystem::ParallelFor(static_cast<size_t>(batchCount), [=](size_t i) {
             const auto& p = batchParticles[i];
@@ -991,18 +1065,28 @@ void Renderer2D::DrawParticlesParallel(
             const float size = glm::mix(p.sizeEnd, p.sizeBegin, lifeRatio);
             const glm::vec4 color = glm::mix(p.colorEnd, p.colorBegin, lifeRatio);
 
-            const glm::vec3 anchor = p.position - camUp * (0.5f * size);
             glm::vec3 corners[4];
-            ComputeBillboardCorners(anchor, { size, size }, camRight, camUp, glm::degrees(p.rotation), corners);
+            ComputeParticleCorners(p.position, p.velocity, size, p.rotation, orientation, camRight, camUp, corners);
+
+            glm::vec2 uvs[4];
+            if (flipbookCopy.Enabled) {
+                const uint32_t frameIdx = ParticleSystem::ComputeFlipbookFrameIndex(p, flipbookCopy);
+                ParticleSystem::ComputeFlipbookUVs(frameIdx, flipbookCopy, uvs);
+            } else {
+                uvs[0] = kDefaultTexCoords[0];
+                uvs[1] = kDefaultTexCoords[1];
+                uvs[2] = kDefaultTexCoords[2];
+                uvs[3] = kDefaultTexCoords[3];
+            }
 
             for (int c = 0; c < 4; ++c) {
                 v[c].Position     = corners[c];
                 v[c].Color        = color;
-                v[c].TexCoord     = kDefaultTexCoords[c];
-                v[c].TexIndex     = 0.0f;
+                v[c].TexCoord     = uvs[c];
+                v[c].TexIndex     = texSlot;
                 v[c].AlphaCutoff  = 0.0f;
                 v[c].Emissive     = emissive;
-                v[c].ShadowOffset = 0.25f;
+                v[c].ShadowOffset = shadowOffset;
                 v[c].WindParams   = glm::vec3(0.0f);
                 v[c].CutoutFX     = glm::vec4(0.0f, 0.0f, 0.0f, 0.08f);
             }

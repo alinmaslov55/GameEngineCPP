@@ -36,6 +36,15 @@ void ComputeBillboardCorners(const glm::vec3& anchorPosition,
                              float rotationZDegrees,
                              std::span<glm::vec3, 4> outPositions);
 
+void ComputeParticleCorners(const glm::vec3& position,
+                            const glm::vec3& velocity,
+                            float size,
+                            float rotationRadians,
+                            ParticleOrientation orientation,
+                            const glm::vec3& camRight,
+                            const glm::vec3& camUp,
+                            std::span<glm::vec3, 4> outPositions) noexcept;
+
 class Renderer2D {
 public:
     static void Init();
@@ -161,7 +170,10 @@ public:
                                       uint32_t count,
                                       const glm::vec3& camRight,
                                       const glm::vec3& camUp,
-                                      float emissive);
+                                      float emissive,
+                                      const Texture* texture = nullptr,
+                                      ParticleOrientation orientation = ParticleOrientation::CameraBillboard,
+                                      const FlipbookConfig& flipbook = {});
 
 private:
     static void StartBatch();

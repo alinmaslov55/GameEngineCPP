@@ -362,12 +362,27 @@ void SerializeParticleSystem(const GameObject* go, json& compsJson) {
     if (!particleSystem) return;
 
     const auto& tp = particleSystem->TemplateProps;
-    compsJson["ParticleSystem"] = {
+    const auto& fb = particleSystem->Flipbook;
+    json psJson = {
         {"PoolSize", particleSystem->GetParticles().size()},
         {"AutoEmit", particleSystem->AutoEmit},
         {"EmitRate", particleSystem->EmitRate},
         {"SpawnOffset", ToJson(particleSystem->SpawnOffset)},
         {"EmissiveParticles", particleSystem->EmissiveParticles},
+        {"Orientation", static_cast<int>(particleSystem->Orientation)},
+        {"GravityY", particleSystem->GravityY},
+        {"LinearDrag", particleSystem->LinearDrag},
+        {"CollideGroundY", particleSystem->CollideGroundY},
+        {"GroundPlaneY", particleSystem->GroundPlaneY},
+        {"GroundBounceRestitution", particleSystem->GroundBounceRestitution},
+        {"Flipbook", {
+            {"Enabled", fb.Enabled},
+            {"Columns", fb.Columns},
+            {"Rows", fb.Rows},
+            {"TotalFrames", fb.TotalFrames},
+            {"CyclesOverLifetime", fb.CyclesOverLifetime},
+            {"RandomStartFrame", fb.RandomStartFrame}
+        }},
         {"TemplateProps", {
             {"Velocity", ToJson(tp.velocity)},
             {"VelocityVariation", ToJson(tp.velocityVariation)},
@@ -376,9 +391,17 @@ void SerializeParticleSystem(const GameObject* go, json& compsJson) {
             {"SizeBegin", tp.sizeBegin},
             {"SizeEnd", tp.sizeEnd},
             {"SizeVariation", tp.sizeVariation},
-            {"LifeTime", tp.lifeTime}
+            {"LifeTime", tp.lifeTime},
+            {"Rotation", tp.rotation},
+            {"RandomRotation", tp.randomRotation}
         }}
     };
+
+    if (particleSystem->ParticleTexture && !particleSystem->ParticleTexture->GetFilepath().empty()) {
+        psJson["TexturePath"] = ResourceManager::ToRelativePath(particleSystem->ParticleTexture->GetFilepath());
+    }
+
+    compsJson["ParticleSystem"] = std::move(psJson);
 }
 
 void SerializeDirectionalLight(const GameObject* go, json& compsJson) {
@@ -1100,6 +1123,33 @@ void DeserializeParticleSystem(GameObject* go, const json& psJson, const std::st
         ps->SpawnOffset = AsVec3(psJson["SpawnOffset"], ps->SpawnOffset);
     }
     ps->EmissiveParticles = psJson.value("EmissiveParticles", false);
+
+    const int rawOrientation = psJson.value("Orientation", static_cast<int>(ParticleOrientation::CameraBillboard));
+    ps->Orientation = static_cast<ParticleOrientation>(std::clamp(rawOrientation, 0, 2));
+    ps->GravityY = psJson.value("GravityY", 0.0f);
+    ps->LinearDrag = std::max(0.0f, psJson.value("LinearDrag", 0.0f));
+    ps->CollideGroundY = psJson.value("CollideGroundY", false);
+    ps->GroundPlaneY = psJson.value("GroundPlaneY", 0.02f);
+    ps->GroundBounceRestitution = std::clamp(psJson.value("GroundBounceRestitution", 0.4f), 0.0f, 1.0f);
+
+    if (psJson.contains("TexturePath") && psJson["TexturePath"].is_string()) {
+        const std::string texPath = psJson["TexturePath"].get<std::string>();
+        if (!texPath.empty()) {
+            ps->ParticleTexture = ResourceManager::Load<Texture>(texPath);
+        }
+    }
+
+    if (psJson.contains("Flipbook") && psJson["Flipbook"].is_object()) {
+        const auto& fbJson = psJson["Flipbook"];
+        ps->Flipbook.Enabled = fbJson.value("Enabled", false);
+        ps->Flipbook.Columns = std::max(1u, fbJson.value("Columns", 1u));
+        ps->Flipbook.Rows = std::max(1u, fbJson.value("Rows", 1u));
+        const uint32_t maxGrid = ps->Flipbook.Columns * ps->Flipbook.Rows;
+        ps->Flipbook.TotalFrames = std::clamp(fbJson.value("TotalFrames", 1u), 1u, maxGrid);
+        ps->Flipbook.CyclesOverLifetime = std::max(0.0f, fbJson.value("CyclesOverLifetime", 1.0f));
+        ps->Flipbook.RandomStartFrame = fbJson.value("RandomStartFrame", false);
+    }
+
     if (psJson.contains("TemplateProps") && psJson["TemplateProps"].is_object()) {
         const auto& tpJson = psJson["TemplateProps"];
         auto& tp = ps->TemplateProps;
@@ -1111,6 +1161,8 @@ void DeserializeParticleSystem(GameObject* go, const json& psJson, const std::st
         tp.sizeEnd = tpJson.value("SizeEnd", tp.sizeEnd);
         tp.sizeVariation = tpJson.value("SizeVariation", tp.sizeVariation);
         tp.lifeTime = tpJson.value("LifeTime", tp.lifeTime);
+        tp.rotation = tpJson.value("Rotation", tp.rotation);
+        tp.randomRotation = tpJson.value("RandomRotation", tp.randomRotation);
     }
 }
 
