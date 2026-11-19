@@ -65,6 +65,9 @@ public:
     void SetLooping(bool loop) noexcept { m_Looping = loop; }
     [[nodiscard]] bool IsLooping() const noexcept { return m_Looping; }
 
+    void SetAutoUpdate(bool enabled) noexcept { m_AutoUpdate = enabled; }
+    [[nodiscard]] bool IsAutoUpdateEnabled() const noexcept { return m_AutoUpdate; }
+
     void SetGain(float gain) noexcept;
     [[nodiscard]] float GetGain() const noexcept { return m_Gain; }
 
@@ -108,6 +111,7 @@ private:
     bool m_Looping = true;
     bool m_IsPlaying = false;
     bool m_EndOfStream = false;
+    bool m_AutoUpdate = true;
 };
 
 } // namespace Engine

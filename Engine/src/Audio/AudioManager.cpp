@@ -314,7 +314,7 @@ void AudioManager::Update(const glm::vec3& listenerWorldPos, const glm::vec3& li
     }
 
     for (AudioStreamTrack* track : tracksCopy) {
-        if (track && track->IsPlaying()) {
+        if (track && track->IsPlaying() && track->IsAutoUpdateEnabled()) {
             track->Update();
         }
     }

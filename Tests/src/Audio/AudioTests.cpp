@@ -3,6 +3,7 @@
 #include "Engine/Audio/AudioManager.h"
 #include "Engine/Audio/AudioSource.h"
 #include "Engine/Audio/AudioStreamTrack.h"
+#include "Engine/Audio/MusicDirector.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Scene/GameObject.h"
 #include "EmbeddedTestOgg.h"
@@ -566,6 +567,221 @@ TEST(AudioSourceTest, PolyphonyAndSpatialIntegration) {
     EXPECT_FALSE(source->IsPlaying());
 
     Engine::AudioManager::Shutdown();
+}
+
+TEST(MusicDirectorTest, SlewingConvergenceWithoutDiscontinuities) {
+    Engine::AudioManager::Init();
+    Engine::MusicDirector::Shutdown();
+
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    const std::array<std::span<const uint8_t>, 3> buffers = { oggSpan, oggSpan, oggSpan };
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(buffers, /*fadeInSec=*/0.0f);
+
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingStems());
+    EXPECT_EQ(Engine::MusicDirector::GetMode(), Engine::MusicMode::SynchronizedStems);
+
+    // Initial state: torchFuel = 1.0 -> Ash Frenzy Tier (Stem 0: 0.1, Stem 1: 0.6, Stem 2: 1.0)
+    EXPECT_EQ(Engine::MusicDirector::GetCombatTier(), Engine::CombatMusicTier::AshFrenzyCombat);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(0), 0.1f, 1e-4f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(1), 0.6f, 1e-4f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(2), 1.0f, 1e-4f);
+
+    // Transition to Medium Exploration: torchFuel = 0.5f, enemies = 0
+    // Target weights: Stem 0: 0.3, Stem 1: 1.0, Stem 2: 0.0
+    constexpr float dt = 0.05f; // 50ms per step
+    const float slewRate = Engine::MusicDirector::GetSlewRate();
+    const float maxStep = slewRate * dt + 1e-5f;
+
+    float prevW0 = Engine::MusicDirector::GetStemWeight(0);
+    float prevW1 = Engine::MusicDirector::GetStemWeight(1);
+    float prevW2 = Engine::MusicDirector::GetStemWeight(2);
+
+    for (int step = 0; step < 40; ++step) {
+        Engine::MusicDirector::UpdateCombatState(0.5f, 0, dt);
+
+        const float w0 = Engine::MusicDirector::GetStemWeight(0);
+        const float w1 = Engine::MusicDirector::GetStemWeight(1);
+        const float w2 = Engine::MusicDirector::GetStemWeight(2);
+
+        // Verify no step discontinuities: change per step must not exceed maxStep
+        EXPECT_LE(std::abs(w0 - prevW0), maxStep);
+        EXPECT_LE(std::abs(w1 - prevW1), maxStep);
+        EXPECT_LE(std::abs(w2 - prevW2), maxStep);
+
+        // Verify bounded within [0, 1]
+        EXPECT_GE(w0, 0.0f); EXPECT_LE(w0, 1.0f);
+        EXPECT_GE(w1, 0.0f); EXPECT_LE(w1, 1.0f);
+        EXPECT_GE(w2, 0.0f); EXPECT_LE(w2, 1.0f);
+
+        prevW0 = w0;
+        prevW1 = w1;
+        prevW2 = w2;
+    }
+
+    // After 2.0s (40 * 0.05s) at 0.8/s slew rate, weights must have converged to Exploration targets
+    EXPECT_EQ(Engine::MusicDirector::GetCombatTier(), Engine::CombatMusicTier::MediumTorchExploration);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(0), 0.3f, 1e-3f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(1), 1.0f, 1e-3f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(2), 0.0f, 1e-3f);
+
+    // Transition to Pitch-Black Ambience: torchFuel = 0.1f, enemies = 0
+    // Target weights: Stem 0: 1.0, Stem 1: 0.15, Stem 2: 0.0
+    for (int step = 0; step < 40; ++step) {
+        Engine::MusicDirector::UpdateCombatState(0.1f, 0, dt);
+
+        const float w0 = Engine::MusicDirector::GetStemWeight(0);
+        const float w1 = Engine::MusicDirector::GetStemWeight(1);
+        const float w2 = Engine::MusicDirector::GetStemWeight(2);
+
+        EXPECT_LE(std::abs(w0 - prevW0), maxStep);
+        EXPECT_LE(std::abs(w1 - prevW1), maxStep);
+        EXPECT_LE(std::abs(w2 - prevW2), maxStep);
+
+        prevW0 = w0;
+        prevW1 = w1;
+        prevW2 = w2;
+    }
+
+    EXPECT_EQ(Engine::MusicDirector::GetCombatTier(), Engine::CombatMusicTier::PitchBlackAmbience);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(0), 1.0f, 1e-3f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(1), 0.15f, 1e-3f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(2), 0.0f, 1e-3f);
+
+    // Threat override: even with torchFuel = 0.1f, 6+ enemies triggers Ash Frenzy
+    for (int step = 0; step < 40; ++step) {
+        Engine::MusicDirector::UpdateCombatState(0.1f, 6, dt);
+    }
+    EXPECT_EQ(Engine::MusicDirector::GetCombatTier(), Engine::CombatMusicTier::AshFrenzyCombat);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(0), 0.1f, 1e-3f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(1), 0.6f, 1e-3f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(2), 1.0f, 1e-3f);
+
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(MusicDirectorTest, PhaseLockedFrameSynchronization) {
+    Engine::AudioManager::Init();
+    Engine::MusicDirector::Shutdown();
+
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    const std::array<std::span<const uint8_t>, 3> buffers = { oggSpan, oggSpan, oggSpan };
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(buffers, /*fadeInSec=*/0.0f);
+
+    // Initial pre-buffer pumped frames
+    const uint64_t initialFrame0 = Engine::MusicDirector::GetStemFrame(0);
+    const uint64_t initialFrame1 = Engine::MusicDirector::GetStemFrame(1);
+    const uint64_t initialFrame2 = Engine::MusicDirector::GetStemFrame(2);
+
+    EXPECT_GT(initialFrame0, 0u);
+    EXPECT_EQ(initialFrame0, initialFrame1);
+    EXPECT_EQ(initialFrame1, initialFrame2);
+
+    // Step combat state across multiple update iterations
+    for (int i = 0; i < 20; ++i) {
+        Engine::MusicDirector::UpdateCombatState(0.5f, 0, 0.1f);
+        const uint64_t f0 = Engine::MusicDirector::GetStemFrame(0);
+        const uint64_t f1 = Engine::MusicDirector::GetStemFrame(1);
+        const uint64_t f2 = Engine::MusicDirector::GetStemFrame(2);
+
+        // Every stem must have decoded and advanced by the exact same sample frame count!
+        EXPECT_EQ(f0, f1) << "Stem 0 and 1 desynchronized at iteration " << i;
+        EXPECT_EQ(f1, f2) << "Stem 1 and 2 desynchronized at iteration " << i;
+    }
+
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(MusicDirectorTest, SanctuaryHubSingleTrackCrossfade) {
+    Engine::AudioManager::Init();
+    Engine::MusicDirector::Shutdown();
+
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    const std::array<std::span<const uint8_t>, 3> buffers = { oggSpan, oggSpan, oggSpan };
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(buffers, /*fadeInSec=*/0.0f);
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingStems());
+    EXPECT_FALSE(Engine::MusicDirector::IsPlayingSingleTrack());
+
+    // Crossfade to Sanctuary Hub single track
+    Engine::MusicDirector::PlaySingleTrackFromMemory(oggSpan, /*crossfadeSec=*/1.0f, "sanctuary_hub.ogg");
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingSingleTrack());
+
+    // Step forward until crossfade completes (1.5 seconds at 0.8/s slew rate)
+    for (int i = 0; i < 30; ++i) {
+        Engine::MusicDirector::Update(0.05f);
+    }
+
+    // Single track should be at full weight and stems should be faded out
+    EXPECT_NEAR(Engine::MusicDirector::GetSingleTrackWeight(), 1.0f, 1e-3f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemWeight(0), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemWeight(1), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemWeight(2), 0.0f);
+
+    // Crossfade back to synchronized stems
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(buffers, /*fadeInSec=*/1.0f);
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingStems());
+
+    for (int i = 0; i < 30; ++i) {
+        Engine::MusicDirector::Update(0.05f);
+    }
+
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetSingleTrackWeight(), 0.0f);
+    EXPECT_GT(Engine::MusicDirector::GetStemWeight(1), 0.5f);
+
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(MusicDirectorTest, BusGainHierarchyCascading) {
+    Engine::AudioManager::Init();
+    Engine::MusicDirector::Shutdown();
+
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    const std::array<std::span<const uint8_t>, 3> buffers = { oggSpan, oggSpan, oggSpan };
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(buffers, /*fadeInSec=*/0.0f);
+
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::Master, 0.8f);
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::Music, 0.5f);
+    Engine::MusicDirector::Update(0.0f); // Reapply gains
+
+    // Ash frenzy initial tier: Stem 2 target weight = 1.0
+    // Expected gain = 0.8 (Master) * 0.5 (Music) * 1.0 (Stem Weight) = 0.4
+    EXPECT_NEAR(Engine::MusicDirector::GetStemGain(2), 0.4f, 1e-3f);
+
+    // Muting Master cascades to silence
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::Master, 0.0f);
+    Engine::MusicDirector::Update(0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemGain(2), 0.0f);
+
+    // Restoring Master and changing Music bus
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::Master, 1.0f);
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::Music, 0.75f);
+    Engine::MusicDirector::Update(0.0f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemGain(2), 0.75f, 1e-3f);
+
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(MusicDirectorTest, HeadlessLifecycleAndSafety) {
+    Engine::AudioManager::Init();
+    Engine::MusicDirector::Shutdown();
+
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    const std::array<std::span<const uint8_t>, 3> buffers = { oggSpan, oggSpan, oggSpan };
+
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(buffers, /*fadeInSec=*/0.5f);
+    Engine::MusicDirector::UpdateCombatState(0.5f, 2, 0.1f);
+    Engine::MusicDirector::Stop(/*fadeOutSec=*/0.2f);
+
+    for (int i = 0; i < 10; ++i) {
+        Engine::MusicDirector::Update(0.05f);
+    }
+
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
+    SUCCEED();
 }
 
 } // namespace

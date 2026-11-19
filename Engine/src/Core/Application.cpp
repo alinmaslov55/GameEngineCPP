@@ -13,6 +13,7 @@
 #include "Engine/Scene/SceneManager.h"
 #include "Engine/Audio/AudioManager.h"
 #include "Engine/Audio/AudioClip.h"
+#include "Engine/Audio/MusicDirector.h"
 #include "Engine/Utils/Logger.h"
 
 #ifdef ENGINE_BUILD_EDITOR
@@ -108,6 +109,7 @@ void Application::Run() {
         Time::Update();
         ResourceManager::ProcessPendingUploads(4);
         AudioManager::Update();
+        MusicDirector::Update(Time::GetUnscaledDeltaTime());
         const float deltaTime = Time::GetDeltaTime();
 
         if (!m_Layers.empty()) {
@@ -204,6 +206,7 @@ void Application::Shutdown() {
     TerrainRenderer::Shutdown();
     Renderer2D::Shutdown();
     Renderer::Shutdown();
+    MusicDirector::Shutdown();
     AudioManager::Shutdown();
     JobSystem::Shutdown();
     Input::Shutdown();

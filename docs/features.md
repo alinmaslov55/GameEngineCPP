@@ -221,7 +221,7 @@ flowchart TD
 | **`UIX-04`** | Tactical Radial Drop Wheel & Fog-of-War Minimap | `DONE` | **P1** | W2 | `UIX-02`, `INP-01`, `TER-01`, `LGT-03` | `ECS-02` (wheel slow-mo) | Mid-combat building & chunk exploration |
 | **`AUD-01`** | OGG Vorbis Decoder & Streaming Music Playback | `DONE` | **P0** | W0 | *None (Root)* | `JobSystem` | `AUD-02`, `AUD-03` |
 | **`AUD-02`** | Polyphonic Mixer, Buses, Pitch & 3D Panning | `DONE` | **P0** | W1 | `AUD-01` | `TER-04` (surface foley) | `AUD-03`, `SAV-02` |
-| **`AUD-03`** | Multi-Stem Adaptive Music Director | `TODO` | **P1** | W2 | `AUD-01`, `AUD-02` | `LGT-03` (fuel % state) | Dynamic 3-layer Ash Frenzy soundtrack |
+| **`AUD-03`** | Multi-Stem Adaptive Music Director | `DONE` | **P1** | W2 | `AUD-01`, `AUD-02` | `LGT-03` (fuel % state) | Dynamic 3-layer Ash Frenzy soundtrack |
 | **`AIX-01`** | Horde Steering, Separation & Obstacle Avoidance | `TODO` | **P1** | W4 | `PHY-05`, `ECS-05` | `TER-04` (avoid fire) | 40+ Ghoul/Thrall swarm encirclement |
 | **`AIX-02`** | Reusable FSM & Jiangshi Jump Ballistics | `TODO` | **P1** | W2 | `PHY-01`, `LGT-03` | `ANI-01` | Wendigo, Jiangshi, Wisp & Companion AI |
 | **`SAV-01`** | Data-Driven JSON Archetype & Upgrade Registries | `TODO` | **P1** | W0 | *None (Root)* | `ECS-04` | `SAV-02`, 16 Roots / 24 Branches / 4 Runes |
@@ -1218,7 +1218,7 @@ flowchart TD
 ---
 
 #### `AUD-03` — Multi-Stem Adaptive Music Director
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `AUD-01`, `AUD-02` | Unlocks: Dynamic 3-layer Ash Frenzy soundtrack
 - **Proposed C++ Specification:**
   ```cpp
