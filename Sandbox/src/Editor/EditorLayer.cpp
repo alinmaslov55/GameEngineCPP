@@ -5,6 +5,7 @@
 #include <Engine/Core/Application.h>
 #include <Engine/Core/Input.h>
 #include <Engine/Core/ResourceManager.h>
+#include <Engine/Data/GameplayData.h>
 #include <Engine/ImGui/ImGuiLayer.h>
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/Renderer/RHI/Renderer.h>
@@ -39,10 +40,17 @@ void EditorLayer::OnAttach() {
     m_Framebuffer = std::make_shared<Engine::Framebuffer>(fbSpec);
 
     m_ContentBrowserPanel.SetRootDirectory(Engine::ResourceManager::GetAssetRoot() / "assets");
+
+    std::filesystem::path dataDir = Engine::ResourceManager::GetAssetRoot() / "assets" / "data";
+    if (!std::filesystem::exists(dataDir)) {
+        dataDir = "Sandbox/assets/data";
+    }
+    Engine::GameplayData::Init(dataDir.string());
 }
 
 void EditorLayer::OnDetach() {
     ENGINE_INFO("Detaching EditorLayer...");
+    Engine::GameplayData::Shutdown();
     if (m_SceneState == SceneState::Play) {
         OnSceneStop();
     }
@@ -72,6 +80,9 @@ void EditorLayer::OnUpdate(float deltaTime) {
 
     // 2. Poll Input & Step Runtime Simulation (when in Play Mode) or Ambient Particles (in Edit Mode)
     Engine::Input::Update();
+    if (ImGui::IsKeyPressed(ImGuiKey_F5, false) || Engine::Input::IsKeyJustPressed(SDL_SCANCODE_F5)) {
+        Engine::GameplayData::ReloadAll();
+    }
     if (m_SceneState == SceneState::Play && m_ActiveScene) {
         m_ActiveScene->UpdateRuntime(deltaTime);
     } else if (m_SceneState == SceneState::Edit && m_ActiveScene) {
@@ -217,6 +228,13 @@ void EditorLayer::RenderMenuBar() {
                 m_ShowProfiler = true;
                 m_ShowConsole = true;
                 Engine::ImGuiLayer::ResetWorkspaceLayout();
+            }
+            ImGui::EndMenu();
+        }
+
+        if (ImGui::BeginMenu("Data")) {
+            if (ImGui::MenuItem("Reload All Data Tables", "F5")) {
+                Engine::GameplayData::ReloadAll();
             }
             ImGui::EndMenu();
         }

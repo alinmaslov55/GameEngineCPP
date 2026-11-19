@@ -1,0 +1,42 @@
+[
+  {
+    "Id": "rune_ignite",
+    "Name": "Rune of Ignition",
+    "Description": "Erupts a pool of sacred fire that engulfs enemies in blazing torment.",
+    "FuelCost": 15.0,
+    "CooldownSec": 4.0,
+    "Radius": 5.0,
+    "DurationSec": 3.5,
+    "Icon": "tex_icon_rune_ignite"
+  },
+  {
+    "Id": "rune_chronos",
+    "Name": "Rune of Chronos",
+    "Description": "Distorts temporal flow in an area, slowing enemy movements and projectiles by 60%.",
+    "FuelCost": 20.0,
+    "CooldownSec": 8.0,
+    "Radius": 7.0,
+    "DurationSec": 4.0,
+    "Icon": "tex_icon_rune_chronos"
+  },
+  {
+    "Id": "rune_shockwave",
+    "Name": "Rune of Shockwave",
+    "Description": "Detonates a concussive burst that flings all encroaching monsters away.",
+    "FuelCost": 12.0,
+    "CooldownSec": 3.5,
+    "Radius": 6.0,
+    "DurationSec": 0.5,
+    "Icon": "tex_icon_rune_shockwave"
+  },
+  {
+    "Id": "rune_consecrate",
+    "Name": "Rune of Consecration",
+    "Description": "Hallows the ground into a sanctuary that wards off darkness and cleanses corruption.",
+    "FuelCost": 25.0,
+    "CooldownSec": 10.0,
+    "Radius": 8.0,
+    "DurationSec": 6.0,
+    "Icon": "tex_icon_rune_consecrate"
+  }
+]

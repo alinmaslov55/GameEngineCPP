@@ -1,0 +1,42 @@
+[
+  {
+    "Id": "drop_barricade",
+    "Name": "Spiked Barricade",
+    "Description": "Sturdy timber palisade that obstructs enemy movement and deals contact thorn damage.",
+    "WoodCost": 4,
+    "BuildTimeSec": 0.5,
+    "Health": 120.0,
+    "PrefabPath": "prefabs/barricade.prefab",
+    "Icon": "tex_icon_drop_barricade"
+  },
+  {
+    "Id": "drop_beacon",
+    "Name": "Radiant Beacon",
+    "Description": "Erects a sustained brazier that establishes a localized safe haven of daylight.",
+    "WoodCost": 8,
+    "BuildTimeSec": 1.0,
+    "Health": 80.0,
+    "PrefabPath": "prefabs/beacon.prefab",
+    "Icon": "tex_icon_drop_beacon"
+  },
+  {
+    "Id": "drop_siphon",
+    "Name": "Ash Siphon",
+    "Description": "Mechanical extractor that filters surrounding soil to harvest residual ash embers over time.",
+    "WoodCost": 6,
+    "BuildTimeSec": 0.8,
+    "Health": 100.0,
+    "PrefabPath": "prefabs/siphon.prefab",
+    "Icon": "tex_icon_drop_siphon"
+  },
+  {
+    "Id": "drop_springboard",
+    "Name": "Kinetic Springboard",
+    "Description": "Tension-loaded wooden trap that catapults intruding enemies backward upon triggering.",
+    "WoodCost": 5,
+    "BuildTimeSec": 0.6,
+    "Health": 75.0,
+    "PrefabPath": "prefabs/springboard.prefab",
+    "Icon": "tex_icon_drop_springboard"
+  }
+]

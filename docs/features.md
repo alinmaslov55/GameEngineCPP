@@ -224,7 +224,7 @@ flowchart TD
 | **`AUD-03`** | Multi-Stem Adaptive Music Director | `DONE` | **P1** | W2 | `AUD-01`, `AUD-02` | `LGT-03` (fuel % state) | Dynamic 3-layer Ash Frenzy soundtrack |
 | **`AIX-01`** | Horde Steering, Separation & Obstacle Avoidance | `TODO` | **P1** | W4 | `PHY-05`, `ECS-05` | `TER-04` (avoid fire) | 40+ Ghoul/Thrall swarm encirclement |
 | **`AIX-02`** | Reusable FSM & Jiangshi Jump Ballistics | `TODO` | **P1** | W2 | `PHY-01`, `LGT-03` | `ANI-01` | Wendigo, Jiangshi, Wisp & Companion AI |
-| **`SAV-01`** | Data-Driven JSON Archetype & Upgrade Registries | `TODO` | **P1** | W0 | *None (Root)* | `ECS-04` | `SAV-02`, 16 Roots / 24 Branches / 4 Runes |
+| **`SAV-01`** | Data-Driven JSON Archetype & Upgrade Registries | `DONE` | **P1** | W0 | *None (Root)* | `ECS-04` | `SAV-02`, 16 Roots / 24 Branches / 4 Runes |
 | **`SAV-02`** | Persistent Profile Save System & Hub Transitions | `TODO` | **P2** | W2 | `ECS-01`, `SAV-01`, `INP-01`, `AUD-02` | `PostProcessor` (fade) | Meta-progression Ashes vault & settings |
 | **`EDT-01`** | Aspect-Ratio & Safe-Area Viewport Simulator | `TODO` | **P2** | W1 | `CAM-01`, `UIX-01` | *None* | Desktop + Mobile `9:16` visual QA |
 | **`EDT-02`** | 2.5D Physics, Light Radius & Hitbox Debug Gizmos | `TODO` | **P1** | W4 | `PHY-03`, `LGT-02` | `TER-01` (chunk lines) | Collider, cleave arc & torch radius tuning |
@@ -1321,7 +1321,7 @@ flowchart TD
 ---
 
 #### `SAV-01` — Data-Driven JSON Archetype & Upgrade Registries
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `SAV-02`, Rapid Designer Balancing without Recompiling C++
 - **Proposed C++ Specification:**
   ```cpp

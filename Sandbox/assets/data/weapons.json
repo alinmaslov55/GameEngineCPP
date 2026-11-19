@@ -1,0 +1,110 @@
+[
+  {
+    "Id": "weapon_maul_t1",
+    "WeaponType": "Maul",
+    "Tier": 1,
+    "Name": "Rough Iron Maul",
+    "Damage": 35.0,
+    "SwingArcDeg": 130.0,
+    "Reach": 2.2,
+    "KnockbackImpulse": 22.0,
+    "AttackRate": 0.9,
+    "Sprite": "tex_maul_t1"
+  },
+  {
+    "Id": "weapon_maul_t2",
+    "WeaponType": "Maul",
+    "Tier": 2,
+    "Name": "Tempered War Maul",
+    "Damage": 52.0,
+    "SwingArcDeg": 135.0,
+    "Reach": 2.4,
+    "KnockbackImpulse": 26.0,
+    "AttackRate": 0.95,
+    "Sprite": "tex_maul_t2"
+  },
+  {
+    "Id": "weapon_maul_t3",
+    "WeaponType": "Maul",
+    "Tier": 3,
+    "Name": "Cataclysm Maul",
+    "Damage": 78.0,
+    "SwingArcDeg": 140.0,
+    "Reach": 2.6,
+    "KnockbackImpulse": 32.0,
+    "AttackRate": 1.0,
+    "Sprite": "tex_maul_t3"
+  },
+  {
+    "Id": "weapon_halberd_t1",
+    "WeaponType": "Halberd",
+    "Tier": 1,
+    "Name": "Ashwood Halberd",
+    "Damage": 28.0,
+    "SwingArcDeg": 90.0,
+    "Reach": 3.5,
+    "KnockbackImpulse": 16.0,
+    "AttackRate": 1.1,
+    "Sprite": "tex_halberd_t1"
+  },
+  {
+    "Id": "weapon_halberd_t2",
+    "WeaponType": "Halberd",
+    "Tier": 2,
+    "Name": "Garrison Pike-Halberd",
+    "Damage": 44.0,
+    "SwingArcDeg": 95.0,
+    "Reach": 3.8,
+    "KnockbackImpulse": 19.0,
+    "AttackRate": 1.15,
+    "Sprite": "tex_halberd_t2"
+  },
+  {
+    "Id": "weapon_halberd_t3",
+    "WeaponType": "Halberd",
+    "Tier": 3,
+    "Name": "Drakeguard Glaive",
+    "Damage": 65.0,
+    "SwingArcDeg": 100.0,
+    "Reach": 4.1,
+    "KnockbackImpulse": 24.0,
+    "AttackRate": 1.25,
+    "Sprite": "tex_halberd_t3"
+  },
+  {
+    "Id": "weapon_sickle_t1",
+    "WeaponType": "Sickle",
+    "Tier": 1,
+    "Name": "Culling Sickle",
+    "Damage": 16.0,
+    "SwingArcDeg": 110.0,
+    "Reach": 1.8,
+    "KnockbackImpulse": 8.0,
+    "AttackRate": 2.0,
+    "Sprite": "tex_sickle_t1"
+  },
+  {
+    "Id": "weapon_sickle_t2",
+    "WeaponType": "Sickle",
+    "Tier": 2,
+    "Name": "Twin-Crescent Sickle",
+    "Damage": 26.0,
+    "SwingArcDeg": 115.0,
+    "Reach": 1.9,
+    "KnockbackImpulse": 10.0,
+    "AttackRate": 2.2,
+    "Sprite": "tex_sickle_t2"
+  },
+  {
+    "Id": "weapon_sickle_t3",
+    "WeaponType": "Sickle",
+    "Tier": 3,
+    "Name": "Phantom Scythe",
+    "Damage": 40.0,
+    "SwingArcDeg": 120.0,
+    "Reach": 2.1,
+    "KnockbackImpulse": 13.0,
+    "AttackRate": 2.5,
+    "Sprite": "tex_sickle_t3"
+  }
+]

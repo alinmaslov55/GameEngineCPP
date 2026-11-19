@@ -1,0 +1,242 @@
+[
+  {
+    "Id": "branch_blade_dance",
+    "Name": "Blade Dance",
+    "Description": "Hones reflexes to swing weapons in rapid, fluid succession.",
+    "Rarity": "Common",
+    "Tags": ["Melee", "Speed"],
+    "StatModifier": "AttackRate",
+    "Value": 0.15,
+    "Icon": "tex_icon_branch_speed"
+  },
+  {
+    "Id": "branch_thick_bark",
+    "Name": "Thick Bark",
+    "Description": "Toughens flesh, granting additional maximum health.",
+    "Rarity": "Common",
+    "Tags": ["Survival", "Defense"],
+    "StatModifier": "MaxHealth",
+    "Value": 25.0,
+    "Icon": "tex_icon_branch_health"
+  },
+  {
+    "Id": "branch_kindled_sparks",
+    "Name": "Kindled Sparks",
+    "Description": "Increases radiant burning damage dealt by torch light.",
+    "Rarity": "Common",
+    "Tags": ["Fire", "Light"],
+    "StatModifier": "AuraDamage",
+    "Value": 3.0,
+    "Icon": "tex_icon_branch_spark"
+  },
+  {
+    "Id": "branch_fleetfoot",
+    "Name": "Fleetfoot",
+    "Description": "Lightens footsteps, increasing movement velocity.",
+    "Rarity": "Common",
+    "Tags": ["Mobility"],
+    "StatModifier": "MoveSpeed",
+    "Value": 0.4,
+    "Icon": "tex_icon_branch_boots"
+  },
+  {
+    "Id": "branch_splintering_blow",
+    "Name": "Splintering Blow",
+    "Description": "Harvests significantly more timber from felled trees.",
+    "Rarity": "Common",
+    "Tags": ["Harvest", "Economy"],
+    "StatModifier": "WoodHarvestRate",
+    "Value": 0.25,
+    "Icon": "tex_icon_branch_wood"
+  },
+  {
+    "Id": "branch_stone_breaker",
+    "Name": "Stone Breaker",
+    "Description": "Shatters ore veins cleanly, producing greater yield.",
+    "Rarity": "Common",
+    "Tags": ["Harvest", "Economy"],
+    "StatModifier": "OreHarvestRate",
+    "Value": 0.25,
+    "Icon": "tex_icon_branch_ore"
+  },
+  {
+    "Id": "branch_ember_catcher",
+    "Name": "Ember Catcher",
+    "Description": "Broadens magnetic pull radius for fallen ash essences.",
+    "Rarity": "Common",
+    "Tags": ["Utility", "Economy"],
+    "StatModifier": "AshAttractionRange",
+    "Value": 3.0,
+    "Icon": "tex_icon_branch_magnet"
+  },
+  {
+    "Id": "branch_resolute_guard",
+    "Name": "Resolute Guard",
+    "Description": "Plants feet firmly, reducing knockback taken from brute attacks.",
+    "Rarity": "Common",
+    "Tags": ["Defense"],
+    "StatModifier": "KnockbackResistance",
+    "Value": 0.3,
+    "Icon": "tex_icon_branch_guard"
+  },
+  {
+    "Id": "branch_ignited_edges",
+    "Name": "Ignited Edges",
+    "Description": "Coats blades in hot resin, inflicting burning damage on strike.",
+    "Rarity": "Rare",
+    "Tags": ["Melee", "Fire", "DoT"],
+    "StatModifier": "BurnDamageOnHit",
+    "Value": 6.0,
+    "Icon": "tex_icon_branch_flameblade"
+  },
+  {
+    "Id": "branch_cleaving_momentum",
+    "Name": "Cleaving Momentum",
+    "Description": "Widens weapon swing arc by 20 degrees, striking more enemies.",
+    "Rarity": "Rare",
+    "Tags": ["Melee", "AoE"],
+    "StatModifier": "SwingArcDeg",
+    "Value": 20.0,
+    "Icon": "tex_icon_branch_cleave"
+  },
+  {
+    "Id": "branch_shock_reversal",
+    "Name": "Shock Reversal",
+    "Description": "Deflecting an enemy attack reflects 50% damage back to the attacker.",
+    "Rarity": "Rare",
+    "Tags": ["Defense", "Counter"],
+    "StatModifier": "ReflectDamageRatio",
+    "Value": 0.5,
+    "Icon": "tex_icon_branch_counter"
+  },
+  {
+    "Id": "branch_wildfire_surge",
+    "Name": "Wildfire Surge",
+    "Description": "Each enemy slain restores a small amount of torch fuel.",
+    "Rarity": "Rare",
+    "Tags": ["Fire", "Survival"],
+    "StatModifier": "FuelOnKill",
+    "Value": 2.0,
+    "Icon": "tex_icon_branch_surge"
+  },
+  {
+    "Id": "branch_overcharge_rune",
+    "Name": "Overcharge Rune",
+    "Description": "Amplify active rune damage and spell effect radius by 30%.",
+    "Rarity": "Rare",
+    "Tags": ["Magic", "Spells"],
+    "StatModifier": "RunePowerMultiplier",
+    "Value": 0.3,
+    "Icon": "tex_icon_branch_runepower"
+  },
+  {
+    "Id": "branch_fortified_joints",
+    "Name": "Fortified Joints",
+    "Description": "Engineers deployable barricades with heavy iron reinforcements.",
+    "Rarity": "Rare",
+    "Tags": ["Building", "Defense"],
+    "StatModifier": "DeployableHealthBonus",
+    "Value": 50.0,
+    "Icon": "tex_icon_branch_fortify"
+  },
+  {
+    "Id": "branch_reapers_haste",
+    "Name": "Reaper's Haste",
+    "Description": "Grants 20% burst of move speed for 3 seconds upon felling a foe.",
+    "Rarity": "Rare",
+    "Tags": ["Mobility", "Buff"],
+    "StatModifier": "SpeedOnKill",
+    "Value": 0.2,
+    "Icon": "tex_icon_branch_haste"
+  },
+  {
+    "Id": "branch_frenzied_strikes",
+    "Name": "Frenzied Strikes",
+    "Description": "Consecutive melee hits stack attack speed up to a maximum of 25%.",
+    "Rarity": "Rare",
+    "Tags": ["Melee", "Offense"],
+    "StatModifier": "StackingAttackSpeed",
+    "Value": 0.25,
+    "Icon": "tex_icon_branch_frenzy"
+  },
+  {
+    "Id": "branch_infernal_whirlwind",
+    "Name": "Infernal Whirlwind",
+    "Description": "Heavy weapon finishers unleash sweeping arcs of pure fire.",
+    "Rarity": "Epic",
+    "Tags": ["Melee", "Fire", "AoE"],
+    "StatModifier": "FireWaveDamage",
+    "Value": 35.0,
+    "Icon": "tex_icon_branch_whirlwind"
+  },
+  {
+    "Id": "branch_solar_flare",
+    "Name": "Solar Flare",
+    "Description": "Dodging through enemy attacks detonates a flash that blinds foes for 2s.",
+    "Rarity": "Epic",
+    "Tags": ["Light", "CrowdControl"],
+    "StatModifier": "BlindDuration",
+    "Value": 2.0,
+    "Icon": "tex_icon_branch_solar"
+  },
+  {
+    "Id": "branch_vampiric_pyre",
+    "Name": "Vampiric Pyre",
+    "Description": "Slaying enemies currently engulfed in fire restores 6 health.",
+    "Rarity": "Epic",
+    "Tags": ["Fire", "Healing"],
+    "StatModifier": "HealOnBurnKill",
+    "Value": 6.0,
+    "Icon": "tex_icon_branch_vampire"
+  },
+  {
+    "Id": "branch_titan_stride",
+    "Name": "Titan Stride",
+    "Description": "Grants complete stagger immunity and bonus armor while swinging.",
+    "Rarity": "Epic",
+    "Tags": ["Melee", "Mobility"],
+    "StatModifier": "HyperArmorDuration",
+    "Value": 1.0,
+    "Icon": "tex_icon_branch_titan"
+  },
+  {
+    "Id": "branch_leyline_resonance",
+    "Name": "Leyline Resonance",
+    "Description": "Active runes gain an additional stored charge and 15% CDR.",
+    "Rarity": "Epic",
+    "Tags": ["Magic", "Cooldown"],
+    "StatModifier": "BonusRuneCharges",
+    "Value": 1.0,
+    "Icon": "tex_icon_branch_leyline"
+  },
+  {
+    "Id": "branch_avatar_of_ash",
+    "Name": "Avatar of Ash",
+    "Description": "Doubles max fuel; frenzy mode triggers fiery devastation and +40% stats.",
+    "Rarity": "Legendary",
+    "Tags": ["Ultimate", "Fire", "Frenzy"],
+    "StatModifier": "AshFrenzyBoost",
+    "Value": 0.4,
+    "Icon": "tex_icon_branch_avatar"
+  },
+  {
+    "Id": "branch_cataclysmic_quake",
+    "Name": "Cataclysmic Quake",
+    "Description": "Ground slam impacts send shockwaves through stone, stunning all enemies.",
+    "Rarity": "Legendary",
+    "Tags": ["Ultimate", "CrowdControl", "Melee"],
+    "StatModifier": "QuakeRadius",
+    "Value": 8.0,
+    "Icon": "tex_icon_branch_quake"
+  },
+  {
+    "Id": "branch_eternal_beacon",
+    "Name": "Eternal Beacon",
+    "Description": "All player structures radiate safe light zones and self-repair over time.",
+    "Rarity": "Legendary",
+    "Tags": ["Ultimate", "Building", "Light"],
+    "StatModifier": "BeaconRegenRate",
+    "Value": 5.0,
+    "Icon": "tex_icon_branch_beacon"
+  }
+]

@@ -1,0 +1,57 @@
+[
+  {
+    "Id": "enemy_ghoul",
+    "Name": "Flesheater Ghoul",
+    "Archetype": "Swarm",
+    "Health": 35.0,
+    "MoveSpeed": 3.8,
+    "Damage": 8.0,
+    "Mass": 25.0,
+    "LightVulnerability": 1.2,
+    "SpriteSheet": "tex_sheet_ghoul"
+  },
+  {
+    "Id": "enemy_thrall",
+    "Name": "Rotting Thrall",
+    "Archetype": "Swarm",
+    "Health": 50.0,
+    "MoveSpeed": 2.6,
+    "Damage": 14.0,
+    "Mass": 45.0,
+    "LightVulnerability": 1.0,
+    "SpriteSheet": "tex_sheet_thrall"
+  },
+  {
+    "Id": "enemy_jiangshi",
+    "Name": "Hopping Jiangshi",
+    "Archetype": "Jumper",
+    "Health": 65.0,
+    "MoveSpeed": 4.2,
+    "Damage": 18.0,
+    "Mass": 35.0,
+    "LightVulnerability": 1.5,
+    "SpriteSheet": "tex_sheet_jiangshi"
+  },
+  {
+    "Id": "enemy_wendigo",
+    "Name": "Apex Wendigo",
+    "Archetype": "EliteStalker",
+    "Health": 180.0,
+    "MoveSpeed": 4.8,
+    "Damage": 32.0,
+    "Mass": 90.0,
+    "LightVulnerability": 0.8,
+    "SpriteSheet": "tex_sheet_wendigo"
+  },
+  {
+    "Id": "enemy_wisp",
+    "Name": "Blight Wisp",
+    "Archetype": "Swarm",
+    "Health": 20.0,
+    "MoveSpeed": 5.0,
+    "Damage": 12.0,
+    "Mass": 10.0,
+    "LightVulnerability": 2.0,
+    "SpriteSheet": "tex_sheet_wisp"
+  }
+]
