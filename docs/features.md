@@ -220,7 +220,7 @@ flowchart TD
 | **`UIX-03`** | BMFont (`.fnt`) Loader & Styled Text Layout | `DONE` | **P1** | W1 | `UIX-01` | `CAM-01` (world prompts) | Gothic HUD counters, Shrine upgrade cards |
 | **`UIX-04`** | Tactical Radial Drop Wheel & Fog-of-War Minimap | `DONE` | **P1** | W2 | `UIX-02`, `INP-01`, `TER-01`, `LGT-03` | `ECS-02` (wheel slow-mo) | Mid-combat building & chunk exploration |
 | **`AUD-01`** | OGG Vorbis Decoder & Streaming Music Playback | `DONE` | **P0** | W0 | *None (Root)* | `JobSystem` | `AUD-02`, `AUD-03` |
-| **`AUD-02`** | Polyphonic Mixer, Buses, Pitch & 3D Panning | `TODO` | **P0** | W1 | `AUD-01` | `TER-04` (surface foley) | `AUD-03`, `SAV-02` |
+| **`AUD-02`** | Polyphonic Mixer, Buses, Pitch & 3D Panning | `DONE` | **P0** | W1 | `AUD-01` | `TER-04` (surface foley) | `AUD-03`, `SAV-02` |
 | **`AUD-03`** | Multi-Stem Adaptive Music Director | `TODO` | **P1** | W2 | `AUD-01`, `AUD-02` | `LGT-03` (fuel % state) | Dynamic 3-layer Ash Frenzy soundtrack |
 | **`AIX-01`** | Horde Steering, Separation & Obstacle Avoidance | `TODO` | **P1** | W4 | `PHY-05`, `ECS-05` | `TER-04` (avoid fire) | 40+ Ghoul/Thrall swarm encirclement |
 | **`AIX-02`** | Reusable FSM & Jiangshi Jump Ballistics | `TODO` | **P1** | W2 | `PHY-01`, `LGT-03` | `ANI-01` | Wendigo, Jiangshi, Wisp & Companion AI |
@@ -1174,7 +1174,7 @@ flowchart TD
 ---
 
 #### `AUD-02` — Polyphonic Mixer, Buses, Pitch Variance & 3D Spatial Panning
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `AUD-01` | Unlocks: `AUD-03`, `SAV-02`
 - **Current Gap:** `AudioSource` (`AudioSource.h:36, 49`) opens a dedicated OS `SDL_OpenAudioDeviceStream` per component and aborts `Play()` if the previous sound is still playing (`SDL_GetAudioStreamAvailable > 0`).
 - **Proposed `AudioManager` Voice-Pool Architecture:**
@@ -1470,7 +1470,7 @@ Without these 15 features, the core physics + torch shadow + surface interaction
 | **`LGT-03`** | `DONE` | **Full:** CPU `GetIlluminationAt(posXZ)` & `IsWithinTorchSafeRadius(posXZ)` to drive darkness vulnerability, searing-rim burn ticks, and monster light reactions. |
 | **`TER-04`** | `DONE` | **Full:** Run the CPU surface sampler (`Grass`, `Ash`, `Tar`, `Chalk`, `Cobble`, `Scorched`) and `0.5m` 10 Hz Tar/Firewall cellular automaton grid with spread delay, decay to Scorched Ash, dynamic linear damping on Rigidbody2D, and pooled firewall entities across both finite TerrainComponent and infinite TerrainChunkManager. |
 | **`CAM-02`** | `DONE` | **Full:** Damped top-down camera follow, aim look-ahead, and Perlin trauma screen shake (`AddTrauma`) to sell heavy weapon impacts. |
-| **`AUD-02`** | `TODO` | **Lean WAV Mixer:** Multi-voice polyphonic `.wav` playback with `±10%` random pitch variation so overlapping melee hits and crate shatters don't cut each other off. |
+| **`AUD-02`** | `DONE` | **Lean WAV Mixer:** Multi-voice polyphonic `.wav` playback with `±10%` random pitch variation so overlapping melee hits and crate shatters don't cut each other off. |
 
 ---
 

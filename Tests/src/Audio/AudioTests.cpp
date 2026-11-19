@@ -326,4 +326,246 @@ TEST(AudioSourceTest, DisableDestroyAndPoolReleaseStopPlaybackSafely) {
     SUCCEED();
 }
 
+TEST(SpatialAudioTest, ConstantPowerPanLawPreservesAcousticEnergy) {
+    const float testPans[] = { -1.0f, -0.85f, -0.5f, 0.0f, 0.5f, 0.85f, 1.0f };
+    for (float pan : testPans) {
+        const auto gains = Engine::SpatialAudio::CalculateConstantPowerGains(pan);
+        const float energy = gains.Left * gains.Left + gains.Right * gains.Right;
+        EXPECT_NEAR(energy, 1.0f, 1e-5f) << "Failed for pan: " << pan;
+    }
+
+    // Center pan: equal power to both channels
+    const auto center = Engine::SpatialAudio::CalculateConstantPowerGains(0.0f);
+    EXPECT_NEAR(center.Left, center.Right, 1e-5f);
+    EXPECT_NEAR(center.Left, 0.70710678f, 1e-4f);
+
+    // Hard Left
+    const auto hardLeft = Engine::SpatialAudio::CalculateConstantPowerGains(-1.0f);
+    EXPECT_NEAR(hardLeft.Left, 1.0f, 1e-5f);
+    EXPECT_NEAR(hardLeft.Right, 0.0f, 1e-5f);
+
+    // Hard Right
+    const auto hardRight = Engine::SpatialAudio::CalculateConstantPowerGains(1.0f);
+    EXPECT_NEAR(hardRight.Left, 0.0f, 1e-5f);
+    EXPECT_NEAR(hardRight.Right, 1.0f, 1e-5f);
+}
+
+TEST(SpatialAudioTest, DistanceAttenuationSmoothQuadraticRollOff) {
+    constexpr float kMinD = 3.0f;
+    constexpr float kMaxD = 24.0f;
+
+    // Within min distance: full volume
+    EXPECT_FLOAT_EQ(Engine::SpatialAudio::CalculateDistanceAttenuation(0.0f, kMinD, kMaxD), 1.0f);
+    EXPECT_FLOAT_EQ(Engine::SpatialAudio::CalculateDistanceAttenuation(2.0f, kMinD, kMaxD), 1.0f);
+    EXPECT_FLOAT_EQ(Engine::SpatialAudio::CalculateDistanceAttenuation(3.0f, kMinD, kMaxD), 1.0f);
+
+    // Beyond max distance: silence
+    EXPECT_FLOAT_EQ(Engine::SpatialAudio::CalculateDistanceAttenuation(24.0f, kMinD, kMaxD), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::SpatialAudio::CalculateDistanceAttenuation(50.0f, kMinD, kMaxD), 0.0f);
+
+    // Midpoint distance: t = 0.5 -> atten = (1 - 0.5)^2 = 0.25
+    constexpr float midDist = kMinD + (kMaxD - kMinD) * 0.5f;
+    EXPECT_NEAR(Engine::SpatialAudio::CalculateDistanceAttenuation(midDist, kMinD, kMaxD), 0.25f, 1e-5f);
+
+    // Degenerate range
+    EXPECT_FLOAT_EQ(Engine::SpatialAudio::CalculateDistanceAttenuation(5.0f, 10.0f, 5.0f), 0.0f);
+}
+
+TEST(SpatialAudioTest, StereoPanAngleAndClamping) {
+    const glm::vec2 listenerRight(1.0f, 0.0f);
+
+    // 10 units right -> clamped to 0.85
+    EXPECT_NEAR(Engine::SpatialAudio::CalculateStereoPan(glm::vec2(10.0f, 0.0f), listenerRight), 0.85f, 1e-5f);
+    EXPECT_NEAR(Engine::SpatialAudio::CalculateStereoPan(glm::vec2(20.0f, 0.0f), listenerRight), 0.85f, 1e-5f);
+
+    // 5 units right -> 0.5
+    EXPECT_NEAR(Engine::SpatialAudio::CalculateStereoPan(glm::vec2(5.0f, 0.0f), listenerRight), 0.5f, 1e-5f);
+
+    // Directly in front or behind -> 0.0 (center)
+    EXPECT_NEAR(Engine::SpatialAudio::CalculateStereoPan(glm::vec2(0.0f, 15.0f), listenerRight), 0.0f, 1e-5f);
+    EXPECT_NEAR(Engine::SpatialAudio::CalculateStereoPan(glm::vec2(0.0f, -15.0f), listenerRight), 0.0f, 1e-5f);
+
+    // 10 units left -> clamped to -0.85
+    EXPECT_NEAR(Engine::SpatialAudio::CalculateStereoPan(glm::vec2(-10.0f, 0.0f), listenerRight), -0.85f, 1e-5f);
+}
+
+TEST(AudioManagerTest, BusGainHierarchyAndCascading) {
+    Engine::AudioManager::Init(48);
+
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::Master, 0.8f);
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::SFX, 0.5f);
+    EXPECT_FLOAT_EQ(Engine::AudioManager::GetBusVolume(Engine::AudioBus::Master), 0.8f);
+    EXPECT_FLOAT_EQ(Engine::AudioManager::GetBusVolume(Engine::AudioBus::SFX), 0.5f);
+
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 2u, 1024u);
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "bus_test.wav");
+    ASSERT_NE(clip, nullptr);
+
+    Engine::SoundPlayParams params;
+    params.Bus = Engine::AudioBus::SFX;
+    params.Volume = 0.9f;
+    params.SpatializedXZ = false;
+
+    const auto voice = Engine::AudioManager::PlayOneShot(clip, params);
+    EXPECT_NE(voice, Engine::kInvalidVoiceHandle);
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(voice));
+
+    // Expected gain: 0.8 (Master) * 0.5 (SFX) * 0.9 (Volume) = 0.36
+    EXPECT_NEAR(Engine::AudioManager::GetVoiceEffectiveGain(voice), 0.36f, 1e-4f);
+
+    // Setting Master to 0.0 cascades to silence
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::Master, 0.0f);
+    EXPECT_FLOAT_EQ(Engine::AudioManager::GetVoiceEffectiveGain(voice), 0.0f);
+
+    // Restoring Master and changing SFX
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::Master, 1.0f);
+    Engine::AudioManager::SetBusVolume(Engine::AudioBus::SFX, 0.5f);
+    EXPECT_NEAR(Engine::AudioManager::GetVoiceEffectiveGain(voice), 0.45f, 1e-4f);
+
+    // Bus pause & resume
+    Engine::AudioManager::PauseBus(Engine::AudioBus::SFX);
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(voice));
+    Engine::AudioManager::ResumeBus(Engine::AudioBus::SFX);
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(voice));
+
+    // Bus stop
+    Engine::AudioManager::StopBus(Engine::AudioBus::SFX);
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(voice));
+
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(AudioManagerTest, VoiceStealingPriorityWhenOver48Voices) {
+    Engine::AudioManager::Init(48);
+
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 1024u);
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "voice_steal.wav");
+    ASSERT_NE(clip, nullptr);
+
+    std::vector<Engine::VoiceHandle> handles;
+    handles.reserve(48);
+
+    // Fill all 48 slots with increasing priorities
+    for (uint32_t i = 0; i < 48; ++i) {
+        Engine::SoundPlayParams params;
+        params.Bus = Engine::AudioBus::SFX;
+        params.Volume = 0.5f;
+        params.Priority = static_cast<uint8_t>(i + 1); // 1..48
+        params.Loop = true; // Looping keeps voices in active state
+        const auto h = Engine::AudioManager::PlayOneShot(clip, params);
+        ASSERT_NE(h, Engine::kInvalidVoiceHandle);
+        handles.push_back(h);
+    }
+
+    EXPECT_EQ(Engine::AudioManager::GetActiveVoiceCount(), 48u);
+    const auto lowestPriorityHandle = handles[0]; // Priority 1 -> first to be stolen
+
+    // Trigger 49th voice with high priority
+    Engine::SoundPlayParams urgentParams;
+    urgentParams.Bus = Engine::AudioBus::SFX;
+    urgentParams.Volume = 1.0f;
+    urgentParams.Priority = 200;
+    urgentParams.Loop = true;
+    const auto urgentHandle = Engine::AudioManager::PlayOneShot(clip, urgentParams);
+
+    EXPECT_NE(urgentHandle, Engine::kInvalidVoiceHandle);
+    EXPECT_EQ(Engine::AudioManager::GetActiveVoiceCount(), 48u);
+
+    // Verify lowest-priority voice was stolen and invalidated
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(lowestPriorityHandle));
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(urgentHandle));
+
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(AudioManagerTest, PitchVarianceRangeRandomization) {
+    Engine::AudioManager::Init(48);
+
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 1024u);
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "pitch_test.wav");
+    ASSERT_NE(clip, nullptr);
+
+    constexpr float minPitch = 0.94f;
+    constexpr float maxPitch = 1.06f;
+
+    for (int i = 0; i < 10; ++i) {
+        Engine::SoundPlayParams params;
+        params.PitchMin = minPitch;
+        params.PitchMax = maxPitch;
+        const auto handle = Engine::AudioManager::PlayOneShot(clip, params);
+        ASSERT_NE(handle, Engine::kInvalidVoiceHandle);
+        const float pitch = Engine::AudioManager::GetVoiceFrequencyRatio(handle);
+        EXPECT_GE(pitch, minPitch);
+        EXPECT_LE(pitch, maxPitch);
+        Engine::AudioManager::StopVoice(handle);
+    }
+
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(AudioManagerTest, PlayRandomVariationSelection) {
+    Engine::AudioManager::Init(48);
+
+    std::vector<std::shared_ptr<Engine::AudioClip>> variations;
+    for (int i = 0; i < 4; ++i) {
+        const auto wavBytes = BuildSyntheticWavPCM16(22050u + i * 2000u, 1u, 512u);
+        variations.push_back(Engine::AudioClip::CreateFromMemory(wavBytes, "var_" + std::to_string(i) + ".wav"));
+    }
+
+    for (int i = 0; i < 16; ++i) {
+        const auto handle = Engine::AudioManager::PlayRandomVariation(variations);
+        EXPECT_NE(handle, Engine::kInvalidVoiceHandle);
+        EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(handle));
+        Engine::AudioManager::StopVoice(handle);
+    }
+
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(AudioSourceTest, PolyphonyAndSpatialIntegration) {
+    Engine::AudioManager::Init(48);
+
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 2048u);
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "source_test.wav");
+    ASSERT_NE(clip, nullptr);
+
+    Engine::GameObject entity("SpatialAudioEmitter");
+    auto* transform = entity.GetTransform();
+    ASSERT_NE(transform, nullptr);
+    transform->position = glm::vec3(5.0f, 0.0f, 0.0f);
+
+    auto* source = entity.AddComponent<Engine::AudioSource>();
+    ASSERT_NE(source, nullptr);
+
+    source->SetClip(clip);
+    source->SetBus(Engine::AudioBus::SFX);
+    source->SetVolume(0.8f);
+    source->SetSpatialized(true);
+    source->SetAttenuationDistances(2.0f, 20.0f);
+    source->SetPitchRange(0.98f, 1.02f);
+    source->SetLooping(true);
+
+    EXPECT_EQ(source->GetBus(), Engine::AudioBus::SFX);
+    EXPECT_FLOAT_EQ(source->GetVolume(), 0.8f);
+    EXPECT_TRUE(source->IsSpatialized());
+    EXPECT_FLOAT_EQ(source->GetMinDistance(), 2.0f);
+    EXPECT_FLOAT_EQ(source->GetMaxDistance(), 20.0f);
+    EXPECT_TRUE(source->IsLooping());
+
+    source->Play();
+    EXPECT_TRUE(source->IsPlaying());
+    EXPECT_NE(source->GetActiveVoice(), Engine::kInvalidVoiceHandle);
+
+    source->Pause();
+    EXPECT_FALSE(source->IsPlaying());
+
+    source->Resume();
+    EXPECT_TRUE(source->IsPlaying());
+
+    source->Stop();
+    EXPECT_FALSE(source->IsPlaying());
+
+    Engine::AudioManager::Shutdown();
+}
+
 } // namespace
