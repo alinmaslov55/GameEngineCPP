@@ -213,6 +213,10 @@ void Renderer2D::Shutdown() {
     ENGINE_CORE_INFO("Renderer2D shut down");
 }
 
+bool Renderer2D::IsInitialized() noexcept {
+    return s_Data != nullptr;
+}
+
 void Renderer2D::ApplyLightingUniforms(const SceneLightingData* lighting) {
     auto& shader = *s_Data->TextureShader;
     shader.Bind();

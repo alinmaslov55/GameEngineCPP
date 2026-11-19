@@ -34,6 +34,7 @@ class Renderer2D {
 public:
     static void Init();
     static void Shutdown();
+    [[nodiscard]] static bool IsInitialized() noexcept;
 
     static void BeginScene(const PerspectiveCamera& camera, bool depthTest = true, float defaultAlphaCutoff = 0.0f);
     static void BeginScene(const PerspectiveCamera& camera, const SceneLightingData& lighting, bool depthTest = true, float defaultAlphaCutoff = 0.0f);
