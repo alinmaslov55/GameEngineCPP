@@ -226,7 +226,7 @@ flowchart TD
 | **`AIX-02`** | Reusable FSM & Jiangshi Jump Ballistics | `TODO` | **P1** | W2 | `PHY-01`, `LGT-03` | `ANI-01` | Wendigo, Jiangshi, Wisp & Companion AI |
 | **`SAV-01`** | Data-Driven JSON Archetype & Upgrade Registries | `DONE` | **P1** | W0 | *None (Root)* | `ECS-04` | `SAV-02`, 16 Roots / 24 Branches / 4 Runes |
 | **`SAV-02`** | Persistent Profile Save System & Hub Transitions | `DONE` | **P2** | W2 | `ECS-01`, `SAV-01`, `INP-01`, `AUD-02` | `PostProcessor` (fade) | Meta-progression Ashes vault & settings |
-| **`EDT-01`** | Aspect-Ratio & Safe-Area Viewport Simulator | `TODO` | **P2** | W1 | `CAM-01`, `UIX-01` | *None* | Desktop + Mobile `9:16` visual QA |
+| **`EDT-01`** | Aspect-Ratio & Safe-Area Viewport Simulator | `DONE` | **P2** | W1 | `CAM-01`, `UIX-01` | *None* | Desktop + Mobile `9:16` visual QA |
 | **`EDT-02`** | 2.5D Physics, Light Radius & Hitbox Debug Gizmos | `TODO` | **P1** | W4 | `PHY-03`, `LGT-02` | `TER-01` (chunk lines) | Collider, cleave arc & torch radius tuning |
 | **`EDT-03`** | Prefab & Animation Clip Inspector Authoring | `TODO` | **P2** | W3 | `ECS-04`, `ANI-02` | *None* | Visual prefab & frame-event editing |
 
@@ -1380,7 +1380,7 @@ flowchart TD
 ---
 
 #### `EDT-01` — Aspect-Ratio & Safe-Area Viewport Simulator
-- **Status:** `TODO` | **Priority:** `P2` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P2` | **Wave:** `W1`
 - **Dependencies:** Hard: `CAM-01`, `UIX-01` | Unlocks: Artist Checklist Step 7 (`game_assets_specification.md` line 468)
 - **Proposed Editor Enhancement (`SceneViewportPanel`):**
   - Add toolbar combo box: **`[Aspect: Free | 16:9 Landscape | 16:10 Landscape | 9:16 Portrait | 10:16 Portrait]`** + **`[x] Show 5% Safe Area`**.

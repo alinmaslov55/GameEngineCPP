@@ -71,6 +71,26 @@ DioramaDropArchetype ResolveDropArchetype(DioramaDropArchetype requested, const 
     return DioramaDropArchetype::SolidStandee;
 }
 
+void DrawDashedLine(ImDrawList* drawList, const ImVec2& p1, const ImVec2& p2, ImU32 col, float thickness, float dashLen, float gapLen) {
+    if (!drawList) return;
+    const float dx = p2.x - p1.x;
+    const float dy = p2.y - p1.y;
+    const float dist = std::hypot(dx, dy);
+    if (dist <= 0.001f) return;
+
+    const float dirX = dx / dist;
+    const float dirY = dy / dist;
+
+    float current = 0.0f;
+    while (current < dist) {
+        const float segEnd = std::min(current + dashLen, dist);
+        const ImVec2 start{ p1.x + dirX * current, p1.y + dirY * current };
+        const ImVec2 end{ p1.x + dirX * segEnd, p1.y + dirY * segEnd };
+        drawList->AddLine(start, end, col, thickness);
+        current += dashLen + gapLen;
+    }
+}
+
 } // namespace
 
 void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer>& framebuffer,
@@ -83,8 +103,49 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0.0f, 0.0f });
     ImGui::Begin("Scene");
 
-    const ImVec2 viewportPanelSize = ImGui::GetContentRegionAvail();
-    m_ViewportSize = { viewportPanelSize.x, viewportPanelSize.y };
+    // 0. Simulator Toolbar: Aspect Combo Box & 5% Safe Area Toggle
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
+    ImGui::SetCursorPosX(ImGui::GetCursorPosX() + 6.0f);
+    ImGui::SetCursorPosY(ImGui::GetCursorPosY() + 4.0f);
+
+    ImGui::SetNextItemWidth(150.0f);
+    const char* aspectNames[] = {
+        "Aspect: Free",
+        "16:9 Landscape",
+        "16:10 Landscape",
+        "9:16 Portrait",
+        "10:16 Portrait"
+    };
+    int currentAspect = static_cast<int>(m_AspectMode);
+    if (ImGui::Combo("##AspectModeCombo", &currentAspect, aspectNames, IM_ARRAYSIZE(aspectNames))) {
+        m_AspectMode = static_cast<Engine::ViewportAspectMode>(currentAspect);
+    }
+    ImGui::SameLine();
+    ImGui::Checkbox("Show 5% Safe Area", &m_ShowSafeArea);
+
+    // Live display of resolution and aspect ratio in toolbar
+    ImGui::SameLine();
+    const float curRatio = (m_ViewportSize.y > 0.0f) ? (m_ViewportSize.x / m_ViewportSize.y) : 0.0f;
+    ImGui::TextDisabled("| %dx%d (%.2f:1)",
+                        static_cast<int>(m_ViewportSize.x),
+                        static_cast<int>(m_ViewportSize.y),
+                        curRatio);
+
+    ImGui::PopStyleVar(); // FramePadding
+
+    // 1. Calculate Letterboxed / Pillarboxed dimensions inside remaining panel space
+    const ImVec2 contentAvail = ImGui::GetContentRegionAvail();
+    const glm::vec2 availSize = { std::max(contentAvail.x, 1.0f), std::max(contentAvail.y, 1.0f) };
+
+    const auto metrics = Engine::ViewportAspectSimulator::CalculateMetrics(availSize, m_AspectMode);
+    m_ViewportSize = metrics.RenderSize;
+    m_ViewportOffset = metrics.Offset;
+
+    // Apply offset to center image within panel
+    const ImVec2 cursorOrigin = ImGui::GetCursorPos();
+    if (m_ViewportOffset.x > 0.0f || m_ViewportOffset.y > 0.0f) {
+        ImGui::SetCursorPos(ImVec2(cursorOrigin.x + m_ViewportOffset.x, cursorOrigin.y + m_ViewportOffset.y));
+    }
 
     if (framebuffer) {
         const uint32_t textureID = framebuffer->GetColorAttachmentRendererID();
@@ -94,8 +155,49 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                      ImVec2{ 1.0f, 0.0f });
     }
     const ImVec2 imageMin = ImGui::GetItemRectMin();
+
     if (m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f) {
         Engine::Input::SetViewportRect({ imageMin.x, imageMin.y }, m_ViewportSize);
+    }
+
+    // 2. Draw Dashed Amber 5% Safe Area Overlay
+    if (m_ShowSafeArea && m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f) {
+        const auto safeRect = Engine::ViewportAspectSimulator::CalculateSafeArea(
+            { imageMin.x, imageMin.y },
+            m_ViewportSize,
+            Engine::ViewportAspectSimulator::kDefaultSafeAreaMargin
+        );
+
+        ImDrawList* drawList = ImGui::GetWindowDrawList();
+        const ImU32 amberColor = IM_COL32(245, 166, 35, 230); // Dashed amber (RGB: 245, 166, 35)
+        const float dashLen = 8.0f;
+        const float gapLen = 5.0f;
+        const float thickness = 1.5f;
+
+        const ImVec2 sMin = { safeRect.Min.x, safeRect.Min.y };
+        const ImVec2 sMax = { safeRect.Max.x, safeRect.Max.y };
+
+        // 4 dashed boundary edges
+        DrawDashedLine(drawList, { sMin.x, sMin.y }, { sMax.x, sMin.y }, amberColor, thickness, dashLen, gapLen);
+        DrawDashedLine(drawList, { sMax.x, sMin.y }, { sMax.x, sMax.y }, amberColor, thickness, dashLen, gapLen);
+        DrawDashedLine(drawList, { sMax.x, sMax.y }, { sMin.x, sMax.y }, amberColor, thickness, dashLen, gapLen);
+        DrawDashedLine(drawList, { sMin.x, sMax.y }, { sMin.x, sMin.y }, amberColor, thickness, dashLen, gapLen);
+
+        // Corner tick marks and label
+        const float tickSize = 12.0f;
+        drawList->AddLine({ sMin.x, sMin.y }, { sMin.x + tickSize, sMin.y }, amberColor, 2.0f);
+        drawList->AddLine({ sMin.x, sMin.y }, { sMin.x, sMin.y + tickSize }, amberColor, 2.0f);
+
+        drawList->AddLine({ sMax.x, sMin.y }, { sMax.x - tickSize, sMin.y }, amberColor, 2.0f);
+        drawList->AddLine({ sMax.x, sMin.y }, { sMax.x, sMin.y + tickSize }, amberColor, 2.0f);
+
+        drawList->AddLine({ sMin.x, sMax.y }, { sMin.x + tickSize, sMax.y }, amberColor, 2.0f);
+        drawList->AddLine({ sMin.x, sMax.y }, { sMin.x, sMax.y - tickSize }, amberColor, 2.0f);
+
+        drawList->AddLine({ sMax.x, sMax.y }, { sMax.x - tickSize, sMax.y }, amberColor, 2.0f);
+        drawList->AddLine({ sMax.x, sMax.y }, { sMax.x, sMax.y - tickSize }, amberColor, 2.0f);
+
+        drawList->AddText(ImVec2(sMin.x + 4.0f, sMin.y + 4.0f), amberColor, "5% Safe Area");
     }
 
     // 0. Drag-and-Drop 2.5D Prop Spawning from Asset Browser directly onto the 3D Ground Plane
