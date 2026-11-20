@@ -228,7 +228,7 @@ flowchart TD
 | **`SAV-02`** | Persistent Profile Save System & Hub Transitions | `DONE` | **P2** | W2 | `ECS-01`, `SAV-01`, `INP-01`, `AUD-02` | `PostProcessor` (fade) | Meta-progression Ashes vault & settings |
 | **`EDT-01`** | Aspect-Ratio & Safe-Area Viewport Simulator | `DONE` | **P2** | W1 | `CAM-01`, `UIX-01` | *None* | Desktop + Mobile `9:16` visual QA |
 | **`EDT-02`** | 2.5D Physics, Light Radius & Hitbox Debug Gizmos | `DONE` | **P1** | W4 | `PHY-03`, `LGT-02` | `TER-01` (chunk lines) | Collider, cleave arc & torch radius tuning |
-| **`EDT-03`** | Prefab & Animation Clip Inspector Authoring | `TODO` | **P2** | W3 | `ECS-04`, `ANI-02` | *None* | Visual prefab & frame-event editing |
+| **`EDT-03`** | Prefab & Animation Clip Inspector Authoring | `DONE` | **P2** | W3 | `ECS-04`, `ANI-02` | *None* | Visual prefab & frame-event editing |
 
 ---
 
@@ -1403,7 +1403,7 @@ flowchart TD
 ---
 
 #### `EDT-03` — Prefab & Animation Clip Inspector Authoring
-- **Status:** `TODO` | **Priority:** `P2` | **Wave:** `W3`
+- **Status:** `DONE` | **Priority:** `P2` | **Wave:** `W3`
 - **Dependencies:** Hard: `ECS-04`, `ANI-02` | Unlocks: Visual prefab drag-and-drop & event marker tuning
 - **Proposed Editor Enhancement (`InspectorPanel` & `ContentBrowserPanel`):**
   - Dragging any entity from `SceneHierarchyPanel` into `ContentBrowserPanel` writes `<name>.prefab`; dragging `<name>.prefab` onto `SceneViewportPanel` raycasts `Y = 0` and calls `Scene::InstantiatePrefab`.

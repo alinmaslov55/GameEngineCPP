@@ -77,6 +77,16 @@ struct AnimationClip {
     }
 
     [[nodiscard]] const std::vector<AnimationEvent>& GetEvents() const noexcept { return Events; }
+    [[nodiscard]] std::vector<AnimationEvent>& GetEventsMutable() noexcept { return Events; }
+
+    bool RemoveEvent(size_t index) {
+        if (index < Events.size()) {
+            Events.erase(Events.begin() + index);
+            return true;
+        }
+        return false;
+    }
+
     void ClearEvents() noexcept { Events.clear(); }
 
     [[nodiscard]] float GetTotalDuration() const noexcept {

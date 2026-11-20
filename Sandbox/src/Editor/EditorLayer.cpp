@@ -2,6 +2,7 @@
 
 #include "Scene/DemoScene.h"
 
+#include <Engine/Animation/Animator.h>
 #include <Engine/Core/Application.h>
 #include <Engine/Core/Input.h>
 #include <Engine/Core/ResourceManager.h>
@@ -92,6 +93,11 @@ void EditorLayer::OnUpdate(float deltaTime) {
             }
             if (auto* ss = go->GetComponent<Engine::SquashStretchComponent>()) {
                 ss->Update(deltaTime);
+            }
+            if (auto* anim = go->GetComponent<Engine::Animator>()) {
+                if (anim->IsPreviewPlaying()) {
+                    anim->Update(deltaTime);
+                }
             }
         }
     }

@@ -67,6 +67,36 @@ void Animator::Stop() noexcept {
     ResetState();
 }
 
+void Animator::SetCurrentFrameIndex(uint32_t frameIndex) {
+    ScrubToFrame(frameIndex, false);
+}
+
+void Animator::ScrubToFrame(uint32_t frameIndex, bool triggerEvents) {
+    if (!m_CurrentClip) {
+        return;
+    }
+    const size_t frameCount = !m_CurrentClip->Frames.empty()
+        ? m_CurrentClip->Frames.size()
+        : m_CurrentClip->frames.size();
+    if (frameCount == 0) {
+        return;
+    }
+
+    m_IsPreviewPlaying = false;
+    m_CurrentFrameIndex = std::min(frameIndex, static_cast<uint32_t>(frameCount - 1));
+    m_CurrentTime = 0.0f;
+
+    if (triggerEvents) {
+        TriggerFrameEvents(m_CurrentFrameIndex);
+    }
+    UpdateSpriteRenderer();
+}
+
+void Animator::SetCurrentFlipX(bool flipX) {
+    m_CurrentFlipX = flipX;
+    UpdateSpriteRenderer();
+}
+
 uint32_t Animator::AddEventListener(AnimEventCallback callback) {
     if (!callback) {
         return 0;
@@ -128,6 +158,7 @@ void Animator::ResetState() noexcept {
     m_QueuedLoopState.clear();
     m_CurrentFlipX = false;
     m_Frame0Fired = false;
+    m_IsPreviewPlaying = false;
 }
 
 void Animator::GetCameraBasis(glm::vec3& outRightXZ, glm::vec3& outForwardXZ) const {

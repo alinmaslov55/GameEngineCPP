@@ -1,5 +1,6 @@
 #include "Panels/Inspector/InspectorPanel.h"
 
+#include <Engine/Animation/Animator.h>
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Renderer/SpriteRenderer.h>
@@ -124,6 +125,9 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         DrawComponent<Engine::Tilemap>("Tilemap", selectedEntity, [&](Engine::Tilemap& c) {
             DrawTilemap(c, selectedEntity);
         });
+        DrawComponent<Engine::Animator>("Animator", selectedEntity, [&](Engine::Animator& c) {
+            DrawAnimator(c, selectedEntity);
+        });
 
         ImGui::Spacing();
         ImGui::Separator();
@@ -199,6 +203,7 @@ void InspectorPanel::DrawAddComponentMenu(Engine::GameObject* entity) {
 
     if (ImGui::BeginPopup("AddComponentPopup")) {
         DrawAddComponentEntry<Engine::SpriteRenderer>("Sprite Renderer", entity);
+        DrawAddComponentEntry<Engine::Animator>("Animator", entity);
         DrawAddComponentEntry<Engine::TerrainComponent>("Terrain (Splatmap)", entity);
         DrawAddComponentEntry<Engine::TerrainChunkManager>("Terrain Chunk Manager (Infinite)", entity);
         DrawAddComponentEntry<Engine::DirectionalLightComponent>("Directional Light", entity);

@@ -8,6 +8,7 @@
 #include <Engine/Renderer/SceneRenderer.h>
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/Components/FoliageWindComponents.h>
+#include <Engine/Scene/Prefab.h>
 #include <Engine/Terrain/TerrainComponent.h>
 #include <Engine/Terrain/TerrainChunkManager.h>
 #include <Engine/Terrain/Tilemap.h>
@@ -332,6 +333,45 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                 ENGINE_INFO("Scene Viewport: Spawned 2.5D standee '{}' [{}] at ({:.2f}, {:.2f}, {:.2f}), scale=({:.2f}, {:.2f}, {:.2f}), aspect={:.2f}",
                             entityName, archName, spawnPos.x, spawnPos.y, spawnPos.z,
                             transform->scale.x, transform->scale.y, transform->scale.z, aspect);
+            } else if (ext == ".prefab") {
+                const Engine::PerspectiveCamera& viewCamera = editorCamera.GetCamera();
+                float groundY = 0.0f;
+                if (Engine::GameObject* terrainObj = TilePalettePanel::ResolveTargetTerrainEntity(activeScene, selectedEntity)) {
+                    if (auto* tr = terrainObj->GetTransform()) {
+                        groundY = tr->position.y;
+                    }
+                }
+
+                glm::vec3 spawnPos = viewCamera.GetFocalPoint();
+                spawnPos.y = groundY;
+
+                if (m_ViewportSize.x > 0.0f && m_ViewportSize.y > 0.0f) {
+                    const ImVec2 mousePos = ImGui::GetMousePos();
+                    const glm::vec2 relMouse = {
+                        mousePos.x - imageMin.x,
+                        m_ViewportSize.y - (mousePos.y - imageMin.y)
+                    };
+                    const glm::vec2 ndc = {
+                        (relMouse.x / m_ViewportSize.x) * 2.0f - 1.0f,
+                        (relMouse.y / m_ViewportSize.y) * 2.0f - 1.0f
+                    };
+                    glm::vec3 hitPos{ 0.0f };
+                    if (viewCamera.RaycastGroundPlane(ndc, groundY, hitPos)) {
+                        spawnPos = hitPos;
+                    }
+                }
+
+                auto prefab = Engine::Prefab::LoadFromFile(droppedPath.string());
+                if (prefab && prefab->IsValid()) {
+                    Engine::GameObject* spawned = activeScene->InstantiatePrefab(*prefab, spawnPos);
+                    if (spawned) {
+                        selectedEntity = spawned;
+                        ENGINE_INFO("Scene Viewport: Instantiated prefab '{}' at ({:.2f}, {:.2f}, {:.2f})",
+                                    droppedPath.filename().string(), spawnPos.x, spawnPos.y, spawnPos.z);
+                    }
+                } else {
+                    ENGINE_ERROR("Scene Viewport: Failed to load prefab from '{}'", droppedPath.string());
+                }
             }
         }
         ImGui::EndDragDropTarget();

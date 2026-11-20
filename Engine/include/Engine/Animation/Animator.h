@@ -28,10 +28,17 @@ public:
     void AddClip(const std::shared_ptr<AnimationClip>& clip);
     [[nodiscard]] const std::unordered_map<std::string, std::shared_ptr<AnimationClip>>& GetClips() const noexcept { return m_Clips; }
     [[nodiscard]] std::shared_ptr<AnimationClip> GetClip(std::string_view name) const;
+    [[nodiscard]] std::shared_ptr<AnimationClip> GetCurrentClip() const noexcept { return m_CurrentClip; }
 
     // Direct playback (backward compatible)
     void Play(const std::string& clipName);
     void Stop() noexcept;
+
+    // Live editor preview & scrubbing
+    void SetCurrentFrameIndex(uint32_t frameIndex);
+    void ScrubToFrame(uint32_t frameIndex, bool triggerEvents = false);
+    [[nodiscard]] bool IsPreviewPlaying() const noexcept { return m_IsPreviewPlaying; }
+    void SetPreviewPlaying(bool playing) noexcept { m_IsPreviewPlaying = playing; }
 
     // Directional configuration & speed scaling
     void SetDirectionalScheme(DirectionalScheme scheme) noexcept { m_DirectionalScheme = scheme; }
@@ -57,7 +64,7 @@ public:
     [[nodiscard]] uint32_t GetCurrentFrameIndex() const noexcept { return m_CurrentFrameIndex; }
     [[nodiscard]] float GetCurrentTime() const noexcept { return m_CurrentTime; }
     [[nodiscard]] bool GetCurrentFlipX() const noexcept { return m_CurrentFlipX; }
-    void SetCurrentFlipX(bool flipX) noexcept { m_CurrentFlipX = flipX; }
+    void SetCurrentFlipX(bool flipX);
 
     // Animation event listener API
     uint32_t AddEventListener(AnimEventCallback callback);
@@ -118,6 +125,7 @@ private:
     std::vector<std::pair<uint32_t, AnimEventCallback>> m_EventListeners;
     uint32_t m_NextListenerHandle = 1;
     bool m_Frame0Fired = false;
+    bool m_IsPreviewPlaying = false;
 };
 
 } // namespace Engine

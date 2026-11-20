@@ -2,6 +2,8 @@
 
 #include <Engine/Core/ResourceManager.h>
 #include <Engine/Renderer/Texture.h>
+#include <Engine/Scene/GameObject.h>
+#include <Engine/Scene/Prefab.h>
 #include <Engine/Utils/CutoutProcessor.h>
 #include <Engine/Utils/Logger.h>
 
@@ -26,6 +28,23 @@ std::string ToLowerASCII(std::string s) {
 bool IsImageExtension(const std::filesystem::path& path) {
     const std::string ext = ToLowerASCII(path.extension().string());
     return ext == ".png" || ext == ".jpg" || ext == ".jpeg" || ext == ".bmp";
+}
+
+std::string SanitizeFilename(std::string_view name) {
+    std::string safe;
+    safe.reserve(name.size());
+    for (char c : name) {
+        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
+            c == '"' || c == '<' || c == '>' || c == '|' || c == '\0') {
+            safe += '_';
+        } else {
+            safe += c;
+        }
+    }
+    while (!safe.empty() && (safe.front() == ' ' || safe.front() == '\t')) safe.erase(safe.begin());
+    while (!safe.empty() && (safe.back() == ' ' || safe.back() == '\t')) safe.pop_back();
+    if (safe.empty()) safe = "GameObject";
+    return safe;
 }
 
 } // namespace
@@ -66,6 +85,7 @@ void ContentBrowserPanel::RefreshEntries() {
         item.ItemPath = item.Path.string();
         item.IsDirectory = entry.is_directory();
         item.IsImage = IsImageExtension(item.Path);
+        item.IsPrefab = (ToLowerASCII(item.Path.extension().string()) == ".prefab");
         if (item.IsImage) {
             item.Thumbnail = Engine::ResourceManager::Load<Engine::Texture>(item.ItemPath);
         }
@@ -279,6 +299,23 @@ void ContentBrowserPanel::OnImGuiRender(bool* pOpen) {
                 }
 
                 ImGui::TextWrapped("%s", entry.Filename.c_str());
+            } else if (entry.IsPrefab) {
+                ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.20f, 0.42f, 0.65f, 0.90f));
+                ImGui::Button("[PREFAB]", ImVec2(m_ThumbnailSize, m_ThumbnailSize));
+                ImGui::PopStyleColor();
+
+                if (ImGui::BeginDragDropSource()) {
+                    ImGui::SetDragDropPayload("CONTENT_BROWSER_ITEM", entry.ItemPath.c_str(), entry.ItemPath.size() + 1);
+                    ImGui::Text("Instantiate '%s'\ninto 3D Scene Viewport", entry.Filename.c_str());
+                    ImGui::EndDragDropSource();
+                }
+
+                if (ImGui::IsItemHovered()) {
+                    ImGui::SetTooltip("%s\nDrag onto 3D Scene Viewport to instantiate at ground plane (Y = 0)",
+                                      entry.Filename.c_str());
+                }
+
+                ImGui::TextWrapped("%s", entry.Filename.c_str());
             } else {
                 ImGui::Button("FILE", ImVec2(m_ThumbnailSize, m_ThumbnailSize));
                 if (ImGui::BeginDragDropSource()) {
@@ -294,6 +331,34 @@ void ContentBrowserPanel::OnImGuiRender(bool* pOpen) {
         }
 
         ImGui::Columns(1);
+    }
+
+    // Support dropping any GameObject from SceneHierarchyPanel to export as .prefab
+    const ImVec2 avail = ImGui::GetContentRegionAvail();
+    if (avail.y > 0.0f) {
+        ImGui::Dummy(avail);
+    }
+    if (ImGui::BeginDragDropTarget()) {
+        if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY")) {
+            auto* go = *static_cast<Engine::GameObject**>(payload->Data);
+            if (go) {
+                auto prefab = Engine::Prefab::CreateFromGameObject(go, /*zeroRootPosition=*/true);
+                if (prefab && prefab->IsValid()) {
+                    const std::string filename = SanitizeFilename(go->GetName()) + ".prefab";
+                    const std::filesystem::path targetPath = m_CurrentDirectory / filename;
+                    if (prefab->SaveToFile(targetPath.string())) {
+                        m_NeedsRefresh = true;
+                        m_LastStatusMessage = "Exported prefab: " + filename;
+                        ENGINE_INFO("Asset Browser: Exported prefab '{}' for GameObject '{}'",
+                                    targetPath.string(), go->GetName());
+                    } else {
+                        m_LastStatusMessage = "Failed to save prefab: " + filename;
+                        ENGINE_ERROR("Asset Browser: Failed to save prefab to '{}'", targetPath.string());
+                    }
+                }
+            }
+        }
+        ImGui::EndDragDropTarget();
     }
 
     ImGui::End();

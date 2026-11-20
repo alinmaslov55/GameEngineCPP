@@ -38,6 +38,7 @@ private:
         std::string ItemPath;
         bool IsDirectory = false;
         bool IsImage = false;
+        bool IsPrefab = false;
         std::shared_ptr<Engine::Texture> Thumbnail;
     };
 

@@ -19,6 +19,7 @@ class CameraComponent;
 class TerrainComponent;
 class TerrainChunkManager;
 class Tilemap;
+class Animator;
 } // namespace Engine
 
 namespace Sandbox {
@@ -45,6 +46,7 @@ private:
     static void DrawTerrain(Engine::TerrainComponent& terrain, Engine::GameObject* entity);
     static void DrawTerrainChunkManager(Engine::TerrainChunkManager& chunkMgr, Engine::GameObject* entity);
     static void DrawTilemap(Engine::Tilemap& tilemapComp, Engine::GameObject* entity);
+    static void DrawAnimator(Engine::Animator& animator, Engine::GameObject* entity);
     static void DrawAddComponentMenu(Engine::GameObject* entity);
 };
 

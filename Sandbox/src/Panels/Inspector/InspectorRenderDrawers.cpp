@@ -1,5 +1,7 @@
 #include "Panels/Inspector/InspectorPanel.h"
 
+#include <Engine/Animation/AnimationClip.h>
+#include <Engine/Animation/Animator.h>
 #include <Engine/Core/ResourceManager.h>
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/Renderer/SpriteRenderer.h>
@@ -507,6 +509,230 @@ void InspectorPanel::DrawCamera(Engine::CameraComponent& camComp, Engine::GameOb
 
     if (changed) {
         camComp.SyncFromTransform(entity ? entity->GetTransform() : nullptr);
+    }
+}
+
+void InspectorPanel::DrawAnimator(Engine::Animator& animator, [[maybe_unused]] Engine::GameObject* entity) {
+    // 1. Directional Scheme & Orientation Controls
+    const char* schemeNames[] = { "Omni 1-Way", "Front/Back 2-Way", "Cardinal 4-Way" };
+    int schemeIdx = static_cast<int>(animator.GetDirectionalScheme());
+    if (ImGui::Combo("Directional Scheme", &schemeIdx, schemeNames, IM_ARRAYSIZE(schemeNames))) {
+        animator.SetDirectionalScheme(static_cast<Engine::DirectionalScheme>(schemeIdx));
+    }
+
+    const char* facingNames[] = { "None", "Down / Front", "Side", "Up / Back", "Diag" };
+    int facingIdx = static_cast<int>(animator.GetCurrentFacingDirection());
+    if (ImGui::Combo("Facing Direction", &facingIdx, facingNames, IM_ARRAYSIZE(facingNames))) {
+        animator.SetCurrentFacingDirection(static_cast<Engine::FacingDirection>(facingIdx));
+    }
+
+    bool flipX = animator.GetCurrentFlipX();
+    if (ImGui::Checkbox("FlipX Preview", &flipX)) {
+        animator.SetCurrentFlipX(flipX);
+    }
+    ImGui::SameLine();
+    if (ImGui::SmallButton("Toggle FlipX")) {
+        animator.SetCurrentFlipX(!animator.GetCurrentFlipX());
+    }
+
+    float speed = animator.GetPlaybackSpeed();
+    if (ImGui::DragFloat("Playback Speed", &speed, 0.05f, 0.0f, 10.0f, "%.2fx")) {
+        animator.SetPlaybackSpeed(speed);
+    }
+
+    float hysteresis = animator.GetHysteresisDegrees();
+    if (ImGui::SliderFloat("Hysteresis Angle", &hysteresis, 0.0f, 45.0f, "%.1f deg")) {
+        animator.SetHysteresisDegrees(hysteresis);
+    }
+
+    // 2. Clip Selection & State Machine Info
+    ImGui::Separator();
+    const auto& clips = animator.GetClips();
+    ImGui::Text("Animation Clips (%zu registered)", clips.size());
+
+    if (clips.empty()) {
+        ImGui::TextDisabled("No clips attached to Animator.");
+        return;
+    }
+
+    std::vector<const char*> clipNames;
+    clipNames.reserve(clips.size());
+    int currentClipIndex = -1;
+    int index = 0;
+    const std::string currentClipName = animator.GetCurrentClipName();
+
+    for (const auto& [name, clipPtr] : clips) {
+        clipNames.push_back(name.c_str());
+        if (name == currentClipName) {
+            currentClipIndex = index;
+        }
+        index++;
+    }
+
+    if (currentClipIndex == -1 && !clipNames.empty()) {
+        currentClipIndex = 0;
+    }
+
+    if (ImGui::Combo("Active Clip", &currentClipIndex, clipNames.data(), static_cast<int>(clipNames.size()))) {
+        animator.Play(clipNames[currentClipIndex]);
+    }
+
+    auto currentClip = animator.GetCurrentClip();
+    if (!currentClip) {
+        auto it = clips.find(clipNames[currentClipIndex]);
+        if (it != clips.end()) {
+            currentClip = it->second;
+        }
+    }
+
+    // 3. Transport & Live Scrub Bar
+    if (currentClip) {
+        const uint32_t frameCount = static_cast<uint32_t>(!currentClip->Frames.empty()
+            ? currentClip->Frames.size()
+            : currentClip->frames.size());
+        const float totalDuration = currentClip->GetTotalDuration();
+
+        ImGui::Text("Frames: %u | Total Duration: %.3f s", frameCount, totalDuration);
+        ImGui::Checkbox("Looping", &currentClip->loop);
+        ImGui::SameLine();
+        ImGui::DragFloat("Frame Dur", &currentClip->frameDuration, 0.005f, 0.01f, 1.0f, "%.3f s");
+
+        if (frameCount > 0) {
+            // Transport buttons
+            if (ImGui::Button("|<")) {
+                animator.ScrubToFrame(0);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("< Prev")) {
+                const uint32_t cur = animator.GetCurrentFrameIndex();
+                if (cur > 0) animator.ScrubToFrame(cur - 1);
+            }
+            ImGui::SameLine();
+            const bool isPlaying = animator.IsPreviewPlaying();
+            if (ImGui::Button(isPlaying ? "Pause Preview" : "Play Preview")) {
+                animator.SetPreviewPlaying(!isPlaying);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button("Next >")) {
+                const uint32_t cur = animator.GetCurrentFrameIndex();
+                if (cur + 1 < frameCount) animator.ScrubToFrame(cur + 1);
+            }
+            ImGui::SameLine();
+            if (ImGui::Button(">|")) {
+                animator.ScrubToFrame(frameCount - 1);
+            }
+
+            // Scrub slider
+            int curFrame = static_cast<int>(animator.GetCurrentFrameIndex());
+            if (ImGui::SliderInt("Scrub Bar", &curFrame, 0, static_cast<int>(frameCount - 1), "Frame %d")) {
+                animator.ScrubToFrame(static_cast<uint32_t>(curFrame));
+            }
+
+            ImGui::Text("Time: %.3f s / %.3f s (Frame %u / %u)",
+                        animator.GetCurrentTime(), totalDuration,
+                        animator.GetCurrentFrameIndex(), frameCount);
+
+            // 4. Frame Event Track & Badges
+            ImGui::Spacing();
+            ImGui::Separator();
+            ImGui::Text("Frame Events (%zu registered)", currentClip->Events.size());
+
+            // Timeline Badge Markers for frames with events
+            ImGui::TextDisabled("Timeline Markers:");
+            for (uint32_t f = 0; f < frameCount; ++f) {
+                for (size_t evIdx = 0; evIdx < currentClip->Events.size(); ++evIdx) {
+                    if (currentClip->Events[evIdx].FrameIndex == f) {
+                        const auto& ev = currentClip->Events[evIdx];
+                        ImVec4 badgeColor(0.20f, 0.70f, 0.85f, 1.0f);
+                        if (ev.EventID.find("Hitbox") != std::string::npos || ev.EventID.find("Damage") != std::string::npos) {
+                            badgeColor = ImVec4(0.95f, 0.35f, 0.20f, 1.0f);
+                        } else if (ev.EventID.find("Footstep") != std::string::npos) {
+                            badgeColor = ImVec4(0.30f, 0.85f, 0.40f, 1.0f);
+                        } else if (ev.EventID.find("Slam") != std::string::npos || ev.EventID.find("Impact") != std::string::npos) {
+                            badgeColor = ImVec4(0.95f, 0.80f, 0.20f, 1.0f);
+                        }
+
+                        ImGui::PushStyleColor(ImGuiCol_Button, badgeColor);
+                        char badgeLabel[128];
+                        std::snprintf(badgeLabel, sizeof(badgeLabel), "F%u: %s##%zu", f, ev.EventID.c_str(), evIdx);
+                        if (ImGui::SmallButton(badgeLabel)) {
+                            animator.ScrubToFrame(f);
+                        }
+                        ImGui::PopStyleColor();
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Frame %u: %s\nSocket Offset: (%.2f, %.2f) m\nClick to jump to frame",
+                                              f, ev.EventID.c_str(), ev.SocketOffset.x, ev.SocketOffset.y);
+                        }
+                        ImGui::SameLine();
+                    }
+                }
+            }
+            ImGui::NewLine();
+
+            // Add Event on current frame
+            const uint32_t currentF = animator.GetCurrentFrameIndex();
+            char addBtnLabel[64];
+            std::snprintf(addBtnLabel, sizeof(addBtnLabel), "+ Add Event on Frame %u", currentF);
+            if (ImGui::Button(addBtnLabel)) {
+                currentClip->AddEvent(currentF, "HitboxActive", glm::vec2(0.5f, 0.0f));
+            }
+
+            // Detailed Event Table Editor
+            if (!currentClip->Events.empty()) {
+                if (ImGui::BeginTable("ClipEventsTable", 4, ImGuiTableFlags_Borders | ImGuiTableFlags_RowBg | ImGuiTableFlags_SizingStretchProp)) {
+                    ImGui::TableSetupColumn("Frame", ImGuiTableColumnFlags_WidthFixed, 60.0f);
+                    ImGui::TableSetupColumn("Event ID", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Socket Offset (m)", ImGuiTableColumnFlags_WidthStretch);
+                    ImGui::TableSetupColumn("Actions", ImGuiTableColumnFlags_WidthFixed, 36.0f);
+                    ImGui::TableHeadersRow();
+
+                    int eventToDelete = -1;
+                    for (size_t evIdx = 0; evIdx < currentClip->Events.size(); ++evIdx) {
+                        auto& ev = currentClip->Events[evIdx];
+                        ImGui::PushID(static_cast<int>(evIdx));
+
+                        ImGui::TableNextRow();
+                        // Frame Index
+                        ImGui::TableSetColumnIndex(0);
+                        int fIdx = static_cast<int>(ev.FrameIndex);
+                        ImGui::SetNextItemWidth(55.0f);
+                        if (ImGui::DragInt("##Frame", &fIdx, 0.1f, 0, static_cast<int>(frameCount - 1))) {
+                            ev.FrameIndex = static_cast<uint32_t>(std::clamp(fIdx, 0, static_cast<int>(frameCount - 1)));
+                        }
+
+                        // Event ID
+                        ImGui::TableSetColumnIndex(1);
+                        char idBuf[128];
+                        std::snprintf(idBuf, sizeof(idBuf), "%s", ev.EventID.c_str());
+                        ImGui::SetNextItemWidth(-1.0f);
+                        if (ImGui::InputText("##EventID", idBuf, sizeof(idBuf))) {
+                            ev.EventID = idBuf;
+                        }
+
+                        // Socket Offset (m)
+                        ImGui::TableSetColumnIndex(2);
+                        ImGui::SetNextItemWidth(-1.0f);
+                        ImGui::DragFloat2("##Offset", &ev.SocketOffset.x, 0.02f, -10.0f, 10.0f, "%.2f");
+
+                        // Delete button
+                        ImGui::TableSetColumnIndex(3);
+                        if (ImGui::SmallButton("X")) {
+                            eventToDelete = static_cast<int>(evIdx);
+                        }
+                        if (ImGui::IsItemHovered()) {
+                            ImGui::SetTooltip("Delete event");
+                        }
+
+                        ImGui::PopID();
+                    }
+                    ImGui::EndTable();
+
+                    if (eventToDelete >= 0) {
+                        currentClip->RemoveEvent(static_cast<size_t>(eventToDelete));
+                    }
+                }
+            }
+        }
     }
 }
 
