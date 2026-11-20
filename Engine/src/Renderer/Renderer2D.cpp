@@ -40,6 +40,10 @@ struct Renderer2DStorage {
     static constexpr uint32_t TorchShadowMapTextureSlot = 14;
     static constexpr uint32_t DissolveNoiseTextureSlot = 15;
 
+    // Line batch constants
+    static constexpr uint32_t MaxLines = 10000;
+    static constexpr uint32_t MaxLineVertices = MaxLines * 2;
+
     std::shared_ptr<VertexArray> QuadVertexArray;
     std::shared_ptr<VertexBuffer> QuadVertexBuffer;
     std::shared_ptr<Shader> TextureShader;
@@ -51,6 +55,14 @@ struct Renderer2DStorage {
     QuadVertex* QuadVertexBufferPtr = nullptr;
     uint32_t CurrentVertexOffset = 0;
 
+    // Line batch resources
+    std::shared_ptr<VertexArray> LineVertexArray;
+    std::shared_ptr<VertexBuffer> LineVertexBuffer;
+    std::shared_ptr<Shader> LineShader;
+    std::unique_ptr<LineVertex[]> LineVertexBufferBase;
+    LineVertex* LineVertexBufferPtr = nullptr;
+    float LineWidth = 1.5f;
+
     std::array<uint32_t, MaxTextureSlots> TextureSlots{};
     uint32_t TextureSlotIndex = 1; // Slot 0 = 1x1 WhiteTexture
 
@@ -59,6 +71,8 @@ struct Renderer2DStorage {
     uint32_t BoundShadowTextureID = 0;
     uint32_t BoundTorchShadowTextureID = 0;
     std::vector<float> PreassignedTexIndices;
+
+    glm::mat4 CurrentViewProjection{ 1.0f };
 
     Renderer2D::Statistics Stats;
 
@@ -124,62 +138,64 @@ void Renderer2D::Init() {
     s_Data->QuadVertexArray->SetIndexBuffer(quadIB);
 
     // Create 1x1 white texture for solid color rendering in slot 0 & fallback shadow slot 13/14
-    glGenTextures(1, &s_Data->WhiteTexture);
-    glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
-    uint32_t whiteData = 0xffffffff;
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, &whiteData);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    if (glad_glGenTextures != nullptr) {
+        glGenTextures(1, &s_Data->WhiteTexture);
+        glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_NEAREST);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
+        uint32_t whiteData = 0xffffffff;
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_RGBA8, 1, 1, 0, GL_RGBA, GL_UNSIGNED_BYTE, &whiteData);
+        glBindTexture(GL_TEXTURE_2D, 0);
 
-    // Create 256x256 seamless procedural R8 noise texture for ash dissolve in slot 15
-    glGenTextures(1, &s_Data->DissolveNoiseTexture);
-    glBindTexture(GL_TEXTURE_2D, s_Data->DissolveNoiseTexture);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
+        // Create 256x256 seamless procedural R8 noise texture for ash dissolve in slot 15
+        glGenTextures(1, &s_Data->DissolveNoiseTexture);
+        glBindTexture(GL_TEXTURE_2D, s_Data->DissolveNoiseTexture);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, GL_LINEAR);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
-    std::vector<uint8_t> noiseData(256 * 256);
-    auto hash2D = [](int x, int y) -> float {
-        int n = x + y * 57;
-        n = (n << 13) ^ n;
-        return (1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f) * 0.5f + 0.5f;
-    };
-    auto smoothNoise = [&](float x, float y, int period) -> float {
-        int x0 = static_cast<int>(std::floor(x));
-        int y0 = static_cast<int>(std::floor(y));
-        float tx = x - static_cast<float>(x0);
-        float ty = y - static_cast<float>(y0);
-        tx = tx * tx * (3.0f - 2.0f * tx);
-        ty = ty * ty * (3.0f - 2.0f * ty);
-        int xi0 = ((x0 % period) + period) % period;
-        int yi0 = ((y0 % period) + period) % period;
-        int xi1 = (xi0 + 1) % period;
-        int yi1 = (yi0 + 1) % period;
-        float v00 = hash2D(xi0, yi0);
-        float v10 = hash2D(xi1, yi0);
-        float v01 = hash2D(xi0, yi1);
-        float v11 = hash2D(xi1, yi1);
-        float top = v00 * (1.0f - tx) + v10 * tx;
-        float bottom = v01 * (1.0f - tx) + v11 * tx;
-        return top * (1.0f - ty) + bottom * ty;
-    };
+        std::vector<uint8_t> noiseData(256 * 256);
+        auto hash2D = [](int x, int y) -> float {
+            int n = x + y * 57;
+            n = (n << 13) ^ n;
+            return (1.0f - ((n * (n * n * 15731 + 789221) + 1376312589) & 0x7fffffff) / 1073741824.0f) * 0.5f + 0.5f;
+        };
+        auto smoothNoise = [&](float x, float y, int period) -> float {
+            int x0 = static_cast<int>(std::floor(x));
+            int y0 = static_cast<int>(std::floor(y));
+            float tx = x - static_cast<float>(x0);
+            float ty = y - static_cast<float>(y0);
+            tx = tx * tx * (3.0f - 2.0f * tx);
+            ty = ty * ty * (3.0f - 2.0f * ty);
+            int xi0 = ((x0 % period) + period) % period;
+            int yi0 = ((y0 % period) + period) % period;
+            int xi1 = (xi0 + 1) % period;
+            int yi1 = (yi0 + 1) % period;
+            float v00 = hash2D(xi0, yi0);
+            float v10 = hash2D(xi1, yi0);
+            float v01 = hash2D(xi0, yi1);
+            float v11 = hash2D(xi1, yi1);
+            float top = v00 * (1.0f - tx) + v10 * tx;
+            float bottom = v01 * (1.0f - tx) + v11 * tx;
+            return top * (1.0f - ty) + bottom * ty;
+        };
 
-    for (int y = 0; y < 256; ++y) {
-        for (int x = 0; x < 256; ++x) {
-            float v = 0.0f;
-            v += smoothNoise(static_cast<float>(x) * (8.0f / 256.0f),  static_cast<float>(y) * (8.0f / 256.0f),  8)  * 0.50f;
-            v += smoothNoise(static_cast<float>(x) * (16.0f / 256.0f), static_cast<float>(y) * (16.0f / 256.0f), 16) * 0.25f;
-            v += smoothNoise(static_cast<float>(x) * (32.0f / 256.0f), static_cast<float>(y) * (32.0f / 256.0f), 32) * 0.125f;
-            v += smoothNoise(static_cast<float>(x) * (64.0f / 256.0f), static_cast<float>(y) * (64.0f / 256.0f), 64) * 0.125f;
-            noiseData[y * 256 + x] = static_cast<uint8_t>(std::clamp(v * 255.0f, 0.0f, 255.0f));
+        for (int y = 0; y < 256; ++y) {
+            for (int x = 0; x < 256; ++x) {
+                float v = 0.0f;
+                v += smoothNoise(static_cast<float>(x) * (8.0f / 256.0f),  static_cast<float>(y) * (8.0f / 256.0f),  8)  * 0.50f;
+                v += smoothNoise(static_cast<float>(x) * (16.0f / 256.0f), static_cast<float>(y) * (16.0f / 256.0f), 16) * 0.25f;
+                v += smoothNoise(static_cast<float>(x) * (32.0f / 256.0f), static_cast<float>(y) * (32.0f / 256.0f), 32) * 0.125f;
+                v += smoothNoise(static_cast<float>(x) * (64.0f / 256.0f), static_cast<float>(y) * (64.0f / 256.0f), 64) * 0.125f;
+                noiseData[y * 256 + x] = static_cast<uint8_t>(std::clamp(v * 255.0f, 0.0f, 255.0f));
+            }
         }
+        glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 256, 256, 0, GL_RED, GL_UNSIGNED_BYTE, noiseData.data());
+        glBindTexture(GL_TEXTURE_2D, 0);
     }
-    glTexImage2D(GL_TEXTURE_2D, 0, GL_R8, 256, 256, 0, GL_RED, GL_UNSIGNED_BYTE, noiseData.data());
-    glBindTexture(GL_TEXTURE_2D, 0);
 
     int32_t samplers[Renderer2DStorage::MaxTextureSlots];
     for (uint32_t i = 0; i < Renderer2DStorage::MaxTextureSlots; i++) {
@@ -194,6 +210,44 @@ void Renderer2D::Init() {
     s_Data->TextureShader->SetInt("u_TorchShadowMap", static_cast<int>(Renderer2DStorage::TorchShadowMapTextureSlot));
     s_Data->TextureShader->SetInt("u_DissolveNoise", static_cast<int>(Renderer2DStorage::DissolveNoiseTextureSlot));
     s_Data->TextureShader->BindUniformBlock("PointLightBlock", SceneLightingData::PointLightUBOBinding);
+
+    // Initialize 3D / 2.5D Line Batching (EDT-02)
+    s_Data->LineVertexArray = std::make_shared<VertexArray>();
+    s_Data->LineVertexBuffer = std::make_shared<VertexBuffer>(
+        Renderer2DStorage::MaxLineVertices * static_cast<uint32_t>(sizeof(LineVertex))
+    );
+    s_Data->LineVertexBuffer->SetLayout({
+        { ShaderDataType::Float3, "a_Position" },
+        { ShaderDataType::Float4, "a_Color"    }
+    });
+    s_Data->LineVertexArray->AddVertexBuffer(s_Data->LineVertexBuffer);
+    s_Data->LineVertexBufferBase = std::make_unique<LineVertex[]>(Renderer2DStorage::MaxLineVertices);
+    s_Data->LineVertexBufferPtr = s_Data->LineVertexBufferBase.get();
+
+    static const char* kLineVertexShader = R"(#version 450 core
+layout(location = 0) in vec3 a_Position;
+layout(location = 1) in vec4 a_Color;
+
+uniform mat4 u_ViewProjection;
+
+layout(location = 0) out vec4 v_Color;
+
+void main() {
+    v_Color = a_Color;
+    gl_Position = u_ViewProjection * vec4(a_Position, 1.0);
+}
+)";
+
+    static const char* kLineFragmentShader = R"(#version 450 core
+layout(location = 0) in vec4 v_Color;
+
+layout(location = 0) out vec4 o_Color;
+
+void main() {
+    o_Color = v_Color;
+}
+)";
+    s_Data->LineShader = std::make_shared<Shader>("LineShader", kLineVertexShader, kLineFragmentShader);
 
     s_Data->TextureSlots[0] = s_Data->WhiteTexture;
     s_Data->BoundShadowTextureID = s_Data->WhiteTexture;
@@ -296,7 +350,8 @@ void Renderer2D::BeginScene(const PerspectiveCamera& camera, bool depthTest, flo
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(nullptr);
     ApplyWindUniforms(nullptr);
-    s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
+    s_Data->CurrentViewProjection = camera.GetViewProjectionMatrix();
+    s_Data->TextureShader->SetMat4("u_ViewProjection", s_Data->CurrentViewProjection);
     StartBatch();
 }
 
@@ -309,7 +364,8 @@ void Renderer2D::BeginScene(const PerspectiveCamera& camera,
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(&lighting);
     ApplyWindUniforms(nullptr);
-    s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
+    s_Data->CurrentViewProjection = camera.GetViewProjectionMatrix();
+    s_Data->TextureShader->SetMat4("u_ViewProjection", s_Data->CurrentViewProjection);
     StartBatch();
 }
 
@@ -319,7 +375,8 @@ void Renderer2D::BeginShadowPass(const glm::mat4& lightSpaceMatrix, float defaul
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(nullptr); // Unbinds ShadowMap from slot 15 to prevent FBO feedback loop
     ApplyWindUniforms(nullptr);
-    s_Data->TextureShader->SetMat4("u_ViewProjection", lightSpaceMatrix);
+    s_Data->CurrentViewProjection = lightSpaceMatrix;
+    s_Data->TextureShader->SetMat4("u_ViewProjection", s_Data->CurrentViewProjection);
     StartBatch();
 }
 
@@ -329,7 +386,8 @@ void Renderer2D::BeginScene(const OrthographicCamera& camera) {
     s_Data->DefaultAlphaCutoff = 0.0f;
     ApplyLightingUniforms(nullptr);
     ApplyWindUniforms(nullptr);
-    s_Data->TextureShader->SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
+    s_Data->CurrentViewProjection = camera.GetViewProjectionMatrix();
+    s_Data->TextureShader->SetMat4("u_ViewProjection", s_Data->CurrentViewProjection);
     StartBatch();
 }
 
@@ -339,7 +397,8 @@ void Renderer2D::BeginScene(const glm::mat4& projectionMatrix, bool depthTest, f
     s_Data->DefaultAlphaCutoff = defaultAlphaCutoff;
     ApplyLightingUniforms(nullptr);
     ApplyWindUniforms(nullptr);
-    s_Data->TextureShader->SetMat4("u_ViewProjection", projectionMatrix);
+    s_Data->CurrentViewProjection = projectionMatrix;
+    s_Data->TextureShader->SetMat4("u_ViewProjection", s_Data->CurrentViewProjection);
     StartBatch();
 }
 
@@ -369,6 +428,8 @@ void Renderer2D::StartBatch() {
     s_Data->QuadIndexCount = 0;
     s_Data->QuadVertexBufferPtr = s_Data->QuadVertexBufferBase.get();
     s_Data->TextureSlotIndex = 1;
+
+    s_Data->LineVertexBufferPtr = s_Data->LineVertexBufferBase.get();
 }
 
 void Renderer2D::NextBatch() {
@@ -377,7 +438,7 @@ void Renderer2D::NextBatch() {
     StartBatch();
 }
 
-void Renderer2D::Flush() {
+void Renderer2D::FlushQuads() {
     if (!s_Data || s_Data->QuadIndexCount == 0) {
         return;
     }
@@ -421,7 +482,55 @@ void Renderer2D::Flush() {
         s_Data->CurrentVertexOffset += vertexCount;
     }
 
-    StartBatch();
+    s_Data->QuadIndexCount = 0;
+    s_Data->QuadVertexBufferPtr = s_Data->QuadVertexBufferBase.get();
+    s_Data->TextureSlotIndex = 1;
+}
+
+void Renderer2D::FlushLines() {
+    if (!s_Data) return;
+
+    const uint32_t lineVertexCount = static_cast<uint32_t>(
+        s_Data->LineVertexBufferPtr - s_Data->LineVertexBufferBase.get()
+    );
+    if (lineVertexCount == 0) return;
+
+    const uint32_t dataSize = lineVertexCount * static_cast<uint32_t>(sizeof(LineVertex));
+    s_Data->LineVertexBuffer->SetSubData(s_Data->LineVertexBufferBase.get(), dataSize, 0);
+
+    if (s_Data->LineShader && s_Data->LineShader->IsValid()) {
+        s_Data->LineShader->Bind();
+        s_Data->LineShader->SetMat4("u_ViewProjection", s_Data->CurrentViewProjection);
+    }
+
+    if (glad_glLineWidth != nullptr) {
+        glLineWidth(s_Data->LineWidth);
+    }
+
+    if (s_Data->LineVertexArray) {
+        s_Data->LineVertexArray->Bind();
+        if (glad_glDrawArrays != nullptr) {
+            glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(lineVertexCount));
+        }
+    }
+
+    s_Data->Stats.DrawCalls++;
+    s_Data->Stats.LineCount += (lineVertexCount / 2);
+
+    s_Data->LineVertexBufferPtr = s_Data->LineVertexBufferBase.get();
+}
+
+void Renderer2D::Flush() {
+    if (!s_Data) return;
+    if (s_Data->QuadIndexCount > 0) {
+        FlushQuads();
+    }
+    const uint32_t lineVertexCount = static_cast<uint32_t>(
+        s_Data->LineVertexBufferPtr - s_Data->LineVertexBufferBase.get()
+    );
+    if (lineVertexCount > 0) {
+        FlushLines();
+    }
 }
 
 void Renderer2D::SubmitVertices(
@@ -1031,6 +1140,131 @@ void Renderer2D::ResetStats() {
 
 Renderer2D::Statistics Renderer2D::GetStats() {
     return s_Data ? s_Data->Stats : Statistics{};
+}
+
+void Renderer2D::DrawDebugLine3D(const glm::vec3& p0, const glm::vec3& p1, const glm::vec4& color) {
+    if (!s_Data || !s_Data->LineVertexBufferBase) return;
+
+    const uint32_t currentLineVertices = static_cast<uint32_t>(
+        s_Data->LineVertexBufferPtr - s_Data->LineVertexBufferBase.get()
+    );
+    if (currentLineVertices + 2 > Renderer2DStorage::MaxLineVertices) {
+        FlushLines();
+    }
+
+    s_Data->LineVertexBufferPtr->Position = p0;
+    s_Data->LineVertexBufferPtr->Color = color;
+    s_Data->LineVertexBufferPtr++;
+
+    s_Data->LineVertexBufferPtr->Position = p1;
+    s_Data->LineVertexBufferPtr->Color = color;
+    s_Data->LineVertexBufferPtr++;
+}
+
+void Renderer2D::DrawDebugWireCircleXZ(const glm::vec3& center, float radius, const glm::vec4& color, uint32_t segments) {
+    if (!s_Data || radius <= 0.0f) return;
+
+    const uint32_t segs = std::clamp(segments, 3u, 128u);
+    const float step = (2.0f * 3.14159265358979323846f) / static_cast<float>(segs);
+
+    for (uint32_t i = 0; i < segs; ++i) {
+        const float theta0 = static_cast<float>(i) * step;
+        const float theta1 = static_cast<float>(i + 1) * step;
+
+        const glm::vec3 p0 = center + glm::vec3(std::cos(theta0) * radius, 0.0f, std::sin(theta0) * radius);
+        const glm::vec3 p1 = center + glm::vec3(std::cos(theta1) * radius, 0.0f, std::sin(theta1) * radius);
+
+        DrawDebugLine3D(p0, p1, color);
+    }
+}
+
+void Renderer2D::DrawDebugWireBoxXZ(const glm::vec3& center, const glm::vec2& sizeXZ, float yawRad, const glm::vec4& color) {
+    if (!s_Data || sizeXZ.x <= 0.0f || sizeXZ.y <= 0.0f) return;
+
+    const float hx = 0.5f * sizeXZ.x;
+    const float hz = 0.5f * sizeXZ.y;
+
+    glm::vec2 corners[4] = {
+        { -hx, -hz },
+        {  hx, -hz },
+        {  hx,  hz },
+        { -hx,  hz }
+    };
+
+    if (std::abs(yawRad) > 1e-5f) {
+        const float cosY = std::cos(yawRad);
+        const float sinY = std::sin(yawRad);
+        for (auto& c : corners) {
+            const float rx = c.x * cosY - c.y * sinY;
+            const float rz = c.x * sinY + c.y * cosY;
+            c.x = rx;
+            c.y = rz;
+        }
+    }
+
+    const glm::vec3 p0 = { center.x + corners[0].x, center.y, center.z + corners[0].y };
+    const glm::vec3 p1 = { center.x + corners[1].x, center.y, center.z + corners[1].y };
+    const glm::vec3 p2 = { center.x + corners[2].x, center.y, center.z + corners[2].y };
+    const glm::vec3 p3 = { center.x + corners[3].x, center.y, center.z + corners[3].y };
+
+    DrawDebugLine3D(p0, p1, color);
+    DrawDebugLine3D(p1, p2, color);
+    DrawDebugLine3D(p2, p3, color);
+    DrawDebugLine3D(p3, p0, color);
+}
+
+void Renderer2D::DrawDebugWireArcXZ(const glm::vec3& origin, const glm::vec2& forwardXZ, float radius, float halfAngleDeg, const glm::vec4& color) {
+    if (!s_Data || radius <= 0.0f) return;
+
+    const float clampedHalfDeg = std::clamp(halfAngleDeg, 0.1f, 180.0f);
+    if (clampedHalfDeg >= 179.9f) {
+        DrawDebugWireCircleXZ(origin, radius, color, 32);
+        return;
+    }
+
+    glm::vec2 fwd = forwardXZ;
+    const float lenSq = glm::dot(fwd, fwd);
+    if (lenSq < 1e-8f) {
+        fwd = { 0.0f, 1.0f };
+    } else {
+        fwd = glm::normalize(fwd);
+    }
+
+    const float baseAngle = std::atan2(fwd.y, fwd.x);
+    const float halfRad = glm::radians(clampedHalfDeg);
+    const float angleMin = baseAngle - halfRad;
+    const float angleMax = baseAngle + halfRad;
+
+    const glm::vec3 pLeft = origin + glm::vec3(std::cos(angleMin) * radius, 0.0f, std::sin(angleMin) * radius);
+    const glm::vec3 pRight = origin + glm::vec3(std::cos(angleMax) * radius, 0.0f, std::sin(angleMax) * radius);
+
+    // Left and right boundary spokes
+    DrawDebugLine3D(origin, pLeft, color);
+    DrawDebugLine3D(origin, pRight, color);
+
+    // Curved perimeter arc
+    const uint32_t arcSegments = std::clamp(static_cast<uint32_t>(std::ceil(clampedHalfDeg / 5.0f)), 8u, 48u);
+    const float arcStep = (2.0f * halfRad) / static_cast<float>(arcSegments);
+
+    for (uint32_t i = 0; i < arcSegments; ++i) {
+        const float a0 = angleMin + static_cast<float>(i) * arcStep;
+        const float a1 = angleMin + static_cast<float>(i + 1) * arcStep;
+
+        const glm::vec3 arcP0 = origin + glm::vec3(std::cos(a0) * radius, 0.0f, std::sin(a0) * radius);
+        const glm::vec3 arcP1 = origin + glm::vec3(std::cos(a1) * radius, 0.0f, std::sin(a1) * radius);
+
+        DrawDebugLine3D(arcP0, arcP1, color);
+    }
+}
+
+void Renderer2D::SetLineWidth(float width) {
+    if (s_Data) {
+        s_Data->LineWidth = std::clamp(width, 0.5f, 16.0f);
+    }
+}
+
+float Renderer2D::GetLineWidth() noexcept {
+    return s_Data ? s_Data->LineWidth : 1.5f;
 }
 
 } // namespace Engine

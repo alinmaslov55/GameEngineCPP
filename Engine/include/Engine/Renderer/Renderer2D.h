@@ -30,6 +30,12 @@ struct QuadVertex {
 };
 static_assert(sizeof(QuadVertex) == 80, "QuadVertex layout size must be 80 bytes");
 
+struct LineVertex {
+    glm::vec3 Position;
+    glm::vec4 Color;
+};
+static_assert(sizeof(LineVertex) == 28, "LineVertex layout size must be 28 bytes");
+
 class Renderer2D {
 public:
     static void Init();
@@ -130,13 +136,23 @@ public:
                               float windSpatialPhase = 0.0f,
                               float proximityBend = 0.0f);
 
+    // 3D & 2.5D Debug Wireframe Rendering
+    static void DrawDebugLine3D(const glm::vec3& p0, const glm::vec3& p1, const glm::vec4& color);
+    static void DrawDebugWireCircleXZ(const glm::vec3& center, float radius, const glm::vec4& color, uint32_t segments = 32);
+    static void DrawDebugWireBoxXZ(const glm::vec3& center, const glm::vec2& sizeXZ, float yawRad, const glm::vec4& color);
+    static void DrawDebugWireArcXZ(const glm::vec3& origin, const glm::vec2& forwardXZ, float radius, float halfAngleDeg, const glm::vec4& color);
+
+    static void SetLineWidth(float width);
+    [[nodiscard]] static float GetLineWidth() noexcept;
+
     // Per-frame batch rendering statistics
     struct Statistics {
         uint32_t DrawCalls = 0;
         uint32_t QuadCount = 0;
+        uint32_t LineCount = 0;
         uint32_t RingBufferVBOOffset = 0;
 
-        [[nodiscard]] uint32_t GetTotalVertexCount() const noexcept { return QuadCount * 4; }
+        [[nodiscard]] uint32_t GetTotalVertexCount() const noexcept { return QuadCount * 4 + LineCount * 2; }
         [[nodiscard]] uint32_t GetTotalIndexCount() const noexcept { return QuadCount * 6; }
     };
 
@@ -166,6 +182,8 @@ public:
 
 private:
     static void StartBatch();
+    static void FlushQuads();
+    static void FlushLines();
     static void ApplyLightingUniforms(const SceneLightingData* lighting);
     static void ApplyWindUniforms(const SceneWindData* wind);
     static void SubmitVertices(const glm::vec3 positions[4],

@@ -5,6 +5,7 @@
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/TerrainRenderer.h>
+#include <Engine/Renderer/SceneRenderer.h>
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/Components/FoliageWindComponents.h>
 #include <Engine/Terrain/TerrainComponent.h>
@@ -122,6 +123,12 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
     }
     ImGui::SameLine();
     ImGui::Checkbox("Show 5% Safe Area", &m_ShowSafeArea);
+
+    ImGui::SameLine();
+    bool showGizmos = Engine::SceneRenderer::IsShowingDebugGizmos();
+    if (ImGui::Checkbox("Debug Gizmos", &showGizmos)) {
+        Engine::SceneRenderer::SetShowDebugGizmos(showGizmos);
+    }
 
     // Live display of resolution and aspect ratio in toolbar
     ImGui::SameLine();

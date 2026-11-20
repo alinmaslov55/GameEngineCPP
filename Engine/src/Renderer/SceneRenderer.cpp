@@ -52,6 +52,20 @@ inline void ComputeStandeeBoundingSphere(const Transform& transform,
     outRadius = 0.85f * std::max({ width, height, depth }) + 0.75f;
 }
 
+struct DebugHitboxEntry {
+    enum class ShapeType { Arc, Box, Circle } Type = ShapeType::Circle;
+    glm::vec3 Position{ 0.0f };
+    glm::vec2 ForwardXZ{ 0.0f, 1.0f };
+    glm::vec2 SizeXZ{ 1.0f, 1.0f };
+    float Radius = 1.0f;
+    float HalfAngleDeg = 60.0f;
+    float YawRad = 0.0f;
+    float RemainingLifetime = 0.0f;
+};
+
+static bool s_ShowDebugGizmos = false;
+static std::vector<DebugHitboxEntry> s_DebugHitboxes;
+
 } // namespace
 
 SceneWindData SceneRenderContext::BuildWindUniforms(const glm::vec3& swayRightAxis) const {
@@ -1014,6 +1028,208 @@ void SceneRenderer::RenderPassScreenUI() {
     Renderer2D::EndScene();
 }
 
+void SceneRenderer::SetShowDebugGizmos(bool show) noexcept {
+    s_ShowDebugGizmos = show;
+}
+
+bool SceneRenderer::IsShowingDebugGizmos() noexcept {
+    return s_ShowDebugGizmos;
+}
+
+void SceneRenderer::AddDebugHitboxArc(const glm::vec3& origin, const glm::vec2& forwardXZ, float radius, float halfAngleDeg, float lifetimeSec) {
+    DebugHitboxEntry entry;
+    entry.Type = DebugHitboxEntry::ShapeType::Arc;
+    entry.Position = origin;
+    entry.ForwardXZ = forwardXZ;
+    entry.Radius = radius;
+    entry.HalfAngleDeg = halfAngleDeg;
+    entry.RemainingLifetime = lifetimeSec;
+    s_DebugHitboxes.push_back(entry);
+}
+
+void SceneRenderer::AddDebugHitboxBox(const glm::vec3& center, const glm::vec2& sizeXZ, float yawRad, float lifetimeSec) {
+    DebugHitboxEntry entry;
+    entry.Type = DebugHitboxEntry::ShapeType::Box;
+    entry.Position = center;
+    entry.SizeXZ = sizeXZ;
+    entry.YawRad = yawRad;
+    entry.RemainingLifetime = lifetimeSec;
+    s_DebugHitboxes.push_back(entry);
+}
+
+void SceneRenderer::AddDebugHitboxCircle(const glm::vec3& center, float radius, float lifetimeSec) {
+    DebugHitboxEntry entry;
+    entry.Type = DebugHitboxEntry::ShapeType::Circle;
+    entry.Position = center;
+    entry.Radius = radius;
+    entry.RemainingLifetime = lifetimeSec;
+    s_DebugHitboxes.push_back(entry);
+}
+
+void SceneRenderer::ClearDebugHitboxes() {
+    s_DebugHitboxes.clear();
+}
+
+void SceneRenderer::RenderPassDebugGizmos(SceneRenderContext& ctx, Scene& scene) {
+    if (!ctx.activeCam) {
+        return;
+    }
+
+    static const glm::vec4 kColorStaticCollider  { 0.10f, 0.95f, 0.20f, 0.95f }; // Green
+    static const glm::vec4 kColorDynamicCollider { 0.00f, 0.90f, 1.00f, 0.95f }; // Cyan
+    static const glm::vec4 kColorSensorTrigger   { 1.00f, 0.90f, 0.10f, 0.95f }; // Yellow
+    static const glm::vec4 kColorActiveHitbox    { 1.00f, 0.15f, 0.15f, 0.95f }; // Red
+    static const glm::vec4 kColorTorchInnerSafe  { 1.00f, 0.84f, 0.10f, 0.90f }; // Radiant Gold
+    static const glm::vec4 kColorTorchSearingRim { 1.00f, 0.45f, 0.00f, 0.90f }; // Warm Orange
+    static const glm::vec4 kColorTerrainChunkGrid{ 0.45f, 0.45f, 0.45f, 0.55f }; // Dim Slate Grey
+
+    // Render in world-space using active camera, depth testing disabled so wireframes overlay world geometry
+    Renderer2D::BeginScene(*ctx.activeCam, /*depthTest=*/false, /*defaultAlphaCutoff=*/0.0f);
+
+    // 1. Terrain Chunk Borders (Dim Slate Grey)
+    for (const auto& [chunkMgr, transform] : m_TerrainChunkScratch) {
+        if (!chunkMgr) continue;
+        const float groundY = transform ? transform->position.y + 0.01f : 0.01f;
+        const float chunkSize = chunkMgr->ChunkSizeMeters > 0.0f ? chunkMgr->ChunkSizeMeters : 16.0f;
+        const auto& loadedChunks = chunkMgr->GetChunks();
+        for (const auto& [coord, chunk] : loadedChunks) {
+            const float x0 = static_cast<float>(coord.cx) * chunkSize;
+            const float z0 = static_cast<float>(coord.cz) * chunkSize;
+            const float x1 = x0 + chunkSize;
+            const float z1 = z0 + chunkSize;
+            Renderer2D::DrawDebugLine3D({ x0, groundY, z0 }, { x1, groundY, z0 }, kColorTerrainChunkGrid);
+            Renderer2D::DrawDebugLine3D({ x1, groundY, z0 }, { x1, groundY, z1 }, kColorTerrainChunkGrid);
+            Renderer2D::DrawDebugLine3D({ x1, groundY, z1 }, { x0, groundY, z1 }, kColorTerrainChunkGrid);
+            Renderer2D::DrawDebugLine3D({ x0, groundY, z1 }, { x0, groundY, z0 }, kColorTerrainChunkGrid);
+        }
+    }
+    for (const auto& [terrain, transform] : m_TerrainScratch) {
+        if (!terrain) continue;
+        const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
+        const glm::vec3 scale = transform ? transform->scale : glm::vec3(1.0f);
+        const float w = terrain->GetWidth() * scale.x;
+        const float d = terrain->GetDepth() * scale.z;
+        const float groundY = origin.y + 0.01f;
+        Renderer2D::DrawDebugWireBoxXZ({ origin.x + 0.5f * w, groundY, origin.z + 0.5f * d }, { w, d }, 0.0f, kColorTerrainChunkGrid);
+    }
+
+    // 2. Point Light Radii (Gold Inner Safe & Orange Outer Searing Rim)
+    for (uint32_t i = 0; i < ctx.lighting.PointLightCount; ++i) {
+        const auto& pl = ctx.lighting.PointLights[i];
+        const glm::vec3 lightPos = { pl.PositionAndRadius.x, pl.PositionAndRadius.y, pl.PositionAndRadius.z };
+        const float radius = pl.PositionAndRadius.w;
+        if (radius <= 0.05f) continue;
+
+        const glm::vec3 groundCenter = { lightPos.x, 0.02f, lightPos.z };
+        const float innerSafeRadius = radius * 0.82f;
+
+        // Inner Safe Zone: Radiant Gold
+        Renderer2D::DrawDebugWireCircleXZ(groundCenter, innerSafeRadius, kColorTorchInnerSafe, 32);
+        // Outer Searing Rim: Warm Orange
+        Renderer2D::DrawDebugWireCircleXZ(groundCenter, radius, kColorTorchSearingRim, 32);
+    }
+
+    // 3. 2.5D Physics Colliders (Static Green, Dynamic Cyan, Sensor Yellow)
+    for (const auto& go : scene.GetGameObjects()) {
+        if (!go || !go->IsActiveInHierarchy()) continue;
+
+        auto* rb = go->GetComponent<Rigidbody2D>();
+        const bool isDynamic = (rb != nullptr && rb->Type != Rigidbody2D::BodyType::Static);
+
+        auto* transform = go->GetTransform();
+        const glm::vec3 worldPos = transform ? transform->GetWorldPosition() : glm::vec3(0.0f);
+        const glm::vec3 worldScale = transform ? transform->scale : glm::vec3(1.0f);
+        const float yawRad = transform ? glm::radians(transform->rotation.y) : 0.0f;
+        const float groundY = worldPos.y + 0.02f;
+
+        // BoxCollider2D
+        if (auto* box = go->GetComponent<BoxCollider2D>()) {
+            const glm::vec4 colColor = box->IsSensor
+                ? kColorSensorTrigger
+                : (isDynamic ? kColorDynamicCollider : kColorStaticCollider);
+
+            const glm::vec2 scaledSize = {
+                box->size.x * std::abs(worldScale.x),
+                box->size.y * std::abs(worldScale.z)
+            };
+
+            glm::vec2 offsetRotated = {
+                box->offset.x * worldScale.x,
+                box->offset.y * worldScale.z
+            };
+            if (std::abs(yawRad) > 1e-5f) {
+                const float cosY = std::cos(yawRad);
+                const float sinY = std::sin(yawRad);
+                const float rx = offsetRotated.x * cosY - offsetRotated.y * sinY;
+                const float rz = offsetRotated.x * sinY + offsetRotated.y * cosY;
+                offsetRotated = { rx, rz };
+            }
+
+            const glm::vec3 boxCenter = {
+                worldPos.x + offsetRotated.x,
+                groundY,
+                worldPos.z + offsetRotated.y
+            };
+            Renderer2D::DrawDebugWireBoxXZ(boxCenter, scaledSize, yawRad, colColor);
+        }
+
+        // CircleCollider2D
+        if (auto* circle = go->GetComponent<CircleCollider2D>()) {
+            const glm::vec4 colColor = circle->IsSensor
+                ? kColorSensorTrigger
+                : (isDynamic ? kColorDynamicCollider : kColorStaticCollider);
+
+            const float scaledRadius = circle->Radius * std::max(std::abs(worldScale.x), std::abs(worldScale.z));
+
+            glm::vec2 offsetRotated = circle->OffsetXZ;
+            if (std::abs(yawRad) > 1e-5f) {
+                const float cosY = std::cos(yawRad);
+                const float sinY = std::sin(yawRad);
+                const float rx = offsetRotated.x * cosY - offsetRotated.y * sinY;
+                const float rz = offsetRotated.x * sinY + offsetRotated.y * cosY;
+                offsetRotated = { rx, rz };
+            }
+
+            const glm::vec3 circleCenter = {
+                worldPos.x + offsetRotated.x,
+                groundY,
+                worldPos.z + offsetRotated.y
+            };
+            Renderer2D::DrawDebugWireCircleXZ(circleCenter, scaledRadius, colColor, 32);
+        }
+    }
+
+    // 4. Transient Combat Hitboxes (Red)
+    for (const auto& hb : s_DebugHitboxes) {
+        switch (hb.Type) {
+            case DebugHitboxEntry::ShapeType::Arc:
+                Renderer2D::DrawDebugWireArcXZ(hb.Position, hb.ForwardXZ, hb.Radius, hb.HalfAngleDeg, kColorActiveHitbox);
+                break;
+            case DebugHitboxEntry::ShapeType::Box:
+                Renderer2D::DrawDebugWireBoxXZ(hb.Position, hb.SizeXZ, hb.YawRad, kColorActiveHitbox);
+                break;
+            case DebugHitboxEntry::ShapeType::Circle:
+                Renderer2D::DrawDebugWireCircleXZ(hb.Position, hb.Radius, kColorActiveHitbox, 32);
+                break;
+        }
+    }
+
+    // Age and prune transient hitboxes
+    const float dt = Time::GetDeltaTime();
+    for (auto it = s_DebugHitboxes.begin(); it != s_DebugHitboxes.end(); ) {
+        if (it->RemainingLifetime > 0.0f) {
+            it->RemainingLifetime -= dt;
+            if (it->RemainingLifetime <= 0.0f) {
+                it = s_DebugHitboxes.erase(it);
+                continue;
+            }
+        }
+        ++it;
+    }
+
+    Renderer2D::EndScene();
+}
+
 void SceneRenderer::Render(Scene& scene, const PerspectiveCamera* overrideCamera) {
     ResourceManager::ProcessPendingUploads();
     SceneRenderContext ctx = GatherRenderContext(scene, overrideCamera);
@@ -1032,6 +1248,10 @@ void SceneRenderer::Render(Scene& scene, const PerspectiveCamera* overrideCamera
 
     if (ctx.useHDRPostProcess) {
         PostProcessor::EndHDRAndComposite(*ctx.postProcess);
+    }
+
+    if (s_ShowDebugGizmos) {
+        RenderPassDebugGizmos(ctx, scene);
     }
 
     RenderPassScreenUI();

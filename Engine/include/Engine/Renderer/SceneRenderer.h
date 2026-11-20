@@ -76,6 +76,15 @@ public:
 
     [[nodiscard]] const std::unordered_map<uint64_t, std::vector<uint32_t>>& GetFoliageInteractorGrid() const noexcept { return m_FoliageInteractorGrid; }
 
+    // Debug Gizmos & Hitbox API
+    static void SetShowDebugGizmos(bool show) noexcept;
+    [[nodiscard]] static bool IsShowingDebugGizmos() noexcept;
+
+    static void AddDebugHitboxArc(const glm::vec3& origin, const glm::vec2& forwardXZ, float radius, float halfAngleDeg, float lifetimeSec = 0.0f);
+    static void AddDebugHitboxBox(const glm::vec3& center, const glm::vec2& sizeXZ, float yawRad, float lifetimeSec = 0.0f);
+    static void AddDebugHitboxCircle(const glm::vec3& center, float radius, float lifetimeSec = 0.0f);
+    static void ClearDebugHitboxes();
+
 private:
     struct PointLightCandidate {
         PointLightUniform Uniform{};
@@ -90,6 +99,7 @@ private:
     void RenderPassGroundPlane(SceneRenderContext& ctx);
     void RenderPassCutoutStandees(SceneRenderContext& ctx);
     void RenderPassParticles(SceneRenderContext& ctx);
+    void RenderPassDebugGizmos(SceneRenderContext& ctx, Scene& scene);
     void RenderPassScreenUI();
 
     PerspectiveCamera m_Camera;
