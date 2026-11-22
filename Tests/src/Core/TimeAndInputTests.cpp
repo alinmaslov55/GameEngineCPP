@@ -497,5 +497,80 @@ TEST(InputSystemTest, NormalizeGamepadAxisClampsExtremes) {
     EXPECT_FLOAT_EQ(Engine::Input::NormalizeGamepadAxis(32767), 1.0f);
 }
 
+TEST(InputSystemTest, GamepadDisconnectFiresReleaseEdgeAndRevertsDeviceMode) {
+    ScopedInputSession input;
+
+    // 1. Connect gamepad and press South button
+    Engine::Input::SetGamepadConnectedForTesting(true);
+    Engine::Input::BeginFrame();
+    Engine::Input::SetGamepadButtonStateForTesting(SDL_GAMEPAD_BUTTON_SOUTH, true);
+
+    EXPECT_TRUE(Engine::Input::IsGamepadButtonPressed(SDL_GAMEPAD_BUTTON_SOUTH));
+    EXPECT_EQ(Engine::Input::GetActiveDeviceMode(), Engine::InputDeviceMode::Gamepad);
+
+    // 2. Disconnect gamepad on next frame while button is held
+    Engine::Input::BeginFrame();
+    Engine::Input::OnGamepadRemoved(9999); // Testing disconnect / unbind
+
+    // Invariant: Button is no longer pressed, but release edge is preserved
+    EXPECT_FALSE(Engine::Input::IsGamepadButtonPressed(SDL_GAMEPAD_BUTTON_SOUTH));
+    EXPECT_TRUE(Engine::Input::IsGamepadButtonJustReleased(SDL_GAMEPAD_BUTTON_SOUTH));
+    // Invariant: Active device mode reverts to KeyboardMouse
+    EXPECT_EQ(Engine::Input::GetActiveDeviceMode(), Engine::InputDeviceMode::KeyboardMouse);
+
+    // 3. Next frame: release edge has cleared
+    Engine::Input::BeginFrame();
+    EXPECT_FALSE(Engine::Input::IsGamepadButtonJustReleased(SDL_GAMEPAD_BUTTON_SOUTH));
+}
+
+TEST(InputActionMapTest, JsonScancodeFallbackAndOverflowSafety) {
+    // 1. "primaryKey": 0 must NOT block "primaryKeyName": "Space"
+    const std::string jsonWithZeroAndName = R"({
+        "bindings": {
+            "Jump": {
+                "primaryKey": 0,
+                "primaryKeyName": "Space",
+                "secondaryKey": 0,
+                "secondaryKeyName": "",
+                "mouseButton": 0,
+                "padButton": "South",
+                "padTriggerAxis": ""
+            }
+        }
+    })";
+
+    Engine::InputActionMap map;
+    ASSERT_TRUE(map.DeserializeFromString(jsonWithZeroAndName));
+    const auto* jumpBinding = map.GetBinding("Jump");
+    ASSERT_NE(jumpBinding, nullptr);
+    EXPECT_EQ(jumpBinding->PrimaryKey, SDL_SCANCODE_SPACE);
+    EXPECT_EQ(jumpBinding->PadButton, SDL_GAMEPAD_BUTTON_SOUTH);
+
+    // 2. Overflow integer inputs (> 32-bit int) must not throw unhandled exception
+    const std::string jsonWithOverflow = R"({
+        "bindings": {
+            "Attack": {
+                "primaryKey": 999999999999999999,
+                "primaryKeyName": "J",
+                "secondaryKey": 0,
+                "mouseButton": 999999999999999999,
+                "padButton": 999999999999999999,
+                "padTriggerAxis": 999999999999999999
+            }
+        }
+    })";
+
+    Engine::InputActionMap overflowMap;
+    EXPECT_TRUE(overflowMap.DeserializeFromString(jsonWithOverflow));
+    const auto* attackBinding = overflowMap.GetBinding("Attack");
+    ASSERT_NE(attackBinding, nullptr);
+    // Overflow numeric key fell back cleanly to primaryKeyName "J"
+    EXPECT_EQ(attackBinding->PrimaryKey, SDL_SCANCODE_J);
+    // Out-of-bounds mouse button and pad button sanitized to invalid / 0
+    EXPECT_EQ(attackBinding->MouseButton, 0);
+    EXPECT_EQ(attackBinding->PadButton, SDL_GAMEPAD_BUTTON_INVALID);
+    EXPECT_EQ(attackBinding->PadTriggerAxis, SDL_GAMEPAD_AXIS_INVALID);
+}
+
 } // namespace
 

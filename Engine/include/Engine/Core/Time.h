@@ -17,6 +17,9 @@ public:
 
     static void SetTimeScale(float scale) noexcept;
     [[nodiscard]] static float GetTimeScale() noexcept {
+        if (s_TimeScale == 0.0f) {
+            return 0.0f;
+        }
         return (s_HitStopTimer > 0.0f) ? s_HitStopTimeScale : s_TimeScale;
     }
     [[nodiscard]] static float GetBaseTimeScale() noexcept { return s_TimeScale; }

@@ -51,13 +51,16 @@ struct InputState {
     void ResetBuffers() noexcept {
         CurrKeys.fill(false);
         PrevKeys.fill(false);
+        LatchedKeysDown.fill(false);
         CurrMouseButtons.fill(false);
         PrevMouseButtons.fill(false);
+        LatchedMouseButtonsDown.fill(false);
         MousePosition = { 0.0f, 0.0f };
         ScrollDeltaX = 0.0f;
         ScrollDeltaY = 0.0f;
         CurrPadButtons.fill(false);
         PrevPadButtons.fill(false);
+        LatchedPadButtonsDown.fill(false);
         CurrPadAxes.fill(0.0f);
         PrevPadAxes.fill(0.0f);
         ActiveDeviceMode = InputDeviceMode::KeyboardMouse;
@@ -308,6 +311,16 @@ void Input::OnGamepadAdded(SDL_JoystickID which) {
     }
 }
 
+bool Input::IsActiveGamepad(SDL_JoystickID which) noexcept {
+    if (s_State.GamepadConnectedForTesting) {
+        return true;
+    }
+    if (s_Gamepad) {
+        return SDL_GetGamepadID(s_Gamepad) == which;
+    }
+    return false;
+}
+
 void Input::OnGamepadRemoved(SDL_JoystickID which) {
     if (s_Gamepad && SDL_GetGamepadID(s_Gamepad) == which) {
         const char* name = SDL_GetGamepadName(s_Gamepad);
@@ -316,7 +329,17 @@ void Input::OnGamepadRemoved(SDL_JoystickID which) {
         s_Gamepad = nullptr;
         s_State.CurrPadButtons.fill(false);
         s_State.CurrPadAxes.fill(0.0f);
+        s_State.LatchedPadButtonsDown.fill(false);
         ConnectFirstGamepad();
+        if (!s_Gamepad && !s_State.GamepadConnectedForTesting) {
+            s_State.ActiveDeviceMode = InputDeviceMode::KeyboardMouse;
+        }
+    } else if (s_State.GamepadConnectedForTesting) {
+        s_State.CurrPadButtons.fill(false);
+        s_State.CurrPadAxes.fill(0.0f);
+        s_State.LatchedPadButtonsDown.fill(false);
+        s_State.GamepadConnectedForTesting = false;
+        s_State.ActiveDeviceMode = InputDeviceMode::KeyboardMouse;
     }
 }
 
@@ -415,7 +438,7 @@ bool Input::IsGamepadButtonJustPressed(SDL_GamepadButton btn) {
 }
 
 bool Input::IsGamepadButtonJustReleased(SDL_GamepadButton btn) {
-    if (!IsGamepadConnected() || !IsValidGamepadButton(btn)) {
+    if (!IsValidGamepadButton(btn)) {
         return false;
     }
     const size_t idx = static_cast<size_t>(btn);
@@ -646,9 +669,13 @@ void Input::SetMousePositionForTesting(const glm::vec2& position) {
 
 void Input::SetGamepadConnectedForTesting(bool connected) {
     s_State.GamepadConnectedForTesting = connected;
-    if (!connected && !s_Gamepad) {
+    if (connected) {
+        s_State.ActiveDeviceMode = InputDeviceMode::Gamepad;
+    } else if (!s_Gamepad) {
         s_State.CurrPadButtons.fill(false);
         s_State.CurrPadAxes.fill(0.0f);
+        s_State.LatchedPadButtonsDown.fill(false);
+        s_State.ActiveDeviceMode = InputDeviceMode::KeyboardMouse;
     }
 }
 

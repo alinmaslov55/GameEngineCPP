@@ -190,8 +190,8 @@ flowchart TD
 | Codename | Work Package Title | Status | Prio | Wave | Hard Prerequisites | Audit Findings Covered | Downstream Dependents (`Unlocks`) |
 | :--- | :--- | :---: | :---: | :---: | :--- | :--- | :--- |
 | **`FIX-CORE-01`** | `JobSystem` Lifecycle/Overflow & `ResourceManager` Thread-Safe GL Teardown | `DONE` | **P0** | W0 | *None (Root)* | `C-02`, `C-03`,Core `#1–#3`, `#6` | `FIX-CORE-02`, `FIX-PHY-02`, `FIX-RND-02`, `FIX-SAV-02` |
-| **`FIX-CORE-02`** | `Application`, `Window` DPI, `Logger` Exception Guard & `ImGuiLayer` Safety | `TODO` | **P1** | W1 | `FIX-CORE-01` | Core `#4`, `#12`, `#14`, Med `Window` | `DOC-01`, `DOC-02` |
-| **`FIX-CORE-03`** | `Time` Hit-Stop/Pause Invariants & `Input` Gamepad/ActionMap Hardening | `TODO` | **P0** | W0 | *None (Root)* | Core `#5`, `#6`, Med `InputActionMap` | `FIX-SAV-01`, `FIX-UIX-02`, `FIX-UIX-04`, `DOC-02` |
+| **`FIX-CORE-02`** | `Application`, `Window` DPI, `Logger` Exception Guard & `ImGuiLayer` Safety | `DONE` | **P1** | W1 | `FIX-CORE-01` | Core `#4`, `#12`, `#14`, Med `Window` | `DOC-01`, `DOC-02` |
+| **`FIX-CORE-03`** | `Time` Hit-Stop/Pause Invariants & `Input` Gamepad/ActionMap Hardening | `DONE` | **P0** | W0 | *None (Root)* | Core `#5`, `#6`, Med `InputActionMap` | `FIX-SAV-01`, `FIX-UIX-02`, `FIX-UIX-04`, `DOC-02` |
 | **`FIX-CORE-04`** | `CutoutProcessor` Per-Cell Alpha Bleed, Dynamic Frame Names & Bounds | `TODO` | **P1** | W0 | *None (Root)* | Core `#13`, Med `CutoutProcessor` | `DOC-08` |
 | **`FIX-AUD-01`** | SDL3 Shared-Device Stream Unbind/Bind, SIOF Fix & Track Thread Safety | `TODO` | **P0** | W0 | *None (Root)* | `C-13`, `C-14`, Audio `#9` | `FIX-AUD-02`, `FIX-AUD-03` |
 | **`FIX-AUD-02`** | WAV S16 Normalization, Dynamic Spatial Pan & `GetQueuedFrames` Fix | `TODO` | **P0** | W1 | `FIX-AUD-01` | `C-15`, Audio `#7`, Med `AudioClip` | `FIX-AUD-03`, `FIX-SAV-01` |
@@ -275,7 +275,7 @@ flowchart TD
 ---
 
 #### `FIX-CORE-02` — `Application`, `Window` DPI, `Logger` Exception Guard & `ImGuiLayer` Safety
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-CORE-01` | Unlocks: `DOC-01`, `DOC-02`
 - **Current Defects:**
   1. [Application.cpp](file://Engine/src/Core/Application.cpp#L61-L82), [lines 196-211](file://Engine/src/Core/Application.cpp#L196-L211): `Initialize()` continues when `!m_Window->IsInitialized()`; `Shutdown()` clears GPU/audio caches *before* `JobSystem::Shutdown()` and misses `Shader`/`Font`/`SpriteAtlas`/`Prefab` caches; `Application::Update()` double-calls `Input::Update()`.
@@ -288,7 +288,7 @@ flowchart TD
 ---
 
 #### `FIX-CORE-03` — `Time` Hit-Stop/Pause Invariants & `Input` Gamepad/ActionMap Hardening
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `FIX-SAV-01`, `FIX-UIX-02`, `FIX-UIX-04`, `DOC-02`
 - **Current Defects:**
   1. [Time.h](file://Engine/include/Engine/Core/Time.h#L19-L21), [Time.cpp](file://Engine/src/Core/Time.cpp#L71-L78), [lines 132-145](file:/Engine/src/Core/Time.cpp#L132-L145): `GetTimeScale()` returns `s_HitStopTimeScale` (`0.02f`) while paused (`SetTimeScale(0.0f)`); `s_HitStopTimer` decays while paused; overlapping short `TriggerHitStop` truncates a longer active hit-stop.

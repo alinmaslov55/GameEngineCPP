@@ -214,4 +214,65 @@ TEST(TimeAndPhysicsStepTest, MultiFrameratePhysicsDeterminism) {
     EXPECT_NEAR(pos60.z, pos240.z, 1e-4f);
 }
 
+TEST(TimeAndPhysicsStepTest, HitStopPauseInvariantsAndOverlappingRequests) {
+    Engine::Time::Init();
+    Engine::Time::Reset();
+
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 1.0f);
+    EXPECT_FALSE(Engine::Time::IsInHitStop());
+
+    // 1. Trigger initial hit-stop (0.10s duration, scale 0.05f)
+    Engine::Time::TriggerHitStop(0.10f, 0.05f);
+    EXPECT_TRUE(Engine::Time::IsInHitStop());
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.05f);
+
+    // 2. Trigger overlapping shorter hit-stop (0.02s duration, scale 0.10f)
+    // Invariant: Must NOT truncate duration to 0.02s; must keep strongest freeze (0.05f)
+    Engine::Time::TriggerHitStop(0.02f, 0.10f);
+    EXPECT_TRUE(Engine::Time::IsInHitStop());
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.05f);
+
+    // 3. Step 0.04s unscaled (0.06s remaining)
+    Engine::Time::SetMockDeltaTime(0.04f);
+    Engine::Time::Update();
+    EXPECT_TRUE(Engine::Time::IsInHitStop());
+    EXPECT_FLOAT_EQ(Engine::Time::GetDeltaTime(), 0.04f * 0.05f);
+
+    // 4. Pause the game via SetTimeScale(0.0f)
+    Engine::Time::SetTimeScale(0.0f);
+    // Invariant: While paused, GetTimeScale() MUST return 0.0f, not the 0.05f hit-stop scale!
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::Time::GetBaseTimeScale(), 0.0f);
+
+    // Step 3 mock frames while paused
+    for (int i = 0; i < 3; ++i) {
+        Engine::Time::SetMockDeltaTime(0.05f);
+        Engine::Time::Update();
+        EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.0f);
+        EXPECT_FLOAT_EQ(Engine::Time::GetDeltaTime(), 0.0f);
+        EXPECT_TRUE(Engine::Time::IsInHitStop()); // Hit-stop state preserved across pause
+    }
+
+    // 5. Unpause the game via SetTimeScale(1.0f)
+    Engine::Time::SetTimeScale(1.0f);
+    // Hit-stop resumes with remaining 0.06s at scale 0.05f
+    EXPECT_TRUE(Engine::Time::IsInHitStop());
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.05f);
+
+    // Step 0.03s unscaled (0.03s remaining)
+    Engine::Time::SetMockDeltaTime(0.03f);
+    Engine::Time::Update();
+    EXPECT_TRUE(Engine::Time::IsInHitStop());
+    EXPECT_FLOAT_EQ(Engine::Time::GetDeltaTime(), 0.03f * 0.05f);
+
+    // Step 0.04s unscaled (exceeds remaining 0.03s -> hit stop expires)
+    Engine::Time::SetMockDeltaTime(0.04f);
+    Engine::Time::Update();
+    EXPECT_FALSE(Engine::Time::IsInHitStop());
+    // Invariant: Base time scale (1.0f) seamlessly restored!
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 1.0f);
+
+    Engine::Time::Reset();
+}
+
 } // namespace

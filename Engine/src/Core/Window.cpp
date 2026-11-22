@@ -109,12 +109,16 @@ void Window::PollEvents() {
                 break;
 
             case SDL_EVENT_GAMEPAD_BUTTON_DOWN:
-                Input::OnGamepadButtonEvent(static_cast<SDL_GamepadButton>(event.gbutton.button), true);
+                if (Input::IsActiveGamepad(event.gbutton.which)) {
+                    Input::OnGamepadButtonEvent(static_cast<SDL_GamepadButton>(event.gbutton.button), true);
+                }
                 break;
 
             case SDL_EVENT_GAMEPAD_AXIS_MOTION: {
-                const float normalized = Input::NormalizeGamepadAxis(event.gaxis.value);
-                Input::OnGamepadAxisEvent(static_cast<SDL_GamepadAxis>(event.gaxis.axis), normalized);
+                if (Input::IsActiveGamepad(event.gaxis.which)) {
+                    const float normalized = Input::NormalizeGamepadAxis(event.gaxis.value);
+                    Input::OnGamepadAxisEvent(static_cast<SDL_GamepadAxis>(event.gaxis.axis), normalized);
+                }
                 break;
             }
 

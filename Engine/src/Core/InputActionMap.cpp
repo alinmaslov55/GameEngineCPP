@@ -41,23 +41,36 @@ nlohmann::json SerializeBinding(const ActionBinding& binding) {
 
 SDL_Scancode ParseScancodeField(const nlohmann::json& j, const char* idKey, const char* nameKey) {
     if (j.contains(idKey)) {
-        const auto& val = j.at(idKey);
-        if (val.is_number_integer()) {
-            const int code = val.get<int>();
-            if (code >= 0 && code < SDL_SCANCODE_COUNT) {
-                return static_cast<SDL_Scancode>(code);
+        try {
+            const auto& val = j.at(idKey);
+            if (val.is_number_integer()) {
+                const int64_t code = val.get<int64_t>();
+                if (code > 0 && code < SDL_SCANCODE_COUNT) {
+                    return static_cast<SDL_Scancode>(code);
+                }
+                // code == 0 (SDL_SCANCODE_UNKNOWN) intentionally falls through to nameKey
+            } else if (val.is_string()) {
+                const std::string& name = val.get_ref<const std::string&>();
+                if (!name.empty()) {
+                    const SDL_Scancode sc = SDL_GetScancodeFromName(name.c_str());
+                    if (sc != SDL_SCANCODE_UNKNOWN) {
+                        return sc;
+                    }
+                }
             }
-        } else if (val.is_string()) {
-            const std::string& name = val.get_ref<const std::string&>();
-            if (!name.empty()) {
-                return SDL_GetScancodeFromName(name.c_str());
-            }
+        } catch (...) {
         }
     }
-    if (nameKey && j.contains(nameKey) && j.at(nameKey).is_string()) {
-        const std::string& name = j.at(nameKey).get_ref<const std::string&>();
-        if (!name.empty()) {
-            return SDL_GetScancodeFromName(name.c_str());
+    if (nameKey && j.contains(nameKey)) {
+        try {
+            const auto& val = j.at(nameKey);
+            if (val.is_string()) {
+                const std::string& name = val.get_ref<const std::string&>();
+                if (!name.empty()) {
+                    return SDL_GetScancodeFromName(name.c_str());
+                }
+            }
+        } catch (...) {
         }
     }
     return SDL_SCANCODE_UNKNOWN;
@@ -67,16 +80,35 @@ SDL_GamepadButton ParseGamepadButtonField(const nlohmann::json& j) {
     if (!j.contains("padButton")) {
         return SDL_GAMEPAD_BUTTON_INVALID;
     }
-    const auto& val = j.at("padButton");
-    if (val.is_string()) {
-        const std::string& str = val.get_ref<const std::string&>();
-        return str.empty() ? SDL_GAMEPAD_BUTTON_INVALID : SDL_GetGamepadButtonFromString(str.c_str());
-    }
-    if (val.is_number_integer()) {
-        const int id = val.get<int>();
-        if (id >= 0 && id < SDL_GAMEPAD_BUTTON_COUNT) {
-            return static_cast<SDL_GamepadButton>(id);
+    try {
+        const auto& val = j.at("padButton");
+        if (val.is_string()) {
+            const std::string& str = val.get_ref<const std::string&>();
+            if (str.empty()) {
+                return SDL_GAMEPAD_BUTTON_INVALID;
+            }
+            const SDL_GamepadButton btn = SDL_GetGamepadButtonFromString(str.c_str());
+            if (btn != SDL_GAMEPAD_BUTTON_INVALID) {
+                return btn;
+            }
+            // Directional face button aliases
+            std::string lower = str;
+            for (char& c : lower) {
+                c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+            }
+            if (lower == "south" || lower == "a" || lower == "cross") return SDL_GAMEPAD_BUTTON_SOUTH;
+            if (lower == "east" || lower == "b" || lower == "circle") return SDL_GAMEPAD_BUTTON_EAST;
+            if (lower == "west" || lower == "x" || lower == "square") return SDL_GAMEPAD_BUTTON_WEST;
+            if (lower == "north" || lower == "y" || lower == "triangle") return SDL_GAMEPAD_BUTTON_NORTH;
+            return SDL_GAMEPAD_BUTTON_INVALID;
         }
+        if (val.is_number_integer()) {
+            const int64_t id = val.get<int64_t>();
+            if (id >= 0 && id < SDL_GAMEPAD_BUTTON_COUNT) {
+                return static_cast<SDL_GamepadButton>(id);
+            }
+        }
+    } catch (...) {
     }
     return SDL_GAMEPAD_BUTTON_INVALID;
 }
@@ -85,16 +117,19 @@ SDL_GamepadAxis ParseGamepadAxisField(const nlohmann::json& j) {
     if (!j.contains("padTriggerAxis")) {
         return SDL_GAMEPAD_AXIS_INVALID;
     }
-    const auto& val = j.at("padTriggerAxis");
-    if (val.is_string()) {
-        const std::string& str = val.get_ref<const std::string&>();
-        return str.empty() ? SDL_GAMEPAD_AXIS_INVALID : SDL_GetGamepadAxisFromString(str.c_str());
-    }
-    if (val.is_number_integer()) {
-        const int id = val.get<int>();
-        if (id >= 0 && id < SDL_GAMEPAD_AXIS_COUNT) {
-            return static_cast<SDL_GamepadAxis>(id);
+    try {
+        const auto& val = j.at("padTriggerAxis");
+        if (val.is_string()) {
+            const std::string& str = val.get_ref<const std::string&>();
+            return str.empty() ? SDL_GAMEPAD_AXIS_INVALID : SDL_GetGamepadAxisFromString(str.c_str());
         }
+        if (val.is_number_integer()) {
+            const int64_t id = val.get<int64_t>();
+            if (id >= 0 && id < SDL_GAMEPAD_AXIS_COUNT) {
+                return static_cast<SDL_GamepadAxis>(id);
+            }
+        }
+    } catch (...) {
     }
     return SDL_GAMEPAD_AXIS_INVALID;
 }
@@ -181,16 +216,22 @@ bool InputActionMap::DeserializeFromString(std::string_view jsonStr) {
         if (!entry.is_object() || actionName.empty()) {
             continue;
         }
-        ActionBinding binding;
-        binding.PrimaryKey = ParseScancodeField(entry, "primaryKey", "primaryKeyName");
-        binding.SecondaryKey = ParseScancodeField(entry, "secondaryKey", "secondaryKeyName");
-        if (entry.contains("mouseButton") && entry.at("mouseButton").is_number_integer()) {
-            const int btn = entry.at("mouseButton").get<int>();
-            binding.MouseButton = IsValidMouseButton(btn) ? btn : 0;
+        try {
+            ActionBinding binding;
+            binding.PrimaryKey = ParseScancodeField(entry, "primaryKey", "primaryKeyName");
+            binding.SecondaryKey = ParseScancodeField(entry, "secondaryKey", "secondaryKeyName");
+            if (entry.contains("mouseButton") && entry.at("mouseButton").is_number_integer()) {
+                const int64_t btn = entry.at("mouseButton").get<int64_t>();
+                binding.MouseButton = (btn >= 0 && btn <= 255 && IsValidMouseButton(static_cast<int>(btn)))
+                    ? static_cast<int>(btn)
+                    : 0;
+            }
+            binding.PadButton = ParseGamepadButtonField(entry);
+            binding.PadTriggerAxis = ParseGamepadAxisField(entry);
+            parsed.emplace(actionName, binding);
+        } catch (const std::exception& e) {
+            ENGINE_CORE_WARN("Skipping malformed input binding '{}': {}", actionName, e.what());
         }
-        binding.PadButton = ParseGamepadButtonField(entry);
-        binding.PadTriggerAxis = ParseGamepadAxisField(entry);
-        parsed.emplace(actionName, binding);
     }
 
     m_Bindings = std::move(parsed);

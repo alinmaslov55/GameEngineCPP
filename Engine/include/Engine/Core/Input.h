@@ -41,6 +41,7 @@ public:
 
     // Gamepad (one player)
     static bool IsGamepadConnected();
+    [[nodiscard]] static bool IsActiveGamepad(SDL_JoystickID which) noexcept;
     static bool IsGamepadButtonPressed(SDL_GamepadButton button);
     static bool IsGamepadButtonJustPressed(SDL_GamepadButton btn);
     static bool IsGamepadButtonJustReleased(SDL_GamepadButton btn);

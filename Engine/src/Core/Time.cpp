@@ -50,7 +50,9 @@ void Time::SetTimeScale(float scale) noexcept {
         ENGINE_CORE_DEBUG("Time::SetTimeScale set to {:.3f}", clamped);
     }
     s_TimeScale = clamped;
-    s_PreHitStopTimeScale = clamped;
+    if (clamped > 0.0f) {
+        s_PreHitStopTimeScale = clamped;
+    }
 }
 
 void Time::SetFixedDeltaTime(float fixedDt) noexcept {
@@ -68,11 +70,18 @@ void Time::TriggerHitStop(float unscaledDurationSeconds, float hitScale) noexcep
                          unscaledDurationSeconds, hitScale);
         return;
     }
+    const float validHitScale = std::clamp(hitScale, 0.0f, 4.0f);
     if (s_HitStopTimer <= 0.0f) {
-        s_PreHitStopTimeScale = s_TimeScale;
+        if (s_TimeScale > 0.0f) {
+            s_PreHitStopTimeScale = s_TimeScale;
+        }
+        s_HitStopTimer = unscaledDurationSeconds;
+        s_HitStopTimeScale = validHitScale;
+    } else {
+        // Extend duration if new request is longer; apply strongest freeze scale
+        s_HitStopTimer = std::max(s_HitStopTimer, unscaledDurationSeconds);
+        s_HitStopTimeScale = std::min(s_HitStopTimeScale, validHitScale);
     }
-    s_HitStopTimer = unscaledDurationSeconds;
-    s_HitStopTimeScale = std::clamp(hitScale, 0.0f, 4.0f);
     ENGINE_CORE_DEBUG("Time::TriggerHitStop active for {:.3f}s at scale {:.3f}",
                       s_HitStopTimer, s_HitStopTimeScale);
 }
@@ -127,20 +136,21 @@ void Time::Update() {
     s_UnscaledDeltaTime = rawDelta;
     s_UnscaledTotalTime += rawDelta;
 
-    // Decay hit-stop if active using unscaled delta time
+    // Decay hit-stop if active using unscaled delta time (only when not paused)
     float effectiveTimeScale = s_TimeScale;
     if (s_HitStopTimer > 0.0f) {
-        if (s_TimeScale == 0.0f || s_PreHitStopTimeScale == 0.0f) {
+        if (s_TimeScale == 0.0f) {
             effectiveTimeScale = 0.0f;
+            // Freeze hit-stop timer while paused
         } else {
             effectiveTimeScale = s_HitStopTimeScale;
-        }
-        s_HitStopTimer -= rawDelta;
-        if (s_HitStopTimer <= 0.0f) {
-            s_HitStopTimer = 0.0f;
-            // Restore previous time scale
-            s_TimeScale = s_PreHitStopTimeScale;
-            ENGINE_CORE_DEBUG("Time: Hit-stop expired; restored timeScale to {:.3f}", s_TimeScale);
+            s_HitStopTimer -= rawDelta;
+            if (s_HitStopTimer <= 0.0f) {
+                s_HitStopTimer = 0.0f;
+                // Restore previous time scale
+                s_TimeScale = s_PreHitStopTimeScale;
+                ENGINE_CORE_DEBUG("Time: Hit-stop expired; restored timeScale to {:.3f}", s_TimeScale);
+            }
         }
     }
 
