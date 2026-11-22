@@ -99,7 +99,7 @@ TEST(AsyncTextureLoadingTest, IncrementalUploadBatchingBoundsFrameTime) {
     auto texC = Engine::ResourceManager::LoadTextureAsync(pngC.string());
 
     // Wait until background decoding jobs have placed their buffers in the pending upload queue
-    while (Engine::ResourceManager::GetPendingUploadCount() > 0) {
+    while (Engine::ResourceManager::GetActiveAsyncLoadCount() > 0) {
         if (!Engine::JobSystem::ExecuteOneJob()) {
             std::this_thread::yield();
         }

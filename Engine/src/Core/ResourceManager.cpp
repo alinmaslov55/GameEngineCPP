@@ -629,6 +629,10 @@ uint32_t ResourceManager::GetPendingUploadCount() noexcept {
     return s_ActiveAsyncLoads.load(std::memory_order_acquire) + static_cast<uint32_t>(s_PendingUploads.size());
 }
 
+uint32_t ResourceManager::GetActiveAsyncLoadCount() noexcept {
+    return s_ActiveAsyncLoads.load(std::memory_order_acquire);
+}
+
 std::shared_ptr<AudioClip> ResourceManager::LoadAudioClip(const std::string& filepath) {
     return Load<AudioClip>(filepath);
 }

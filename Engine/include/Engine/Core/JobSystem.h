@@ -204,8 +204,12 @@ private:
             return;
         }
 
-        using UnsignedDiff = std::make_unsigned_t<IndexType>;
-        const size_t totalItems = static_cast<size_t>(static_cast<UnsignedDiff>(end) - static_cast<UnsignedDiff>(start));
+        size_t totalItems = 0;
+        if constexpr (std::is_signed_v<IndexType>) {
+            totalItems = static_cast<size_t>(static_cast<int64_t>(end) - static_cast<int64_t>(start));
+        } else {
+            totalItems = static_cast<size_t>(static_cast<uint64_t>(end) - static_cast<uint64_t>(start));
+        }
         const uint32_t workers = GetWorkerCount();
 
         if (!IsInitialized() || workers == 0 || (!IsBatched && totalItems <= 1)) {
@@ -300,9 +304,17 @@ private:
         }
 
         for (size_t c = 0; c < chunkCount; ++c) {
-            const IndexType chunkStart = static_cast<IndexType>(start + static_cast<IndexType>(c * chunkSize));
-            const size_t step = std::min(chunkSize, totalItems - c * chunkSize);
-            const IndexType chunkEnd = static_cast<IndexType>(chunkStart + static_cast<IndexType>(step));
+            const size_t offsetStart = c * chunkSize;
+            const size_t step = std::min(chunkSize, totalItems - offsetStart);
+            IndexType chunkStart{};
+            IndexType chunkEnd{};
+            if constexpr (std::is_signed_v<IndexType>) {
+                chunkStart = static_cast<IndexType>(static_cast<int64_t>(start) + static_cast<int64_t>(offsetStart));
+                chunkEnd = static_cast<IndexType>(static_cast<int64_t>(chunkStart) + static_cast<int64_t>(step));
+            } else {
+                chunkStart = static_cast<IndexType>(static_cast<uint64_t>(start) + static_cast<uint64_t>(offsetStart));
+                chunkEnd = static_cast<IndexType>(static_cast<uint64_t>(chunkStart) + static_cast<uint64_t>(step));
+            }
             packets[c].func = &func;
             packets[c].context = &ctx;
             packets[c].start = chunkStart;

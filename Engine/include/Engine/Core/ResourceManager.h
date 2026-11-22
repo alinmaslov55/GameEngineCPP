@@ -70,8 +70,11 @@ public:
     // Blocks the calling thread until all background texture decoding tasks complete and uploads them to OpenGL.
     static void WaitForPendingUploads();
 
-    // Returns the number of background texture decoding jobs currently in flight.
+    // Returns the total number of textures pending completion (in-flight decoding jobs + queued GPU uploads).
     [[nodiscard]] static uint32_t GetPendingUploadCount() noexcept;
+
+    // Returns the number of background texture decoding jobs currently in flight.
+    [[nodiscard]] static uint32_t GetActiveAsyncLoadCount() noexcept;
 
     // Loads an asset from disk, or returns the cached version if it already exists
     template<typename T>
