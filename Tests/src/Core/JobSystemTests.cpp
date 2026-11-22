@@ -491,5 +491,110 @@ TEST(JobSystemTest, Shutdown_WithQueuedJobsAndBlockedWaitersCompletesWithoutHang
     EXPECT_FALSE(Engine::JobSystem::IsInitialized());
 }
 
+TEST(JobSystemTest, LifecycleStressInitShutdownCycles) {
+    constexpr int kCycles = 50;
+    for (int i = 0; i < kCycles; ++i) {
+        Engine::JobSystem::Init(4);
+        EXPECT_TRUE(Engine::JobSystem::IsInitialized());
+
+        std::atomic<int> counter{ 0 };
+        auto h1 = Engine::JobSystem::Dispatch([&counter]() {
+            counter.fetch_add(1, std::memory_order_relaxed);
+        });
+        auto h2 = Engine::JobSystem::Dispatch([&counter]() {
+            counter.fetch_add(1, std::memory_order_relaxed);
+        });
+
+        // Fast concurrent shutdown
+        Engine::JobSystem::Shutdown();
+        EXPECT_FALSE(Engine::JobSystem::IsInitialized());
+        EXPECT_EQ(counter.load(std::memory_order_relaxed), 2);
+    }
+}
+
+TEST(JobSystemTest, ParallelForNarrowTypesAndNegativeRanges) {
+    Engine::JobSystem::Init(4);
+
+    // 1. int8_t negative to positive
+    {
+        const int8_t start = -20;
+        const int8_t end = 30;
+        const size_t count = static_cast<size_t>(end - start);
+        std::vector<int> visited(count, 0);
+
+        Engine::JobSystem::ParallelFor(start, end, [&](int8_t idx) {
+            const size_t offset = static_cast<size_t>(idx - start);
+            visited[offset] += 1;
+        }, 7);
+
+        for (size_t i = 0; i < count; ++i) {
+            EXPECT_EQ(visited[i], 1) << "Index offset " << i << " was not visited exactly once";
+        }
+    }
+
+    // 2. int16_t negative to positive with batching
+    {
+        const int16_t start = -250;
+        const int16_t end = 350;
+        const size_t count = static_cast<size_t>(end - start);
+        std::vector<int> visited(count, 0);
+
+        Engine::JobSystem::ParallelForBatched(start, end, [&](int16_t s, int16_t e) {
+            for (int16_t i = s; i < e; ++i) {
+                const size_t offset = static_cast<size_t>(i - start);
+                visited[offset] += 1;
+            }
+        }, 33);
+
+        for (size_t i = 0; i < count; ++i) {
+            EXPECT_EQ(visited[i], 1);
+        }
+    }
+
+    // 3. uint8_t
+    {
+        const uint8_t start = 10;
+        const uint8_t end = 120;
+        const size_t count = static_cast<size_t>(end - start);
+        std::vector<int> visited(count, 0);
+
+        Engine::JobSystem::ParallelFor(start, end, [&](uint8_t idx) {
+            const size_t offset = static_cast<size_t>(idx - start);
+            visited[offset] += 1;
+        }, 11);
+
+        for (size_t i = 0; i < count; ++i) {
+            EXPECT_EQ(visited[i], 1);
+        }
+    }
+
+    Engine::JobSystem::Shutdown();
+}
+
+TEST(JobSystemTest, JobFunctionCapturesReleasedOnCompletion) {
+    Engine::JobSystem::Init(2);
+
+    std::weak_ptr<int> observer;
+    Engine::JobHandle handle;
+    {
+        auto capturedResource = std::make_shared<int>(12345);
+        observer = capturedResource;
+
+        handle = Engine::JobSystem::Dispatch([capturedResource]() {
+            EXPECT_EQ(*capturedResource, 12345);
+        });
+    }
+
+    // capturedResource went out of scope here; only the job lambda inside JobState should hold it
+    handle.Wait();
+    EXPECT_TRUE(handle.IsComplete());
+
+    // Because handle is still alive, the JobState is alive.
+    // However, jobFunction must have been reset to nullptr on completion, releasing the shared_ptr!
+    EXPECT_TRUE(observer.expired()) << "Lambda captures should be released immediately upon job completion";
+
+    Engine::JobSystem::Shutdown();
+}
+
 } // namespace
 

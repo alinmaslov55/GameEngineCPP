@@ -8,6 +8,7 @@ namespace Engine {
 static thread_local int32_t t_WorkerIndex = -1;
 std::unique_ptr<JobSystem> JobSystem::s_Instance = nullptr;
 static std::shared_mutex s_InstanceMutex;
+static std::mutex s_LifecycleMutex;
 
 void JobHandle::Wait() const {
     if (!m_State) return;
@@ -64,6 +65,7 @@ JobSystem::~JobSystem() {
 }
 
 void JobSystem::Init(uint32_t workerCount) {
+    std::unique_lock lifecycleLock(s_LifecycleMutex);
     std::unique_lock lock(s_InstanceMutex);
     if (s_Instance && s_Instance->m_Initialized.load(std::memory_order_acquire)) {
         ENGINE_CORE_WARN("JobSystem::Init called while already initialized");
@@ -80,6 +82,7 @@ void JobSystem::Init(uint32_t workerCount) {
 }
 
 void JobSystem::Shutdown() {
+    std::unique_lock lifecycleLock(s_LifecycleMutex);
     JobSystem* instance = nullptr;
     {
         std::unique_lock lock(s_InstanceMutex);
@@ -402,6 +405,7 @@ void JobSystem::ExecuteJobState(const std::shared_ptr<JobState>& jobState) {
     struct CompletionGuard {
         const std::shared_ptr<JobState>& state;
         ~CompletionGuard() {
+            state->jobFunction = nullptr;
             state->isFinished.store(true, std::memory_order_release);
             state->isFinished.notify_all();
 

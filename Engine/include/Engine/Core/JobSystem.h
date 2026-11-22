@@ -170,21 +170,29 @@ public:
         void Push(QueuedJob job) {
             std::lock_guard lock(m_Mutex);
             m_Ring.PushBack(std::move(job));
+            m_ApproxSize.fetch_add(1, std::memory_order_relaxed);
         }
 
         bool Pop(QueuedJob& outJob) {
+            if (m_ApproxSize.load(std::memory_order_relaxed) == 0) {
+                return false;
+            }
             std::lock_guard lock(m_Mutex);
-            return m_Ring.PopFront(outJob);
+            if (!m_Ring.PopFront(outJob)) {
+                return false;
+            }
+            m_ApproxSize.fetch_sub(1, std::memory_order_relaxed);
+            return true;
         }
 
-        bool Empty() const {
-            std::lock_guard lock(m_Mutex);
-            return m_Ring.Empty();
+        [[nodiscard]] bool Empty() const noexcept {
+            return m_ApproxSize.load(std::memory_order_relaxed) == 0;
         }
 
     private:
         mutable std::mutex m_Mutex;
         JobRingBuffer m_Ring;
+        std::atomic<size_t> m_ApproxSize{ 0 };
     };
 
 private:
@@ -196,7 +204,8 @@ private:
             return;
         }
 
-        const size_t totalItems = static_cast<size_t>(end - start);
+        using UnsignedDiff = std::make_unsigned_t<IndexType>;
+        const size_t totalItems = static_cast<size_t>(static_cast<UnsignedDiff>(end) - static_cast<UnsignedDiff>(start));
         const uint32_t workers = GetWorkerCount();
 
         if (!IsInitialized() || workers == 0 || (!IsBatched && totalItems <= 1)) {
@@ -291,8 +300,9 @@ private:
         }
 
         for (size_t c = 0; c < chunkCount; ++c) {
-            const IndexType chunkStart = start + static_cast<IndexType>(c * chunkSize);
-            const IndexType chunkEnd = std::min(end, chunkStart + static_cast<IndexType>(chunkSize));
+            const IndexType chunkStart = static_cast<IndexType>(start + static_cast<IndexType>(c * chunkSize));
+            const size_t step = std::min(chunkSize, totalItems - c * chunkSize);
+            const IndexType chunkEnd = static_cast<IndexType>(chunkStart + static_cast<IndexType>(step));
             packets[c].func = &func;
             packets[c].context = &ctx;
             packets[c].start = chunkStart;

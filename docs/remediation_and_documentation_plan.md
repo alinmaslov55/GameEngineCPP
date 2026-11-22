@@ -189,7 +189,7 @@ flowchart TD
 
 | Codename | Work Package Title | Status | Prio | Wave | Hard Prerequisites | Audit Findings Covered | Downstream Dependents (`Unlocks`) |
 | :--- | :--- | :---: | :---: | :---: | :--- | :--- | :--- |
-| **`FIX-CORE-01`** | `JobSystem` Lifecycle/Overflow & `ResourceManager` Thread-Safe GL Teardown | `TODO` | **P0** | W0 | *None (Root)* | `C-02`, `C-03`,Core `#1–#3`, `#6` | `FIX-CORE-02`, `FIX-PHY-02`, `FIX-RND-02`, `FIX-SAV-02` |
+| **`FIX-CORE-01`** | `JobSystem` Lifecycle/Overflow & `ResourceManager` Thread-Safe GL Teardown | `DONE` | **P0** | W0 | *None (Root)* | `C-02`, `C-03`,Core `#1–#3`, `#6` | `FIX-CORE-02`, `FIX-PHY-02`, `FIX-RND-02`, `FIX-SAV-02` |
 | **`FIX-CORE-02`** | `Application`, `Window` DPI, `Logger` Exception Guard & `ImGuiLayer` Safety | `TODO` | **P1** | W1 | `FIX-CORE-01` | Core `#4`, `#12`, `#14`, Med `Window` | `DOC-01`, `DOC-02` |
 | **`FIX-CORE-03`** | `Time` Hit-Stop/Pause Invariants & `Input` Gamepad/ActionMap Hardening | `TODO` | **P0** | W0 | *None (Root)* | Core `#5`, `#6`, Med `InputActionMap` | `FIX-SAV-01`, `FIX-UIX-02`, `FIX-UIX-04`, `DOC-02` |
 | **`FIX-CORE-04`** | `CutoutProcessor` Per-Cell Alpha Bleed, Dynamic Frame Names & Bounds | `TODO` | **P1** | W0 | *None (Root)* | Core `#13`, Med `CutoutProcessor` | `DOC-08` |
@@ -245,7 +245,7 @@ flowchart TD
 ---
 
 #### `FIX-CORE-01` — `JobSystem` Lifecycle/Overflow & `ResourceManager` Thread-Safe GL Teardown
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `FIX-CORE-02`, `FIX-PHY-02`, `FIX-RND-02`, `FIX-SAV-02`
 - **Current Defects:**
   1. [ResourceManager.cpp](file://Engine/src/Core/ResourceManager.cpp#L415-L508): Worker lambda captures `std::shared_ptr<Texture> placeholder` by value; on decode failure or `ClearType<Texture>()`, the last reference can drop on a worker thread, calling `glDeleteTextures` without an OpenGL context (`C-02`).

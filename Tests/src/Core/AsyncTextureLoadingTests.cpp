@@ -301,5 +301,92 @@ TEST(CutoutProcessorAsyncTest, ParallelProcessFileAsyncBatchCompletesWithoutGlob
     Engine::JobSystem::Shutdown();
 }
 
+TEST(AsyncTextureLoadingTest, CorruptDdsFallsBackToSourcePng) {
+    Engine::JobSystem::Shutdown();
+    Engine::JobSystem::Init(4);
+
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "engine_async_tex_test_fallback";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+    const std::filesystem::path testPng = tempDir / "fallback_image.png";
+    const std::filesystem::path testDds = tempDir / "fallback_image.dds";
+
+    // 1. Create a valid PNG
+    WriteTestPng(testPng, 48, 48, 120, 200, 80, 255);
+
+    // 2. Create a corrupt/truncated DDS sibling with equal or newer mtime
+    {
+        std::ofstream ddsOut(testDds, std::ios::binary);
+        // Write invalid/truncated header (<128 bytes)
+        const char garbage[32] = { 'D', 'D', 'S', ' ' };
+        ddsOut.write(garbage, sizeof(garbage));
+    }
+    std::filesystem::last_write_time(testDds, std::filesystem::last_write_time(testPng));
+
+    // 3. Load texture asynchronously: ResolveTextureDiskPath will pick the DDS sibling,
+    // which fails to parse, but the worker falls back to fallback_image.png!
+    auto tex = Engine::ResourceManager::LoadTextureAsync(testPng.string());
+    ASSERT_NE(tex, nullptr);
+
+    Engine::ResourceManager::WaitForPendingUploads();
+    EXPECT_EQ(Engine::ResourceManager::GetPendingUploadCount(), 0u);
+
+    // Should have successfully loaded the PNG dimensions
+    EXPECT_TRUE(tex->IsLoaded());
+    EXPECT_EQ(tex->GetWidth(), 48);
+    EXPECT_EQ(tex->GetHeight(), 48);
+
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+    std::filesystem::remove_all(tempDir, ec);
+    Engine::JobSystem::Shutdown();
+}
+
+TEST(AsyncTextureLoadingTest, WorkerThreadTextureTeardownSafety) {
+    Engine::JobSystem::Shutdown();
+    Engine::JobSystem::Init(4);
+
+    // Discard the returned placeholder immediately so caller holds no reference
+    {
+        auto placeholder = Engine::ResourceManager::LoadTextureAsync("non_existent_texture_path_12345.png");
+        EXPECT_NE(placeholder, nullptr);
+    }
+
+    // Wait for the background worker to fail and clean up
+    Engine::ResourceManager::WaitForPendingUploads();
+    EXPECT_EQ(Engine::ResourceManager::GetPendingUploadCount(), 0u);
+
+    // Process pending uploads to verify deferred garbage drains cleanly on the main thread
+    EXPECT_EQ(Engine::ResourceManager::ProcessPendingUploads(), 0u);
+
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+    Engine::JobSystem::Shutdown();
+}
+
+TEST(AsyncTextureLoadingTest, AccuratePendingUploadCountTracksQueue) {
+    Engine::JobSystem::Shutdown();
+    Engine::JobSystem::Init(4);
+
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "engine_async_tex_test_count";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+    const std::filesystem::path testPng = tempDir / "count_test.png";
+    WriteTestPng(testPng, 16, 16, 255, 0, 0, 255);
+
+    auto tex = Engine::ResourceManager::LoadTextureAsync(testPng.string());
+    ASSERT_NE(tex, nullptr);
+
+    // While in flight or waiting for upload, pending upload count should be >= 1
+    // (either in-flight decode or queued in s_PendingUploads)
+    // Wait for worker decode to complete
+    Engine::ResourceManager::WaitForPendingUploads();
+    // After WaitForPendingUploads, uploads have been processed to OpenGL and pending count is 0
+    EXPECT_EQ(Engine::ResourceManager::GetPendingUploadCount(), 0u);
+    EXPECT_TRUE(tex->IsLoaded());
+
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+    std::filesystem::remove_all(tempDir, ec);
+    Engine::JobSystem::Shutdown();
+}
+
 } // namespace
 
