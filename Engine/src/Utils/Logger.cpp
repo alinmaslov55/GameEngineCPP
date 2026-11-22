@@ -59,6 +59,7 @@ private:
 std::shared_ptr<RingBufferLogSink> s_RingBufferSink{nullptr};
 spdlog::level::level_enum s_CurrentLevel = spdlog::level::info;
 bool s_Initialized = false;
+bool s_HasInitializedOnce = false;
 std::mutex s_LoggerMutex;
 
 void InitLocked(std::shared_ptr<spdlog::logger>& coreLogger,
@@ -75,15 +76,26 @@ void InitLocked(std::shared_ptr<spdlog::logger>& coreLogger,
         return;
     }
 
-    std::filesystem::create_directories("logs");
+    std::error_code ec;
+    std::filesystem::create_directories("logs", ec);
 
-    auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("logs/Engine.log", true);
-    fileSink->set_pattern("[%Y-%m-%d %T] [%l] %n: %v");
+    std::vector<spdlog::sink_ptr> sinks;
+    sinks.reserve(2);
+
+    const bool truncate = !s_HasInitializedOnce;
+    s_HasInitializedOnce = true;
+
+    try {
+        auto fileSink = std::make_shared<spdlog::sinks::basic_file_sink_mt>("logs/Engine.log", truncate);
+        fileSink->set_pattern("[%Y-%m-%d %T] [%l] %n: %v");
+        sinks.push_back(fileSink);
+    } catch (const std::exception&) {
+        // Fall back gracefully if logs directory or file cannot be opened
+    }
 
     s_RingBufferSink = std::make_shared<RingBufferLogSink>(1000);
     s_RingBufferSink->set_pattern("[%T] [%l] %n: %v");
-
-    std::vector<spdlog::sink_ptr> sinks = { fileSink, s_RingBufferSink };
+    sinks.push_back(s_RingBufferSink);
 
     spdlog::drop("ENGINE");
     spdlog::drop("APP");

@@ -26,6 +26,7 @@ public:
 
     Window& GetWindow() { return *m_Window; }
     const Window& GetWindow() const { return *m_Window; }
+    [[nodiscard]] bool IsInitialized() const noexcept { return m_Initialized; }
 
 #ifdef ENGINE_BUILD_EDITOR
     void SetImGuiRenderCallback(std::function<void()> callback) { m_ImGuiRenderCallback = std::move(callback); }
@@ -40,6 +41,7 @@ private:
     std::unique_ptr<Window> m_Window;
     std::vector<std::unique_ptr<Layer>> m_Layers;
     bool m_Running = true;
+    bool m_Initialized{ false };
 #ifdef ENGINE_BUILD_EDITOR
     std::function<void()> m_ImGuiRenderCallback{nullptr};
 #endif

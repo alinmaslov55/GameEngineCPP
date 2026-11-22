@@ -9,7 +9,7 @@
 
 namespace Engine {
 Window::Window(const std::string& title, int width, int height)
-    : m_Width(width), m_Height(height) {
+    : m_Width(width), m_Height(height), m_FramebufferWidth(width), m_FramebufferHeight(height) {
     ENGINE_CORE_INFO("Creating window '{}' ({}x{})", title, width, height);
 
     if (!SDL_Init(SDL_INIT_VIDEO)) {
@@ -28,6 +28,8 @@ Window::Window(const std::string& title, int width, int height)
         ENGINE_CORE_CRITICAL("Failed to create window: {}", SDL_GetError());
         return;
     }
+
+    SDL_GetWindowSizeInPixels(m_Window, &m_FramebufferWidth, &m_FramebufferHeight);
 
     m_GLContext = SDL_GL_CreateContext(m_Window);
     if (!m_GLContext) {
@@ -52,10 +54,13 @@ Window::~Window() {
     ENGINE_CORE_INFO("Destroying window...");
     m_IsInitialized = false;
     if (m_GLContext) {
+        SDL_GL_MakeCurrent(m_Window, nullptr);
         SDL_GL_DestroyContext(m_GLContext);
+        m_GLContext = nullptr;
     }
     if (m_Window) {
         SDL_DestroyWindow(m_Window);
+        m_Window = nullptr;
     }
     SDL_QuitSubSystem(SDL_INIT_VIDEO);
     ENGINE_CORE_INFO("Window destroyed");
@@ -76,14 +81,23 @@ void Window::PollEvents() {
                 break;
 
             case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+                if (event.window.data1 > 0 && event.window.data2 > 0) {
+                    m_FramebufferWidth = event.window.data1;
+                    m_FramebufferHeight = event.window.data2;
+                    ENGINE_CORE_DEBUG("Window framebuffer resized to {}x{}", m_FramebufferWidth, m_FramebufferHeight);
+                }
+                break;
+
             case SDL_EVENT_WINDOW_RESIZED:
                 if (event.window.data1 > 0 && event.window.data2 > 0) {
                     m_Width = event.window.data1;
                     m_Height = event.window.data2;
+#ifndef ENGINE_BUILD_EDITOR
                     Input::SetViewportRect(
                         { 0.0f, 0.0f },
                         { static_cast<float>(m_Width), static_cast<float>(m_Height) }
                     );
+#endif
                     ENGINE_CORE_DEBUG("Window resized to {}x{}", m_Width, m_Height);
                 }
                 break;

@@ -19,6 +19,8 @@ public:
 
     int GetWidth() const { return m_Width; }
     int GetHeight() const { return m_Height; }
+    [[nodiscard]] int GetFramebufferWidth() const noexcept { return m_FramebufferWidth; }
+    [[nodiscard]] int GetFramebufferHeight() const noexcept { return m_FramebufferHeight; }
 
     bool ShouldClose() const { return m_ShouldClose; }
     bool IsInitialized() const noexcept { return m_IsInitialized; }
@@ -31,6 +33,8 @@ private:
     SDL_GLContext m_GLContext{nullptr};
     int m_Width{0};
     int m_Height{0};
+    int m_FramebufferWidth{0};
+    int m_FramebufferHeight{0};
     bool m_ShouldClose{false};
     bool m_IsInitialized{false};
 };

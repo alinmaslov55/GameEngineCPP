@@ -1,4 +1,6 @@
 #include <gtest/gtest.h>
+#include "Engine/Core/Application.h"
+#include "Engine/Core/Window.h"
 #include "Engine/Core/Layer.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Scene/Scene.h"
@@ -106,6 +108,18 @@ TEST(BuildConfigurationTest, StandaloneSceneFileStartupAndMissingFileFailure) {
 
     Engine::ResourceManager::SetAssetRoot({});
     std::filesystem::remove_all(tempDir, ec);
+}
+
+TEST(ApplicationAndLayerTest, WindowDPIPhysicalAndLogicalDimensionSeparation) {
+    Engine::Window window("TestDPIWindow", 800, 600);
+    EXPECT_EQ(window.GetWidth(), 800);
+    EXPECT_EQ(window.GetHeight(), 600);
+    EXPECT_GE(window.GetFramebufferWidth(), 0);
+    EXPECT_GE(window.GetFramebufferHeight(), 0);
+    if (window.IsInitialized()) {
+        EXPECT_GE(window.GetFramebufferWidth(), 800);
+        EXPECT_GE(window.GetFramebufferHeight(), 600);
+    }
 }
 
 } // namespace

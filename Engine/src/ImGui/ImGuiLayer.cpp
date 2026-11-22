@@ -15,10 +15,25 @@ namespace Engine {
 namespace {
 std::string s_IniFilePath;
 bool s_ResetLayoutRequested = false;
+bool s_Initialized = false;
 ImGuiLayer::LayoutBuilderFn s_LayoutBuilder = nullptr;
 } // namespace
 
+bool ImGuiLayer::IsInitialized() noexcept {
+    return s_Initialized;
+}
+
 void ImGuiLayer::Init(SDL_Window* window, SDL_GLContext glContext) {
+    if (s_Initialized) {
+        ENGINE_CORE_WARN("ImGuiLayer::Init: Already initialized");
+        return;
+    }
+    if (!window || !glContext) {
+        ENGINE_CORE_ERROR("ImGuiLayer::Init called with invalid window ({}) or glContext ({})",
+                          static_cast<const void*>(window), static_cast<const void*>(glContext));
+        return;
+    }
+
     ENGINE_CORE_INFO("Initializing ImGuiLayer...");
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -45,31 +60,59 @@ void ImGuiLayer::Init(SDL_Window* window, SDL_GLContext glContext) {
         ENGINE_CORE_ERROR("Failed to initialize ImGui OpenGL3 backend");
     }
 
+    s_Initialized = true;
     ENGINE_CORE_INFO("ImGuiLayer initialized successfully (Keyboard Nav & Docking enabled)");
 }
 
 void ImGuiLayer::Shutdown() {
-    ENGINE_CORE_INFO("Shutting down ImGuiLayer...");
     s_ResetLayoutRequested = false;
     s_LayoutBuilder = nullptr;
 
-    ImGui_ImplOpenGL3_Shutdown();
-    ImGui_ImplSDL3_Shutdown();
-    ImGui::DestroyContext();
+    if (!s_Initialized && !ImGui::GetCurrentContext()) {
+        return;
+    }
+
+    ENGINE_CORE_INFO("Shutting down ImGuiLayer...");
+
+    if (ImGui::GetCurrentContext() != nullptr) {
+        ImGuiIO& io = ImGui::GetIO();
+        if (io.BackendRendererUserData != nullptr) {
+            ImGui_ImplOpenGL3_Shutdown();
+        }
+        if (io.BackendPlatformUserData != nullptr) {
+            ImGui_ImplSDL3_Shutdown();
+        }
+        ImGui::DestroyContext();
+    }
+    s_Initialized = false;
     ENGINE_CORE_INFO("ImGuiLayer shut down");
 }
 
 void ImGuiLayer::Begin() {
+    if (!ImGui::GetCurrentContext()) {
+        return;
+    }
     ENGINE_CORE_TRACE("ImGuiLayer::Begin");
-    ImGui_ImplOpenGL3_NewFrame();
-    ImGui_ImplSDL3_NewFrame();
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.BackendRendererUserData != nullptr) {
+        ImGui_ImplOpenGL3_NewFrame();
+    }
+    if (io.BackendPlatformUserData != nullptr) {
+        ImGui_ImplSDL3_NewFrame();
+    }
     ImGui::NewFrame();
 }
 
 void ImGuiLayer::End() {
+    if (!ImGui::GetCurrentContext()) {
+        return;
+    }
     ENGINE_CORE_TRACE("ImGuiLayer::End");
     ImGui::Render();
-    ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    ImGuiIO& io = ImGui::GetIO();
+    if (io.BackendRendererUserData != nullptr) {
+        ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
+    }
 }
 
 void ImGuiLayer::SetIniFilePath(const std::filesystem::path& filepath) {
@@ -154,6 +197,9 @@ void ImGuiLayer::ApplyDefaultWorkspaceLayout(unsigned int dockspaceId, float wid
 }
 
 void ImGuiLayer::BeginDockspace() {
+    if (!ImGui::GetCurrentContext()) {
+        return;
+    }
     ENGINE_CORE_TRACE("ImGuiLayer::BeginDockspace");
     // Create a fullscreen window with no title bar or borders to act as the dockspace host
     ImGuiWindowFlags window_flags = ImGuiWindowFlags_MenuBar | ImGuiWindowFlags_NoDocking;
@@ -188,6 +234,9 @@ void ImGuiLayer::BeginDockspace() {
 }
 
 void ImGuiLayer::EndDockspace() {
+    if (!ImGui::GetCurrentContext()) {
+        return;
+    }
     ENGINE_CORE_TRACE("ImGuiLayer::EndDockspace");
     ImGui::End();
 }

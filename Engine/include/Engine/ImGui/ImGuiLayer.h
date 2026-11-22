@@ -17,6 +17,8 @@ public:
     // Cleanup ImGui
     static void Shutdown();
 
+    [[nodiscard]] static bool IsInitialized() noexcept;
+
     // Start a new ImGui frame
     static void Begin();
 

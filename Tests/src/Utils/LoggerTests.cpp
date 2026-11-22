@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include "Engine/Utils/Logger.h"
+#include <fstream>
+#include <sstream>
 #include <thread>
 #include <vector>
 
@@ -61,6 +63,27 @@ TEST(LoggerTest, RepeatedInitShutdownAndConcurrentLoggingAreSafe) {
 
     Engine::Logger::SetLevel(spdlog::level::info);
     Engine::Logger::ClearLogs();
+}
+
+TEST(LoggerTest, PostShutdownLoggingPreservesSessionLog) {
+    Engine::Logger::Init();
+    const std::string preMessage = "SENTINEL_PRE_SHUTDOWN_LOG_ENTRY";
+    ENGINE_CORE_INFO("{}", preMessage);
+    Engine::Logger::Shutdown();
+
+    const std::string postMessage = "SENTINEL_POST_SHUTDOWN_LOG_ENTRY";
+    ENGINE_CORE_INFO("{}", postMessage);
+    Engine::Logger::GetCoreLogger()->flush();
+
+    // Read logs/Engine.log and verify both messages exist (append mode instead of truncate)
+    std::ifstream file("logs/Engine.log");
+    ASSERT_TRUE(file.is_open());
+    std::stringstream buffer;
+    buffer << file.rdbuf();
+    const std::string content = buffer.str();
+
+    EXPECT_NE(content.find(preMessage), std::string::npos);
+    EXPECT_NE(content.find(postMessage), std::string::npos);
 }
 
 } // namespace

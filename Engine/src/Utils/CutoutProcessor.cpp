@@ -385,6 +385,11 @@ CutoutProcessResult CutoutProcessor::ProcessFile(const std::filesystem::path& in
     const auto parentDir = outputPath.parent_path();
     if (!parentDir.empty() && !std::filesystem::exists(parentDir, ec)) {
         std::filesystem::create_directories(parentDir, ec);
+        if (ec) {
+            result.ErrorMessage = "Failed to create directory for processed PNG: " + parentDir.string() + " (" + ec.message() + ")";
+            ENGINE_CORE_ERROR("CutoutProcessor::ProcessFile failed: {}", result.ErrorMessage);
+            return result;
+        }
     }
 
     int writeOk = 0;
@@ -488,9 +493,9 @@ CutoutProcessResult CutoutProcessor::ProcessAnimationStrip(
         for (uint32_t r = 0; r < gridRows; ++r) {
             for (uint32_t c = 0; c < gridCols; ++c) {
                 FrameItem item;
-                char buf[64];
-                std::snprintf(buf, sizeof(buf), "%s_%02u", stem.c_str(), frameIdx++);
-                item.name = buf;
+                char idxBuf[16];
+                std::snprintf(idxBuf, sizeof(idxBuf), "_%02u", frameIdx++);
+                item.name = stem + idxBuf;
                 item.width = cellW;
                 item.height = cellH;
                 item.rgba.resize(static_cast<size_t>(cellW) * cellH * 4u);
@@ -525,9 +530,9 @@ CutoutProcessResult CutoutProcessor::ProcessAnimationStrip(
 
             FrameItem item;
             if (!settings.FrameNamePrefix.empty()) {
-                char buf[64];
-                std::snprintf(buf, sizeof(buf), "%s_%02u", settings.FrameNamePrefix.c_str(), frameIdx++);
-                item.name = buf;
+                char idxBuf[16];
+                std::snprintf(idxBuf, sizeof(idxBuf), "_%02u", frameIdx++);
+                item.name = settings.FrameNamePrefix + idxBuf;
             } else {
                 item.name = filePath.stem().string();
             }
@@ -637,22 +642,27 @@ CutoutProcessResult CutoutProcessor::ProcessAnimationStrip(
         const uint32_t cellOriginX = col * cellW;
         const uint32_t cellOriginY = row * cellH;
 
+        // Allocate isolated cell frame buffer
+        std::vector<uint8_t> cellRGBA(static_cast<size_t>(cellW) * cellH * 4u, 0u);
+
         if (settings.LockSharedUnionBounds) {
             for (uint32_t cy = 0; cy < unionContentH; ++cy) {
                 const uint32_t srcY = unionMinY + cy;
                 if (srcY >= fr.height) continue;
-                const uint32_t dstY = cellOriginY + dstStartY + cy;
+                const uint32_t dstY = dstStartY + cy;
+                if (dstY >= cellH) continue;
                 for (uint32_t cx = 0; cx < unionContentW; ++cx) {
                     const uint32_t srcX = unionMinX + cx;
                     if (srcX >= fr.width) continue;
-                    const uint32_t dstX = cellOriginX + dstStartX + cx;
+                    const uint32_t dstX = dstStartX + cx;
+                    if (dstX >= cellW) continue;
 
                     const size_t srcIdx = (static_cast<size_t>(srcY) * fr.width + srcX) * 4u;
-                    const size_t dstIdx = (static_cast<size_t>(dstY) * sheetW + dstX) * 4u;
-                    sheetRGBA[dstIdx + 0] = fr.rgba[srcIdx + 0];
-                    sheetRGBA[dstIdx + 1] = fr.rgba[srcIdx + 1];
-                    sheetRGBA[dstIdx + 2] = fr.rgba[srcIdx + 2];
-                    sheetRGBA[dstIdx + 3] = fr.rgba[srcIdx + 3];
+                    const size_t dstIdx = (static_cast<size_t>(dstY) * cellW + dstX) * 4u;
+                    cellRGBA[dstIdx + 0] = fr.rgba[srcIdx + 0];
+                    cellRGBA[dstIdx + 1] = fr.rgba[srcIdx + 1];
+                    cellRGBA[dstIdx + 2] = fr.rgba[srcIdx + 2];
+                    cellRGBA[dstIdx + 3] = fr.rgba[srcIdx + 3];
                 }
             }
         } else {
@@ -660,34 +670,46 @@ CutoutProcessResult CutoutProcessor::ProcessAnimationStrip(
             if (fb.hasOpaque) {
                 const uint32_t localW = fb.maxX - fb.minX + 1u;
                 const uint32_t localH = fb.maxY - fb.minY + 1u;
-                const uint32_t localDstX = (cellW > localW) ? (cellW - localW) / 2u : 0u;
-                const uint32_t localDstY = (cellH > localH) ? cellH - localH : 0u;
+                const uint32_t localDstX = settings.LockHorizontalCenter
+                    ? ((cellW > localW) ? (cellW - localW) / 2u : 0u)
+                    : std::min(settings.BaseSettings.HorizontalPaddingPx, (cellW > localW ? cellW - localW : 0u));
+                const uint32_t localDstY = settings.LockBottomFootPivot
+                    ? ((cellH > localH) ? cellH - localH : 0u)
+                    : std::min(settings.BaseSettings.TopPaddingPx, (cellH > localH ? cellH - localH : 0u));
+
                 for (uint32_t cy = 0; cy < localH; ++cy) {
                     const uint32_t srcY = fb.minY + cy;
                     if (srcY >= fr.height) continue;
-                    const uint32_t dstY = cellOriginY + localDstY + cy;
+                    const uint32_t dstY = localDstY + cy;
+                    if (dstY >= cellH) continue;
                     for (uint32_t cx = 0; cx < localW; ++cx) {
                         const uint32_t srcX = fb.minX + cx;
                         if (srcX >= fr.width) continue;
-                        const uint32_t dstX = cellOriginX + localDstX + cx;
+                        const uint32_t dstX = localDstX + cx;
+                        if (dstX >= cellW) continue;
 
                         const size_t srcIdx = (static_cast<size_t>(srcY) * fr.width + srcX) * 4u;
-                        const size_t dstIdx = (static_cast<size_t>(dstY) * sheetW + dstX) * 4u;
-                        sheetRGBA[dstIdx + 0] = fr.rgba[srcIdx + 0];
-                        sheetRGBA[dstIdx + 1] = fr.rgba[srcIdx + 1];
-                        sheetRGBA[dstIdx + 2] = fr.rgba[srcIdx + 2];
-                        sheetRGBA[dstIdx + 3] = fr.rgba[srcIdx + 3];
+                        const size_t dstIdx = (static_cast<size_t>(dstY) * cellW + dstX) * 4u;
+                        cellRGBA[dstIdx + 0] = fr.rgba[srcIdx + 0];
+                        cellRGBA[dstIdx + 1] = fr.rgba[srcIdx + 1];
+                        cellRGBA[dstIdx + 2] = fr.rgba[srcIdx + 2];
+                        cellRGBA[dstIdx + 3] = fr.rgba[srcIdx + 3];
                     }
                 }
             }
         }
-    }
 
-    // Alpha bleed dilation across composite sheet
-    if (settings.BaseSettings.AlphaBleedPasses > 0u && sheetW >= 2u && sheetH >= 2u) {
-        ApplyAlphaBleedDilation(sheetRGBA, sheetW, sheetH, settings.BaseSettings.AlphaBleedPasses, alphaThreshold);
-        ENGINE_CORE_DEBUG("CutoutProcessor: Dilation applied across composite sheet ({} passes)",
-                          settings.BaseSettings.AlphaBleedPasses);
+        // Apply alpha bleed dilation strictly within this isolated cell buffer to eliminate cross-cell bleeding
+        if (settings.BaseSettings.AlphaBleedPasses > 0u && cellW >= 2u && cellH >= 2u) {
+            ApplyAlphaBleedDilation(cellRGBA, cellW, cellH, settings.BaseSettings.AlphaBleedPasses, alphaThreshold);
+        }
+
+        // Blit cellRGBA into composite sheetRGBA at (cellOriginX, cellOriginY)
+        for (uint32_t y = 0; y < cellH; ++y) {
+            const size_t cellRowOffset = static_cast<size_t>(y) * cellW * 4u;
+            const size_t sheetRowOffset = (static_cast<size_t>(cellOriginY + y) * sheetW + cellOriginX) * 4u;
+            std::memcpy(&sheetRGBA[sheetRowOffset], &cellRGBA[cellRowOffset], static_cast<size_t>(cellW) * 4u);
+        }
     }
 
     // Write output sheet PNG
@@ -695,6 +717,11 @@ CutoutProcessResult CutoutProcessor::ProcessAnimationStrip(
     const auto parentPng = outputSheetPng.parent_path();
     if (!parentPng.empty() && !std::filesystem::exists(parentPng, ec)) {
         std::filesystem::create_directories(parentPng, ec);
+        if (ec) {
+            result.ErrorMessage = "Failed to create directory for sheet PNG: " + parentPng.string() + " (" + ec.message() + ")";
+            ENGINE_CORE_ERROR("CutoutProcessor::ProcessAnimationStrip failed: {}", result.ErrorMessage);
+            return result;
+        }
     }
 
     int writeOk = 0;
@@ -768,6 +795,11 @@ CutoutProcessResult CutoutProcessor::ProcessAnimationStrip(
     const auto parentJson = outputAtlasJson.parent_path();
     if (!parentJson.empty() && !std::filesystem::exists(parentJson, ec)) {
         std::filesystem::create_directories(parentJson, ec);
+        if (ec) {
+            result.ErrorMessage = "Failed to create directory for atlas JSON: " + parentJson.string() + " (" + ec.message() + ")";
+            ENGINE_CORE_ERROR("CutoutProcessor::ProcessAnimationStrip failed: {}", result.ErrorMessage);
+            return result;
+        }
     }
 
     std::ofstream jsonFile(outputAtlasJson);
@@ -777,6 +809,11 @@ CutoutProcessResult CutoutProcessor::ProcessAnimationStrip(
         return result;
     }
     jsonFile << root.dump(2) << std::endl;
+    if (!jsonFile.good()) {
+        result.ErrorMessage = "Failed writing data to atlas JSON: " + outputAtlasJson.string();
+        ENGINE_CORE_ERROR("CutoutProcessor::ProcessAnimationStrip failed: {}", result.ErrorMessage);
+        return result;
+    }
     jsonFile.close();
 
     result.Success = true;

@@ -192,7 +192,7 @@ flowchart TD
 | **`FIX-CORE-01`** | `JobSystem` Lifecycle/Overflow & `ResourceManager` Thread-Safe GL Teardown | `DONE` | **P0** | W0 | *None (Root)* | `C-02`, `C-03`,Core `#1–#3`, `#6` | `FIX-CORE-02`, `FIX-PHY-02`, `FIX-RND-02`, `FIX-SAV-02` |
 | **`FIX-CORE-02`** | `Application`, `Window` DPI, `Logger` Exception Guard & `ImGuiLayer` Safety | `DONE` | **P1** | W1 | `FIX-CORE-01` | Core `#4`, `#12`, `#14`, Med `Window` | `DOC-01`, `DOC-02` |
 | **`FIX-CORE-03`** | `Time` Hit-Stop/Pause Invariants & `Input` Gamepad/ActionMap Hardening | `DONE` | **P0** | W0 | *None (Root)* | Core `#5`, `#6`, Med `InputActionMap` | `FIX-SAV-01`, `FIX-UIX-02`, `FIX-UIX-04`, `DOC-02` |
-| **`FIX-CORE-04`** | `CutoutProcessor` Per-Cell Alpha Bleed, Dynamic Frame Names & Bounds | `TODO` | **P1** | W0 | *None (Root)* | Core `#13`, Med `CutoutProcessor` | `DOC-08` |
+| **`FIX-CORE-04`** | `CutoutProcessor` Per-Cell Alpha Bleed, Dynamic Frame Names & Bounds | `DONE` | **P1** | W0 | *None (Root)* | Core `#13`, Med `CutoutProcessor` | `DOC-08` |
 | **`FIX-AUD-01`** | SDL3 Shared-Device Stream Unbind/Bind, SIOF Fix & Track Thread Safety | `TODO` | **P0** | W0 | *None (Root)* | `C-13`, `C-14`, Audio `#9` | `FIX-AUD-02`, `FIX-AUD-03` |
 | **`FIX-AUD-02`** | WAV S16 Normalization, Dynamic Spatial Pan & `GetQueuedFrames` Fix | `TODO` | **P0** | W1 | `FIX-AUD-01` | `C-15`, Audio `#7`, Med `AudioClip` | `FIX-AUD-03`, `FIX-SAV-01` |
 | **`FIX-AUD-03`** | `MusicDirector` Phase-Locked Pre-Buffer, Fade Slew & `AudioSource` WorldPos | `TODO` | **P1** | W2 | `FIX-AUD-01`, `FIX-AUD-02` | Audio `#8`, Med `AudioSource` | `DOC-06` |
@@ -299,7 +299,7 @@ flowchart TD
 ---
 
 #### `FIX-CORE-04` — `CutoutProcessor` Per-Cell Alpha Bleed, Dynamic Frame Names & Bounds
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `DOC-08`
 - **Current Defects:** [CutoutProcessor.cpp](file://Engine/src/Utils/CutoutProcessor.cpp#L491-L530), [lines 640-780](file://Engine/src/Utils/CutoutProcessor.cpp#L640-L780): `char buf[64]` truncates stems `>= 61` chars (colliding frame names in JSON); `ApplyAlphaBleedDilation` runs on the composite `sheetRGBA`, bleeding bottom-locked feet from row $r$ into row $r+1$; `LockHorizontalCenter` / `LockBottomFootPivot` are ignored when `LockSharedUnionBounds == false`; `jsonFile.good()` and empty `parent_path()` are unchecked.
 - **Proposed Fix:** Run `ApplyAlphaBleedDilation` per individual `[cellW × cellH]` frame buffer before blitting into `sheetRGBA`; use `std::string` formatting for frame names; honor pivot flags in both union-bound modes; guard `parent_path()` and `jsonFile.good()`.

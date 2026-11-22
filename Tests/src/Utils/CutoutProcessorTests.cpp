@@ -396,5 +396,92 @@ TEST(CutoutProcessorTest, ProcessAnimationStripAsyncExecutesInBackground) {
     std::filesystem::remove_all(tempDir, ec);
 }
 
+TEST(CutoutProcessorTest, PerCellDilationPreventsCrossRowBleedAndLongStemNames) {
+    const std::filesystem::path tempDir = std::filesystem::temp_directory_path() / "cutout_cell_bleed_test";
+    std::error_code ec;
+    std::filesystem::create_directories(tempDir, ec);
+
+    // 1. Synthesize a 32x32 2x2 grid image (each cell is 16x16, 2 columns, 2 rows)
+    const uint32_t gridW = 32u, gridH = 32u;
+    std::vector<uint8_t> gridImg(static_cast<size_t>(gridW) * gridH * 4u, 0u);
+    auto setPx = [&](uint32_t x, uint32_t y, uint8_t r, uint8_t g, uint8_t b, uint8_t a) {
+        const size_t idx = (static_cast<size_t>(y) * gridW + x) * 4u;
+        gridImg[idx + 0] = r;
+        gridImg[idx + 1] = g;
+        gridImg[idx + 2] = b;
+        gridImg[idx + 3] = a;
+    };
+
+    // Row 0 (y = 0..15): cells 0 and 1 have bottom-flush solid red blocks touching scanline y = 15
+    for (uint32_t y = 8; y <= 15; ++y) {
+        for (uint32_t x = 4; x <= 11; ++x) {
+            setPx(x, y, 255u, 0u, 0u, 255u);       // Cell (0, 0)
+            setPx(x + 16u, y, 255u, 0u, 0u, 255u);  // Cell (1, 0)
+        }
+    }
+
+    // Row 1 (y = 16..31): cells 2 and 3 have blue blocks at y = 24..30, leaving y = 16..23 100% transparent
+    for (uint32_t y = 24; y <= 30; ++y) {
+        for (uint32_t x = 4; x <= 11; ++x) {
+            setPx(x, y, 0u, 0u, 255u, 255u);       // Cell (0, 1)
+            setPx(x + 16u, y, 0u, 0u, 255u, 255u);  // Cell (1, 1)
+        }
+    }
+
+    const auto inGridPng = tempDir / "bleed_raw.png";
+    const auto outSheetPng = tempDir / "bleed_sheet.png";
+    const auto outAtlasJson = tempDir / "bleed_sheet.atlas.json";
+
+    stbi_flip_vertically_on_write(0);
+    ASSERT_NE(stbi_write_png(inGridPng.string().c_str(), static_cast<int>(gridW), static_cast<int>(gridH), 4, gridImg.data(), static_cast<int>(gridW * 4u)), 0);
+
+    // 2. Configure 4-pass alpha bleed dilation and a long 76-character stem prefix
+    const std::string longPrefix = "character_undead_jiangshi_warrior_special_attack_phase2_animation_variant_hop";
+    Engine::SheetCutoutSettings settings;
+    settings.BaseSettings.BackgroundMode = Engine::CutoutKeyMode::PreserveExistingAlpha;
+    settings.BaseSettings.AutoTrimAndBottomFlush = false;
+    settings.Columns = 2u;
+    settings.Rows = 2u;
+    settings.BaseSettings.HorizontalPaddingPx = 2u;
+    settings.BaseSettings.TopPaddingPx = 4u;
+    settings.BaseSettings.AlphaBleedPasses = 4u; // Aggressive 4-pass dilation
+    settings.FrameNamePrefix = longPrefix;
+
+    const auto res = Engine::CutoutProcessor::ProcessAnimationStrip({ inGridPng }, outSheetPng, outAtlasJson, settings);
+    ASSERT_TRUE(res.Success);
+
+    // 3. Verify that all 4 frames in atlas retain the full long prefix without truncation
+    auto atlas = Engine::SpriteAtlas::LoadFromJSON(outAtlasJson.string());
+    ASSERT_NE(atlas, nullptr);
+    auto frames = atlas->GetFramesByPrefix(longPrefix);
+    EXPECT_EQ(frames.size(), 4u);
+    EXPECT_NE(atlas->GetFrame(longPrefix + "_00"), nullptr);
+    EXPECT_NE(atlas->GetFrame(longPrefix + "_01"), nullptr);
+    EXPECT_NE(atlas->GetFrame(longPrefix + "_02"), nullptr);
+    EXPECT_NE(atlas->GetFrame(longPrefix + "_03"), nullptr);
+
+    // 4. Inspect resulting sheet pixels: row 1's top scanline (y = cellH) must contain ZERO red bleed from row 0
+    int sheetW = 0, sheetH = 0, channels = 0;
+    stbi_set_flip_vertically_on_load_thread(0);
+    unsigned char* sheetPixels = stbi_load(outSheetPng.string().c_str(), &sheetW, &sheetH, &channels, 4);
+    ASSERT_NE(sheetPixels, nullptr);
+    ASSERT_EQ(sheetW, static_cast<int>(res.OutputWidth));
+    ASSERT_EQ(sheetH, static_cast<int>(res.OutputHeight));
+
+    const int cellH = sheetH / 2;
+    const int row1TopY = cellH; // Scanline immediately across row 0/1 boundary
+
+    for (int x = 0; x < sheetW; ++x) {
+        const size_t pxIdx = (static_cast<size_t>(row1TopY) * static_cast<size_t>(sheetW) + static_cast<size_t>(x)) * 4u;
+        const uint8_t r = sheetPixels[pxIdx + 0];
+        const uint8_t a = sheetPixels[pxIdx + 3];
+        EXPECT_EQ(r, 0u) << "Red color from row 0 bled across boundary into row 1 at x=" << x << " y=" << row1TopY;
+        EXPECT_EQ(a, 0u) << "Unexpected alpha at row 1 top scanline at x=" << x << " y=" << row1TopY;
+    }
+
+    stbi_image_free(sheetPixels);
+    std::filesystem::remove_all(tempDir, ec);
+}
+
 } // namespace
 

@@ -100,6 +100,20 @@ TEST(EditorWorkspaceTest, DefaultWorkspaceDocksAllPanelsAndRoundTripsIni) {
     std::filesystem::remove(tempIniPath, ec);
 }
 
+TEST(EditorWorkspaceTest, UninitializedAndRepeatedShutdownSafety) {
+    // Ensure layer is uninitialized
+    Engine::ImGuiLayer::Shutdown();
+    Engine::ImGuiLayer::Shutdown();
+    EXPECT_FALSE(Engine::ImGuiLayer::IsInitialized());
+
+    // Calling Begin, End, BeginDockspace, EndDockspace while uninitialized must not crash
+    EXPECT_NO_THROW(Engine::ImGuiLayer::Begin());
+    EXPECT_NO_THROW(Engine::ImGuiLayer::End());
+    EXPECT_NO_THROW(Engine::ImGuiLayer::BeginDockspace());
+    EXPECT_NO_THROW(Engine::ImGuiLayer::EndDockspace());
+    EXPECT_NO_THROW(Engine::ImGuiLayer::ResetWorkspaceLayout());
+}
+
 } // namespace
 #endif
 

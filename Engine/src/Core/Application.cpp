@@ -10,6 +10,8 @@
 #include "Engine/Renderer/TorchShadowMap.h"
 #include "Engine/Renderer/TerrainRenderer.h"
 #include "Engine/Renderer/Texture.h"
+#include "Engine/Renderer/SpriteAtlas.h"
+#include "Engine/UI/Font.h"
 #include "Engine/Scene/SceneManager.h"
 #include "Engine/Audio/AudioManager.h"
 #include "Engine/Audio/AudioClip.h"
@@ -61,6 +63,9 @@ void Application::Initialize() {
     m_Window = std::make_unique<Window>("Isometric Engine", 1280, 720);
     if (!m_Window->IsInitialized()) {
         ENGINE_CORE_CRITICAL("Failed to initialize engine window!");
+        m_Running = false;
+        m_Window.reset();
+        return;
     }
     Time::Init();
     Input::Init();
@@ -81,6 +86,7 @@ void Application::Initialize() {
     ImGuiLayer::Init(m_Window->GetSDLWindow(), m_Window->GetGLContext());
 #endif
 
+    m_Initialized = true;
     ENGINE_CORE_INFO("Isometric Engine initialized successfully");
 }
 
@@ -94,6 +100,9 @@ void Application::PushLayer(std::unique_ptr<Layer> layer) {
 }
 
 void Application::Run() {
+    if (!m_Initialized || !m_Running || !m_Window || !m_Window->IsInitialized()) {
+        return;
+    }
     ENGINE_CORE_INFO("Starting application run loop");
 
     while (m_Running) {
@@ -158,7 +167,6 @@ void Application::Run() {
 }
 
 void Application::Update() {
-    Input::Update();
     SceneManager::Update(Time::GetDeltaTime());
 }
 
@@ -180,6 +188,9 @@ void Application::Close() {
 }
 
 void Application::Shutdown() {
+    if (!m_Initialized) {
+        return;
+    }
     ENGINE_CORE_INFO("Shutting down Isometric Engine...");
 
     // Detach and destroy layers first while OpenGL context and subsystems are still active
@@ -192,9 +203,16 @@ void Application::Shutdown() {
 
     SceneManager::Shutdown();
 
-    // Clear caches to gracefully destroy OpenGL textures and SDL Audio buffers
+    // Drain pending async texture decodes and join workers before clearing caches
+    ResourceManager::WaitForPendingUploads();
+    JobSystem::Shutdown();
+
+    // Clear caches to gracefully destroy OpenGL textures, audio buffers, fonts and atlases
     ResourceManager::ClearType<Texture>();
     ResourceManager::ClearType<AudioClip>();
+    ResourceManager::ClearType<SpriteAtlas>();
+    ResourceManager::ClearType<Font>();
+    ResourceManager::ClearPathCache();
 
 #ifdef ENGINE_BUILD_EDITOR
     ImGuiLayer::Shutdown();
@@ -208,10 +226,10 @@ void Application::Shutdown() {
     Renderer::Shutdown();
     MusicDirector::Shutdown();
     AudioManager::Shutdown();
-    JobSystem::Shutdown();
     Input::Shutdown();
     m_Window.reset();
     ENGINE_CORE_INFO("Isometric Engine shutdown complete");
     Logger::Shutdown();
+    m_Initialized = false;
 }
 } // namespace Engine

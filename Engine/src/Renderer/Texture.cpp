@@ -3,6 +3,7 @@
 #include "Engine/Renderer/RHI/GLUtils.h"
 #include "Engine/Utils/Logger.h"
 #include <glad/glad.h>
+#include <SDL3/SDL.h>
 #include <stb_image.h>
 
 #include <algorithm>
@@ -14,7 +15,7 @@ namespace Engine {
 
 namespace {
 bool HasActiveGLContext() {
-    return glad_glGenTextures != nullptr && glad_glBindTexture != nullptr;
+    return SDL_GL_GetCurrentContext() != nullptr && glad_glGenTextures != nullptr && glad_glBindTexture != nullptr;
 }
 
 void ConfigureAndUploadTexture2D(uint32_t& rendererID,
