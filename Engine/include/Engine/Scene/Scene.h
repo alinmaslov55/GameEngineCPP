@@ -143,6 +143,7 @@ public:
     void PaintMaterialWorld(const glm::vec2& centerXZ, uint32_t layerIdx, float radius, float strength = 1.0f);
     void IgniteAtXZ(const glm::vec2& centerXZ, float radius);
     void ExtinguishAtXZ(const glm::vec2& centerXZ, float radius);
+    [[nodiscard]] bool IsBurningAtXZ(float worldX, float worldZ) const noexcept;
     void InvalidateTerrainCache() noexcept { m_TerrainCacheDirty = true; }
     void RefreshTerrainCache() const noexcept;
 

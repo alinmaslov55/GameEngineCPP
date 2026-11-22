@@ -222,7 +222,7 @@ flowchart TD
 | **`AUD-01`** | OGG Vorbis Decoder & Streaming Music Playback | `DONE` | **P0** | W0 | *None (Root)* | `JobSystem` | `AUD-02`, `AUD-03` |
 | **`AUD-02`** | Polyphonic Mixer, Buses, Pitch & 3D Panning | `DONE` | **P0** | W1 | `AUD-01` | `TER-04` (surface foley) | `AUD-03`, `SAV-02` |
 | **`AUD-03`** | Multi-Stem Adaptive Music Director | `DONE` | **P1** | W2 | `AUD-01`, `AUD-02` | `LGT-03` (fuel % state) | Dynamic 3-layer Ash Frenzy soundtrack |
-| **`AIX-01`** | Horde Steering, Separation & Obstacle Avoidance | `TODO` | **P1** | W4 | `PHY-05`, `ECS-05` | `TER-04` (avoid fire) | 40+ Ghoul/Thrall swarm encirclement |
+| **`AIX-01`** | Horde Steering, Separation & Obstacle Avoidance | `DONE` | **P1** | W4 | `PHY-05`, `ECS-05` | `TER-04` (avoid fire) | 40+ Ghoul/Thrall swarm encirclement |
 | **`AIX-02`** | Reusable FSM & Jiangshi Jump Ballistics | `TODO` | **P1** | W2 | `PHY-01`, `LGT-03` | `ANI-01` | Wendigo, Jiangshi, Wisp & Companion AI |
 | **`SAV-01`** | Data-Driven JSON Archetype & Upgrade Registries | `DONE` | **P1** | W0 | *None (Root)* | `ECS-04` | `SAV-02`, 16 Roots / 24 Branches / 4 Runes |
 | **`SAV-02`** | Persistent Profile Save System & Hub Transitions | `DONE` | **P2** | W2 | `ECS-01`, `SAV-01`, `INP-01`, `AUD-02` | `PostProcessor` (fade) | Meta-progression Ashes vault & settings |
@@ -1244,7 +1244,7 @@ flowchart TD
 ---
 
 #### `AIX-01` — Horde Steering, Separation & Local Obstacle Avoidance
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W4`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W4`
 - **Dependencies:** Hard: `PHY-05`, `ECS-05` | Unlocks: 40+ Thrall/Ghoul swarm combat without snagging
 - **Proposed C++ Specification:**
   ```cpp
@@ -1483,7 +1483,7 @@ These 7 features only need a **20–30% minimal implementation** to make the Alp
 | **`VFX-01`** | `TODO` | Textured/flipbook particle quads + `FlatGround` shockwave ring orientation. | Bouncing `Y`-floor debris physics (use simple gravity particles first). |
 | **`UIX-01`** | `DONE` | Basic top-left/bottom-center anchor math on `16:9` desktop viewport. | Portrait `9:16` layout switching & `5%` mobile safe-area inset. |
 | **`UIX-02`** | `DONE` | Simple `UIFillBar` UV cropping for HP bar, Torch Fuel bar, and Wood counter. | 9-slice ornate gothic frames and radial cooldown shader sweeps. |
-| **`AIX-01`** | `TODO` | Simple seek toward player + neighbor separation vector (prevents enemy stacking). | 16-ray context-map obstacle avoidance & flank slot assignment. |
+| **`AIX-01`** | `DONE` | 12-slot context-map obstacle avoidance, fire avoidance, neighbor separation & Wisp orbit ring. | Horde steering solver with continuous peak sector cluster blending. |
 | **`AIX-02`** | `TODO` | 4-state FSM (`Chase`, `Windup`, `Attack`, `Stunned`) + Jiangshi hop parabola. | Companion AI and complex multi-phase boss behaviors. |
 | **`EDT-02`** | `DONE` | `DrawDebugWireCircleXZ` & `DrawDebugWireArcXZ` for hitbox and torch-radius tuning. | Full Editor gizmo toolbar & terrain chunk grid overlays. |
 

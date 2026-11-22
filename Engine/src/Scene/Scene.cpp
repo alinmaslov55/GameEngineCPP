@@ -802,4 +802,14 @@ void Scene::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
     }
 }
 
+bool Scene::IsBurningAtXZ(float worldX, float worldZ) const noexcept {
+    if (m_TerrainCacheDirty) {
+        RefreshTerrainCache();
+    }
+    if (m_CachedChunkManager) {
+        return m_CachedChunkManager->IsBurningAtXZ(worldX, worldZ);
+    }
+    return false;
+}
+
 } // namespace Engine
