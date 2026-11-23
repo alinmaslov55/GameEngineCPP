@@ -1,11 +1,23 @@
 #include "Engine/Data/SaveManager.h"
 
 #include "Engine/Audio/AudioManager.h"
+#include "Engine/Core/Application.h"
+#include "Engine/Core/Input.h"
 #include "Engine/Data/GameplayDefinitions.h"
 #include "Engine/Utils/Logger.h"
 
 #include <SDL3/SDL.h>
 #include <fstream>
+
+#ifdef _WIN32
+#ifndef WIN32_LEAN_AND_MEAN
+#define WIN32_LEAN_AND_MEAN
+#endif
+#ifndef NOMINMAX
+#define NOMINMAX
+#endif
+#include <windows.h>
+#endif
 
 namespace Engine {
 
@@ -127,35 +139,10 @@ static bool TryLoadFile(const std::filesystem::path& path, PlayerProfileData& ou
     return ProfileFromJson(envelope["Payload"], outData);
 }
 
-} // namespace
-
-std::filesystem::path SaveManager::GetSaveDirectory(std::string_view appName) {
-    if (!s_DirectoryOverride.empty()) {
-        return s_DirectoryOverride;
-    }
-
-    char* prefPath = SDL_GetPrefPath("UmbralDevs", std::string(appName).c_str());
-    if (prefPath) {
-        std::filesystem::path p(prefPath);
-        SDL_free(prefPath);
-        return p;
-    }
-
-    return std::filesystem::current_path() / "saves";
-}
-
-void SaveManager::SetSaveDirectoryOverride(const std::filesystem::path& dir) {
-    s_DirectoryOverride = dir;
-}
-
-void SaveManager::ClearSaveDirectoryOverride() {
-    s_DirectoryOverride.clear();
-}
-
-bool SaveManager::SaveProfileAtomic(uint32_t slotIndex, const PlayerProfileData& data) {
+static bool WriteAndReplacePrimaryAtomic(uint32_t slotIndex, const PlayerProfileData& data, bool backupCurrentPrimary) {
     namespace fs = std::filesystem;
     std::error_code ec;
-    const fs::path saveDir = GetSaveDirectory();
+    const fs::path saveDir = SaveManager::GetSaveDirectory();
     if (!fs::exists(saveDir, ec)) {
         fs::create_directories(saveDir, ec);
     }
@@ -190,27 +177,65 @@ bool SaveManager::SaveProfileAtomic(uint32_t slotIndex, const PlayerProfileData&
         }
     }
 
-    // 2. If primary exists, copy to backup
-    if (fs::exists(primaryPath, ec)) {
+    // 2. If requested and primary exists, copy primary to backup before atomic replacement
+    if (backupCurrentPrimary && fs::exists(primaryPath, ec)) {
         fs::copy_file(primaryPath, backupPath, fs::copy_options::overwrite_existing, ec);
         if (ec) {
             ENGINE_CORE_WARN("SaveManager: Failed to create backup file '{}': {}", backupPath.string(), ec.message());
             ec.clear();
         }
-        fs::remove(primaryPath, ec);
-        ec.clear();
     }
 
-    // 3. Atomically rename temp to primary
-    fs::rename(tempPath, primaryPath, ec);
-    if (ec) {
-        ENGINE_CORE_ERROR("SaveManager: Failed to rename '{}' to '{}': {}", tempPath.string(), primaryPath.string(), ec.message());
+    // 3. Atomically replace primary with temp (WITHOUT deleting primary beforehand)
+#ifdef _WIN32
+    if (!MoveFileExW(tempPath.wstring().c_str(), primaryPath.wstring().c_str(),
+                     MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+        const DWORD err = GetLastError();
+        ENGINE_CORE_ERROR("SaveManager: MoveFileExW failed to atomically replace '{}' with '{}' (error: {})",
+                          primaryPath.string(), tempPath.string(), err);
         return false;
     }
+#else
+    fs::rename(tempPath, primaryPath, ec);
+    if (ec) {
+        ENGINE_CORE_ERROR("SaveManager: Failed to rename '{}' to '{}': {}",
+                          tempPath.string(), primaryPath.string(), ec.message());
+        return false;
+    }
+#endif
 
     ENGINE_CORE_INFO("SaveManager: Successfully saved profile slot {} to '{}' (CRC32: 0x{:08X})",
                      slotIndex, primaryPath.string(), crc);
     return true;
+}
+
+} // namespace
+
+std::filesystem::path SaveManager::GetSaveDirectory(std::string_view appName) {
+    if (!s_DirectoryOverride.empty()) {
+        return s_DirectoryOverride;
+    }
+
+    char* prefPath = SDL_GetPrefPath("UmbralDevs", std::string(appName).c_str());
+    if (prefPath) {
+        std::filesystem::path p(prefPath);
+        SDL_free(prefPath);
+        return p;
+    }
+
+    return std::filesystem::current_path() / "saves";
+}
+
+void SaveManager::SetSaveDirectoryOverride(const std::filesystem::path& dir) {
+    s_DirectoryOverride = dir;
+}
+
+void SaveManager::ClearSaveDirectoryOverride() {
+    s_DirectoryOverride.clear();
+}
+
+bool SaveManager::SaveProfileAtomic(uint32_t slotIndex, const PlayerProfileData& data) {
+    return WriteAndReplacePrimaryAtomic(slotIndex, data, /*backupCurrentPrimary=*/true);
 }
 
 bool SaveManager::LoadProfile(uint32_t slotIndex, PlayerProfileData& outData) {
@@ -231,8 +256,8 @@ bool SaveManager::LoadProfile(uint32_t slotIndex, PlayerProfileData& outData) {
                      slotIndex, backupPath.string());
     if (TryLoadFile(backupPath, outData)) {
         ENGINE_CORE_INFO("SaveManager: Successfully recovered profile slot {} from backup '{}'!", slotIndex, backupPath.string());
-        // Restore healthy primary from recovered data
-        SaveProfileAtomic(slotIndex, outData);
+        // Restore healthy primary from recovered data WITHOUT touching the backup file
+        WriteAndReplacePrimaryAtomic(slotIndex, outData, /*backupCurrentPrimary=*/false);
         return true;
     }
 
@@ -264,11 +289,34 @@ void SaveManager::ApplyAudioAndVideoSettings(const PlayerProfileData& data) {
     for (size_t i = 0; i < data.BusVolumes.size() && i < static_cast<size_t>(AudioBus::Count); ++i) {
         AudioManager::SetBusVolume(static_cast<AudioBus>(i), data.BusVolumes[i]);
     }
+
+    if (Application* app = Application::TryGet(); app && app->IsInitialized()) {
+        app->GetWindow().SetFullscreen(data.Fullscreen);
+        app->GetWindow().SetVSync(data.VSync);
+    }
+
+    if (!data.CustomActionBindings.is_null() && !data.CustomActionBindings.empty()) {
+        Input::DeserializeBindingsFromString(data.CustomActionBindings.dump());
+    }
 }
 
 void SaveManager::CaptureAudioAndVideoSettings(PlayerProfileData& outData) {
     for (size_t i = 0; i < outData.BusVolumes.size() && i < static_cast<size_t>(AudioBus::Count); ++i) {
         outData.BusVolumes[i] = AudioManager::GetBusVolume(static_cast<AudioBus>(i));
+    }
+
+    if (Application* app = Application::TryGet(); app && app->IsInitialized()) {
+        outData.Fullscreen = app->GetWindow().IsFullscreen();
+        outData.VSync = app->GetWindow().IsVSync();
+    }
+
+    const std::string bindingsStr = Input::SerializeBindingsToString();
+    if (!bindingsStr.empty()) {
+        try {
+            outData.CustomActionBindings = nlohmann::json::parse(bindingsStr);
+        } catch (const nlohmann::json::exception& e) {
+            ENGINE_CORE_WARN("SaveManager: Failed to parse serialized action bindings: {}", e.what());
+        }
     }
 }
 

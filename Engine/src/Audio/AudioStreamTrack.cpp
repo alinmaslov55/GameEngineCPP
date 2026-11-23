@@ -211,11 +211,6 @@ bool AudioStreamTrack::AttachDevice(SDL_AudioDeviceID deviceId) {
         ENGINE_CORE_ERROR("AudioStreamTrack::AttachDevice: SDL_CreateAudioStream failed: {}", SDL_GetError());
         return false;
     }
-    if (!SDL_BindAudioStream(deviceId, stream)) {
-        ENGINE_CORE_ERROR("AudioStreamTrack::AttachDevice: SDL_BindAudioStream failed: {}", SDL_GetError());
-        SDL_DestroyAudioStream(stream);
-        return false;
-    }
 
     m_Stream = stream;
     m_AttachedDevice = deviceId;
@@ -264,7 +259,9 @@ void AudioStreamTrack::Play() {
     }
 
     if (EnsureAudioStream()) {
-        Update();
+        if (m_AutoUpdate) {
+            Update();
+        }
         if (m_OwnsDeviceStream) {
             SDL_ResumeAudioStreamDevice(m_Stream);
         }

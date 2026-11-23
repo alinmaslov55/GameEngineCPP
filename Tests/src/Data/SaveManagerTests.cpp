@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 
 #include "Engine/Audio/AudioManager.h"
+#include "Engine/Core/Input.h"
 #include "Engine/Data/SaveManager.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneManager.h"
@@ -224,4 +225,148 @@ TEST(SaveManagerTests, SceneManagerAsyncFadeTransition) {
     EXPECT_EQ(SceneManager::GetActiveScene()->GetName(), "ProceduralRun");
 
     SceneManager::Shutdown();
+}
+
+// Test 6: Backup recovery heals primary file without overwriting or destroying valid .bak
+TEST(SaveManagerTests, BackupRecoveryHealsPrimaryWithoutOverwritingBackup) {
+    namespace fs = std::filesystem;
+    const fs::path tempDir = fs::temp_directory_path() / "SaveManagerTest_NonDestructiveBackup";
+    std::error_code ec;
+    fs::remove_all(tempDir, ec);
+    fs::create_directories(tempDir, ec);
+
+    SaveManager::SetSaveDirectoryOverride(tempDir);
+
+    // Save initial healthy profile v1 (BankedAshes = 4242)
+    PlayerProfileData v1;
+    v1.BankedAshes = 4242;
+    v1.TotalRuns = 12;
+    v1.BestSurvivalSeconds = 999;
+    EXPECT_TRUE(SaveManager::SaveProfileAtomic(0, v1));
+
+    const fs::path primaryPath = tempDir / "profile_0.json";
+    const fs::path backupPath = tempDir / "profile_0.json.bak";
+
+    // Copy primary to backup manually so backup is guaranteed valid v1
+    fs::copy_file(primaryPath, backupPath, fs::copy_options::overwrite_existing, ec);
+    ASSERT_FALSE(ec);
+
+    // Read initial backup content and size
+    const auto backupSizeInitial = fs::file_size(backupPath, ec);
+    ASSERT_GT(backupSizeInitial, 0u);
+
+    // Corrupt primary file with truncated / invalid payload
+    {
+        std::ofstream corruptOut(primaryPath, std::ios::trunc | std::ios::binary);
+        corruptOut << "{\"CRC32\": 12345678, \"Payload\": { \"BankedAshes\": 999999, \"TotalRuns\": ";
+    }
+
+    // Call LoadProfile: must detect corrupt primary, fall back to .bak, and heal primary WITHOUT corrupting .bak
+    PlayerProfileData recovered;
+    EXPECT_TRUE(SaveManager::LoadProfile(0, recovered));
+    EXPECT_EQ(recovered.BankedAshes, 4242ULL);
+    EXPECT_EQ(recovered.TotalRuns, 12u);
+    EXPECT_EQ(recovered.BestSurvivalSeconds, 999u);
+
+    // Assert BOTH primary and backup files exist
+    EXPECT_TRUE(fs::exists(primaryPath, ec));
+    EXPECT_TRUE(fs::exists(backupPath, ec));
+
+    // Assert backup file was NOT overwritten with corrupt data
+    const auto backupSizeAfter = fs::file_size(backupPath, ec);
+    EXPECT_EQ(backupSizeAfter, backupSizeInitial);
+
+    // Verify backup file can still be parsed directly
+    PlayerProfileData backupLoaded;
+    EXPECT_TRUE(SaveManager::LoadProfile(0, backupLoaded));
+    EXPECT_EQ(backupLoaded.BankedAshes, 4242ULL);
+
+    // Overwrite backup with garbage and verify healed primary still loads fine
+    {
+        std::ofstream corruptBak(backupPath, std::ios::trunc | std::ios::binary);
+        corruptBak << "GARBAGE";
+    }
+    PlayerProfileData primaryLoaded;
+    EXPECT_TRUE(SaveManager::LoadProfile(0, primaryLoaded));
+    EXPECT_EQ(primaryLoaded.BankedAshes, 4242ULL);
+
+    SaveManager::ClearSaveDirectoryOverride();
+    fs::remove_all(tempDir, ec);
+}
+
+// Test 7: Atomic replace never leaves primary missing at any point
+TEST(SaveManagerTests, AtomicReplaceNeverLeavesMissingPrimary) {
+    namespace fs = std::filesystem;
+    const fs::path tempDir = fs::temp_directory_path() / "SaveManagerTest_AtomicReplace";
+    std::error_code ec;
+    fs::remove_all(tempDir, ec);
+    fs::create_directories(tempDir, ec);
+
+    SaveManager::SetSaveDirectoryOverride(tempDir);
+
+    const fs::path primaryPath = tempDir / "profile_1.json";
+
+    for (uint32_t i = 1; i <= 20; ++i) {
+        PlayerProfileData data;
+        data.BankedAshes = i * 100;
+        data.TotalRuns = i;
+
+        EXPECT_TRUE(SaveManager::SaveProfileAtomic(1, data));
+        EXPECT_TRUE(fs::exists(primaryPath, ec));
+        EXPECT_TRUE(fs::is_regular_file(primaryPath, ec));
+
+        PlayerProfileData verifyLoad;
+        EXPECT_TRUE(SaveManager::LoadProfile(1, verifyLoad));
+        EXPECT_EQ(verifyLoad.BankedAshes, static_cast<uint64_t>(i * 100));
+        EXPECT_EQ(verifyLoad.TotalRuns, i);
+    }
+
+    SaveManager::ClearSaveDirectoryOverride();
+    fs::remove_all(tempDir, ec);
+}
+
+// Test 8: Custom action bindings and window settings synchronization
+TEST(SaveManagerTests, ApplyAndCaptureSettingsBindsWindowAndInput) {
+    Input::Init();
+
+    // Set custom action bindings
+    ActionBinding dodgeBinding;
+    dodgeBinding.PrimaryKey = SDL_SCANCODE_SPACE;
+    dodgeBinding.PadButton = SDL_GAMEPAD_BUTTON_SOUTH;
+    Input::BindAction("DodgeRoll", dodgeBinding);
+
+    ActionBinding attackBinding;
+    attackBinding.MouseButton = SDL_BUTTON_LEFT;
+    attackBinding.PadTriggerAxis = SDL_GAMEPAD_AXIS_RIGHT_TRIGGER;
+    Input::BindAction("SlashAttack", attackBinding);
+
+    PlayerProfileData profile;
+    SaveManager::CaptureAudioAndVideoSettings(profile);
+
+    // Action bindings should be serialized into CustomActionBindings JSON
+    EXPECT_FALSE(profile.CustomActionBindings.is_null());
+    EXPECT_FALSE(profile.CustomActionBindings.empty());
+    EXPECT_TRUE(profile.CustomActionBindings.contains("bindings"));
+    EXPECT_TRUE(profile.CustomActionBindings["bindings"].contains("DodgeRoll"));
+    EXPECT_TRUE(profile.CustomActionBindings["bindings"].contains("SlashAttack"));
+
+    // Clear bindings in Input
+    Input::ClearActions();
+    EXPECT_EQ(Input::GetActionBinding("DodgeRoll"), nullptr);
+    EXPECT_EQ(Input::GetActionBinding("SlashAttack"), nullptr);
+
+    // Apply settings back
+    SaveManager::ApplyAudioAndVideoSettings(profile);
+
+    const ActionBinding* restoredDodge = Input::GetActionBinding("DodgeRoll");
+    ASSERT_NE(restoredDodge, nullptr);
+    EXPECT_EQ(restoredDodge->PrimaryKey, SDL_SCANCODE_SPACE);
+    EXPECT_EQ(restoredDodge->PadButton, SDL_GAMEPAD_BUTTON_SOUTH);
+
+    const ActionBinding* restoredAttack = Input::GetActionBinding("SlashAttack");
+    ASSERT_NE(restoredAttack, nullptr);
+    EXPECT_EQ(restoredAttack->MouseButton, SDL_BUTTON_LEFT);
+    EXPECT_EQ(restoredAttack->PadTriggerAxis, SDL_GAMEPAD_AXIS_RIGHT_TRIGGER);
+
+    Input::Shutdown();
 }

@@ -210,7 +210,7 @@ void MusicDirector::PlaySynchronizedStems(const std::array<std::string, kNumStem
     EnsureInitializedLocked();
     const SDL_AudioDeviceID deviceId = AudioManager::GetPlaybackDevice();
 
-    // Pass 1: Open, seek, and pre-buffer all stems in lockstep
+    // Pass 1: Open, attach device stream (unbound), seek, and pre-buffer all stems in lockstep
     for (size_t i = 0; i < kNumStems; ++i) {
         s_Stems[i]->Close();
         if (!s_Stems[i]->OpenFile(oggFilepaths[i], /*loop=*/true)) {
@@ -218,15 +218,15 @@ void MusicDirector::PlaySynchronizedStems(const std::array<std::string, kNumStem
             return;
         }
         s_Stems[i]->SetAutoUpdate(false);
+        if (deviceId != 0) {
+            s_Stems[i]->AttachDevice(deviceId);
+        }
         s_Stems[i]->SeekToStart();
         s_Stems[i]->PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
     }
 
-    // Pass 2: Attach devices and play simultaneously
+    // Pass 2: Play and bind simultaneously
     for (size_t i = 0; i < kNumStems; ++i) {
-        if (deviceId != 0) {
-            s_Stems[i]->AttachDevice(deviceId);
-        }
         s_Stems[i]->Play();
     }
 
@@ -260,7 +260,7 @@ void MusicDirector::PlaySynchronizedStemsFromMemory(
     EnsureInitializedLocked();
     const SDL_AudioDeviceID deviceId = AudioManager::GetPlaybackDevice();
 
-    // Pass 1: Open, seek, and pre-buffer all stems in lockstep
+    // Pass 1: Open, attach device stream (unbound), seek, and pre-buffer all stems in lockstep
     for (size_t i = 0; i < kNumStems; ++i) {
         s_Stems[i]->Close();
         if (!s_Stems[i]->OpenMemory(oggBuffers[i], /*loop=*/true, debugNames[i])) {
@@ -268,15 +268,15 @@ void MusicDirector::PlaySynchronizedStemsFromMemory(
             return;
         }
         s_Stems[i]->SetAutoUpdate(false);
+        if (deviceId != 0) {
+            s_Stems[i]->AttachDevice(deviceId);
+        }
         s_Stems[i]->SeekToStart();
         s_Stems[i]->PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
     }
 
-    // Pass 2: Attach devices and play simultaneously
+    // Pass 2: Play and bind simultaneously
     for (size_t i = 0; i < kNumStems; ++i) {
-        if (deviceId != 0) {
-            s_Stems[i]->AttachDevice(deviceId);
-        }
         s_Stems[i]->Play();
     }
 

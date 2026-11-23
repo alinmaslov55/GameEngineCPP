@@ -160,4 +160,28 @@ void Window::Update() {
     PollEvents();
     SwapBuffers();
 }
+
+void Window::SetFullscreen(bool fullscreen) {
+    m_IsFullscreen = fullscreen;
+    if (m_Window) {
+        SDL_SetWindowFullscreen(m_Window, fullscreen);
+    }
+}
+
+bool Window::IsFullscreen() const noexcept {
+    if (m_Window) {
+        return (SDL_GetWindowFlags(m_Window) & SDL_WINDOW_FULLSCREEN) != 0;
+    }
+    return m_IsFullscreen;
+}
+
+void Window::SetVSync(bool vsync) {
+    m_IsVSync = vsync;
+    SDL_GL_SetSwapInterval(vsync ? 1 : 0);
+}
+
+bool Window::IsVSync() const noexcept {
+    return m_IsVSync;
+}
+
 } // namespace Engine

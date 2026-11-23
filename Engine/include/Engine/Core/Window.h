@@ -28,6 +28,11 @@ public:
     SDL_Window* GetSDLWindow() const { return m_Window; }
     SDL_GLContext GetGLContext() const { return m_GLContext; }
 
+    void SetFullscreen(bool fullscreen);
+    [[nodiscard]] bool IsFullscreen() const noexcept;
+    void SetVSync(bool vsync);
+    [[nodiscard]] bool IsVSync() const noexcept;
+
 private:
     SDL_Window* m_Window{nullptr};
     SDL_GLContext m_GLContext{nullptr};
@@ -37,6 +42,8 @@ private:
     int m_FramebufferHeight{0};
     bool m_ShouldClose{false};
     bool m_IsInitialized{false};
+    bool m_IsFullscreen{false};
+    bool m_IsVSync{true};
 };
 } // namespace Engine
 

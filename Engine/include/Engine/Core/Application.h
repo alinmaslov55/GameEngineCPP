@@ -14,6 +14,7 @@ public:
     ~Application();
 
     static Application& Get() { return *s_Instance; }
+    static Application* TryGet() noexcept { return s_Instance; }
 
     void Run();
 

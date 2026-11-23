@@ -196,7 +196,7 @@ flowchart TD
 | **`FIX-AUD-01`** | SDL3 Shared-Device Stream Unbind/Bind, SIOF Fix & Track Thread Safety | `DONE` | **P0** | W0 | *None (Root)* | `C-13`, `C-14`, Audio `#9` | `FIX-AUD-02`, `FIX-AUD-03` |
 | **`FIX-AUD-02`** | WAV S16 Normalization, Dynamic Spatial Pan & `GetQueuedFrames` Fix | `DONE` | **P0** | W1 | `FIX-AUD-01` | `C-15`, Audio `#7`, Med `AudioClip` | `FIX-AUD-03`, `FIX-SAV-01` |
 | **`FIX-AUD-03`** | `MusicDirector` Phase-Locked Pre-Buffer, Fade Slew & `AudioSource` WorldPos | `DONE` | **P1** | W2 | `FIX-AUD-01`, `FIX-AUD-02` | Audio `#8`, Med `AudioSource` | `DOC-06` |
-| **`FIX-SAV-01`** | `SaveManager` Non-Destructive `.bak` Recovery, Atomic Replace & Settings | `TODO` | **P0** | W1 | `FIX-CORE-03`, `FIX-AUD-02` | `C-01`, Core `#10`, Med `SaveManager` | `FIX-SBX-01`, `DOC-08` |
+| **`FIX-SAV-01`** | `SaveManager` Non-Destructive `.bak` Recovery, Atomic Replace & Settings | `DONE` | **P0** | W1 | `FIX-CORE-03`, `FIX-AUD-02` | `C-01`, Core `#10`, Med `SaveManager` | `FIX-SBX-01`, `DOC-08` |
 | **`FIX-SAV-02`** | `DataRegistry` Single-Object Parse, Path Resolution & Deterministic Order | `TODO` | **P1** | W1 | `FIX-CORE-01` | Core `#11`, Med `GameplayData`, Imp `#8` | `FIX-SBX-01`, `DOC-08` |
 | **`FIX-ECS-01`** | `GameObject` Transform Removal Guard, Reentrancy, `LateUpdate` & UUID Map | `TODO` | **P0** | W0 | *None (Root)* | `C-07`, ECS `#15`, `#16`, `#19`, Med `HasComponent` | `FIX-ECS-02`, `FIX-PHY-01`, `FIX-EDT-01` |
 | **`FIX-ECS-02`** | `Transform` Reparent Active Sync, Zero-Scale Guard & `SquashStretch` WorldPos | `TODO` | **P0** | W1 | `FIX-ECS-01` | ECS `#17`, `#18`, Med `SquashStretch` | `FIX-ECS-03`, `FIX-SER-01`, `DOC-01` |
@@ -351,7 +351,7 @@ flowchart TD
 ---
 
 #### `FIX-SAV-01` — `SaveManager` Non-Destructive `.bak` Recovery, Atomic Replace & Settings
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-CORE-03`, `FIX-AUD-02` | Unlocks: `FIX-SBX-01`, `DOC-08`
 - **Current Defects:** [SaveManager.cpp](file://Engine/src/Data/SaveManager.cpp#L132-L273): `LoadProfile` backup recovery calls `SaveProfileAtomic`, which copies the **corrupt** primary onto the **valid** `.bak` (`C-01`); `SaveProfileAtomic` deletes `primaryPath` before `rename` and ignores `copy_file` errors; `Apply/CaptureAudioAndVideoSettings` ignore `Fullscreen`, `VSync`, and `CustomActionBindings`.
 - **Proposed Fix:** Split `WriteAndReplacePrimaryAtomic(slotIndex, data, preserveExistingBackup)` so `.bak` recovery heals `primaryPath` without overwriting `.bak`; replace `primaryPath` atomically (`MoveFileExW(..., MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)` on Windows, `std::filesystem::rename` on POSIX); wire `InputActionMap` bindings and window settings into `Apply/CaptureAudioAndVideoSettings`.
