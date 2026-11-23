@@ -100,6 +100,7 @@ private:
     void DispatchEvent(const AnimationEvent& ev);
 
 private:
+    uint64_t m_PlayGeneration = 0;
     std::unordered_map<std::string, std::shared_ptr<AnimationClip>> m_Clips;
     std::shared_ptr<AnimationClip> m_CurrentClip = nullptr;
     std::string m_CurrentClipName = "";

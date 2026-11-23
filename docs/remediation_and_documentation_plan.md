@@ -202,7 +202,7 @@ flowchart TD
 | **`FIX-ECS-02`** | `Transform` Reparent Active Sync, Zero-Scale Guard & `SquashStretch` WorldPos | `DONE` | **P0** | W1 | `FIX-ECS-01` | ECS `#17`, `#18`, Med `SquashStretch` | `FIX-ECS-03`, `FIX-SER-01`, `DOC-01` |
 | **`FIX-ECS-03`** | `EntityPoolManager` Key/Parent Safety & Pooled Component State Reset | `DONE` | **P0** | W2 | `FIX-ECS-02`, `FIX-ANI-01` | `C-08`, Med `EntityPoolManager`, Physics `#28` | `DOC-03` |
 | **`FIX-SER-01`** | `SceneSerializer` & `Prefab` Full Component/Active Fidelity & Safe JSON | `DONE` | **P0** | W1 | `FIX-ECS-02`, `FIX-ANI-01` | ECS `#23`, `#25` (`SceneManager` unscaled dt) | `FIX-PHY-01`, `DOC-03` |
-| **`FIX-ANI-01`** | `Animator` PlayGeneration Reentrancy Guard, `FlipX` Retention & Finite `dt` | `TODO` | **P0** | W0 | *None (Root)* | `C-09`, ECS `#21`, Med `PlayOneShot` | `FIX-ECS-03`, `FIX-SER-01`, `FIX-EDT-03` |
+| **`FIX-ANI-01`** | `Animator` PlayGeneration Reentrancy Guard, `FlipX` Retention & Finite `dt` | `DONE` | **P0** | W0 | *None (Root)* | `C-09`, ECS `#21`, Med `PlayOneShot` | `FIX-ECS-03`, `FIX-SER-01`, `FIX-EDT-03` |
 | **`FIX-AIX-01`** | `StateMachine` Iterative Transition Queue, `SteeringSystem` & `Ballistics` Guards | `TODO` | **P0** | W1 | `FIX-PHY-04` | `C-10`, ECS `#26`, Med `Ballistics`, `StateMachine` | `OPT-01`, `DOC-06` |
 | **`FIX-LGT-01`** | `LightQuerySystem` Enabled/Occlusion Order & `CameraComponent` Pause Hold | `TODO` | **P1** | W1 | `FIX-PHY-04` | ECS `#20`, `#24` (`CameraComponent`) | `OPT-01`, `DOC-05` |
 | **`FIX-PHY-01`** | Deferred Prefab Body Registration, Static Transform Sync & Shape Filter/Mass | `TODO` | **P0** | W1 | `FIX-ECS-01`, `FIX-SER-01` | `C-12` (Static `(0,0)`, filters, density, velocity) | `FIX-PHY-03`, `FIX-PHY-04` |
@@ -415,7 +415,7 @@ flowchart TD
 ---
 
 #### `FIX-ANI-01` — `Animator` PlayGeneration Reentrancy Guard, `FlipX` Retention & Finite `dt`
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `FIX-ECS-03`, `FIX-SER-01`, `FIX-EDT-03`
 - **Current Defects:** [Animator.cpp](file://Engine/src/Animation/Animator.cpp#L123-L147), [lines 197-211](file://Engine/src/Animation/Animator.cpp#L197-L211), [lines 416-545](file://Engine/src/Animation/Animator.cpp#L416-L545): `TriggerFrameEvents` iterates `m_CurrentClip->Events` while listeners can mutate clips/events or restart the same clip (`C-09`); `ResolveDirection` resets `FlipX = false` when `facingXZ == {0, 0}`; `PlayOneShot` clobbers running one-shot state before checking if the clip exists; `Update(NaN/+Inf)` poisons or hangs the loop.
 - **Verification (`EngineTests`):** Register a frame event callback that calls `PlayState("Attack", ..., forceRestart=true)` and modifies `Events`; verify no UAF and play time resets cleanly. Verify `PlayState("Idle", {0, 0})` after walking West preserves `FlipX == true`.

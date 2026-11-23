@@ -43,6 +43,7 @@ void Animator::Play(const std::string& clipName) {
     }
 
     ENGINE_CORE_TRACE("Animator: Playing clip '{}'", clipName);
+    m_PlayGeneration++;
     m_CurrentClipName = clipName;
     m_CurrentBaseState = clipName;
     m_CurrentClip = it->second;
@@ -125,10 +126,22 @@ void Animator::TriggerFrameEvents(uint32_t frameIndex) {
         return;
     }
 
+    // Take a snapshot copy of matching events to guard against m_CurrentClip->Events mutation during callbacks
+    std::vector<AnimationEvent> matchingEvents;
+    matchingEvents.reserve(m_CurrentClip->Events.size());
     for (const auto& ev : m_CurrentClip->Events) {
         if (ev.FrameIndex == frameIndex) {
-            DispatchEvent(ev);
+            matchingEvents.push_back(ev);
         }
+    }
+
+    const uint64_t startGen = m_PlayGeneration;
+    for (const auto& ev : matchingEvents) {
+        if (m_PlayGeneration != startGen) {
+            // A listener forced a state change or clip restart; stop dispatching events from superseded clip
+            break;
+        }
+        DispatchEvent(ev);
     }
 }
 
@@ -147,6 +160,7 @@ void Animator::DispatchEvent(const AnimationEvent& ev) {
 }
 
 void Animator::ResetState() noexcept {
+    m_PlayGeneration++;
     m_CurrentClip = nullptr;
     m_CurrentClipName.clear();
     m_CurrentBaseState.clear();
@@ -195,19 +209,16 @@ FacingDirection Animator::ResolveDirection(
     float hysteresisDegrees,
     DirectionalScheme scheme,
     bool* outFlipX) {
-    if (outFlipX) {
-        *outFlipX = false;
-    }
-
     if (scheme == DirectionalScheme::Omni_1Way) {
+        if (outFlipX) {
+            *outFlipX = false;
+        }
         return FacingDirection::None;
     }
 
     const float lenSq = facingXZ.x * facingXZ.x + facingXZ.y * facingXZ.y;
     if (lenSq < 1e-6f) {
-        if (outFlipX && currentDirection == FacingDirection::Side) {
-            // Keep previous flip state if available
-        }
+        // Keep existing *outFlipX if provided rather than zeroing it
         return (currentDirection != FacingDirection::None) ? currentDirection : FacingDirection::Down;
     }
 
@@ -379,7 +390,7 @@ void Animator::PlayState(std::string_view stateName, const glm::vec2& facingXZ, 
     glm::vec3 camForward{ 0.0f, 0.0f, -1.0f };
     GetCameraBasis(camRight, camForward);
 
-    bool flipX = false;
+    bool flipX = m_CurrentFlipX;
     const FacingDirection newDir = ResolveDirection(facingXZ, camRight, camForward, m_CurrentFacingDirection,
                                                     m_HysteresisDegrees, m_DirectionalScheme, &flipX);
     m_CurrentFacingDirection = newDir;
@@ -395,6 +406,7 @@ void Animator::PlayState(std::string_view stateName, const glm::vec2& facingXZ, 
     if (resolvedClipName != m_CurrentClipName || forceRestart || !m_CurrentClip) {
         auto it = m_Clips.find(resolvedClipName);
         if (it != m_Clips.end()) {
+            m_PlayGeneration++;
             m_CurrentClip = it->second;
             m_CurrentClipName = resolvedClipName;
             m_CurrentTime = 0.0f;
@@ -414,46 +426,44 @@ void Animator::PlayOneShot(std::string_view stateName, const glm::vec2& facingXZ
         return;
     }
 
-    m_IsOneShotPlaying = true;
-    m_OneShotPriority = priority;
-    m_OneShotFallbackState = std::string(fallbackLoopState);
-    m_LastFacingXZ = facingXZ;
-
     glm::vec3 camRight{ 1.0f, 0.0f, 0.0f };
     glm::vec3 camForward{ 0.0f, 0.0f, -1.0f };
     GetCameraBasis(camRight, camForward);
 
-    bool flipX = false;
+    bool flipX = m_CurrentFlipX;
     const FacingDirection newDir = ResolveDirection(facingXZ, camRight, camForward, m_CurrentFacingDirection,
                                                     m_HysteresisDegrees, m_DirectionalScheme, &flipX);
-    m_CurrentFacingDirection = newDir;
-    m_CurrentFlipX = flipX;
 
     const std::string resolvedClipName = ResolveClipName(stateName, newDir);
     if (resolvedClipName.empty()) {
-        m_IsOneShotPlaying = false;
-        m_OneShotPriority = 0;
         ENGINE_CORE_WARN("Animator: OneShot clip not found for state '{}'", stateName);
         return;
     }
 
     auto it = m_Clips.find(resolvedClipName);
-    if (it != m_Clips.end()) {
-        m_CurrentClip = it->second;
-        m_CurrentClipName = resolvedClipName;
-        m_CurrentTime = 0.0f;
-        m_CurrentFrameIndex = 0;
-        m_Frame0Fired = false;
-    } else {
-        m_IsOneShotPlaying = false;
-        m_OneShotPriority = 0;
+    if (it == m_Clips.end()) {
+        ENGINE_CORE_WARN("Animator: OneShot clip '{}' not found in clips map", resolvedClipName);
+        return;
     }
+
+    m_PlayGeneration++;
+    m_IsOneShotPlaying = true;
+    m_OneShotPriority = priority;
+    m_OneShotFallbackState = std::string(fallbackLoopState);
+    m_LastFacingXZ = facingXZ;
+    m_CurrentFacingDirection = newDir;
+    m_CurrentFlipX = flipX;
+    m_CurrentClip = it->second;
+    m_CurrentClipName = resolvedClipName;
+    m_CurrentTime = 0.0f;
+    m_CurrentFrameIndex = 0;
+    m_Frame0Fired = false;
 
     UpdateSpriteRenderer();
 }
 
 void Animator::Update(float deltaTime) {
-    if (!m_CurrentClip || deltaTime <= 0.0f || m_PlaybackSpeed <= 0.0f) {
+    if (!m_CurrentClip || !std::isfinite(deltaTime) || deltaTime <= 0.0f || !std::isfinite(m_PlaybackSpeed) || m_PlaybackSpeed <= 0.0f) {
         return;
     }
 
@@ -468,14 +478,17 @@ void Animator::Update(float deltaTime) {
     if (!m_Frame0Fired && m_CurrentFrameIndex == 0) {
         m_Frame0Fired = true;
         const auto clipBefore = m_CurrentClip;
+        const uint64_t genBefore = m_PlayGeneration;
         TriggerFrameEvents(0);
-        if (!m_CurrentClip || m_CurrentClip != clipBefore) {
+        if (!m_CurrentClip || m_CurrentClip != clipBefore || m_PlayGeneration != genBefore) {
             UpdateSpriteRenderer();
             return;
         }
     }
 
-    const float effectiveDelta = deltaTime * m_PlaybackSpeed;
+    constexpr float kMaxDeltaTime = 0.5f;
+    const float clampedDelta = std::min(deltaTime, kMaxDeltaTime);
+    const float effectiveDelta = clampedDelta * m_PlaybackSpeed;
     m_CurrentTime += effectiveDelta;
 
     auto getFrameDuration = [&](uint32_t idx) -> float {
@@ -487,8 +500,10 @@ void Animator::Update(float deltaTime) {
 
     float currentDuration = getFrameDuration(m_CurrentFrameIndex);
     bool changed = false;
+    uint32_t iterations = 0;
+    constexpr uint32_t kMaxIterations = 64;
 
-    while (m_CurrentTime >= currentDuration) {
+    while (m_CurrentTime >= currentDuration && iterations++ < kMaxIterations) {
         m_CurrentTime -= currentDuration;
         m_CurrentFrameIndex++;
         changed = true;
@@ -507,7 +522,7 @@ void Animator::Update(float deltaTime) {
                 glm::vec3 camRight{ 1.0f, 0.0f, 0.0f };
                 glm::vec3 camForward{ 0.0f, 0.0f, -1.0f };
                 GetCameraBasis(camRight, camForward);
-                bool flipX = false;
+                bool flipX = m_CurrentFlipX;
                 const FacingDirection dir = ResolveDirection(m_LastFacingXZ, camRight, camForward,
                                                              m_CurrentFacingDirection, m_HysteresisDegrees,
                                                              m_DirectionalScheme, &flipX);
@@ -524,8 +539,9 @@ void Animator::Update(float deltaTime) {
             } else if (m_CurrentClip->loop) {
                 m_CurrentFrameIndex = 0;
                 const auto clipBefore = m_CurrentClip;
+                const uint64_t genBefore = m_PlayGeneration;
                 TriggerFrameEvents(0);
-                if (!m_CurrentClip || m_CurrentClip != clipBefore) {
+                if (!m_CurrentClip || m_CurrentClip != clipBefore || m_PlayGeneration != genBefore) {
                     UpdateSpriteRenderer();
                     return;
                 }
@@ -536,13 +552,18 @@ void Animator::Update(float deltaTime) {
             }
         } else {
             const auto clipBefore = m_CurrentClip;
+            const uint64_t genBefore = m_PlayGeneration;
             TriggerFrameEvents(m_CurrentFrameIndex);
-            if (!m_CurrentClip || m_CurrentClip != clipBefore) {
+            if (!m_CurrentClip || m_CurrentClip != clipBefore || m_PlayGeneration != genBefore) {
                 UpdateSpriteRenderer();
                 return;
             }
         }
         currentDuration = getFrameDuration(m_CurrentFrameIndex);
+    }
+
+    if (iterations >= kMaxIterations && currentDuration > 0.0f) {
+        m_CurrentTime = std::fmod(m_CurrentTime, currentDuration);
     }
 
     if (changed) {

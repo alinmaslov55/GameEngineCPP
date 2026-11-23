@@ -461,4 +461,136 @@ TEST(AnimatorTest, SceneSerializerSpriteRendererAndAnimatorRoundTrip) {
     EXPECT_EQ(dstAnim->GetCurrentClipName(), "Chop");
 }
 
+TEST(AnimatorTest, ReentrantEventCallbackWithClipRestartAndEventMutation) {
+    Engine::GameObject entity("Hero");
+    entity.AddComponent<Engine::SpriteRenderer>();
+    auto* animator = entity.AddComponent<Engine::Animator>();
+
+    auto clipA = std::make_shared<Engine::AnimationClip>("Attack", 0.1f, false);
+    clipA->AddFrame(nullptr, 0.1f);
+    clipA->AddFrame(nullptr, 0.1f);
+
+    Engine::AnimationEvent ev1;
+    ev1.EventID = "Strike1";
+    ev1.FrameIndex = 0;
+
+    Engine::AnimationEvent ev2;
+    ev2.EventID = "Strike2";
+    ev2.FrameIndex = 0;
+
+    clipA->Events.push_back(ev1);
+    clipA->Events.push_back(ev2);
+
+    animator->AddClip(clipA);
+
+    int ev1Count = 0;
+    int ev2Count = 0;
+
+    animator->AddEventListener([&](std::string_view id, const Engine::AnimationEvent&) {
+        if (id == "Strike1") {
+            ev1Count++;
+            // Reentrantly force restart the clip and mutate clipA->Events
+            Engine::AnimationEvent ev3;
+            ev3.EventID = "MutatedEvent";
+            ev3.FrameIndex = 1;
+            clipA->Events.push_back(ev3);
+
+            animator->PlayState("Attack", { 1.0f, 0.0f }, /*forceRestart=*/true);
+        } else if (id == "Strike2") {
+            ev2Count++;
+        }
+    });
+
+    animator->PlayState("Attack", { 1.0f, 0.0f });
+    
+    // First update fires frame 0
+    EXPECT_NO_THROW(animator->Update(0.01f));
+
+    // Strike1 fired once; reentrant restart occurred so Strike2 from the old generation was safely skipped
+    EXPECT_EQ(ev1Count, 1);
+    EXPECT_EQ(ev2Count, 0);
+    EXPECT_EQ(animator->GetCurrentClipName(), "Attack");
+}
+
+TEST(AnimatorTest, FlipXRetentionWhenTransitioningToZeroFacing) {
+    Engine::GameObject entity("Player");
+    entity.AddComponent<Engine::SpriteRenderer>();
+    auto* animator = entity.AddComponent<Engine::Animator>();
+    animator->SetDirectionalScheme(Engine::DirectionalScheme::Cardinal_4Way);
+
+    auto walkClip = std::make_shared<Engine::AnimationClip>("Walk_Side", 0.1f, true);
+    walkClip->AddFrame(nullptr, 0.1f);
+    auto idleClip = std::make_shared<Engine::AnimationClip>("Idle_Side", 0.1f, true);
+    idleClip->AddFrame(nullptr, 0.1f);
+
+    animator->AddClip(walkClip);
+    animator->AddClip(idleClip);
+
+    // Walk West: in screen space (camera looking -Z), facing {-1, 0} is left -> FlipX = true
+    animator->PlayState("Walk", { -1.0f, 0.0f });
+    EXPECT_EQ(animator->GetCurrentFacingDirection(), Engine::FacingDirection::Side);
+    EXPECT_TRUE(animator->GetCurrentFlipX());
+
+    // Stop moving: transition to Idle with zero facing vector
+    animator->PlayState("Idle", { 0.0f, 0.0f });
+    EXPECT_EQ(animator->GetCurrentFacingDirection(), Engine::FacingDirection::Side);
+    EXPECT_TRUE(animator->GetCurrentFlipX()); // FlipX must be retained!
+
+    // Walk East: facing {1, 0} -> FlipX = false
+    animator->PlayState("Walk", { 1.0f, 0.0f });
+    EXPECT_EQ(animator->GetCurrentFacingDirection(), Engine::FacingDirection::Side);
+    EXPECT_FALSE(animator->GetCurrentFlipX());
+}
+
+TEST(AnimatorTest, PlayOneShotMissingClipPreservesRunningOneShot) {
+    Engine::GameObject entity("Brawler");
+    entity.AddComponent<Engine::SpriteRenderer>();
+    auto* animator = entity.AddComponent<Engine::Animator>();
+
+    auto attackClip = std::make_shared<Engine::AnimationClip>("Attack", 0.2f, false);
+    attackClip->AddFrame(nullptr, 0.2f);
+    animator->AddClip(attackClip);
+
+    animator->PlayOneShot("Attack", { 0.0f, 1.0f }, "Idle", 10);
+    EXPECT_TRUE(animator->IsOneShotPlaying());
+    EXPECT_EQ(animator->GetCurrentOneShotPriority(), 10);
+    EXPECT_EQ(animator->GetCurrentClipName(), "Attack");
+
+    // Attempt to play a non-existent one-shot at higher priority
+    animator->PlayOneShot("NonExistentState", { 0.0f, 1.0f }, "Idle", 20);
+
+    // Active one-shot must NOT be destroyed or corrupted
+    EXPECT_TRUE(animator->IsOneShotPlaying());
+    EXPECT_EQ(animator->GetCurrentOneShotPriority(), 10);
+    EXPECT_EQ(animator->GetCurrentClipName(), "Attack");
+}
+
+TEST(AnimatorTest, NonFiniteDeltaTimeIgnoredWithoutPoisoningTimer) {
+    Engine::GameObject entity("TestEntity");
+    entity.AddComponent<Engine::SpriteRenderer>();
+    auto* animator = entity.AddComponent<Engine::Animator>();
+
+    auto clip = std::make_shared<Engine::AnimationClip>("Test", 0.5f, true);
+    clip->AddFrame(nullptr, 0.5f);
+    animator->AddClip(clip);
+    animator->Play("Test");
+
+    animator->Update(0.1f);
+    EXPECT_FLOAT_EQ(animator->GetCurrentTime(), 0.1f);
+
+    // Feed NaN and Inf
+    animator->Update(std::numeric_limits<float>::quiet_NaN());
+    EXPECT_FLOAT_EQ(animator->GetCurrentTime(), 0.1f);
+
+    animator->Update(std::numeric_limits<float>::infinity());
+    EXPECT_FLOAT_EQ(animator->GetCurrentTime(), 0.1f);
+
+    animator->Update(-0.5f);
+    EXPECT_FLOAT_EQ(animator->GetCurrentTime(), 0.1f);
+
+    // Normal update continues smoothly
+    animator->Update(0.05f);
+    EXPECT_FLOAT_EQ(animator->GetCurrentTime(), 0.15f);
+}
+
 } // namespace
