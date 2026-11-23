@@ -92,8 +92,8 @@ GameObject* EntityPoolManager::AcquirePooled(const std::string& poolKey, const P
         if (instance) {
             instance->SetPoolKey(poolKey);
             instance->SetInFreeList(false);
-            instance->SetActive(false);
             pool.allInstances.push_back(instance);
+            PropagatePoolAcquire(instance);
         } else {
             ENGINE_CORE_ERROR("EntityPoolManager::AcquirePooled('{}'): Prefab instantiation failed", poolKey);
         }
@@ -101,11 +101,11 @@ GameObject* EntityPoolManager::AcquirePooled(const std::string& poolKey, const P
         if (auto* transform = instance->GetTransform()) {
             transform->SetWorldPosition(worldPos);
         }
+        PropagatePoolAcquire(instance);
+        instance->SetActive(true);
     }
 
     if (instance) {
-        PropagatePoolAcquire(instance);
-        instance->SetActive(true);
         ENGINE_CORE_TRACE("EntityPoolManager::AcquirePooled('{}'): {} UUID {} (free={}, total={})",
                           poolKey, recycled ? "Reused" : "Allocated", instance->GetUUID(),
                           pool.freeList.size(), pool.allInstances.size());
@@ -125,15 +125,32 @@ void EntityPoolManager::ReleaseToPool(const std::string& poolKey, GameObject* in
     if (instance->IsInFreeList() || instance->IsPendingDestroy()) {
         return;
     }
+    if (!instance->IsPooled()) {
+        ENGINE_CORE_WARN("EntityPoolManager::ReleaseToPool('{}'): Instance is not pooled", poolKey);
+        return;
+    }
+
+    // Key validation: ensure instance is placed in its legitimate owning pool (C-08)
+    const std::string actualKey = instance->GetPoolKey();
+    if (actualKey != poolKey) {
+        ENGINE_CORE_WARN("EntityPoolManager::ReleaseToPool: Key mismatch ('{}' vs '{}'); releasing to assigned pool", poolKey, actualKey);
+    }
+
+    // Detach from runtime parent so parent destruction does not destroy/disable pooled instance
+    if (auto* transform = instance->GetTransform()) {
+        if (transform->GetParent() != nullptr) {
+            transform->SetParent(nullptr, /*keepWorldTransform=*/false);
+        }
+    }
 
     instance->SetActive(false);
     PropagatePoolRelease(instance);
 
     instance->SetInFreeList(true);
-    auto& pool = m_Pools[poolKey];
+    auto& pool = m_Pools[actualKey];
     pool.freeList.push_back(instance);
     ENGINE_CORE_TRACE("EntityPoolManager::ReleaseToPool('{}'): Released UUID {} (free={}, total={})",
-                      poolKey, instance->GetUUID(), pool.freeList.size(), pool.allInstances.size());
+                      actualKey, instance->GetUUID(), pool.freeList.size(), pool.allInstances.size());
 }
 
 void EntityPoolManager::ReleaseToPool(GameObject* instance) {

@@ -159,6 +159,7 @@ void Animator::ResetState() noexcept {
     m_CurrentFlipX = false;
     m_Frame0Fired = false;
     m_IsPreviewPlaying = false;
+    m_PlaybackSpeed = 1.0f;
 }
 
 void Animator::GetCameraBasis(glm::vec3& outRightXZ, glm::vec3& outForwardXZ) const {

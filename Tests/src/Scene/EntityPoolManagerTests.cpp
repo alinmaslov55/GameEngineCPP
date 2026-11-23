@@ -543,4 +543,110 @@ TEST(PrefabAndPoolingTest, PoolAcquireHookOrderAndDuplicateReleaseGuard) {
     EXPECT_EQ(tracker->events[3], "OnEnable");
 }
 
+TEST(PrefabAndPoolingTest, EnemyPoolFullComponentResetAndParentDetachSafety) {
+    auto scene = std::make_shared<Engine::Scene>("EnemyPoolResetScene");
+    scene->OnRuntimeStart();
+
+    // Create enemy template prefab with SpriteRenderer, Animator, Rigidbody2D, BoxCollider2D
+    auto* templateGo = scene->CreateGameObject("EnemyTemplate");
+    templateGo->AddComponent<Engine::SpriteRenderer>();
+    templateGo->AddComponent<Engine::Animator>();
+    templateGo->AddComponent<Engine::Rigidbody2D>();
+    auto* templateCol = templateGo->AddComponent<Engine::BoxCollider2D>();
+    templateCol->size = { 1.0f, 1.0f };
+    auto enemyPrefab = Engine::Prefab::CreateFromGameObject(templateGo, true);
+    ASSERT_NE(enemyPrefab, nullptr);
+    scene->DestroyGameObject(templateGo);
+    scene->FlushEntityLifecycleQueues();
+
+    // 1. Acquire pooled enemy
+    auto* enemy = scene->AcquirePooled("EnemyPool", *enemyPrefab, { 0.0f, 0.0f, 0.0f });
+    ASSERT_NE(enemy, nullptr);
+    auto* sprite = enemy->GetComponent<Engine::SpriteRenderer>();
+    auto* anim = enemy->GetComponent<Engine::Animator>();
+    auto* rb = enemy->GetComponent<Engine::Rigidbody2D>();
+    ASSERT_NE(sprite, nullptr);
+    ASSERT_NE(anim, nullptr);
+    ASSERT_NE(rb, nullptr);
+
+    // 2. Set DissolveAmount = 0.9f, PlaybackSpeed = 0.4f, VelocityXZ = {12, -5}
+    sprite->SetDissolveAmount(0.9f);
+    anim->SetPlaybackSpeed(0.4f);
+    rb->SetVelocityXZ({ 12.0f, -5.0f });
+    EXPECT_FLOAT_EQ(sprite->GetDissolveAmount(), 0.9f);
+    EXPECT_FLOAT_EQ(anim->GetPlaybackSpeed(), 0.4f);
+    EXPECT_FLOAT_EQ(rb->GetVelocityXZ().x, 12.0f);
+    EXPECT_FLOAT_EQ(rb->GetVelocityXZ().y, -5.0f);
+
+    // 3. Parent it to a moving socket
+    auto* socket = scene->CreateGameObject("MovingSocket");
+    enemy->GetTransform()->SetParent(socket->GetTransform(), false);
+    EXPECT_EQ(enemy->GetTransform()->GetParent(), socket->GetTransform());
+
+    // 4. Release it to pool using mismatched key: must route to legitimate pool and detach parent
+    scene->ReleaseToPool("WrongPoolKey", enemy);
+    EXPECT_TRUE(enemy->IsInFreeList());
+    EXPECT_EQ(enemy->GetTransform()->GetParent(), nullptr);
+
+    // 5. Destroy former parent and flush lifecycle queues
+    scene->DestroyGameObject(socket);
+    scene->FlushEntityLifecycleQueues();
+
+    // 6. Re-acquire: must be alive, unparented, and all component states reset to clean defaults
+    auto* reacquired = scene->AcquirePooled("EnemyPool", *enemyPrefab, { 1.0f, 0.0f, 2.0f });
+    ASSERT_EQ(reacquired, enemy);
+    EXPECT_TRUE(reacquired->IsAlive());
+    EXPECT_FALSE(reacquired->IsPendingDestroy());
+    EXPECT_EQ(reacquired->GetTransform()->GetParent(), nullptr);
+
+    auto* reacquiredSprite = reacquired->GetComponent<Engine::SpriteRenderer>();
+    auto* reacquiredAnim = reacquired->GetComponent<Engine::Animator>();
+    auto* reacquiredRb = reacquired->GetComponent<Engine::Rigidbody2D>();
+    EXPECT_FLOAT_EQ(reacquiredSprite->GetDissolveAmount(), 0.0f);
+    EXPECT_FLOAT_EQ(reacquiredAnim->GetPlaybackSpeed(), 1.0f);
+    EXPECT_FLOAT_EQ(reacquiredRb->GetVelocityXZ().x, 0.0f);
+    EXPECT_FLOAT_EQ(reacquiredRb->GetVelocityXZ().y, 0.0f);
+
+    scene->OnRuntimeStop();
+}
+
+TEST(PrefabAndPoolingTest, PoolGrowthFiresOnEnableExactlyOnce) {
+    auto scene = std::make_shared<Engine::Scene>("GrowthLifecycleScene");
+
+    auto* templateGo = scene->CreateGameObject("GrowthTemplate");
+    templateGo->AddComponent<Engine::SpriteRenderer>();
+    auto growthPrefab = Engine::Prefab::CreateFromGameObject(templateGo, true);
+    ASSERT_NE(growthPrefab, nullptr);
+    scene->DestroyGameObject(templateGo);
+    scene->FlushEntityLifecycleQueues();
+
+    // 1. Acquire from empty pool (pool growth): instance is immediately active without spurious deactivation
+    auto* freshInstance = scene->AcquirePooled("GrowthPool", *growthPrefab, { 0.0f, 0.0f, 0.0f });
+    ASSERT_NE(freshInstance, nullptr);
+    EXPECT_TRUE(freshInstance->IsActive());
+    EXPECT_FALSE(freshInstance->IsInFreeList());
+
+    // Attach tracking component to test subsequent release and recycled acquire lifecycle
+    auto* tracker = freshInstance->AddComponent<CustomPooledComponent>();
+    ASSERT_EQ(tracker->events.size(), 1u);
+    EXPECT_EQ(tracker->events[0], "OnEnable");
+
+    // 2. Release to pool: OnDisable fires once, followed by OnPoolRelease
+    scene->ReleaseToPool("GrowthPool", freshInstance);
+    EXPECT_FALSE(freshInstance->IsActive());
+    EXPECT_TRUE(freshInstance->IsInFreeList());
+    ASSERT_EQ(tracker->events.size(), 3u);
+    EXPECT_EQ(tracker->events[1], "OnDisable");
+    EXPECT_EQ(tracker->events[2], "OnPoolRelease");
+
+    // 3. Re-acquire (recycled): OnPoolAcquire fires, followed by OnEnable
+    auto* recycledInstance = scene->AcquirePooled("GrowthPool", *growthPrefab, { 0.0f, 0.0f, 0.0f });
+    ASSERT_EQ(recycledInstance, freshInstance);
+    EXPECT_TRUE(recycledInstance->IsActive());
+    EXPECT_FALSE(recycledInstance->IsInFreeList());
+    ASSERT_EQ(tracker->events.size(), 5u);
+    EXPECT_EQ(tracker->events[3], "OnPoolAcquire");
+    EXPECT_EQ(tracker->events[4], "OnEnable");
+}
+
 } // namespace

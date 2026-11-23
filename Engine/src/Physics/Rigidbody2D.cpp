@@ -74,13 +74,14 @@ void Rigidbody2D::SetVelocityXZ(const glm::vec2& velocityXZ) {
         m_StasisCachedVelocityXZ = velocityXZ;
         return;
     }
-    InitialLinearVelocityXZ = velocityXZ;
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_SetLinearVelocity(bodyId, b2Vec2{ velocityXZ.x, velocityXZ.y });
+            return;
         }
     }
+    InitialLinearVelocityXZ = velocityXZ;
 }
 
 glm::vec2 Rigidbody2D::GetVelocityXZ() const noexcept {

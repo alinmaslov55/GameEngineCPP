@@ -146,6 +146,19 @@ public:
         return glm::vec4(m_DissolveAmount, m_FlashAmount, m_FlashColorMode, m_DissolveEdgeWidth);
     }
 
+    void ResetCombatFX() noexcept {
+        m_DissolveAmount = 0.0f;
+        m_DissolveEdgeWidth = 0.08f;
+        m_FlashAmount = 0.0f;
+        m_FlashColorMode = 0.0f;
+        m_FlipX = false;
+        m_FlipY = false;
+        m_RenderSilhouette = false;
+    }
+
+    void OnPoolAcquire() override { ResetCombatFX(); }
+    void OnPoolRelease() override { ResetCombatFX(); }
+
 private:
     std::shared_ptr<Texture> m_Texture = nullptr;
     std::shared_ptr<SubTexture2D> m_SubTexture = nullptr;

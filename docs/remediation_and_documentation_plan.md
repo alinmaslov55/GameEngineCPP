@@ -200,7 +200,7 @@ flowchart TD
 | **`FIX-SAV-02`** | `DataRegistry` Single-Object Parse, Path Resolution & Deterministic Order | `DONE` | **P1** | W1 | `FIX-CORE-01` | Core `#11`, Med `GameplayData`, Imp `#8` | `FIX-SBX-01`, `DOC-08` |
 | **`FIX-ECS-01`** | `GameObject` Transform Removal Guard, Reentrancy, `LateUpdate` & UUID Map | `DONE` | **P0** | W0 | *None (Root)* | `C-07`, ECS `#15`, `#16`, `#19`, Med `HasComponent` | `FIX-ECS-02`, `FIX-PHY-01`, `FIX-EDT-01` |
 | **`FIX-ECS-02`** | `Transform` Reparent Active Sync, Zero-Scale Guard & `SquashStretch` WorldPos | `DONE` | **P0** | W1 | `FIX-ECS-01` | ECS `#17`, `#18`, Med `SquashStretch` | `FIX-ECS-03`, `FIX-SER-01`, `DOC-01` |
-| **`FIX-ECS-03`** | `EntityPoolManager` Key/Parent Safety & Pooled Component State Reset | `TODO` | **P0** | W2 | `FIX-ECS-02`, `FIX-ANI-01` | `C-08`, Med `EntityPoolManager`, Physics `#28` | `DOC-03` |
+| **`FIX-ECS-03`** | `EntityPoolManager` Key/Parent Safety & Pooled Component State Reset | `DONE` | **P0** | W2 | `FIX-ECS-02`, `FIX-ANI-01` | `C-08`, Med `EntityPoolManager`, Physics `#28` | `DOC-03` |
 | **`FIX-SER-01`** | `SceneSerializer` & `Prefab` Full Component/Active Fidelity & Safe JSON | `TODO` | **P0** | W1 | `FIX-ECS-02`, `FIX-ANI-01` | ECS `#23`, `#25` (`SceneManager` unscaled dt) | `FIX-PHY-01`, `DOC-03` |
 | **`FIX-ANI-01`** | `Animator` PlayGeneration Reentrancy Guard, `FlipX` Retention & Finite `dt` | `TODO` | **P0** | W0 | *None (Root)* | `C-09`, ECS `#21`, Med `PlayOneShot` | `FIX-ECS-03`, `FIX-SER-01`, `FIX-EDT-03` |
 | **`FIX-AIX-01`** | `StateMachine` Iterative Transition Queue, `SteeringSystem` & `Ballistics` Guards | `TODO` | **P0** | W1 | `FIX-PHY-04` | `C-10`, ECS `#26`, Med `Ballistics`, `StateMachine` | `OPT-01`, `DOC-06` |
@@ -395,7 +395,7 @@ flowchart TD
 ---
 
 #### `FIX-ECS-03` — `EntityPoolManager` Key/Parent Safety & Pooled Component State Reset
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W2`
 - **Dependencies:** Hard: `FIX-ECS-02`, `FIX-ANI-01` | Unlocks: `DOC-03`
 - **Current Defects:** [EntityPoolManager.cpp](file://Engine/src/Scene/EntityPoolManager.cpp#L90-L137), [Rigidbody2D.cpp](file://Engine/src/Physics/Rigidbody2D.cpp#L77): `ReleaseToPool(wrongKey, instance)` corrupts `freeList` with a pointer not cleaned up on destroy (`C-08`) and leaves `instance` parented to external entities; `AcquirePooled` fires `OnEnable` twice on pool growth and fails to reset `SpriteRenderer` combat FX (`DissolveAmount`, `FlashAmount`, `FlipX`), `Animator::m_PlaybackSpeed`, and `Rigidbody2D::InitialLinearVelocityXZ`.
 - **Verification (`EngineTests`):** Acquire a pooled enemy, set `DissolveAmount = 0.9f`, `PlaybackSpeed = 0.4f`, `VelocityXZ = {12, -5}`, parent it to a moving socket, release it to pool, destroy the former parent, and re-acquire: assert entity is alive, unparented, `DissolveAmount == 0.0f`, `PlaybackSpeed == 1.0f`, and `GetVelocityXZ() == {0, 0}`.
