@@ -464,12 +464,12 @@ uint32_t AudioStreamTrack::GetQueuedFrames() const noexcept {
     if (!m_Stream || m_Spec.channels <= 0) {
         return 0u;
     }
-    const int availBytes = SDL_GetAudioStreamAvailable(m_Stream);
-    if (availBytes <= 0) {
+    const int queuedBytes = SDL_GetAudioStreamQueued(m_Stream);
+    if (queuedBytes <= 0) {
         return 0u;
     }
     const uint32_t frameBytes = static_cast<uint32_t>(m_Spec.channels) * sizeof(int16_t);
-    return (frameBytes > 0u) ? (static_cast<uint32_t>(availBytes) / frameBytes) : 0u;
+    return (frameBytes > 0u) ? (static_cast<uint32_t>(queuedBytes) / frameBytes) : 0u;
 }
 
 size_t AudioStreamTrack::GetEstimatedMemoryBytes() const noexcept {

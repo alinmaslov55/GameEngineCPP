@@ -167,11 +167,29 @@ bool AudioClip::DecodeWavFile(const std::string& filepath) {
         return false;
     }
 
-    m_Buffer.resize(wavLen);
-    std::memcpy(m_Buffer.data(), wavBuf, wavLen);
-    SDL_free(wavBuf);
+    SDL_AudioSpec targetSpec{};
+    targetSpec.format = SDL_AUDIO_S16;
+    targetSpec.channels = std::min(spec.channels, 2);
+    targetSpec.freq = spec.freq;
 
-    m_Spec = spec;
+    if (spec.format != targetSpec.format || spec.channels != targetSpec.channels) {
+        Uint8* convertedBuf = nullptr;
+        int convertedLen = 0;
+        if (!SDL_ConvertAudioSamples(&spec, wavBuf, static_cast<int>(wavLen), &targetSpec, &convertedBuf, &convertedLen)) {
+            ENGINE_CORE_ERROR("AudioClip: Failed to normalize WAV '{}' to S16 format: {}", filepath, SDL_GetError());
+            SDL_free(wavBuf);
+            return false;
+        }
+        m_Buffer.assign(convertedBuf, convertedBuf + convertedLen);
+        m_Spec = targetSpec;
+        SDL_free(convertedBuf);
+        SDL_free(wavBuf);
+    } else {
+        m_Buffer.assign(wavBuf, wavBuf + wavLen);
+        m_Spec = spec;
+        SDL_free(wavBuf);
+    }
+
     m_SourceFormat = AudioFormat::WAV;
     ComputeFrameCount();
 
@@ -199,11 +217,29 @@ bool AudioClip::DecodeWavMemory(std::span<const uint8_t> data, const std::string
         return false;
     }
 
-    m_Buffer.resize(wavLen);
-    std::memcpy(m_Buffer.data(), wavBuf, wavLen);
-    SDL_free(wavBuf);
+    SDL_AudioSpec targetSpec{};
+    targetSpec.format = SDL_AUDIO_S16;
+    targetSpec.channels = std::min(spec.channels, 2);
+    targetSpec.freq = spec.freq;
 
-    m_Spec = spec;
+    if (spec.format != targetSpec.format || spec.channels != targetSpec.channels) {
+        Uint8* convertedBuf = nullptr;
+        int convertedLen = 0;
+        if (!SDL_ConvertAudioSamples(&spec, wavBuf, static_cast<int>(wavLen), &targetSpec, &convertedBuf, &convertedLen)) {
+            ENGINE_CORE_ERROR("AudioClip: Failed to normalize memory WAV '{}' to S16 format: {}", debugName, SDL_GetError());
+            SDL_free(wavBuf);
+            return false;
+        }
+        m_Buffer.assign(convertedBuf, convertedBuf + convertedLen);
+        m_Spec = targetSpec;
+        SDL_free(convertedBuf);
+        SDL_free(wavBuf);
+    } else {
+        m_Buffer.assign(wavBuf, wavBuf + wavLen);
+        m_Spec = spec;
+        SDL_free(wavBuf);
+    }
+
     m_SourceFormat = AudioFormat::WAV;
     ComputeFrameCount();
 

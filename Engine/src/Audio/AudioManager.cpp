@@ -148,6 +148,15 @@ void PutVoiceData(VoiceSlot& slot,
     const uint32_t clipBytes = slot.Clip->GetLength();
 
     if (slot.Params.SpatializedXZ) {
+        if (clipSpec.format != SDL_AUDIO_S16 || clipSpec.channels <= 0 || clipSpec.channels > 2) {
+            ENGINE_CORE_WARN("AudioManager::PutVoiceData: Non-S16 or unsupported channel count ({}) for spatialized voice. Falling back to non-spatialized stream.",
+                             clipSpec.channels);
+            SDL_SetAudioStreamFormat(slot.Stream, &clipSpec, s_PlaybackDevice != 0 ? nullptr : &clipSpec);
+            SDL_PutAudioStreamData(slot.Stream, clipBuffer, static_cast<int>(clipBytes));
+            SetStreamPaused(slot.Stream, slot.Paused);
+            return;
+        }
+
         // Spatialized: Render into stereo PCM with constant-power L/R gains
         const SpatialAudio::PanGains gains = SpatialAudio::CalculateConstantPowerGains(slot.CalculatedPan);
         const auto* srcSamples = reinterpret_cast<const int16_t*>(clipBuffer);

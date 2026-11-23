@@ -62,6 +62,96 @@ std::vector<uint8_t> BuildSyntheticWavPCM16(uint32_t sampleRate, uint16_t channe
     return wav;
 }
 
+std::vector<uint8_t> BuildSyntheticWavFloat32(uint32_t sampleRate, uint16_t channels, uint32_t numFrames) {
+    const uint16_t bitsPerSample = 32u;
+    const uint16_t blockAlign = static_cast<uint16_t>(channels * (bitsPerSample / 8u));
+    const uint32_t byteRate = sampleRate * blockAlign;
+    const uint32_t dataSize = numFrames * blockAlign;
+    const uint32_t riffChunkSize = 36u + dataSize;
+
+    std::vector<uint8_t> wav(44u + dataSize, 0u);
+    auto writeU16 = [&](size_t off, uint16_t v) {
+        wav[off + 0] = static_cast<uint8_t>(v & 0xFFu);
+        wav[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+    };
+    auto writeU32 = [&](size_t off, uint32_t v) {
+        wav[off + 0] = static_cast<uint8_t>(v & 0xFFu);
+        wav[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+        wav[off + 2] = static_cast<uint8_t>((v >> 16) & 0xFFu);
+        wav[off + 3] = static_cast<uint8_t>((v >> 24) & 0xFFu);
+    };
+
+    std::memcpy(wav.data() + 0, "RIFF", 4);
+    writeU32(4, riffChunkSize);
+    std::memcpy(wav.data() + 8, "WAVE", 4);
+    std::memcpy(wav.data() + 12, "fmt ", 4);
+    writeU32(16, 16u);          // PCM fmt chunk size
+    writeU16(20, 3u);           // IEEE Float format = 3
+    writeU16(22, channels);
+    writeU32(24, sampleRate);
+    writeU32(28, byteRate);
+    writeU16(32, blockAlign);
+    writeU16(34, bitsPerSample);
+    std::memcpy(wav.data() + 36, "data", 4);
+    writeU32(40, dataSize);
+
+    auto* f32 = reinterpret_cast<float*>(wav.data() + 44u);
+    constexpr double kTwoPi = 6.28318530717958647692;
+    for (uint32_t i = 0; i < numFrames; ++i) {
+        const double t = static_cast<double>(i) / static_cast<double>(sampleRate);
+        const float sample = static_cast<float>(std::sin(kTwoPi * 440.0 * t) * 0.5);
+        for (uint16_t ch = 0; ch < channels; ++ch) {
+            f32[static_cast<size_t>(i) * channels + ch] = sample;
+        }
+    }
+    return wav;
+}
+
+std::vector<uint8_t> BuildSyntheticWavPCM8(uint32_t sampleRate, uint16_t channels, uint32_t numFrames) {
+    const uint16_t bitsPerSample = 8u;
+    const uint16_t blockAlign = static_cast<uint16_t>(channels * (bitsPerSample / 8u));
+    const uint32_t byteRate = sampleRate * blockAlign;
+    const uint32_t dataSize = numFrames * blockAlign;
+    const uint32_t riffChunkSize = 36u + dataSize;
+
+    std::vector<uint8_t> wav(44u + dataSize, 0u);
+    auto writeU16 = [&](size_t off, uint16_t v) {
+        wav[off + 0] = static_cast<uint8_t>(v & 0xFFu);
+        wav[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+    };
+    auto writeU32 = [&](size_t off, uint32_t v) {
+        wav[off + 0] = static_cast<uint8_t>(v & 0xFFu);
+        wav[off + 1] = static_cast<uint8_t>((v >> 8) & 0xFFu);
+        wav[off + 2] = static_cast<uint8_t>((v >> 16) & 0xFFu);
+        wav[off + 3] = static_cast<uint8_t>((v >> 24) & 0xFFu);
+    };
+
+    std::memcpy(wav.data() + 0, "RIFF", 4);
+    writeU32(4, riffChunkSize);
+    std::memcpy(wav.data() + 8, "WAVE", 4);
+    std::memcpy(wav.data() + 12, "fmt ", 4);
+    writeU32(16, 16u);          // PCM fmt chunk size
+    writeU16(20, 1u);           // PCM format
+    writeU16(22, channels);
+    writeU32(24, sampleRate);
+    writeU32(28, byteRate);
+    writeU16(32, blockAlign);
+    writeU16(34, bitsPerSample);
+    std::memcpy(wav.data() + 36, "data", 4);
+    writeU32(40, dataSize);
+
+    auto* u8 = wav.data() + 44u;
+    constexpr double kTwoPi = 6.28318530717958647692;
+    for (uint32_t i = 0; i < numFrames; ++i) {
+        const double t = static_cast<double>(i) / static_cast<double>(sampleRate);
+        const uint8_t sample = static_cast<uint8_t>(128.0 + std::sin(kTwoPi * 440.0 * t) * 60.0);
+        for (uint16_t ch = 0; ch < channels; ++ch) {
+            u8[static_cast<size_t>(i) * channels + ch] = sample;
+        }
+    }
+    return wav;
+}
+
 struct ScopedTempDir {
     std::filesystem::path Path;
     explicit ScopedTempDir(const std::string& name)
@@ -929,6 +1019,96 @@ TEST(MusicDirectorTest, ConcurrentAudioStreamTrackUpdateAndMusicDirectorMutation
     Engine::MusicDirector::Shutdown();
     Engine::AudioManager::Shutdown();
     SUCCEED();
+}
+
+TEST(AudioClipTest, NonS16WavFormatsNormalizedToS16) {
+    // 1. 32-bit float stereo WAV
+    const auto f32Bytes = BuildSyntheticWavFloat32(44100u, 2u, 1024u);
+    auto f32Clip = Engine::AudioClip::CreateFromMemory(f32Bytes, "test_f32.wav");
+    ASSERT_NE(f32Clip, nullptr);
+    EXPECT_TRUE(f32Clip->IsValid());
+    EXPECT_EQ(f32Clip->GetSpec().format, SDL_AUDIO_S16);
+    EXPECT_EQ(f32Clip->GetChannels(), 2);
+    EXPECT_EQ(f32Clip->GetSampleRate(), 44100);
+    EXPECT_EQ(f32Clip->GetFrameCount(), 1024u);
+    EXPECT_EQ(f32Clip->GetLength(), 1024u * 2u * sizeof(int16_t));
+
+    // 2. 8-bit unsigned mono WAV
+    const auto u8Bytes = BuildSyntheticWavPCM8(22050u, 1u, 512u);
+    auto u8Clip = Engine::AudioClip::CreateFromMemory(u8Bytes, "test_u8.wav");
+    ASSERT_NE(u8Clip, nullptr);
+    EXPECT_TRUE(u8Clip->IsValid());
+    EXPECT_EQ(u8Clip->GetSpec().format, SDL_AUDIO_S16);
+    EXPECT_EQ(u8Clip->GetChannels(), 1);
+    EXPECT_EQ(u8Clip->GetSampleRate(), 22050);
+    EXPECT_EQ(u8Clip->GetFrameCount(), 512u);
+    EXPECT_EQ(u8Clip->GetLength(), 512u * 1u * sizeof(int16_t));
+
+    // 3. 4-channel quadraphonic 16-bit WAV -> downmixed to stereo
+    const auto quadBytes = BuildSyntheticWavPCM16(48000u, 4u, 256u);
+    auto quadClip = Engine::AudioClip::CreateFromMemory(quadBytes, "test_quad.wav");
+    ASSERT_NE(quadClip, nullptr);
+    EXPECT_TRUE(quadClip->IsValid());
+    EXPECT_EQ(quadClip->GetSpec().format, SDL_AUDIO_S16);
+    EXPECT_LE(quadClip->GetChannels(), 2);
+    EXPECT_EQ(quadClip->GetSampleRate(), 48000);
+    EXPECT_EQ(quadClip->GetFrameCount(), 256u);
+}
+
+TEST(AudioManagerTest, SpatializedFloat32WavPlaybackZeroDistortion) {
+    Engine::AudioManager::Init();
+
+    const auto f32Bytes = BuildSyntheticWavFloat32(44100u, 2u, 1024u);
+    auto clip = Engine::AudioClip::CreateFromMemory(f32Bytes, "spatial_f32.wav");
+    ASSERT_NE(clip, nullptr);
+    EXPECT_EQ(clip->GetSpec().format, SDL_AUDIO_S16);
+
+    Engine::SoundPlayParams params{};
+    params.SpatializedXZ = true;
+    params.WorldPos = glm::vec3(5.0f, 0.0f, 0.0f);
+    params.MinDistance = 1.0f;
+    params.MaxDistance = 20.0f;
+    params.Loop = false;
+
+    Engine::VoiceHandle h = Engine::AudioManager::PlayOneShot(clip, params);
+    EXPECT_NE(h, Engine::kInvalidVoiceHandle);
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(h));
+
+    // Update listener position
+    Engine::AudioManager::Update(glm::vec3(0.0f), glm::vec3(1.0f, 0.0f, 0.0f));
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(h));
+
+    Engine::AudioManager::StopVoice(h);
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(AudioStreamTrackTest, GetQueuedFramesAccuratelyReflectsInputQueuedBytes) {
+    Engine::AudioManager::Init();
+
+    Engine::AudioStreamTrack track;
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    ASSERT_TRUE(track.OpenMemory(oggSpan, /*loop=*/false, "queued_frames_test.ogg"));
+
+    EXPECT_EQ(track.GetQueuedFrames(), 0u);
+
+    // In testing without a physical audio device, AttachDevice to a mock stream or create stream
+    SDL_AudioStream* stream = SDL_CreateAudioStream(&track.GetSpec(), &track.GetSpec());
+    ASSERT_NE(stream, nullptr);
+
+    // Push 2048 frames into stream
+    std::vector<int16_t> pcm(2048u * static_cast<size_t>(track.GetChannels()), 100);
+    const int byteCount = static_cast<int>(pcm.size() * sizeof(int16_t));
+    SDL_PutAudioStreamData(stream, pcm.data(), byteCount);
+
+    // Verify SDL_GetAudioStreamQueued directly reflects the 2048 frames
+    const int queuedBytes = SDL_GetAudioStreamQueued(stream);
+    EXPECT_EQ(queuedBytes, byteCount);
+    const uint32_t frameBytes = static_cast<uint32_t>(track.GetChannels()) * sizeof(int16_t);
+    EXPECT_EQ(static_cast<uint32_t>(queuedBytes) / frameBytes, 2048u);
+
+    SDL_DestroyAudioStream(stream);
+    track.Close();
+    Engine::AudioManager::Shutdown();
 }
 
 } // namespace
