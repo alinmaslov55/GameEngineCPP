@@ -193,7 +193,7 @@ flowchart TD
 | **`FIX-CORE-02`** | `Application`, `Window` DPI, `Logger` Exception Guard & `ImGuiLayer` Safety | `DONE` | **P1** | W1 | `FIX-CORE-01` | Core `#4`, `#12`, `#14`, Med `Window` | `DOC-01`, `DOC-02` |
 | **`FIX-CORE-03`** | `Time` Hit-Stop/Pause Invariants & `Input` Gamepad/ActionMap Hardening | `DONE` | **P0** | W0 | *None (Root)* | Core `#5`, `#6`, Med `InputActionMap` | `FIX-SAV-01`, `FIX-UIX-02`, `FIX-UIX-04`, `DOC-02` |
 | **`FIX-CORE-04`** | `CutoutProcessor` Per-Cell Alpha Bleed, Dynamic Frame Names & Bounds | `DONE` | **P1** | W0 | *None (Root)* | Core `#13`, Med `CutoutProcessor` | `DOC-08` |
-| **`FIX-AUD-01`** | SDL3 Shared-Device Stream Unbind/Bind, SIOF Fix & Track Thread Safety | `TODO` | **P0** | W0 | *None (Root)* | `C-13`, `C-14`, Audio `#9` | `FIX-AUD-02`, `FIX-AUD-03` |
+| **`FIX-AUD-01`** | SDL3 Shared-Device Stream Unbind/Bind, SIOF Fix & Track Thread Safety | `DONE` | **P0** | W0 | *None (Root)* | `C-13`, `C-14`, Audio `#9` | `FIX-AUD-02`, `FIX-AUD-03` |
 | **`FIX-AUD-02`** | WAV S16 Normalization, Dynamic Spatial Pan & `GetQueuedFrames` Fix | `TODO` | **P0** | W1 | `FIX-AUD-01` | `C-15`, Audio `#7`, Med `AudioClip` | `FIX-AUD-03`, `FIX-SAV-01` |
 | **`FIX-AUD-03`** | `MusicDirector` Phase-Locked Pre-Buffer, Fade Slew & `AudioSource` WorldPos | `TODO` | **P1** | W2 | `FIX-AUD-01`, `FIX-AUD-02` | Audio `#8`, Med `AudioSource` | `DOC-06` |
 | **`FIX-SAV-01`** | `SaveManager` Non-Destructive `.bak` Recovery, Atomic Replace & Settings | `TODO` | **P0** | W1 | `FIX-CORE-03`, `FIX-AUD-02` | `C-01`, Core `#10`, Med `SaveManager` | `FIX-SBX-01`, `DOC-08` |
@@ -308,7 +308,7 @@ flowchart TD
 ---
 
 #### `FIX-AUD-01` — SDL3 Shared-Device Stream Unbind/Bind, SIOF Fix & Track Thread Safety
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `FIX-AUD-02`, `FIX-AUD-03`
 - **Current Defects:**
   1. [AudioManager.cpp](file://Engine/src/Audio/AudioManager.cpp#L173), [lines 361-403](file://Engine/src/Audio/AudioManager.cpp#L361-L403), [lines 528-573](file://Engine/src/Audio/AudioManager.cpp#L528-L573): Calls `SDL_PauseAudioStreamDevice(slot.Stream)` which pauses the entire shared `s_PlaybackDevice` for all 48 voices and all music tracks (`C-13`).

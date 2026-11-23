@@ -3,6 +3,7 @@
 
 #include <SDL3/SDL.h>
 #include <cstdint>
+#include <mutex>
 #include <span>
 #include <string>
 #include <vector>
@@ -91,6 +92,9 @@ private:
     bool FinalizeOpen(bool loop);
     bool EnsureAudioStream();
     void MoveFrom(AudioStreamTrack&& other) noexcept;
+    void CloseInternal() noexcept;
+    void ReleaseAudioStreamInternal() noexcept;
+    bool SeekToStartInternal() noexcept;
 
     std::string m_Filepath;
     stb_vorbis* m_Vorbis = nullptr;
@@ -112,6 +116,7 @@ private:
     bool m_IsPlaying = false;
     bool m_EndOfStream = false;
     bool m_AutoUpdate = true;
+    mutable std::recursive_mutex m_TrackMutex;
 };
 
 } // namespace Engine

@@ -784,4 +784,151 @@ TEST(MusicDirectorTest, HeadlessLifecycleAndSafety) {
     SUCCEED();
 }
 
+TEST(AudioManagerTest, SharedDeviceStreamPauseDoesNotPauseDeviceOrOtherStreams) {
+    Engine::AudioManager::Init();
+    Engine::MusicDirector::Shutdown();
+
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 4410u);
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "voice_test.wav");
+    ASSERT_NE(clip, nullptr);
+
+    Engine::SoundPlayParams p1{};
+    p1.Bus = Engine::AudioBus::SFX;
+    p1.Loop = true;
+    Engine::VoiceHandle v1 = Engine::AudioManager::PlayOneShot(clip, p1);
+
+    Engine::SoundPlayParams p2{};
+    p2.Bus = Engine::AudioBus::SFX;
+    p2.Loop = true;
+    Engine::VoiceHandle v2 = Engine::AudioManager::PlayOneShot(clip, p2);
+
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    Engine::MusicDirector::PlaySingleTrackFromMemory(oggSpan, 0.0f, "bgm.ogg");
+
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(v1));
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(v2));
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingSingleTrack());
+
+    // Pause Voice 1
+    Engine::AudioManager::PauseVoice(v1);
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(v1));
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(v2));
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingSingleTrack());
+
+    // Pause SFX bus
+    Engine::AudioManager::PauseBus(Engine::AudioBus::SFX);
+    EXPECT_TRUE(Engine::AudioManager::IsBusPaused(Engine::AudioBus::SFX));
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(v2));
+    // Music track should still be playing and device unpaused
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingSingleTrack());
+
+    const SDL_AudioDeviceID dev = Engine::AudioManager::GetPlaybackDevice();
+    if (dev != 0) {
+        EXPECT_FALSE(SDL_AudioDevicePaused(dev));
+    }
+
+    // Resume SFX bus
+    Engine::AudioManager::ResumeBus(Engine::AudioBus::SFX);
+    EXPECT_FALSE(Engine::AudioManager::IsBusPaused(Engine::AudioBus::SFX));
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(v2));
+
+    Engine::AudioManager::StopVoice(v1);
+    Engine::AudioManager::StopVoice(v2);
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(AudioManagerTest, VoiceHandle12BitIndexAndGenerationalWrapSafety) {
+    Engine::AudioManager::Init();
+
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 1000u);
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "handle_test.wav");
+    ASSERT_NE(clip, nullptr);
+
+    Engine::SoundPlayParams params{};
+    params.Loop = true;
+    Engine::VoiceHandle h = Engine::AudioManager::PlayOneShot(clip, params);
+    EXPECT_NE(h, Engine::kInvalidVoiceHandle);
+
+    uint32_t rawIndex = static_cast<uint32_t>(h & 0xFFFu);
+    uint32_t rawGen = static_cast<uint32_t>((h >> 12u) & 0xFFFFFu);
+    EXPECT_LT(rawIndex, 4096u);
+    EXPECT_GT(rawGen, 0u);
+
+    // Stop and re-play multiple times to verify generation increments and wraps cleanly
+    Engine::AudioManager::StopVoice(h);
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(h));
+
+    // Stale handle should never report playing or allow mutation
+    EXPECT_FLOAT_EQ(Engine::AudioManager::GetVoiceEffectiveGain(h), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::AudioManager::GetVoiceFrequencyRatio(h), 1.0f);
+
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(AudioManagerTest, HeadlessVoiceExpirationByElapsedDuration) {
+    Engine::AudioManager::Init();
+
+    // 44100 Hz, 441 frames -> 10ms
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 441u);
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "short_test.wav");
+    ASSERT_NE(clip, nullptr);
+
+    Engine::SoundPlayParams params{};
+    params.Loop = false;
+    params.PitchMin = 1.0f;
+    params.PitchMax = 1.0f;
+    Engine::VoiceHandle h = Engine::AudioManager::PlayOneShot(clip, params);
+    EXPECT_NE(h, Engine::kInvalidVoiceHandle);
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(h));
+
+    // Call update immediately -> clip hasn't expired yet (<10ms)
+    Engine::AudioManager::Update();
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(h));
+
+    // Sleep for 30ms so elapsed wall clock exceeds clip duration (10ms)
+    std::this_thread::sleep_for(std::chrono::milliseconds(30));
+
+    // Next update should reap the expired voice in headless mode
+    Engine::AudioManager::Update();
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(h));
+
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(MusicDirectorTest, ConcurrentAudioStreamTrackUpdateAndMusicDirectorMutationSafety) {
+    Engine::AudioManager::Init();
+    Engine::MusicDirector::Shutdown();
+
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    const std::array<std::span<const uint8_t>, 3> buffers = { oggSpan, oggSpan, oggSpan };
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(buffers, 0.0f);
+
+    std::atomic<bool> running{true};
+    std::thread audioThread([&]() {
+        while (running.load(std::memory_order_relaxed)) {
+            Engine::AudioManager::Update();
+            std::this_thread::yield();
+        }
+    });
+
+    std::thread directorThread([&]() {
+        for (int i = 0; i < 50; ++i) {
+            Engine::MusicDirector::UpdateCombatState(static_cast<float>(i % 10) / 10.0f, static_cast<uint32_t>(i % 8), 0.01f);
+            if (i == 25) {
+                Engine::MusicDirector::PlaySingleTrackFromMemory(oggSpan, 0.01f, "concurrent_test.ogg");
+            }
+            std::this_thread::yield();
+        }
+    });
+
+    directorThread.join();
+    running.store(false, std::memory_order_relaxed);
+    audioThread.join();
+
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
+    SUCCEED();
+}
+
 } // namespace

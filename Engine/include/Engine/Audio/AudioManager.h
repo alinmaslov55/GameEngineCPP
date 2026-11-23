@@ -104,6 +104,7 @@ public:
     // Bus Controls
     static void SetBusVolume(AudioBus bus, float volume01);
     [[nodiscard]] static float GetBusVolume(AudioBus bus) noexcept;
+    [[nodiscard]] static bool IsBusPaused(AudioBus bus) noexcept;
     static void StopBus(AudioBus bus);
     static void PauseBus(AudioBus bus);
     static void ResumeBus(AudioBus bus);

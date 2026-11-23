@@ -24,11 +24,13 @@ AudioStreamTrack::~AudioStreamTrack() {
 
 AudioStreamTrack::AudioStreamTrack(AudioStreamTrack&& other) noexcept {
     AudioManager::RegisterStreamTrack(this);
+    std::lock_guard lock(other.m_TrackMutex);
     MoveFrom(std::move(other));
 }
 
 AudioStreamTrack& AudioStreamTrack::operator=(AudioStreamTrack&& other) noexcept {
     if (this != &other) {
+        std::scoped_lock lock(m_TrackMutex, other.m_TrackMutex);
         Close();
         MoveFrom(std::move(other));
     }
@@ -57,7 +59,8 @@ void AudioStreamTrack::MoveFrom(AudioStreamTrack&& other) noexcept {
 }
 
 bool AudioStreamTrack::OpenFile(const std::string& filepath, bool loop) {
-    Close();
+    std::lock_guard lock(m_TrackMutex);
+    CloseInternal();
 
     if (filepath.empty()) {
         ENGINE_CORE_ERROR("AudioStreamTrack::OpenFile: Empty filepath");
@@ -81,7 +84,7 @@ bool AudioStreamTrack::OpenFile(const std::string& filepath, bool loop) {
 
     m_Filepath = resolvedPath;
     if (!FinalizeOpen(loop)) {
-        Close();
+        CloseInternal();
         return false;
     }
 
@@ -94,7 +97,8 @@ bool AudioStreamTrack::OpenFile(const std::string& filepath, bool loop) {
 bool AudioStreamTrack::OpenMemory(std::span<const uint8_t> oggBytes,
                                   bool loop,
                                   const std::string& debugName) {
-    Close();
+    std::lock_guard lock(m_TrackMutex);
+    CloseInternal();
 
     if (oggBytes.empty() || oggBytes.size() > static_cast<size_t>(std::numeric_limits<int>::max())) {
         ENGINE_CORE_ERROR("AudioStreamTrack::OpenMemory: Invalid buffer size ({}) for '{}'", oggBytes.size(), debugName);
@@ -118,7 +122,7 @@ bool AudioStreamTrack::OpenMemory(std::span<const uint8_t> oggBytes,
 
     m_Filepath = debugName;
     if (!FinalizeOpen(loop)) {
-        Close();
+        CloseInternal();
         return false;
     }
 
@@ -155,7 +159,12 @@ bool AudioStreamTrack::FinalizeOpen(bool loop) {
 }
 
 void AudioStreamTrack::Close() noexcept {
-    ReleaseAudioStream();
+    std::lock_guard lock(m_TrackMutex);
+    CloseInternal();
+}
+
+void AudioStreamTrack::CloseInternal() noexcept {
+    ReleaseAudioStreamInternal();
     if (m_Vorbis) {
         stb_vorbis_close(m_Vorbis);
         m_Vorbis = nullptr;
@@ -173,6 +182,11 @@ void AudioStreamTrack::Close() noexcept {
 }
 
 void AudioStreamTrack::ReleaseAudioStream() noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    ReleaseAudioStreamInternal();
+}
+
+void AudioStreamTrack::ReleaseAudioStreamInternal() noexcept {
     m_IsPlaying = false;
     if (m_Stream) {
         if (!m_OwnsDeviceStream && m_AttachedDevice != 0) {
@@ -186,10 +200,11 @@ void AudioStreamTrack::ReleaseAudioStream() noexcept {
 }
 
 bool AudioStreamTrack::AttachDevice(SDL_AudioDeviceID deviceId) {
+    std::lock_guard lock(m_TrackMutex);
     if (!m_Vorbis || deviceId == 0) {
         return false;
     }
-    ReleaseAudioStream();
+    ReleaseAudioStreamInternal();
 
     SDL_AudioStream* stream = SDL_CreateAudioStream(&m_Spec, nullptr);
     if (!stream) {
@@ -231,16 +246,23 @@ bool AudioStreamTrack::EnsureAudioStream() {
 }
 
 void AudioStreamTrack::Play() {
+    std::lock_guard lock(m_TrackMutex);
     if (!m_Vorbis) {
         ENGINE_CORE_WARN("AudioStreamTrack::Play called on unopened track");
         return;
     }
 
     if (m_EndOfStream) {
-        SeekToStart();
+        SeekToStartInternal();
     }
 
     m_IsPlaying = true;
+    if (m_AttachedDevice != 0 && m_Stream) {
+        if (SDL_GetAudioStreamDevice(m_Stream) == 0) {
+            SDL_BindAudioStream(m_AttachedDevice, m_Stream);
+        }
+    }
+
     if (EnsureAudioStream()) {
         Update();
         if (m_OwnsDeviceStream) {
@@ -250,24 +272,33 @@ void AudioStreamTrack::Play() {
 }
 
 void AudioStreamTrack::Pause() {
+    std::lock_guard lock(m_TrackMutex);
     m_IsPlaying = false;
-    if (m_Stream && m_OwnsDeviceStream) {
-        SDL_PauseAudioStreamDevice(m_Stream);
+    if (m_Stream) {
+        if (m_OwnsDeviceStream) {
+            SDL_PauseAudioStreamDevice(m_Stream);
+        } else if (m_AttachedDevice != 0) {
+            SDL_UnbindAudioStream(m_Stream);
+        }
     }
 }
 
 void AudioStreamTrack::Stop() {
+    std::lock_guard lock(m_TrackMutex);
     m_IsPlaying = false;
     if (m_Stream) {
         SDL_ClearAudioStream(m_Stream);
         if (m_OwnsDeviceStream) {
             SDL_PauseAudioStreamDevice(m_Stream);
+        } else if (m_AttachedDevice != 0) {
+            SDL_UnbindAudioStream(m_Stream);
         }
     }
-    SeekToStart();
+    SeekToStartInternal();
 }
 
 uint32_t AudioStreamTrack::DecodeFrames(int16_t* outInterleavedPcm, uint32_t frameCount) {
+    std::lock_guard lock(m_TrackMutex);
     if (!m_Vorbis || !outInterleavedPcm || frameCount == 0u || m_Spec.channels <= 0) {
         return 0u;
     }
@@ -313,6 +344,7 @@ uint32_t AudioStreamTrack::DecodeFrames(int16_t* outInterleavedPcm, uint32_t fra
 }
 
 uint32_t AudioStreamTrack::PumpFrames(uint32_t exactFrames) {
+    std::lock_guard lock(m_TrackMutex);
     if (!m_Vorbis || exactFrames == 0u || m_Spec.channels <= 0) {
         return 0u;
     }
@@ -344,6 +376,7 @@ uint32_t AudioStreamTrack::PumpFrames(uint32_t exactFrames) {
 }
 
 uint32_t AudioStreamTrack::Update() {
+    std::lock_guard lock(m_TrackMutex);
     if (!m_Vorbis || !m_IsPlaying) {
         return 0u;
     }
@@ -375,6 +408,11 @@ uint32_t AudioStreamTrack::Update() {
 }
 
 bool AudioStreamTrack::SeekToStart() noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return SeekToStartInternal();
+}
+
+bool AudioStreamTrack::SeekToStartInternal() noexcept {
     if (!m_Vorbis) {
         return false;
     }
@@ -390,6 +428,7 @@ bool AudioStreamTrack::SeekToStart() noexcept {
 }
 
 bool AudioStreamTrack::SeekToFrame(uint64_t frameIndex) noexcept {
+    std::lock_guard lock(m_TrackMutex);
     if (!m_Vorbis) {
         return false;
     }
@@ -408,6 +447,7 @@ bool AudioStreamTrack::SeekToFrame(uint64_t frameIndex) noexcept {
 }
 
 void AudioStreamTrack::SetGain(float gain) noexcept {
+    std::lock_guard lock(m_TrackMutex);
     m_Gain = std::max(0.0f, gain);
     if (m_Stream) {
         SDL_SetAudioStreamGain(m_Stream, m_Gain);
@@ -415,10 +455,12 @@ void AudioStreamTrack::SetGain(float gain) noexcept {
 }
 
 void AudioStreamTrack::SetTargetBufferedFrames(uint32_t targetFrames) noexcept {
+    std::lock_guard lock(m_TrackMutex);
     m_TargetBufferedFrames = std::max(kChunkFrames, targetFrames);
 }
 
 uint32_t AudioStreamTrack::GetQueuedFrames() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
     if (!m_Stream || m_Spec.channels <= 0) {
         return 0u;
     }
@@ -431,6 +473,7 @@ uint32_t AudioStreamTrack::GetQueuedFrames() const noexcept {
 }
 
 size_t AudioStreamTrack::GetEstimatedMemoryBytes() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
     size_t bytes = static_cast<size_t>(m_SetupMemoryBytes);
     bytes += m_DecodeBuffer.capacity() * sizeof(int16_t);
     bytes += m_OwnedCompressedData.capacity();

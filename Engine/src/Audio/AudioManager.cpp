@@ -39,6 +39,23 @@ std::array<bool, static_cast<size_t>(AudioBus::Count)> s_BusPaused = {
     false, false, false, false, false
 };
 
+// Handle representation: 12-bit slot index (up to 4096 voices), 20-bit generation
+constexpr uint32_t kVoiceIndexBits = 12u;
+constexpr uint32_t kVoiceIndexMask = (1u << kVoiceIndexBits) - 1u; // 0xFFF
+constexpr uint32_t kVoiceGenerationBits = 20u;
+constexpr uint32_t kVoiceGenerationMask = (1u << kVoiceGenerationBits) - 1u; // 0xFFFFF
+
+void SetStreamPaused(SDL_AudioStream* stream, bool paused) noexcept {
+    if (!stream || s_PlaybackDevice == 0) {
+        return;
+    }
+    if (paused) {
+        SDL_UnbindAudioStream(stream);
+    } else if (SDL_GetAudioStreamDevice(stream) == 0) {
+        SDL_BindAudioStream(s_PlaybackDevice, stream);
+    }
+}
+
 // Listener State
 glm::vec3 s_ListenerPos{ 0.0f, 0.0f, 0.0f };
 glm::vec3 s_ListenerRight{ 1.0f, 0.0f, 0.0f };
@@ -71,8 +88,10 @@ uint64_t GetCurrentTimeMs() {
 }
 
 float ComputeEffectiveGain(const SoundPlayParams& params, float attenuation) noexcept {
-    const float masterVol = s_BusVolumes[static_cast<size_t>(AudioBus::Master)];
-    const float busVol = s_BusVolumes[static_cast<size_t>(params.Bus)];
+    const size_t masterIdx = static_cast<size_t>(AudioBus::Master);
+    const size_t busIdx = static_cast<size_t>(params.Bus);
+    const float masterVol = (masterIdx < s_BusVolumes.size()) ? s_BusVolumes[masterIdx] : 1.0f;
+    const float busVol = (busIdx < s_BusVolumes.size()) ? s_BusVolumes[busIdx] : 1.0f;
     const float atten = params.SpatializedXZ ? attenuation : 1.0f;
     return std::clamp(masterVol * busVol * params.Volume * atten, 0.0f, 1.0f);
 }
@@ -169,9 +188,7 @@ void PutVoiceData(VoiceSlot& slot,
         SDL_PutAudioStreamData(slot.Stream, clipBuffer, static_cast<int>(clipBytes));
     }
 
-    if (!slot.Paused) {
-        SDL_ResumeAudioStreamDevice(slot.Stream);
-    }
+    SetStreamPaused(slot.Stream, slot.Paused);
 }
 
 } // namespace
@@ -200,7 +217,8 @@ void AudioManager::Init(uint32_t maxVoices) {
     s_ListenerPos = glm::vec3(0.0f);
     s_ListenerRight = glm::vec3(1.0f, 0.0f, 0.0f);
 
-    s_VoicePool.resize(maxVoices);
+    const uint32_t clampedVoices = std::clamp(maxVoices, 1u, kVoiceIndexMask + 1u);
+    s_VoicePool.resize(clampedVoices);
     SDL_AudioSpec defaultSpec{};
     defaultSpec.format = SDL_AUDIO_S16;
     defaultSpec.channels = 2;
@@ -229,7 +247,7 @@ void AudioManager::Init(uint32_t maxVoices) {
     }
 
     s_AudioInitialized.store(true, std::memory_order_release);
-    ENGINE_CORE_INFO("AudioManager initialized successfully with {} voices", maxVoices);
+    ENGINE_CORE_INFO("AudioManager initialized successfully with {} voices", clampedVoices);
 }
 
 void AudioManager::Shutdown() {
@@ -271,20 +289,17 @@ void AudioManager::Shutdown() {
     ENGINE_CORE_INFO("AudioManager shut down");
 }
 
-void AudioManager::Update() {
-    Update(s_ListenerPos, s_ListenerRight);
-}
-
-void AudioManager::Update(const glm::vec3& listenerWorldPos, const glm::vec3& listenerRightXZ) {
-    if (!s_AudioInitialized.load(std::memory_order_acquire)) {
-        return;
-    }
-
+namespace {
+void UpdateInternal(const glm::vec3& listenerWorldPos, const glm::vec3& listenerRightXZ, bool overrideListener) {
     std::vector<AudioStreamTrack*> tracksCopy;
     {
         std::lock_guard lock(s_AudioMutex);
-        s_ListenerPos = listenerWorldPos;
-        s_ListenerRight = listenerRightXZ;
+        if (overrideListener) {
+            s_ListenerPos = listenerWorldPos;
+            s_ListenerRight = listenerRightXZ;
+        }
+
+        const uint64_t nowMs = GetCurrentTimeMs();
 
         for (size_t i = 0; i < s_VoicePool.size(); ++i) {
             auto& slot = s_VoicePool[i];
@@ -292,13 +307,35 @@ void AudioManager::Update(const glm::vec3& listenerWorldPos, const glm::vec3& li
                 continue;
             }
 
-            if (slot.Stream && SDL_GetAudioStreamAvailable(slot.Stream) == 0) {
+            bool voiceFinished = false;
+            if (slot.Stream) {
+                if (s_PlaybackDevice != 0) {
+                    voiceFinished = (SDL_GetAudioStreamAvailable(slot.Stream) == 0);
+                } else if (!slot.Paused && !slot.Params.Loop && slot.Clip && slot.Clip->IsValid()) {
+                    const uint64_t elapsedMs = (nowMs >= slot.StartTimeMs) ? (nowMs - slot.StartTimeMs) : 0u;
+                    const uint32_t sampleRate = slot.Clip->GetSpec().freq > 0 ? static_cast<uint32_t>(slot.Clip->GetSpec().freq) : 44100u;
+                    const uint32_t channels = slot.Clip->GetSpec().channels > 0 ? static_cast<uint32_t>(slot.Clip->GetSpec().channels) : 2u;
+                    const uint32_t bytesPerSec = sampleRate * channels * sizeof(int16_t);
+                    const uint64_t clipDurationMs = (bytesPerSec > 0) ? ((static_cast<uint64_t>(slot.Clip->GetLength()) * 1000u) / bytesPerSec) : 0u;
+                    const float speed = std::max(0.1f, slot.PitchRatio);
+                    const uint64_t scaledDurationMs = static_cast<uint64_t>(static_cast<float>(clipDurationMs) / speed);
+                    if (elapsedMs >= scaledDurationMs) {
+                        voiceFinished = true;
+                    }
+                }
+            }
+
+            if (voiceFinished) {
                 if (slot.Params.Loop && slot.Clip && slot.Clip->IsValid()) {
                     PutVoiceData(slot, s_ListenerPos, s_ListenerRight);
                 } else {
+                    if (slot.Stream) {
+                        SDL_ClearAudioStream(slot.Stream);
+                        SetStreamPaused(slot.Stream, true);
+                    }
                     slot.Active = false;
                     slot.Paused = false;
-                    slot.Generation++;
+                    slot.Generation = (slot.Generation >= kVoiceGenerationMask) ? 1u : (slot.Generation + 1u);
                     slot.Handle = kInvalidVoiceHandle;
                     slot.Clip.reset();
                     continue;
@@ -318,6 +355,21 @@ void AudioManager::Update(const glm::vec3& listenerWorldPos, const glm::vec3& li
             track->Update();
         }
     }
+}
+} // namespace
+
+void AudioManager::Update() {
+    if (!s_AudioInitialized.load(std::memory_order_acquire)) {
+        return;
+    }
+    UpdateInternal({}, {}, false);
+}
+
+void AudioManager::Update(const glm::vec3& listenerWorldPos, const glm::vec3& listenerRightXZ) {
+    if (!s_AudioInitialized.load(std::memory_order_acquire)) {
+        return;
+    }
+    UpdateInternal(listenerWorldPos, listenerRightXZ, true);
 }
 
 bool AudioManager::IsInitialized() noexcept {
@@ -352,17 +404,31 @@ float AudioManager::GetBusVolume(AudioBus bus) noexcept {
     return s_BusVolumes[busIdx];
 }
 
+bool AudioManager::IsBusPaused(AudioBus bus) noexcept {
+    const auto busIdx = static_cast<size_t>(bus);
+    if (busIdx >= s_BusPaused.size()) {
+        return false;
+    }
+    std::lock_guard lock(s_AudioMutex);
+    return s_BusPaused[busIdx];
+}
+
 void AudioManager::StopBus(AudioBus bus) {
+    const auto busIdx = static_cast<size_t>(bus);
+    if (busIdx >= static_cast<size_t>(AudioBus::Count)) {
+        return;
+    }
+
     std::lock_guard lock(s_AudioMutex);
     for (auto& slot : s_VoicePool) {
         if (slot.Active && (bus == AudioBus::Master || slot.Params.Bus == bus)) {
             if (slot.Stream) {
                 SDL_ClearAudioStream(slot.Stream);
-                SDL_PauseAudioStreamDevice(slot.Stream);
+                SetStreamPaused(slot.Stream, true);
             }
             slot.Active = false;
             slot.Paused = false;
-            slot.Generation++;
+            slot.Generation = (slot.Generation >= kVoiceGenerationMask) ? 1u : (slot.Generation + 1u);
             slot.Handle = kInvalidVoiceHandle;
             slot.Clip.reset();
         }
@@ -380,9 +446,7 @@ void AudioManager::PauseBus(AudioBus bus) {
     for (auto& slot : s_VoicePool) {
         if (slot.Active && (bus == AudioBus::Master || slot.Params.Bus == bus)) {
             slot.Paused = true;
-            if (slot.Stream) {
-                SDL_PauseAudioStreamDevice(slot.Stream);
-            }
+            SetStreamPaused(slot.Stream, true);
         }
     }
 }
@@ -397,11 +461,11 @@ void AudioManager::ResumeBus(AudioBus bus) {
     s_BusPaused[busIdx] = false;
     for (auto& slot : s_VoicePool) {
         if (slot.Active && (bus == AudioBus::Master || slot.Params.Bus == bus)) {
-            if (bus == AudioBus::Master || !s_BusPaused[static_cast<size_t>(AudioBus::Master)]) {
+            const size_t slotBusIdx = static_cast<size_t>(slot.Params.Bus);
+            const bool slotBusPaused = (slotBusIdx < s_BusPaused.size()) ? s_BusPaused[slotBusIdx] : false;
+            if (!s_BusPaused[static_cast<size_t>(AudioBus::Master)] && !slotBusPaused) {
                 slot.Paused = false;
-                if (slot.Stream) {
-                    SDL_ResumeAudioStreamDevice(slot.Stream);
-                }
+                SetStreamPaused(slot.Stream, false);
             }
         }
     }
@@ -458,20 +522,23 @@ VoiceHandle AudioManager::PlayOneShot(const std::shared_ptr<AudioClip>& clip, co
         auto& stolen = s_VoicePool[static_cast<size_t>(chosenIndex)];
         if (stolen.Stream) {
             SDL_ClearAudioStream(stolen.Stream);
+            SetStreamPaused(stolen.Stream, true);
         }
         stolen.Active = false;
-        stolen.Generation++;
+        stolen.Generation = (stolen.Generation >= kVoiceGenerationMask) ? 1u : (stolen.Generation + 1u);
         stolen.Handle = kInvalidVoiceHandle;
     }
 
     auto& slot = s_VoicePool[static_cast<size_t>(chosenIndex)];
-    slot.Generation = (slot.Generation == 0xFFFFFF) ? 1 : (slot.Generation + 1);
-    slot.Handle = (slot.Generation << 8) | (static_cast<uint32_t>(chosenIndex) & 0xFF);
+    slot.Generation = (slot.Generation >= kVoiceGenerationMask) ? 1u : (slot.Generation + 1u);
+    slot.Handle = (slot.Generation << kVoiceIndexBits) | (static_cast<uint32_t>(chosenIndex) & kVoiceIndexMask);
     slot.Clip = clip;
     slot.Params = params;
     slot.StartTimeMs = GetCurrentTimeMs();
     slot.Active = true;
-    slot.Paused = s_BusPaused[static_cast<size_t>(params.Bus)] || s_BusPaused[static_cast<size_t>(AudioBus::Master)];
+    const size_t busIdx = static_cast<size_t>(params.Bus);
+    const bool busIsPaused = (busIdx < s_BusPaused.size()) ? s_BusPaused[busIdx] : false;
+    slot.Paused = busIsPaused || s_BusPaused[static_cast<size_t>(AudioBus::Master)];
 
     if (slot.Stream) {
         SDL_ClearAudioStream(slot.Stream);
@@ -515,8 +582,8 @@ void AudioManager::StopVoice(VoiceHandle handle) {
         return;
     }
     std::lock_guard lock(s_AudioMutex);
-    const uint32_t index = handle & 0xFF;
-    const uint32_t gen = handle >> 8;
+    const uint32_t index = handle & kVoiceIndexMask;
+    const uint32_t gen = handle >> kVoiceIndexBits;
     if (index >= s_VoicePool.size()) {
         return;
     }
@@ -525,11 +592,11 @@ void AudioManager::StopVoice(VoiceHandle handle) {
     if (slot.Active && slot.Generation == gen) {
         if (slot.Stream) {
             SDL_ClearAudioStream(slot.Stream);
-            SDL_PauseAudioStreamDevice(slot.Stream);
+            SetStreamPaused(slot.Stream, true);
         }
         slot.Active = false;
         slot.Paused = false;
-        slot.Generation++;
+        slot.Generation = (slot.Generation >= kVoiceGenerationMask) ? 1u : (slot.Generation + 1u);
         slot.Handle = kInvalidVoiceHandle;
         slot.Clip.reset();
     }
@@ -540,8 +607,8 @@ void AudioManager::PauseVoice(VoiceHandle handle) {
         return;
     }
     std::lock_guard lock(s_AudioMutex);
-    const uint32_t index = handle & 0xFF;
-    const uint32_t gen = handle >> 8;
+    const uint32_t index = handle & kVoiceIndexMask;
+    const uint32_t gen = handle >> kVoiceIndexBits;
     if (index >= s_VoicePool.size()) {
         return;
     }
@@ -549,9 +616,7 @@ void AudioManager::PauseVoice(VoiceHandle handle) {
     auto& slot = s_VoicePool[index];
     if (slot.Active && slot.Generation == gen && !slot.Paused) {
         slot.Paused = true;
-        if (slot.Stream) {
-            SDL_PauseAudioStreamDevice(slot.Stream);
-        }
+        SetStreamPaused(slot.Stream, true);
     }
 }
 
@@ -560,8 +625,8 @@ void AudioManager::ResumeVoice(VoiceHandle handle) {
         return;
     }
     std::lock_guard lock(s_AudioMutex);
-    const uint32_t index = handle & 0xFF;
-    const uint32_t gen = handle >> 8;
+    const uint32_t index = handle & kVoiceIndexMask;
+    const uint32_t gen = handle >> kVoiceIndexBits;
     if (index >= s_VoicePool.size()) {
         return;
     }
@@ -569,9 +634,7 @@ void AudioManager::ResumeVoice(VoiceHandle handle) {
     auto& slot = s_VoicePool[index];
     if (slot.Active && slot.Generation == gen && slot.Paused) {
         slot.Paused = false;
-        if (slot.Stream) {
-            SDL_ResumeAudioStreamDevice(slot.Stream);
-        }
+        SetStreamPaused(slot.Stream, false);
     }
 }
 
@@ -580,8 +643,8 @@ bool AudioManager::IsVoicePlaying(VoiceHandle handle) noexcept {
         return false;
     }
     std::lock_guard lock(s_AudioMutex);
-    const uint32_t index = handle & 0xFF;
-    const uint32_t gen = handle >> 8;
+    const uint32_t index = handle & kVoiceIndexMask;
+    const uint32_t gen = handle >> kVoiceIndexBits;
     if (index >= s_VoicePool.size()) {
         return false;
     }
@@ -594,8 +657,8 @@ float AudioManager::GetVoiceEffectiveGain(VoiceHandle handle) noexcept {
         return 0.0f;
     }
     std::lock_guard lock(s_AudioMutex);
-    const uint32_t index = handle & 0xFF;
-    const uint32_t gen = handle >> 8;
+    const uint32_t index = handle & kVoiceIndexMask;
+    const uint32_t gen = handle >> kVoiceIndexBits;
     if (index >= s_VoicePool.size()) {
         return 0.0f;
     }
@@ -611,8 +674,8 @@ float AudioManager::GetVoiceFrequencyRatio(VoiceHandle handle) noexcept {
         return 1.0f;
     }
     std::lock_guard lock(s_AudioMutex);
-    const uint32_t index = handle & 0xFF;
-    const uint32_t gen = handle >> 8;
+    const uint32_t index = handle & kVoiceIndexMask;
+    const uint32_t gen = handle >> kVoiceIndexBits;
     if (index >= s_VoicePool.size()) {
         return 1.0f;
     }

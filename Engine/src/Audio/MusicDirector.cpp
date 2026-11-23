@@ -5,6 +5,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <memory>
 #include <mutex>
 
 namespace Engine {
@@ -22,14 +23,25 @@ float s_SlewRate = MusicDirector::kDefaultSlewRate;
 float s_MasterVolume = 1.0f;
 
 // 3 Synchronized Stems
-std::array<AudioStreamTrack, MusicDirector::kNumStems> s_Stems;
+std::array<std::unique_ptr<AudioStreamTrack>, MusicDirector::kNumStems> s_Stems;
 std::array<float, MusicDirector::kNumStems> s_StemWeights = { 0.0f, 0.0f, 0.0f };
 std::array<float, MusicDirector::kNumStems> s_StemTargetWeights = { 0.3f, 1.0f, 0.0f };
 
 // Single Track (Sanctuary Hub / Menu)
-AudioStreamTrack s_SingleTrack;
+std::unique_ptr<AudioStreamTrack> s_SingleTrack;
 float s_SingleTrackWeight = 0.0f;
 float s_SingleTrackTargetWeight = 0.0f;
+
+void EnsureInitializedLocked() {
+    for (size_t i = 0; i < MusicDirector::kNumStems; ++i) {
+        if (!s_Stems[i]) {
+            s_Stems[i] = std::make_unique<AudioStreamTrack>();
+        }
+    }
+    if (!s_SingleTrack) {
+        s_SingleTrack = std::make_unique<AudioStreamTrack>();
+    }
+}
 
 CombatMusicTier EvaluateCombatTier(float torchFuel01, uint32_t nearbyEnemyCount) noexcept {
     if (torchFuel01 >= 0.80f || nearbyEnemyCount >= 6) {
@@ -73,8 +85,8 @@ void SlewWeightsInternal(float unscaledDt) noexcept {
         // Slew single track down to 0 if crossfading
         if (s_SingleTrackWeight > 0.0f) {
             s_SingleTrackWeight = std::max(0.0f, s_SingleTrackWeight - maxStep);
-            if (s_SingleTrackWeight == 0.0f && s_SingleTrack.IsPlaying()) {
-                s_SingleTrack.Pause();
+            if (s_SingleTrackWeight == 0.0f && s_SingleTrack && s_SingleTrack->IsPlaying()) {
+                s_SingleTrack->Pause();
             }
         }
     } else if (s_Mode == MusicMode::SingleTrack) {
@@ -96,14 +108,14 @@ void SlewWeightsInternal(float unscaledDt) noexcept {
     } else if (s_Mode == MusicMode::Stopped) {
         for (size_t i = 0; i < MusicDirector::kNumStems; ++i) {
             s_StemWeights[i] = std::max(0.0f, s_StemWeights[i] - maxStep);
-            if (s_StemWeights[i] == 0.0f && s_Stems[i].IsPlaying()) {
-                s_Stems[i].Stop();
+            if (s_StemWeights[i] == 0.0f && s_Stems[i] && s_Stems[i]->IsPlaying()) {
+                s_Stems[i]->Stop();
             }
         }
         if (s_SingleTrackWeight > 0.0f) {
             s_SingleTrackWeight = std::max(0.0f, s_SingleTrackWeight - maxStep);
-            if (s_SingleTrackWeight == 0.0f && s_SingleTrack.IsPlaying()) {
-                s_SingleTrack.Stop();
+            if (s_SingleTrackWeight == 0.0f && s_SingleTrack && s_SingleTrack->IsPlaying()) {
+                s_SingleTrack->Stop();
             }
         }
     }
@@ -115,15 +127,15 @@ void ApplyGainsInternal() noexcept {
     const float baseGain = masterBus * musicBus * s_MasterVolume;
 
     for (size_t i = 0; i < MusicDirector::kNumStems; ++i) {
-        if (s_Stems[i].IsOpen()) {
+        if (s_Stems[i] && s_Stems[i]->IsOpen()) {
             const float gain = baseGain * s_StemWeights[i];
-            s_Stems[i].SetGain(gain);
+            s_Stems[i]->SetGain(gain);
         }
     }
 
-    if (s_SingleTrack.IsOpen()) {
+    if (s_SingleTrack && s_SingleTrack->IsOpen()) {
         const float gain = baseGain * s_SingleTrackWeight;
-        s_SingleTrack.SetGain(gain);
+        s_SingleTrack->SetGain(gain);
     }
 }
 
@@ -134,7 +146,7 @@ void RefillSynchronizedStemsInternal() {
 
     bool allOpen = true;
     for (size_t i = 0; i < MusicDirector::kNumStems; ++i) {
-        if (!s_Stems[i].IsOpen() || !s_Stems[i].IsPlaying()) {
+        if (!s_Stems[i] || !s_Stems[i]->IsOpen() || !s_Stems[i]->IsPlaying()) {
             allOpen = false;
             break;
         }
@@ -143,9 +155,9 @@ void RefillSynchronizedStemsInternal() {
         return;
     }
 
-    uint32_t minQueued = s_Stems[0].GetQueuedFrames();
+    uint32_t minQueued = s_Stems[0]->GetQueuedFrames();
     for (size_t i = 1; i < MusicDirector::kNumStems; ++i) {
-        minQueued = std::min(minQueued, s_Stems[i].GetQueuedFrames());
+        minQueued = std::min(minQueued, s_Stems[i]->GetQueuedFrames());
     }
 
     constexpr uint32_t targetFrames = AudioStreamTrack::kDefaultTargetBufferedFrames;
@@ -155,7 +167,7 @@ void RefillSynchronizedStemsInternal() {
                                       * AudioStreamTrack::kChunkFrames;
 
         for (size_t i = 0; i < MusicDirector::kNumStems; ++i) {
-            s_Stems[i].PumpFrames(framesToPump);
+            s_Stems[i]->PumpFrames(framesToPump);
         }
     }
 }
@@ -168,21 +180,22 @@ void MusicDirector::PlaySynchronizedStems(const std::array<std::string, kNumStem
     }
 
     std::lock_guard lock(s_MusicMutex);
+    EnsureInitializedLocked();
     const SDL_AudioDeviceID deviceId = AudioManager::GetPlaybackDevice();
 
     for (size_t i = 0; i < kNumStems; ++i) {
-        s_Stems[i].Close();
-        if (!s_Stems[i].OpenFile(oggFilepaths[i], /*loop=*/true)) {
+        s_Stems[i]->Close();
+        if (!s_Stems[i]->OpenFile(oggFilepaths[i], /*loop=*/true)) {
             ENGINE_CORE_ERROR("MusicDirector: Failed to open stem {} ('{}')", i, oggFilepaths[i]);
             return;
         }
-        s_Stems[i].SetAutoUpdate(false);
+        s_Stems[i]->SetAutoUpdate(false);
         if (deviceId != 0) {
-            s_Stems[i].AttachDevice(deviceId);
+            s_Stems[i]->AttachDevice(deviceId);
         }
-        s_Stems[i].SeekToStart();
-        s_Stems[i].Play();
-        s_Stems[i].PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
+        s_Stems[i]->SeekToStart();
+        s_Stems[i]->Play();
+        s_Stems[i]->PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
     }
 
     s_CombatTier = EvaluateCombatTier(s_TorchFuel, s_NearbyEnemyCount);
@@ -209,21 +222,22 @@ void MusicDirector::PlaySynchronizedStemsFromMemory(
     }
 
     std::lock_guard lock(s_MusicMutex);
+    EnsureInitializedLocked();
     const SDL_AudioDeviceID deviceId = AudioManager::GetPlaybackDevice();
 
     for (size_t i = 0; i < kNumStems; ++i) {
-        s_Stems[i].Close();
-        if (!s_Stems[i].OpenMemory(oggBuffers[i], /*loop=*/true, debugNames[i])) {
+        s_Stems[i]->Close();
+        if (!s_Stems[i]->OpenMemory(oggBuffers[i], /*loop=*/true, debugNames[i])) {
             ENGINE_CORE_ERROR("MusicDirector: Failed to open stem {} from memory ('{}')", i, debugNames[i]);
             return;
         }
-        s_Stems[i].SetAutoUpdate(false);
+        s_Stems[i]->SetAutoUpdate(false);
         if (deviceId != 0) {
-            s_Stems[i].AttachDevice(deviceId);
+            s_Stems[i]->AttachDevice(deviceId);
         }
-        s_Stems[i].SeekToStart();
-        s_Stems[i].Play();
-        s_Stems[i].PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
+        s_Stems[i]->SeekToStart();
+        s_Stems[i]->Play();
+        s_Stems[i]->PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
     }
 
     s_CombatTier = EvaluateCombatTier(s_TorchFuel, s_NearbyEnemyCount);
@@ -246,19 +260,20 @@ void MusicDirector::PlaySingleTrack(const std::string& oggFilepath, float crossf
     }
 
     std::lock_guard lock(s_MusicMutex);
+    EnsureInitializedLocked();
     const SDL_AudioDeviceID deviceId = AudioManager::GetPlaybackDevice();
 
-    s_SingleTrack.Close();
-    if (!s_SingleTrack.OpenFile(oggFilepath, /*loop=*/true)) {
+    s_SingleTrack->Close();
+    if (!s_SingleTrack->OpenFile(oggFilepath, /*loop=*/true)) {
         ENGINE_CORE_ERROR("MusicDirector: Failed to open single track '{}'", oggFilepath);
         return;
     }
-    s_SingleTrack.SetAutoUpdate(true);
+    s_SingleTrack->SetAutoUpdate(true);
     if (deviceId != 0) {
-        s_SingleTrack.AttachDevice(deviceId);
+        s_SingleTrack->AttachDevice(deviceId);
     }
-    s_SingleTrack.SeekToStart();
-    s_SingleTrack.Play();
+    s_SingleTrack->SeekToStart();
+    s_SingleTrack->Play();
 
     s_SingleTrackTargetWeight = 1.0f;
     if (crossfadeSec > 0.0f) {
@@ -266,8 +281,8 @@ void MusicDirector::PlaySingleTrack(const std::string& oggFilepath, float crossf
     } else {
         s_SingleTrackWeight = 1.0f;
         for (auto& stem : s_Stems) {
-            if (stem.IsPlaying()) {
-                stem.Pause();
+            if (stem && stem->IsPlaying()) {
+                stem->Pause();
             }
         }
         s_StemWeights.fill(0.0f);
@@ -287,19 +302,20 @@ void MusicDirector::PlaySingleTrackFromMemory(std::span<const uint8_t> oggBuffer
     }
 
     std::lock_guard lock(s_MusicMutex);
+    EnsureInitializedLocked();
     const SDL_AudioDeviceID deviceId = AudioManager::GetPlaybackDevice();
 
-    s_SingleTrack.Close();
-    if (!s_SingleTrack.OpenMemory(oggBuffer, /*loop=*/true, debugName)) {
+    s_SingleTrack->Close();
+    if (!s_SingleTrack->OpenMemory(oggBuffer, /*loop=*/true, debugName)) {
         ENGINE_CORE_ERROR("MusicDirector: Failed to open single track from memory '{}'", debugName);
         return;
     }
-    s_SingleTrack.SetAutoUpdate(true);
+    s_SingleTrack->SetAutoUpdate(true);
     if (deviceId != 0) {
-        s_SingleTrack.AttachDevice(deviceId);
+        s_SingleTrack->AttachDevice(deviceId);
     }
-    s_SingleTrack.SeekToStart();
-    s_SingleTrack.Play();
+    s_SingleTrack->SeekToStart();
+    s_SingleTrack->Play();
 
     s_SingleTrackTargetWeight = 1.0f;
     if (crossfadeSec > 0.0f) {
@@ -307,8 +323,8 @@ void MusicDirector::PlaySingleTrackFromMemory(std::span<const uint8_t> oggBuffer
     } else {
         s_SingleTrackWeight = 1.0f;
         for (auto& stem : s_Stems) {
-            if (stem.IsPlaying()) {
-                stem.Pause();
+            if (stem && stem->IsPlaying()) {
+                stem->Pause();
             }
         }
         s_StemWeights.fill(0.0f);
@@ -349,9 +365,13 @@ void MusicDirector::Stop(float fadeOutSec) {
         s_SingleTrackWeight = 0.0f;
         s_SingleTrackTargetWeight = 0.0f;
         for (auto& stem : s_Stems) {
-            stem.Stop();
+            if (stem) {
+                stem->Stop();
+            }
         }
-        s_SingleTrack.Stop();
+        if (s_SingleTrack) {
+            s_SingleTrack->Stop();
+        }
         s_Mode = MusicMode::Stopped;
     } else {
         s_StemTargetWeights.fill(0.0f);
@@ -364,9 +384,15 @@ void MusicDirector::Stop(float fadeOutSec) {
 void MusicDirector::Shutdown() {
     std::lock_guard lock(s_MusicMutex);
     for (auto& stem : s_Stems) {
-        stem.Close();
+        if (stem) {
+            stem->Close();
+            stem.reset();
+        }
     }
-    s_SingleTrack.Close();
+    if (s_SingleTrack) {
+        s_SingleTrack->Close();
+        s_SingleTrack.reset();
+    }
 
     s_Mode = MusicMode::Stopped;
     s_CombatTier = CombatMusicTier::MediumTorchExploration;
@@ -418,18 +444,18 @@ float MusicDirector::GetStemTargetWeight(size_t stemIndex) noexcept {
 
 float MusicDirector::GetStemGain(size_t stemIndex) noexcept {
     std::lock_guard lock(s_MusicMutex);
-    if (stemIndex >= kNumStems) {
+    if (stemIndex >= kNumStems || !s_Stems[stemIndex]) {
         return 0.0f;
     }
-    return s_Stems[stemIndex].GetGain();
+    return s_Stems[stemIndex]->GetGain();
 }
 
 uint64_t MusicDirector::GetStemFrame(size_t stemIndex) noexcept {
     std::lock_guard lock(s_MusicMutex);
-    if (stemIndex >= kNumStems) {
+    if (stemIndex >= kNumStems || !s_Stems[stemIndex]) {
         return 0u;
     }
-    return s_Stems[stemIndex].GetCurrentFrame();
+    return s_Stems[stemIndex]->GetCurrentFrame();
 }
 
 float MusicDirector::GetSingleTrackWeight() noexcept {
@@ -439,7 +465,10 @@ float MusicDirector::GetSingleTrackWeight() noexcept {
 
 float MusicDirector::GetSingleTrackGain() noexcept {
     std::lock_guard lock(s_MusicMutex);
-    return s_SingleTrack.GetGain();
+    if (!s_SingleTrack) {
+        return 0.0f;
+    }
+    return s_SingleTrack->GetGain();
 }
 
 bool MusicDirector::IsPlayingStems() noexcept {
