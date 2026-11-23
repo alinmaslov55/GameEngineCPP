@@ -351,4 +351,66 @@ TEST(CompressedTextureTest, AsyncDDSLoading) {
     std::filesystem::remove_all(tempDir, ec);
 }
 
+TEST(CompressedTextureTest, MalformedDDSRejectionAndFormatCorrection) {
+    // 1. dwMipMapCount overflow / OOM DoS guard (0xFFFFFFFF)
+    {
+        auto buffer = CreateSyntheticDDS(16, 16, 1, 98 /* BC7_UNORM */);
+        const uint32_t maliciousMipCount = 0xFFFFFFFF;
+        std::memcpy(buffer.data() + 28, &maliciousMipCount, sizeof(uint32_t));
+        Engine::DDSInfo dds = Engine::Texture::ParseDDS(buffer.data(), buffer.size());
+        EXPECT_FALSE(dds.Valid);
+    }
+
+    // 2. dwWidth integer overflow guard (0x80000000)
+    {
+        auto buffer = CreateSyntheticDDS(16, 16, 1, 98 /* BC7_UNORM */);
+        const uint32_t maliciousWidth = 0x80000000;
+        std::memcpy(buffer.data() + 16, &maliciousWidth, sizeof(uint32_t));
+        Engine::DDSInfo dds = Engine::Texture::ParseDDS(buffer.data(), buffer.size());
+        EXPECT_FALSE(dds.Valid);
+    }
+
+    // 3. DX10 arraySize > 1 (cubemaps/texture arrays not supported in 2D loader)
+    {
+        auto buffer = CreateSyntheticDDS(16, 16, 1, 98 /* BC7_UNORM */);
+        const uint32_t cubemapArraySize = 6;
+        std::memcpy(buffer.data() + 140, &cubemapArraySize, sizeof(uint32_t));
+        Engine::DDSInfo dds = Engine::Texture::ParseDDS(buffer.data(), buffer.size());
+        EXPECT_FALSE(dds.Valid);
+    }
+
+    // 4. DX10 resourceDimension != 3 (e.g. 2 = 1D texture)
+    {
+        auto buffer = CreateSyntheticDDS(16, 16, 1, 98 /* BC7_UNORM */);
+        const uint32_t dim1D = 2; // D3D10_RESOURCE_DIMENSION_TEXTURE1D
+        std::memcpy(buffer.data() + 132, &dim1D, sizeof(uint32_t));
+        Engine::DDSInfo dds = Engine::Texture::ParseDDS(buffer.data(), buffer.size());
+        EXPECT_FALSE(dds.Valid);
+    }
+
+    // 5. DXGI format 75 (BC2_UNORM_SRGB) mapped to GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT (0x8C4E)
+    {
+        auto buffer = CreateSyntheticDDS(16, 16, 1, 75 /* BC2_UNORM_SRGB */);
+        Engine::DDSInfo dds = Engine::Texture::ParseDDS(buffer.data(), buffer.size());
+        EXPECT_TRUE(dds.Valid);
+        EXPECT_EQ(dds.GLFormat, 0x8C4Eu /* GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT */);
+    }
+}
+
+TEST(CompressedTextureTest, CompressedSetDataGuard) {
+    auto buffer = CreateSyntheticDDS(16, 16, 1, 98 /* BC7_UNORM */);
+    Engine::DDSInfo dds = Engine::Texture::ParseDDS(buffer.data(), buffer.size());
+    ASSERT_TRUE(dds.Valid);
+
+    Engine::Texture tex(16, 16, nullptr);
+    tex.PopulateFromCompressedData(dds.Width, dds.Height, dds.GLFormat, dds.Mips);
+    EXPECT_TRUE(tex.IsCompressed());
+
+    // Calling SetData on compressed texture must be safely rejected
+    std::vector<uint8_t> dummyRgba(16 * 16 * 4, 255);
+    tex.SetData(dummyRgba.data(), static_cast<uint32_t>(dummyRgba.size()));
+    tex.SetSubData(0, 0, 8, 8, dummyRgba.data());
+    EXPECT_TRUE(tex.IsCompressed());
+}
+
 } // namespace

@@ -87,6 +87,9 @@ void ConfigureAndUploadCompressedTexture2D(uint32_t& rendererID,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, magFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, wrap);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, wrap);
+    if (!mips.empty() && glad_glTexParameteri != nullptr) {
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAX_LEVEL, static_cast<GLint>(mips.size() - 1));
+    }
 
     for (size_t i = 0; i < mips.size(); ++i) {
         if (glad_glCompressedTexImage2D != nullptr) {
@@ -131,16 +134,16 @@ DDSInfo Texture::ParseDDS(const void* data, size_t sizeBytes) {
 }
 
 float Texture::GetMaxSupportedAnisotropy() noexcept {
-    static float s_MaxAnisotropy = []() {
-        if (!HasActiveGLContext()) {
-            return 1.0f;
-        }
+    static float s_MaxAnisotropy = 1.0f;
+    static bool s_Queried = false;
+    if (!s_Queried && HasActiveGLContext()) {
         float maxAniso = 1.0f;
         if (glad_glGetFloatv != nullptr) {
             glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
         }
-        return std::max(1.0f, maxAniso);
-    }();
+        s_MaxAnisotropy = std::max(1.0f, maxAniso);
+        s_Queried = true;
+    }
     return s_MaxAnisotropy;
 }
 
@@ -345,6 +348,10 @@ void Texture::SetWrapRepeat(bool repeat) {
 }
 
 void Texture::SetData(const void* rgbaData, uint32_t sizeBytes) {
+    if (m_IsCompressed) {
+        ENGINE_CORE_ERROR("Texture::SetData failed: cannot modify compressed texture '{}'", m_Filepath);
+        return;
+    }
     const uint32_t expectedBytes = static_cast<uint32_t>(m_Width) * static_cast<uint32_t>(m_Height) * 4u;
     if (!rgbaData || sizeBytes < expectedBytes) {
         ENGINE_CORE_ERROR("Texture::SetData size mismatch (got {} bytes, expected {} bytes)", sizeBytes, expectedBytes);
@@ -370,6 +377,10 @@ void Texture::SetSubData(uint32_t xOffset,
                          uint32_t width,
                          uint32_t height,
                          const void* rgbaSubData) {
+    if (m_IsCompressed) {
+        ENGINE_CORE_ERROR("Texture::SetSubData failed: cannot modify compressed texture '{}'", m_Filepath);
+        return;
+    }
     if (!rgbaSubData || width == 0 || height == 0) {
         return;
     }

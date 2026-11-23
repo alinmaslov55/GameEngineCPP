@@ -14,8 +14,9 @@ std::shared_ptr<SubTexture2D> SubTexture2D::CreateFromCoords(
     const glm::vec2& cellSize, 
     const glm::vec2& spriteSize) 
 {
-    if (!texture) {
-        ENGINE_CORE_ERROR("SubTexture2D::CreateFromCoords failed: texture is null");
+    if (!texture || texture->GetWidth() <= 0 || texture->GetHeight() <= 0) {
+        ENGINE_CORE_ERROR("SubTexture2D::CreateFromCoords failed: texture is null or non-positive dimensions ({}, {})",
+                          texture ? texture->GetWidth() : 0, texture ? texture->GetHeight() : 0);
         return nullptr;
     }
 

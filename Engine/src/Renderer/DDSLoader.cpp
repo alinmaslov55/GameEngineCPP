@@ -22,6 +22,9 @@
 #ifndef GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT
 #define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT1_EXT 0x8C4D
 #endif
+#ifndef GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT
+#define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT 0x8C4E
+#endif
 #ifndef GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT
 #define GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT5_EXT 0x8C4F
 #endif
@@ -146,7 +149,22 @@ DDSInfo DDSLoader::ParseDDS(const void* data, size_t sizeBytes) {
 
     DDS_HEADER header{};
     std::memcpy(&header, buffer + sizeof(uint32_t), sizeof(DDS_HEADER));
-    if (header.dwSize != 124 || header.dwWidth == 0 || header.dwHeight == 0) {
+    constexpr uint32_t kMaxTextureDimension = 16384;
+    if (header.dwSize != 124 || header.dwWidth == 0 || header.dwHeight == 0 ||
+        header.dwWidth > kMaxTextureDimension || header.dwHeight > kMaxTextureDimension) {
+        ENGINE_CORE_ERROR("DDS file invalid dimensions: {}x{} (max {})", header.dwWidth, header.dwHeight, kMaxTextureDimension);
+        return result;
+    }
+
+    const uint32_t maxDim = std::max(header.dwWidth, header.dwHeight);
+    uint32_t maxPossibleMips = 1;
+    while ((maxDim >> maxPossibleMips) > 0) {
+        ++maxPossibleMips;
+    }
+
+    if (header.dwMipMapCount > maxPossibleMips) {
+        ENGINE_CORE_ERROR("DDS file invalid mip count: {} exceeds max possible {} for dimension {}",
+                          header.dwMipMapCount, maxPossibleMips, maxDim);
         return result;
     }
 
@@ -165,6 +183,16 @@ DDSInfo DDSLoader::ParseDDS(const void* data, size_t sizeBytes) {
             std::memcpy(&dxt10, buffer + offset, sizeof(DDS_HEADER_DXT10));
             offset += sizeof(DDS_HEADER_DXT10);
 
+            // C-18: Verify 2D resource dimension (D3D10_RESOURCE_DIMENSION_TEXTURE2D = 3) and single array element
+            if (dxt10.resourceDimension != 3) {
+                ENGINE_CORE_ERROR("DDS DX10 unsupported resource dimension: {} (only 2D textures supported)", dxt10.resourceDimension);
+                return result;
+            }
+            if (dxt10.arraySize != 1) {
+                ENGINE_CORE_ERROR("DDS DX10 unsupported array size: {} (texture arrays/cubemaps not supported)", dxt10.arraySize);
+                return result;
+            }
+
             switch (dxt10.dxgiFormat) {
                 case 71: // DXGI_FORMAT_BC1_UNORM
                     result.GLFormat = GL_COMPRESSED_RGBA_S3TC_DXT1_EXT;
@@ -175,8 +203,11 @@ DDSInfo DDSLoader::ParseDDS(const void* data, size_t sizeBytes) {
                     result.BytesPerBlock = 8;
                     break;
                 case 74: // DXGI_FORMAT_BC2_UNORM
-                case 75: // DXGI_FORMAT_BC2_UNORM_SRGB
                     result.GLFormat = GL_COMPRESSED_RGBA_S3TC_DXT3_EXT;
+                    result.BytesPerBlock = 16;
+                    break;
+                case 75: // DXGI_FORMAT_BC2_UNORM_SRGB
+                    result.GLFormat = GL_COMPRESSED_SRGB_ALPHA_S3TC_DXT3_EXT;
                     result.BytesPerBlock = 16;
                     break;
                 case 77: // DXGI_FORMAT_BC3_UNORM
@@ -244,16 +275,17 @@ DDSInfo DDSLoader::ParseDDS(const void* data, size_t sizeBytes) {
     int curH = result.Height;
 
     for (uint32_t i = 0; i < result.MipCount; ++i) {
-        uint32_t blocksX = static_cast<uint32_t>(std::max(1, (curW + 3) / 4));
-        uint32_t blocksY = static_cast<uint32_t>(std::max(1, (curH + 3) / 4));
-        uint32_t levelSize = blocksX * blocksY * result.BytesPerBlock;
+        uint64_t blocksX = static_cast<uint64_t>(std::max(1, (curW + 3) / 4));
+        uint64_t blocksY = static_cast<uint64_t>(std::max(1, (curH + 3) / 4));
+        uint64_t levelSize64 = blocksX * blocksY * static_cast<uint64_t>(result.BytesPerBlock);
 
-        if (offset + levelSize > sizeBytes) {
-            ENGINE_CORE_ERROR("DDS buffer truncated at mip level {} (needed {} bytes, file remaining {})",
-                              i, levelSize, sizeBytes - offset);
+        if (levelSize64 > static_cast<uint64_t>(std::numeric_limits<uint32_t>::max()) || offset + levelSize64 > sizeBytes) {
+            ENGINE_CORE_ERROR("DDS buffer truncated or overflow at mip level {} (needed {} bytes, file remaining {})",
+                              i, levelSize64, (offset < sizeBytes ? (sizeBytes - offset) : 0));
             return result;
         }
 
+        uint32_t levelSize = static_cast<uint32_t>(levelSize64);
         result.Mips.push_back({ curW, curH, levelSize, buffer + offset });
         offset += levelSize;
         curW = std::max(1, curW / 2);

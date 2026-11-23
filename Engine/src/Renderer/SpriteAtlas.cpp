@@ -98,13 +98,17 @@ bool SpriteAtlas::ParseJSON(const std::string& jsonString,
     float texWidth = 0.0f;
     float texHeight = 0.0f;
 
-    if (m_AtlasTexture && m_AtlasTexture->GetWidth() > 0 && m_AtlasTexture->GetHeight() > 0) {
-        texWidth = static_cast<float>(m_AtlasTexture->GetWidth());
-        texHeight = static_cast<float>(m_AtlasTexture->GetHeight());
-    } else if (root.contains("meta") && root["meta"].contains("size")) {
+    // Prefer meta.size from json manifest, as it defines the coordinate system of the atlas frames
+    // even when the backing texture is an async 1x1 placeholder texture (C-20).
+    if (root.contains("meta") && root["meta"].contains("size")) {
         const auto& sizeJson = root["meta"]["size"];
         texWidth = sizeJson.value("w", 0.0f);
         texHeight = sizeJson.value("h", 0.0f);
+    }
+
+    if ((texWidth <= 0.0f || texHeight <= 0.0f) && m_AtlasTexture && m_AtlasTexture->GetWidth() > 1 && m_AtlasTexture->GetHeight() > 1) {
+        texWidth = static_cast<float>(m_AtlasTexture->GetWidth());
+        texHeight = static_cast<float>(m_AtlasTexture->GetHeight());
     }
 
     if (texWidth <= 0.0f || texHeight <= 0.0f) {
