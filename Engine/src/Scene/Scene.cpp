@@ -51,9 +51,11 @@ Scene::~Scene() {
                 continue;
             }
             go->m_LifecycleState = EntityLifecycle::Destroyed;
+            GameObject::ScopedComponentIterationGuard guard(*go);
             for (size_t i = 0; i < go->m_Components.size(); ++i) {
-                if (go->m_Components[i]) {
-                    go->m_Components[i]->OnDestroy();
+                auto* comp = go->m_Components[i].get();
+                if (comp && !comp->IsPendingRemoval()) {
+                    comp->OnDestroy();
                 }
             }
         }
@@ -246,13 +248,20 @@ void Scene::FlushEntityLifecycleQueues() {
                         m_PhysicsWorld->UnregisterRuntimeBody(pending.get());
                     }
 
-                    for (size_t i = 0; i < pending->m_Components.size(); ++i) {
-                        if (pending->m_Components[i]) {
-                            pending->m_Components[i]->OnDestroy();
+                    {
+                        GameObject::ScopedComponentIterationGuard guard(*pending);
+                        for (size_t i = 0; i < pending->m_Components.size(); ++i) {
+                            auto* comp = pending->m_Components[i].get();
+                            if (comp && !comp->IsPendingRemoval()) {
+                                comp->OnDestroy();
+                            }
                         }
                     }
 
-                    m_EntityUUIDMap.erase(pending->GetUUID());
+                    auto it = m_EntityUUIDMap.find(pending->GetUUID());
+                    if (it != m_EntityUUIDMap.end() && it->second == pending.get()) {
+                        m_EntityUUIDMap.erase(it);
+                    }
                 } else {
                     pending->m_LifecycleState = EntityLifecycle::Alive;
                     GameObject* rawPending = pending.get();
@@ -296,13 +305,20 @@ void Scene::FlushEntityLifecycleQueues() {
                 }
 
                 // Invoke OnDestroy() on all components
-                for (size_t i = 0; i < go->m_Components.size(); ++i) {
-                    if (go->m_Components[i]) {
-                        go->m_Components[i]->OnDestroy();
+                {
+                    GameObject::ScopedComponentIterationGuard guard(*go);
+                    for (size_t i = 0; i < go->m_Components.size(); ++i) {
+                        auto* comp = go->m_Components[i].get();
+                        if (comp && !comp->IsPendingRemoval()) {
+                            comp->OnDestroy();
+                        }
                     }
                 }
 
-                m_EntityUUIDMap.erase(go->GetUUID());
+                auto it = m_EntityUUIDMap.find(go->GetUUID());
+                if (it != m_EntityUUIDMap.end() && it->second == go) {
+                    m_EntityUUIDMap.erase(it);
+                }
             }
 
             std::erase_if(m_FixedUpdateEntities, [](GameObject* go) {
@@ -547,6 +563,12 @@ void Scene::Update(float deltaTime) {
             auto& gameObject = m_GameObjects[i];
             if (gameObject->IsActiveInHierarchy()) {
                 gameObject->Update(deltaTime);
+            }
+        }
+        for (size_t i = 0; i < m_GameObjects.size(); ++i) {
+            auto& gameObject = m_GameObjects[i];
+            if (gameObject->IsActiveInHierarchy()) {
+                gameObject->LateUpdate(deltaTime);
             }
         }
     }

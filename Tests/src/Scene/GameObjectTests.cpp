@@ -440,5 +440,125 @@ TEST(GameObjectTest, UnregisteredPolymorphicBaseQueryFallbackAndCascadingRemoval
     EXPECT_EQ(entity.GetComponent<IUnregisteredBase>(), nullptr);
 }
 
+// Test 1: RemoveComponent<Component> never removes Transform (C-07)
+TEST(GameObjectTest, RemoveComponentGenericComponentGuardsTransform) {
+    Engine::GameObject entity("GuardHero");
+
+    ASSERT_NE(entity.GetTransform(), nullptr);
+    // Entity only has Transform. Attempting to remove via base Component must fail!
+    EXPECT_FALSE(entity.RemoveComponent<Engine::Component>());
+    EXPECT_NE(entity.GetTransform(), nullptr);
+    EXPECT_EQ(entity.GetTransform(), entity.GetComponent<Engine::Transform>());
+
+    // Add a non-Transform component
+    auto* lifeComp = entity.AddComponent<LifecycleComponent>();
+    ASSERT_NE(lifeComp, nullptr);
+    EXPECT_TRUE(entity.HasComponent<LifecycleComponent>());
+
+    // Now RemoveComponent<Engine::Component> removes the LifecycleComponent, NOT Transform
+    EXPECT_TRUE(entity.RemoveComponent<Engine::Component>());
+    EXPECT_EQ(entity.GetComponent<LifecycleComponent>(), nullptr);
+    EXPECT_FALSE(entity.HasComponent<LifecycleComponent>());
+    EXPECT_NE(entity.GetTransform(), nullptr);
+    EXPECT_EQ(entity.GetTransform(), entity.GetComponent<Engine::Transform>());
+
+    // Once only Transform remains, subsequent calls return false
+    EXPECT_FALSE(entity.RemoveComponent<Engine::Component>());
+    EXPECT_NE(entity.GetTransform(), nullptr);
+}
+
+// Test 2: HasComponent agrees with GetComponent for unregistered polymorphic base
+namespace {
+
+struct IUnregisteredPolyBase : public Engine::Component {
+    virtual ~IUnregisteredPolyBase() = default;
+    virtual int GetPolyVal() const noexcept { return 42; }
+};
+
+struct UnregisteredPolyDerivedA : public IUnregisteredPolyBase {
+    int GetPolyVal() const noexcept override { return 100; }
+};
+
+struct UnregisteredPolyDerivedB : public IUnregisteredPolyBase {
+    int GetPolyVal() const noexcept override { return 200; }
+};
+
+} // namespace
+
+TEST(GameObjectTest, HasComponentAgreesWithGetComponentOnPolymorphicBase) {
+    Engine::GameObject entity("PolyEntity");
+
+    EXPECT_FALSE(entity.HasComponent<IUnregisteredPolyBase>());
+    EXPECT_EQ(entity.GetComponent<IUnregisteredPolyBase>(), nullptr);
+
+    entity.AddComponent<UnregisteredPolyDerivedA>();
+
+    // Both HasComponent and GetComponent must agree!
+    EXPECT_NE(entity.GetComponent<IUnregisteredPolyBase>(), nullptr);
+    EXPECT_TRUE(entity.HasComponent<IUnregisteredPolyBase>());
+    EXPECT_TRUE(entity.HasComponent<UnregisteredPolyDerivedA>());
+    EXPECT_FALSE(entity.HasComponent<UnregisteredPolyDerivedB>());
+}
+
+// Test 3: Reentrant self-removal in Awake, OnDisable, and OnDestroy causes zero UAF
+namespace {
+
+struct SelfRemoverInAwake : public Engine::Component {
+    bool awakeRan = false;
+    void Awake() override {
+        awakeRan = true;
+        if (GetGameObject()) {
+            GetGameObject()->RemoveComponent<SelfRemoverInAwake>();
+        }
+    }
+};
+
+struct SelfRemoverInOnDisable : public Engine::Component {
+    bool onDisableRan = false;
+    void OnDisable() override {
+        onDisableRan = true;
+        if (GetGameObject()) {
+            GetGameObject()->RemoveComponent<SelfRemoverInOnDisable>();
+        }
+    }
+};
+
+struct SelfRemoverInOnDestroy : public Engine::Component {
+    bool onDestroyRan = false;
+    void OnDestroy() override {
+        onDestroyRan = true;
+        if (GetGameObject()) {
+            GetGameObject()->RemoveComponent<SelfRemoverInOnDestroy>();
+        }
+    }
+};
+
+} // namespace
+
+TEST(GameObjectTest, ReentrantSelfRemovalInAwakeOnDisableOnDestroyZeroUAF) {
+    Engine::GameObject entity("ReentrantHero");
+
+    // 1. Awake self-removal
+    auto* awakeComp = entity.AddComponent<SelfRemoverInAwake>();
+    EXPECT_EQ(awakeComp, nullptr); // Cleanly returned nullptr after deferred flush
+    EXPECT_FALSE(entity.HasComponent<SelfRemoverInAwake>());
+    EXPECT_EQ(entity.GetComponent<SelfRemoverInAwake>(), nullptr);
+
+    // 2. OnDisable self-removal
+    auto* disableComp = entity.AddComponent<SelfRemoverInOnDisable>();
+    ASSERT_NE(disableComp, nullptr);
+    EXPECT_TRUE(entity.HasComponent<SelfRemoverInOnDisable>());
+    EXPECT_TRUE(entity.RemoveComponent<SelfRemoverInOnDisable>());
+    EXPECT_FALSE(entity.HasComponent<SelfRemoverInOnDisable>());
+
+    // 3. OnDestroy secondary removal
+    auto* destroyComp = entity.AddComponent<SelfRemoverInOnDestroy>();
+    ASSERT_NE(destroyComp, nullptr);
+    EXPECT_TRUE(entity.HasComponent<SelfRemoverInOnDestroy>());
+    // Destroying the component directly invokes OnDestroy, which reentrantly calls RemoveComponent
+    EXPECT_TRUE(entity.RemoveComponent<SelfRemoverInOnDestroy>());
+    EXPECT_FALSE(entity.HasComponent<SelfRemoverInOnDestroy>());
+}
+
 } // namespace
 

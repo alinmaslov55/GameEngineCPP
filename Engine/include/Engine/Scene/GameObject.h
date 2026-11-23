@@ -78,19 +78,7 @@ public:
 
     template<std::derived_from<Component> T>
     [[nodiscard]] bool HasComponent() const noexcept {
-        using CleanT = std::remove_cv_t<T>;
-        if constexpr (std::is_same_v<CleanT, Transform>) {
-            return m_Transform != nullptr;
-        } else if constexpr (std::is_same_v<CleanT, Component>) {
-            for (const auto& component : m_Components) {
-                if (component && !component->IsPendingRemoval()) {
-                    return true;
-                }
-            }
-            return false;
-        } else {
-            return m_ComponentMask.Intersects(Detail::GetComponentTypeMask<CleanT>());
-        }
+        return GetComponent<T>() != nullptr;
     }
 
     template<std::derived_from<Component> T, typename... Args>
@@ -116,9 +104,18 @@ public:
         }
 
         ENGINE_CORE_DEBUG("GameObject '{}': Added component", GetName());
-        rawPtr->Awake();
-        if (IsActiveInHierarchy() && rawPtr->IsEnabled()) {
-            rawPtr->OnEnable();
+        bool selfRemoved = false;
+        {
+            ScopedComponentIterationGuard guard(*this);
+            rawPtr->Awake();
+            if (!rawPtr->IsPendingRemoval() && IsActiveInHierarchy() && rawPtr->IsEnabled()) {
+                rawPtr->OnEnable();
+            }
+            selfRemoved = rawPtr->IsPendingRemoval();
+        }
+
+        if (selfRemoved) {
+            return nullptr;
         }
 
         if constexpr (std::is_same_v<CleanT, Rigidbody2D> ||
@@ -415,8 +412,8 @@ public:
         } else {
             const uint16_t targetID = Detail::GetComponentTypeID<CleanT>();
 
-            auto matchesTarget = [targetID](Component* c) noexcept -> bool {
-                if (!c || c->IsPendingRemoval()) return false;
+            auto matchesTarget = [this, targetID](Component* c) noexcept -> bool {
+                if (!c || c == m_Transform || c->IsPendingRemoval()) return false;
                 if constexpr (std::is_same_v<CleanT, Component>) {
                     return true;
                 } else {
@@ -435,7 +432,7 @@ public:
             auto foundIt = m_Components.end();
             for (auto it = m_Components.begin(); it != m_Components.end(); ++it) {
                 auto* comp = it->get();
-                if (!comp || comp->IsPendingRemoval()) continue;
+                if (!comp || comp == m_Transform || comp->IsPendingRemoval()) continue;
                 if constexpr (std::is_same_v<CleanT, Component>) {
                     foundIt = it;
                     break;
@@ -451,7 +448,7 @@ public:
                 if (foundIt == m_Components.end()) {
                     for (auto it = m_Components.begin(); it != m_Components.end(); ++it) {
                         auto* comp = it->get();
-                        if (comp && !comp->IsPendingRemoval() && dynamic_cast<CleanT*>(comp) != nullptr) {
+                        if (comp && comp != m_Transform && !comp->IsPendingRemoval() && dynamic_cast<CleanT*>(comp) != nullptr) {
                             foundIt = it;
                             break;
                         }
@@ -459,18 +456,24 @@ public:
                 }
             }
 
-            if (foundIt == m_Components.end()) {
+            if (foundIt == m_Components.end() || foundIt->get() == m_Transform) {
                 return false;
             }
 
             Component* comp = foundIt->get();
+            if (comp->IsPendingRemoval()) {
+                return false;
+            }
+
+            // 1. Mark pending removal immediately so queries/reentrancy immediately recognize removed state
+            comp->m_PendingRemoval = true;
             const bool wasEnabledAndActive = comp->IsEnabled() && IsActiveInHierarchy();
             comp->m_Enabled = false;
+
+            // 2. Wrap OnDisable in ScopedComponentIterationGuard to prevent vector mutation
             if (wasEnabledAndActive) {
+                ScopedComponentIterationGuard guard(*this);
                 comp->OnDisable();
-            }
-            if (m_ComponentIterationDepth > 0) {
-                comp->m_PendingRemoval = true;
             }
 
             const uint16_t removedExactID = comp->GetTypeID();
@@ -481,7 +484,7 @@ public:
             bool hasMoreOfBase = false;
             for (const auto& other : m_Components) {
                 Component* otherPtr = other.get();
-                if (!otherPtr || otherPtr == comp || otherPtr->IsPendingRemoval()) continue;
+                if (!otherPtr || otherPtr == comp || otherPtr == m_Transform || otherPtr->IsPendingRemoval()) continue;
                 if (otherPtr->GetTypeID() == removedExactID) {
                     hasMoreOfExact = true;
                 }
@@ -500,7 +503,7 @@ public:
             if (!hasMoreOfBase && removedBaseID != Component::kInvalidTypeID) {
                 m_ComponentMask &= ~ComponentMask128::FromBit(removedBaseID);
             }
-            if (!hasMoreOfTarget) {
+            if (!hasMoreOfTarget && targetID != Component::kInvalidTypeID) {
                 m_ComponentMask &= ~ComponentMask128::FromBit(targetID);
             }
 
@@ -526,7 +529,6 @@ public:
                 InvalidateSceneTerrainCache();
             }
 
-            comp->m_PendingRemoval = true;
             if (m_ComponentIterationDepth == 0) {
                 FlushPendingComponentRemovals();
             }

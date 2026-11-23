@@ -384,4 +384,48 @@ TEST(DeferredLifecycleTest, ReentrantIterationDepthTracking) {
     EXPECT_TRUE(scene.GetGameObjects()[1]->IsAlive());
 }
 
+// Test 4: Scene::Update dispatches LateUpdate after all Updates
+namespace {
+
+struct OrderTrackingComponent : public Engine::Component {
+    explicit OrderTrackingComponent(std::vector<std::string>& log, std::string name)
+        : m_Log(log), m_Name(std::move(name)) {}
+
+    void Update(float) override {
+        m_Log.push_back(m_Name + ":Update");
+    }
+
+    void LateUpdate(float) override {
+        m_Log.push_back(m_Name + ":LateUpdate");
+    }
+
+private:
+    std::vector<std::string>& m_Log;
+    std::string m_Name;
+};
+
+} // namespace
+
+TEST(DeferredLifecycleTest, SceneUpdateDispatchesLateUpdateAfterAllUpdates) {
+    Engine::Scene scene("LateUpdateScene");
+    std::vector<std::string> executionOrder;
+
+    auto* entityA = scene.CreateGameObject("EntityA");
+    entityA->AddComponent<OrderTrackingComponent>(executionOrder, "A");
+
+    auto* entityB = scene.CreateGameObject("EntityB");
+    entityB->AddComponent<OrderTrackingComponent>(executionOrder, "B");
+
+    // Flush spawns so they are active in the scene
+    scene.FlushEntityLifecycleQueues();
+
+    scene.Update(0.016f);
+
+    ASSERT_EQ(executionOrder.size(), 4u);
+    EXPECT_EQ(executionOrder[0], "A:Update");
+    EXPECT_EQ(executionOrder[1], "B:Update");
+    EXPECT_EQ(executionOrder[2], "A:LateUpdate");
+    EXPECT_EQ(executionOrder[3], "B:LateUpdate");
+}
+
 } // namespace
