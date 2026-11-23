@@ -292,3 +292,104 @@ TEST(DataRegistryTests, GameplayDataRegistriesLoadAllRealAssets) {
     EXPECT_TRUE(GameplayData::Drops().Empty());
     EXPECT_TRUE(GameplayData::Enemies().Empty());
 }
+
+// Test 6: Single-object JSON with array fields parses correctly
+TEST(DataRegistryTests, SingleObjectWithArrayFieldParsesCorrectly) {
+    const std::string singleObjectJson = R"({
+        "Id": "branch_fire_blade",
+        "Name": "Fire Blade",
+        "Description": "Infuses blade with fiery embers.",
+        "Rarity": "Rare",
+        "StatModifier": "FireDamage",
+        "Value": 25.0,
+        "Icon": "tex_icon_fire_blade",
+        "Tags": ["Fire", "Melee", "Blade"]
+    })";
+
+    DataRegistry<BranchDefinition> registry;
+    EXPECT_TRUE(registry.LoadFromString(singleObjectJson, ParseBranchDefinition));
+    EXPECT_EQ(registry.Count(), 1u);
+
+    const auto* def = registry.Find("branch_fire_blade");
+    ASSERT_NE(def, nullptr);
+    EXPECT_EQ(def->Id, "branch_fire_blade");
+    EXPECT_EQ(def->Name, "Fire Blade");
+    EXPECT_EQ(def->Rarity, "Rare");
+    EXPECT_EQ(def->StatModifier, "FireDamage");
+    EXPECT_FLOAT_EQ(def->Value, 25.0f);
+    EXPECT_EQ(def->Icon, "tex_icon_fire_blade");
+    ASSERT_EQ(def->Tags.size(), 3u);
+    EXPECT_EQ(def->Tags[0], "Fire");
+    EXPECT_EQ(def->Tags[1], "Melee");
+    EXPECT_EQ(def->Tags[2], "Blade");
+}
+
+// Test 7: Directory loading deterministically sorts files alphabetically
+TEST(DataRegistryTests, DirectoryIterationLoadsAlphabeticallySorted) {
+    namespace fs = std::filesystem;
+    const fs::path tempDir = fs::temp_directory_path() / "DataRegistryTest_AlphabeticalSort";
+    std::error_code ec;
+    fs::remove_all(tempDir, ec);
+    fs::create_directories(tempDir, ec);
+
+    // Create 3 files out of alphabetical order
+    {
+        std::ofstream outC(tempDir / "c_items.json");
+        outC << R"({ "Id": "item_c", "Name": "Item C", "Damage": 30.0 })";
+    }
+    {
+        std::ofstream outA(tempDir / "a_items.json");
+        outA << R"({ "Id": "item_a", "Name": "Item A", "Damage": 10.0 })";
+    }
+    {
+        std::ofstream outB(tempDir / "b_items.json");
+        outB << R"({ "Id": "item_b", "Name": "Item B", "Damage": 20.0 })";
+    }
+
+    DataRegistry<WeaponDefinition> registry;
+    EXPECT_TRUE(registry.LoadDirectoryOrFile(tempDir.string(), ParseWeaponDefinition));
+    ASSERT_EQ(registry.Count(), 3u);
+
+    const auto& all = registry.GetAll();
+    EXPECT_EQ(all[0].Id, "item_a");
+    EXPECT_EQ(all[1].Id, "item_b");
+    EXPECT_EQ(all[2].Id, "item_c");
+
+    fs::remove_all(tempDir, ec);
+}
+
+// Test 8: Relative virtual paths resolved via ResourceManager
+TEST(DataRegistryTests, VirtualPathResolutionViaResourceManager) {
+    DataRegistry<RootDefinition> registry;
+    EXPECT_TRUE(registry.LoadDirectoryOrFile("Sandbox/assets/data/roots.json", ParseRootDefinition));
+    EXPECT_EQ(registry.Count(), 16u);
+
+    const auto* ironSinew = registry.Find("root_iron_sinew");
+    ASSERT_NE(ironSinew, nullptr);
+    EXPECT_EQ(ironSinew->Name, "Iron Sinew");
+}
+
+// Test 9: Transparent heterogeneous lookup works with string_view and literals
+TEST(DataRegistryTests, TransparentStringViewLookupNoAllocation) {
+    const std::string jsonContent = R"([
+        {
+            "Id": "very_long_identifier_exceeding_small_string_optimization_threshold",
+            "Name": "Long ID Weapon",
+            "Damage": 50.0
+        }
+    ])";
+
+    DataRegistry<WeaponDefinition> registry;
+    EXPECT_TRUE(registry.LoadFromString(jsonContent, ParseWeaponDefinition));
+
+    // Lookup using string_view without allocation
+    std::string_view svId = "very_long_identifier_exceeding_small_string_optimization_threshold";
+    const auto* def = registry.Find(svId);
+    ASSERT_NE(def, nullptr);
+    EXPECT_EQ(def->Name, "Long ID Weapon");
+    EXPECT_FLOAT_EQ(def->Damage, 50.0f);
+
+    // Lookup using const char* string literal
+    EXPECT_NE(registry.Find("very_long_identifier_exceeding_small_string_optimization_threshold"), nullptr);
+    EXPECT_EQ(registry.Find("non_existent_long_identifier_string_view_lookup"), nullptr);
+}

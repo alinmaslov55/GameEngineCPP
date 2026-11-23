@@ -197,7 +197,7 @@ flowchart TD
 | **`FIX-AUD-02`** | WAV S16 Normalization, Dynamic Spatial Pan & `GetQueuedFrames` Fix | `DONE` | **P0** | W1 | `FIX-AUD-01` | `C-15`, Audio `#7`, Med `AudioClip` | `FIX-AUD-03`, `FIX-SAV-01` |
 | **`FIX-AUD-03`** | `MusicDirector` Phase-Locked Pre-Buffer, Fade Slew & `AudioSource` WorldPos | `DONE` | **P1** | W2 | `FIX-AUD-01`, `FIX-AUD-02` | Audio `#8`, Med `AudioSource` | `DOC-06` |
 | **`FIX-SAV-01`** | `SaveManager` Non-Destructive `.bak` Recovery, Atomic Replace & Settings | `DONE` | **P0** | W1 | `FIX-CORE-03`, `FIX-AUD-02` | `C-01`, Core `#10`, Med `SaveManager` | `FIX-SBX-01`, `DOC-08` |
-| **`FIX-SAV-02`** | `DataRegistry` Single-Object Parse, Path Resolution & Deterministic Order | `TODO` | **P1** | W1 | `FIX-CORE-01` | Core `#11`, Med `GameplayData`, Imp `#8` | `FIX-SBX-01`, `DOC-08` |
+| **`FIX-SAV-02`** | `DataRegistry` Single-Object Parse, Path Resolution & Deterministic Order | `DONE` | **P1** | W1 | `FIX-CORE-01` | Core `#11`, Med `GameplayData`, Imp `#8` | `FIX-SBX-01`, `DOC-08` |
 | **`FIX-ECS-01`** | `GameObject` Transform Removal Guard, Reentrancy, `LateUpdate` & UUID Map | `TODO` | **P0** | W0 | *None (Root)* | `C-07`, ECS `#15`, `#16`, `#19`, Med `HasComponent` | `FIX-ECS-02`, `FIX-PHY-01`, `FIX-EDT-01` |
 | **`FIX-ECS-02`** | `Transform` Reparent Active Sync, Zero-Scale Guard & `SquashStretch` WorldPos | `TODO` | **P0** | W1 | `FIX-ECS-01` | ECS `#17`, `#18`, Med `SquashStretch` | `FIX-ECS-03`, `FIX-SER-01`, `DOC-01` |
 | **`FIX-ECS-03`** | `EntityPoolManager` Key/Parent Safety & Pooled Component State Reset | `TODO` | **P0** | W2 | `FIX-ECS-02`, `FIX-ANI-01` | `C-08`, Med `EntityPoolManager`, Physics `#28` | `DOC-03` |
@@ -360,7 +360,7 @@ flowchart TD
 ---
 
 #### `FIX-SAV-02` — `DataRegistry` Single-Object Parse, Path Resolution & Deterministic Order
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-CORE-01` | Unlocks: `FIX-SBX-01`, `DOC-08`
 - **Current Defects:** [DataRegistry.h](file://Engine/include/Engine/Data/DataRegistry.h#L24-L56), [lines 98-104](file://Engine/include/Engine/Data/DataRegistry.h#L98-L104), [lines 170-182](file://Engine/include/Engine/Data/DataRegistry.h#L170-L182): Single-object JSON with an array field (`{"Id": "b1", "Tags": ["Fire"]}`) misidentifies `"Tags"` as a record wrapper array and fails; `LoadDirectoryOrFile` never calls `ResourceManager::ResolvePath`; `directory_iterator` order is non-deterministic; `Find(string_view) noexcept` heap-allocates `std::string`.
 - **Proposed Fix:** Check `if (root.contains("Id") && root["Id"].is_string())` first in `ParseJsonString`; resolve paths via `ResourceManager::ResolvePath`; sort directory `.json` paths alphabetically; use transparent `StringHash`/`std::equal_to<>` on `m_Lookup`.

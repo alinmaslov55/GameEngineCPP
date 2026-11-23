@@ -1,8 +1,10 @@
 #ifndef DATA_DATAREGISTRY_H
 #define DATA_DATAREGISTRY_H
 
+#include "Engine/Core/ResourceManager.h"
 #include "Engine/Utils/Logger.h"
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <functional>
@@ -19,6 +21,22 @@ class DataRegistry {
 public:
     using ParserFn = std::function<bool(const nlohmann::json&, TDef&)>;
 
+    struct TransparentStringHash {
+        using is_transparent = void;
+
+        [[nodiscard]] size_t operator()(std::string_view sv) const noexcept {
+            return std::hash<std::string_view>{}(sv);
+        }
+        [[nodiscard]] size_t operator()(const std::string& s) const noexcept {
+            return std::hash<std::string_view>{}(s);
+        }
+        [[nodiscard]] size_t operator()(const char* s) const noexcept {
+            return std::hash<std::string_view>{}(s);
+        }
+    };
+
+    using LookupMap = std::unordered_map<std::string, size_t, TransparentStringHash, std::equal_to<>>;
+
     DataRegistry() = default;
 
     bool LoadDirectoryOrFile(const std::string& virtualAssetPath, ParserFn parser) {
@@ -31,26 +49,35 @@ public:
         m_Parser = parser;
 
         std::vector<TDef> newDefs;
-        std::unordered_map<std::string, size_t> newLookup;
+        LookupMap newLookup;
 
+        const std::string resolvedPath = ResourceManager::ResolvePath(virtualAssetPath);
         std::error_code ec;
-        const std::filesystem::path p(virtualAssetPath);
+        const std::filesystem::path p(resolvedPath);
         if (!std::filesystem::exists(p, ec)) {
-            ENGINE_CORE_ERROR("DataRegistry: Source path does not exist: '{}'", virtualAssetPath);
+            ENGINE_CORE_ERROR("DataRegistry: Source path does not exist: '{}' (resolved: '{}')", virtualAssetPath, resolvedPath);
             return false;
         }
 
         bool anyLoaded = false;
         if (std::filesystem::is_directory(p, ec)) {
+            std::vector<std::filesystem::path> jsonFiles;
             for (const auto& entry : std::filesystem::directory_iterator(p, ec)) {
                 if (entry.is_regular_file(ec) && entry.path().extension() == ".json") {
-                    if (ParseFile(entry.path().string(), parser, newDefs, newLookup)) {
-                        anyLoaded = true;
-                    }
+                    jsonFiles.push_back(entry.path());
+                }
+            }
+            std::sort(jsonFiles.begin(), jsonFiles.end(), [](const auto& a, const auto& b) {
+                return a.filename().string() < b.filename().string();
+            });
+
+            for (const auto& filePath : jsonFiles) {
+                if (ParseFile(filePath.string(), parser, newDefs, newLookup)) {
+                    anyLoaded = true;
                 }
             }
         } else {
-            if (ParseFile(virtualAssetPath, parser, newDefs, newLookup)) {
+            if (ParseFile(resolvedPath, parser, newDefs, newLookup)) {
                 anyLoaded = true;
             }
         }
@@ -73,7 +100,7 @@ public:
         }
 
         std::vector<TDef> newDefs;
-        std::unordered_map<std::string, size_t> newLookup;
+        LookupMap newLookup;
 
         if (!ParseJsonString(jsonContent, parser, debugSource, newDefs, newLookup)) {
             return false;
@@ -96,7 +123,7 @@ public:
     }
 
     [[nodiscard]] const TDef* Find(std::string_view id) const noexcept {
-        const auto it = m_Lookup.find(std::string(id));
+        const auto it = m_Lookup.find(id);
         if (it != m_Lookup.end()) {
             return &m_OrderedDefs[it->second];
         }
@@ -118,7 +145,7 @@ private:
     bool ParseFile(const std::string& filePath,
                    const ParserFn& parser,
                    std::vector<TDef>& outDefs,
-                   std::unordered_map<std::string, size_t>& outLookup) {
+                   LookupMap& outLookup) {
         std::ifstream file(filePath);
         if (!file.is_open()) {
             ENGINE_CORE_ERROR("DataRegistry: Failed to open file '{}'", filePath);
@@ -133,7 +160,7 @@ private:
                          const ParserFn& parser,
                          const std::string& debugSource,
                          std::vector<TDef>& outDefs,
-                         std::unordered_map<std::string, size_t>& outLookup) {
+                         LookupMap& outLookup) {
         nlohmann::json root = nlohmann::json::parse(jsonStr, nullptr, false);
         if (root.is_discarded()) {
             ENGINE_CORE_ERROR("DataRegistry: JSON parse error in '{}'", debugSource);
@@ -168,17 +195,22 @@ private:
                 processItem(root[i], i);
             }
         } else if (root.is_object()) {
-            bool foundArray = false;
-            for (auto it = root.begin(); it != root.end(); ++it) {
-                if (it.value().is_array()) {
-                    foundArray = true;
-                    for (size_t i = 0; i < it.value().size(); ++i) {
-                        processItem(it.value()[i], i);
+            if (root.contains("Id") && root["Id"].is_string()) {
+                // Direct single-object definition (e.g., BranchDefinition with "Tags": ["Fire", "Melee"])
+                processItem(root, 0);
+            } else {
+                bool foundArray = false;
+                for (auto it = root.begin(); it != root.end(); ++it) {
+                    if (it.value().is_array()) {
+                        foundArray = true;
+                        for (size_t i = 0; i < it.value().size(); ++i) {
+                            processItem(it.value()[i], i);
+                        }
                     }
                 }
-            }
-            if (!foundArray) {
-                processItem(root, 0);
+                if (!foundArray) {
+                    processItem(root, 0);
+                }
             }
         } else {
             ENGINE_CORE_WARN("DataRegistry: Root element in '{}' is neither an array nor an object", debugSource);
@@ -191,7 +223,7 @@ private:
     std::string m_SourcePath;
     ParserFn m_Parser;
     std::vector<TDef> m_OrderedDefs;
-    std::unordered_map<std::string, size_t> m_Lookup;
+    LookupMap m_Lookup;
 };
 
 } // namespace Engine
