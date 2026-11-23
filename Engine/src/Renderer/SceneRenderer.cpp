@@ -518,7 +518,9 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
 
         if (mask & kParticleMask) {
             if (auto* ps = gameObject->GetComponent<ParticleSystem>()) {
-                m_ParticleScratch.push_back(ps);
+                if (ps->IsEnabled()) {
+                    m_ParticleScratch.push_back(ps);
+                }
             }
         }
 

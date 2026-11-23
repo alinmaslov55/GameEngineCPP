@@ -58,6 +58,8 @@ public:
     void OnPoolAcquire() override { Reset(); }
     void OnPoolRelease() override { Reset(); }
 
+    void SetRandomSeed(uint32_t seed) noexcept { m_RngState = (seed == 0u ? 0x853c49e6u : seed); }
+
     // Visuals, orientation & flipbook configuration
     std::shared_ptr<Texture> ParticleTexture = nullptr;
     ParticleOrientation Orientation = ParticleOrientation::CameraBillboard;

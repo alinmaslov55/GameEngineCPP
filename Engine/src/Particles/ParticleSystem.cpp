@@ -3,6 +3,7 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Utils/Logger.h"
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdlib>
 #include <glm/gtc/constants.hpp>
@@ -27,6 +28,11 @@ static inline float FastRandomFloat(uint32_t& state) noexcept {
 
 ParticleSystem::ParticleSystem(uint32_t maxParticles)
     : m_PoolIndex(0) {
+    static std::atomic<uint32_t> s_RngSalt{ 0x1337c0de };
+    m_RngState = s_RngSalt.fetch_add(0x9e3779b9u, std::memory_order_relaxed) ^ static_cast<uint32_t>(reinterpret_cast<uintptr_t>(this));
+    if (m_RngState == 0u) {
+        m_RngState = 0x853c49e6u;
+    }
     m_ParticlePool.resize(maxParticles);
     ENGINE_CORE_DEBUG("ParticleSystem created with pool size of {} particles", maxParticles);
 }
@@ -117,6 +123,9 @@ void ParticleSystem::Update(float deltaTime) {
 
     const float dragDamping = (LinearDrag > 0.0f) ? (1.0f / (1.0f + LinearDrag * deltaTime)) : 1.0f;
     const float clampedRestitution = std::clamp(GroundBounceRestitution, 0.0f, 1.0f);
+    const float groundRestThreshold = std::max(0.75f, std::abs(GravityY) * deltaTime * 1.5f);
+    constexpr float kGroundFriction = 8.0f;
+    const float groundFrictionDamping = 1.0f / (1.0f + kGroundFriction * deltaTime);
 
     // Active particles are contiguously stored in [0 .. m_ActiveParticleCount - 1]
     for (uint32_t i = 0; i < m_ActiveParticleCount; ) {
@@ -125,9 +134,11 @@ void ParticleSystem::Update(float deltaTime) {
 
         if (particle.lifeRemaining <= 0.0f) {
             particle.active = false;
-            if (m_ActiveParticleCount > 1 && i != m_ActiveParticleCount - 1) {
-                m_ParticlePool[i] = m_ParticlePool[m_ActiveParticleCount - 1];
+            const uint32_t lastActiveIndex = m_ActiveParticleCount - 1;
+            if (m_ActiveParticleCount > 1 && i != lastActiveIndex) {
+                m_ParticlePool[i] = m_ParticlePool[lastActiveIndex];
             }
+            m_ParticlePool[lastActiveIndex].active = false;
             --m_ActiveParticleCount;
             // Re-evaluate the swapped element at index i
         } else {
@@ -139,15 +150,19 @@ void ParticleSystem::Update(float deltaTime) {
             }
             particle.position += particle.velocity * deltaTime;
 
-            if (CollideGroundY && particle.position.y < GroundPlaneY) {
+            if (CollideGroundY && particle.position.y <= GroundPlaneY) {
                 particle.position.y = GroundPlaneY;
                 if (particle.velocity.y < 0.0f) {
                     particle.velocity.y = -particle.velocity.y * clampedRestitution;
-                    if (std::abs(particle.velocity.y) < 0.15f) {
+                    if (std::abs(particle.velocity.y) < groundRestThreshold) {
                         particle.velocity.y = 0.0f;
                     }
-                    particle.velocity.x *= 0.75f;
-                    particle.velocity.z *= 0.75f;
+                    particle.velocity.x *= groundFrictionDamping;
+                    particle.velocity.z *= groundFrictionDamping;
+                } else if (particle.velocity.y == 0.0f) {
+                    // Firmly resting on ground; apply horizontal friction decay
+                    particle.velocity.x *= groundFrictionDamping;
+                    particle.velocity.z *= groundFrictionDamping;
                 }
             }
             ++i;
@@ -188,8 +203,9 @@ uint32_t ParticleSystem::ComputeFlipbookFrameIndex(
     const float rawFrame = ageNorm * static_cast<float>(totalFrames) * cycles;
     const uint32_t frameOffset = static_cast<uint32_t>(std::floor(rawFrame));
 
-    if (cycles <= 1.0f && !flipbook.RandomStartFrame) {
-        return std::min(frameOffset, totalFrames - 1u);
+    if (cycles <= 1.0f) {
+        const uint32_t clampedOffset = std::min(frameOffset, totalFrames - 1u);
+        return (particle.flipbookStartFrame + clampedOffset) % totalFrames;
     }
 
     return (particle.flipbookStartFrame + frameOffset) % totalFrames;

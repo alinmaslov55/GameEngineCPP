@@ -383,5 +383,105 @@ TEST(ParticleSystemTest, SceneSerializerParticleSystemVFX01RoundTrip) {
     EXPECT_FALSE(restoredPs->TemplateProps.randomRotation);
 }
 
+TEST(ParticleSystemTest, GroundBouncingParticleSettlesToCompleteRestAt30FPS) {
+    Engine::ParticleSystem ps(32);
+    ps.GravityY = -18.0f;
+    ps.CollideGroundY = true;
+    ps.GroundPlaneY = 0.02f;
+    ps.GroundBounceRestitution = 0.4f;
+
+    Engine::ParticleProps props;
+    props.position = { 0.0f, 5.0f, 0.0f };
+    props.velocity = { 3.0f, 0.0f, 0.0f };
+    props.velocityVariation = { 0.0f, 0.0f, 0.0f };
+    props.lifeTime = 10.0f;
+    props.randomRotation = false;
+
+    ps.Emit(props);
+    ASSERT_EQ(ps.GetActiveParticleCount(), 1u);
+
+    // Step 60 frames at 30 FPS (dt = 1/30s = 0.0333s)
+    const float dt = 1.0f / 30.0f;
+    for (int frame = 0; frame < 60; ++frame) {
+        ps.Update(dt);
+    }
+
+    const auto& p = ps.GetParticles()[0];
+    EXPECT_FLOAT_EQ(p.position.y, 0.02f);
+    EXPECT_FLOAT_EQ(p.velocity.y, 0.0f);
+    // Horizontal velocity decayed
+    EXPECT_LT(p.velocity.x, 0.05f);
+}
+
+TEST(ParticleSystemTest, SwapRemoveCleansTailSlotActiveState) {
+    Engine::ParticleSystem ps(8);
+
+    Engine::ParticleProps props;
+    props.velocity = { 0.0f, 0.0f, 0.0f };
+    props.velocityVariation = { 0.0f, 0.0f, 0.0f };
+    props.lifeTime = 5.0f;
+
+    props.position = { 1.0f, 0.0f, 0.0f };
+    ps.Emit(props);
+    props.position = { 2.0f, 0.0f, 0.0f };
+    ps.Emit(props);
+    props.position = { 3.0f, 0.0f, 0.0f };
+    ps.Emit(props);
+    ASSERT_EQ(ps.GetActiveParticleCount(), 3u);
+
+    // Expire particle 0
+    const_cast<Engine::ParticleSystem::Particle&>(ps.GetParticles()[0]).lifeRemaining = 0.0f;
+    ps.Update(0.01f);
+
+    EXPECT_EQ(ps.GetActiveParticleCount(), 2u);
+    // Tail slot (index 2) must be cleaned
+    EXPECT_FALSE(ps.GetParticles()[2].active);
+}
+
+TEST(ParticleSystemTest, FlipbookRandomStartFrameDoesNotWrapAtAgeNorm1) {
+    Engine::FlipbookConfig cfg;
+    cfg.Enabled = true;
+    cfg.Columns = 2;
+    cfg.Rows = 2;
+    cfg.TotalFrames = 4;
+    cfg.CyclesOverLifetime = 1.0f;
+    cfg.RandomStartFrame = true;
+
+    Engine::ParticleSystem::Particle p;
+    p.lifeTime = 1.0f;
+    p.flipbookStartFrame = 1u; // Start at frame 1
+
+    // At ageNorm = 1.0f (lifeRemaining = 0.0f), frames are [1, 2, 3, 0]. Final frame is (1 + 3) % 4 = 0.
+    // It must NOT wrap back to frame 1!
+    p.lifeRemaining = 0.0f;
+    const uint32_t finalFrame = Engine::ParticleSystem::ComputeFlipbookFrameIndex(p, cfg);
+    EXPECT_EQ(finalFrame, 0u);
+}
+
+TEST(ParticleSystemTest, UniquePRNGSeedsAcrossMultipleEmitters) {
+    Engine::ParticleSystem ps1(16);
+    Engine::ParticleSystem ps2(16);
+
+    Engine::ParticleProps props;
+    props.position = { 0.0f, 0.0f, 0.0f };
+    props.velocity = { 0.0f, 0.0f, 0.0f };
+    props.velocityVariation = { 10.0f, 10.0f, 10.0f };
+    props.lifeTime = 5.0f;
+    props.randomRotation = true;
+
+    ps1.Emit(props);
+    ps2.Emit(props);
+
+    ASSERT_EQ(ps1.GetActiveParticleCount(), 1u);
+    ASSERT_EQ(ps2.GetActiveParticleCount(), 1u);
+
+    const auto& p1 = ps1.GetParticles()[0];
+    const auto& p2 = ps2.GetParticles()[0];
+
+    // Different random velocities and rotations
+    const bool distinct = (p1.velocity != p2.velocity) || (p1.rotation != p2.rotation);
+    EXPECT_TRUE(distinct);
+}
+
 } // namespace
 

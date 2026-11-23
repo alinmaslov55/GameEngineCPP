@@ -42,12 +42,44 @@ void DecalManager::Update(float deltaTime) {
         return;
     }
 
+    // Step 1: Drain expired decals from m_Head in strict O(1) amortized time
+    while (m_Count > 0u) {
+        GroundDecal& headDecal = m_Decals[m_Head];
+        headDecal.Age += deltaTime;
+        if (headDecal.MaxLifetime > 0.0f && headDecal.Age >= headDecal.MaxLifetime) {
+            headDecal = GroundDecal{};
+            m_Head = (m_Head + 1u) % m_Capacity;
+            --m_Count;
+        } else {
+            // Head decal remains alive; age was advanced
+            break;
+        }
+    }
+
+    if (m_Count == 0u) {
+        m_Head = 0u;
+        return;
+    }
+
+    // Step 2: For remaining decals (from logical slot 1 onwards), advance age and compact if out-of-order expired
+    bool hasOutOfOrderExpiration = false;
+    for (uint32_t k = 1u; k < m_Count; ++k) {
+        const uint32_t idx = (m_Head + k) % m_Capacity;
+        m_Decals[idx].Age += deltaTime;
+        if (m_Decals[idx].MaxLifetime > 0.0f && m_Decals[idx].Age >= m_Decals[idx].MaxLifetime) {
+            hasOutOfOrderExpiration = true;
+        }
+    }
+
+    if (!hasOutOfOrderExpiration) {
+        return;
+    }
+
+    // Out-of-order expiration occurred: compact active elements contiguously starting from m_Head
     uint32_t writeK = 0u;
     for (uint32_t k = 0u; k < m_Count; ++k) {
         const uint32_t srcIdx = (m_Head + k) % m_Capacity;
         GroundDecal& decal = m_Decals[srcIdx];
-        decal.Age += deltaTime;
-
         const bool expired = (decal.MaxLifetime > 0.0f && decal.Age >= decal.MaxLifetime);
         if (!expired) {
             if (writeK != k) {

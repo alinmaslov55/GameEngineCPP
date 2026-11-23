@@ -209,7 +209,7 @@ flowchart TD
 | **`FIX-PHY-02`** | `Box2D` 64-Worker Lease Bitmask, `Box2DTask` Lifetime & Event Buffer Copy | `TODO` | **P0** | W0 | `FIX-CORE-01` | `C-04`, `C-05`, `C-06`, Physics `#31` | `FIX-PHY-03`, `DOC-04` |
 | **`FIX-PHY-03`** | 2.5D Yaw Handedness (`-θ`), Collider Offset Scale, Stasis & Tilemap Safety | `TODO` | **P0** | W1 | `FIX-PHY-01`, `FIX-PHY-02` | Physics `#27–#30`, `#32`, Med `Rigidbody2D`/`Tilemap` | `FIX-PHY-04`, `FIX-SBX-01`, `DOC-04` |
 | **`FIX-PHY-04`** | `PhysicsQueries` Custom Raycast Filter, `OverlapArcXZ` & Fallback Parity | `TODO` | **P1** | W1 | `FIX-PHY-03` | Physics `#33` | `FIX-AIX-01`, `FIX-LGT-01`, `DOC-04` |
-| **`FIX-VFX-01`** | `ParticleSystem` Rest Threshold, Swap-Remove Cleanup, PRNG & `DecalManager` | `TODO` | **P1** | W0 | *None (Root)* | Physics `#30`, `#34`, Med `Flipbook`, Imp `#5`, `#10` | `FIX-TER-03`, `DOC-04` |
+| **`FIX-VFX-01`** | `ParticleSystem` Rest Threshold, Swap-Remove Cleanup, PRNG & `DecalManager` | `DONE` | **P1** | W0 | *None (Root)* | Physics `#30`, `#34`, Med `Flipbook`, Imp `#5`, `#10` | `FIX-TER-03`, `DOC-04` |
 | **`FIX-RND-01`** | OpenGL 4.1 `#version 410` Line Shader, VAO/EBO Protection & `GL_BOOL` Fix | `TODO` | **P0** | W0 | *None (Root)* | `C-16`, RND `#35`, `#36`, `#41`, Med `glLineWidth` | `FIX-RND-03`, `FIX-UIX-01` |
 | **`FIX-RND-02`** | `DDSLoader` Overflow Guards, `GL_TEXTURE_MAX_LEVEL`, Anisotropy & `SpriteAtlas` | `TODO` | **P0** | W0 | `FIX-CORE-01` | `C-18`, `C-20`, RND `#37`, `#40`, Med `SubTexture2D`/`BC2` | `DOC-05` |
 | **`FIX-RND-03`** | `TerrainRenderer` `GL_TEXTURE6` Guard, Transitive Light Sort & Hitbox GC | `TODO` | **P0** | W1 | `FIX-RND-01` | `C-17`, `C-19`, RND `#39`, Med `GL state`/`WorldPos` | `FIX-RND-04` |
@@ -502,7 +502,7 @@ flowchart TD
 ---
 
 #### `FIX-VFX-01` — `ParticleSystem` Rest Threshold, Swap-Remove Cleanup, PRNG & `DecalManager`
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `FIX-TER-03`, `DOC-04`
 - **Current Defects:** [ParticleSystem.cpp](file://Engine/src/Particles/ParticleSystem.cpp#L126-L195), [SceneRenderer.cpp](file://Engine/src/Renderer/SceneRenderer.cpp#L519-L523), [DecalManager.cpp](file://Engine/src/Particles/DecalManager.cpp#L24-L71): Settled particles with spec `GravityY = -18.0f`, `Restitution = 0.4f` bounce infinitely at 30 FPS and use framerate-dependent ground drag `*= 0.75f`; swap-remove leaves stale `active = true` particles in tail slots; `SceneRenderer` renders disabled `ParticleSystem`s; flipbook wraps at `ageNorm == 1.0f` when `RandomStartFrame == true`; all emitters share one constant PRNG seed; `DecalManager::Update` shifts 511 structs instead of advancing `m_Head` in $O(1)$.
 - **Verification (`EngineTests`):** Step a ground-bouncing particle (`GravityY = -18`, `Restitution = 0.4`) at `dt = 1/30s` for 60 steps and assert it comes to complete rest (` position.y == GroundFloorY`, `velocity.y == 0.0f`).
