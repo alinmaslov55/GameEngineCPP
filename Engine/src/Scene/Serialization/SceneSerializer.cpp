@@ -58,6 +58,7 @@ json SerializeEntityInternal(const GameObject* go) {
     json entityJson;
     entityJson["UUID"] = go->GetUUID();
     entityJson["Name"] = go->GetName();
+    entityJson["Active"] = go->IsActive();
     entityJson["Tag"] = EntityTagToString(go->GetTag());
     entityJson["LayerMask"] = go->GetLayer();
 
@@ -164,6 +165,7 @@ std::string SceneSerializer::SerializeToString() const {
 
     json gameObjectsJson = json::array();
     for (const auto& go : m_Scene->GetGameObjects()) {
+        if (!go || go->IsPendingDestroy()) continue;
         gameObjectsJson.push_back(SerializeEntity(go.get()));
     }
     sceneJson["GameObjects"] = std::move(gameObjectsJson);
@@ -269,6 +271,10 @@ bool SceneSerializer::DeserializeFromString(const std::string& jsonString) {
                 }
                 if (entityJson.contains("LayerMask") && entityJson["LayerMask"].is_number()) {
                     go->SetLayer(entityJson["LayerMask"].get<uint32_t>());
+                }
+
+                if (entityJson.contains("Active") && entityJson["Active"].is_boolean()) {
+                    go->SetActive(entityJson["Active"].get<bool>());
                 }
 
                 if (entityJson.contains("Components")) {

@@ -229,9 +229,20 @@ void SerializeAudioSource(const GameObject* go, json& compsJson) {
     if (!audioSource) return;
 
     json audioJson = json::object();
+    audioJson["Enabled"] = audioSource->IsEnabled();
     if (auto clip = audioSource->GetClip()) {
         audioJson["ClipPath"] = ResourceManager::ToRelativePath(clip->GetFilepath());
     }
+    audioJson["Bus"] = static_cast<int>(audioSource->GetBus());
+    audioJson["Volume"] = audioSource->GetVolume();
+    audioJson["PitchMin"] = audioSource->GetPitchMin();
+    audioJson["PitchMax"] = audioSource->GetPitchMax();
+    audioJson["Loop"] = audioSource->IsLooping();
+    audioJson["SpatializedXZ"] = audioSource->IsSpatialized();
+    audioJson["MinDistance"] = audioSource->GetMinDistance();
+    audioJson["MaxDistance"] = audioSource->GetMaxDistance();
+    audioJson["Priority"] = static_cast<int>(audioSource->GetPriority());
+
     compsJson["AudioSource"] = std::move(audioJson);
 }
 
@@ -381,13 +392,29 @@ void DeserializeCameraComponent(GameObject* go, const json& camJson, const std::
 
 
 void DeserializeAudioSource(GameObject* go, const json& audioJson, const std::string&) {
+    if (!audioJson.is_object()) return;
     auto* audioSource = go->AddComponent<AudioSource>();
+    audioSource->SetEnabled(audioJson.value("Enabled", true));
     if (audioJson.contains("ClipPath") && audioJson["ClipPath"].is_string()) {
         std::string clipPath = audioJson["ClipPath"].get<std::string>();
         if (!clipPath.empty()) {
             audioSource->SetClip(ResourceManager::Load<AudioClip>(clipPath));
         }
     }
+    if (audioJson.contains("Bus") && audioJson["Bus"].is_number_integer()) {
+        const int busVal = std::clamp(audioJson["Bus"].get<int>(), 0, static_cast<int>(AudioBus::Count) - 1);
+        audioSource->SetBus(static_cast<AudioBus>(busVal));
+    }
+    audioSource->SetVolume(audioJson.value("Volume", 1.0f));
+    const float pitchMin = audioJson.value("PitchMin", 1.0f);
+    const float pitchMax = audioJson.value("PitchMax", 1.0f);
+    audioSource->SetPitchRange(pitchMin, pitchMax);
+    audioSource->SetLooping(audioJson.value("Loop", false));
+    audioSource->SetSpatialized(audioJson.value("SpatializedXZ", false));
+    const float minDist = audioJson.value("MinDistance", 1.0f);
+    const float maxDist = audioJson.value("MaxDistance", 25.0f);
+    audioSource->SetAttenuationDistances(minDist, maxDist);
+    audioSource->SetPriority(static_cast<uint8_t>(audioJson.value("Priority", 128)));
 }
 
 

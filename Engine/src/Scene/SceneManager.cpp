@@ -1,4 +1,5 @@
 #include "Engine/Scene/SceneManager.h"
+#include "Engine/Core/Time.h"
 #include "Engine/Renderer/Renderer2D.h"
 #include "Engine/Renderer/RHI/Renderer.h"
 #include "Engine/Utils/Logger.h"
@@ -131,7 +132,8 @@ void SceneManager::CancelTransition() noexcept {
 
 void SceneManager::Update(float deltaTime) {
     ENGINE_CORE_TRACE("SceneManager::Update");
-    UpdateTransition(deltaTime);
+    const float unscaledDt = Time::GetUnscaledDeltaTime();
+    UpdateTransition(unscaledDt > 0.0f ? unscaledDt : deltaTime);
     if (s_ActiveScene) {
         s_ActiveScene->Update(deltaTime);
     }
@@ -139,7 +141,8 @@ void SceneManager::Update(float deltaTime) {
 
 void SceneManager::UpdateRuntime(float deltaTime) {
     ENGINE_CORE_TRACE("SceneManager::UpdateRuntime");
-    UpdateTransition(deltaTime);
+    const float unscaledDt = Time::GetUnscaledDeltaTime();
+    UpdateTransition(unscaledDt > 0.0f ? unscaledDt : deltaTime);
     if (s_ActiveScene) {
         s_ActiveScene->UpdateRuntime(deltaTime);
     }

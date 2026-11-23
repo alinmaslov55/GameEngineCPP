@@ -8,6 +8,8 @@
 #include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Components/LightComponents.h"
+#include "Engine/Scene/Components/CameraComponent.h"
+#include "Engine/UI/UIButtonComponent.h"
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/SceneSerializer.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
@@ -495,7 +497,52 @@ GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worl
         }
     }
 
-    // Pass 4: Create runtime physics bodies if runtime is active
+    // Pass 4: Remap UIButtonComponent neighbor UUIDs and sync CameraComponents
+    for (const auto& [uuid, go] : createdEntities) {
+        if (!go) continue;
+
+        if (auto* btn = go->GetComponent<UIButtonComponent>()) {
+            if (btn->UpNeighborUUID != 0) {
+                if (auto it = oldToNewUUID.find(btn->UpNeighborUUID); it != oldToNewUUID.end()) {
+                    btn->UpNeighborUUID = it->second;
+                }
+            }
+            if (btn->DownNeighborUUID != 0) {
+                if (auto it = oldToNewUUID.find(btn->DownNeighborUUID); it != oldToNewUUID.end()) {
+                    btn->DownNeighborUUID = it->second;
+                }
+            }
+            if (btn->LeftNeighborUUID != 0) {
+                if (auto it = oldToNewUUID.find(btn->LeftNeighborUUID); it != oldToNewUUID.end()) {
+                    btn->LeftNeighborUUID = it->second;
+                }
+            }
+            if (btn->RightNeighborUUID != 0) {
+                if (auto it = oldToNewUUID.find(btn->RightNeighborUUID); it != oldToNewUUID.end()) {
+                    btn->RightNeighborUUID = it->second;
+                }
+            }
+        }
+
+        if (auto* cam = go->GetComponent<CameraComponent>()) {
+            cam->SyncFromTransform(go->GetTransform());
+        }
+    }
+
+    // Pass 5: Apply active state saved in prefab
+    for (const auto& entityJson : entitiesArray) {
+        const uint64_t oldUUID = entityJson.value("UUID", 0ULL);
+        auto it = oldToNewUUID.find(oldUUID);
+        if (it != oldToNewUUID.end()) {
+            if (auto goIt = createdEntities.find(it->second); goIt != createdEntities.end() && goIt->second) {
+                if (entityJson.contains("Active") && entityJson["Active"].is_boolean()) {
+                    goIt->second->SetActive(entityJson["Active"].get<bool>());
+                }
+            }
+        }
+    }
+
+    // Pass 6: Create runtime physics bodies if runtime is active
     if (m_PhysicsWorld && m_PhysicsWorld->IsRuntimeRunning()) {
         for (const auto& [uuid, go] : createdEntities) {
             m_PhysicsWorld->RegisterRuntimeBody(go);

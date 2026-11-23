@@ -201,7 +201,7 @@ flowchart TD
 | **`FIX-ECS-01`** | `GameObject` Transform Removal Guard, Reentrancy, `LateUpdate` & UUID Map | `DONE` | **P0** | W0 | *None (Root)* | `C-07`, ECS `#15`, `#16`, `#19`, Med `HasComponent` | `FIX-ECS-02`, `FIX-PHY-01`, `FIX-EDT-01` |
 | **`FIX-ECS-02`** | `Transform` Reparent Active Sync, Zero-Scale Guard & `SquashStretch` WorldPos | `DONE` | **P0** | W1 | `FIX-ECS-01` | ECS `#17`, `#18`, Med `SquashStretch` | `FIX-ECS-03`, `FIX-SER-01`, `DOC-01` |
 | **`FIX-ECS-03`** | `EntityPoolManager` Key/Parent Safety & Pooled Component State Reset | `DONE` | **P0** | W2 | `FIX-ECS-02`, `FIX-ANI-01` | `C-08`, Med `EntityPoolManager`, Physics `#28` | `DOC-03` |
-| **`FIX-SER-01`** | `SceneSerializer` & `Prefab` Full Component/Active Fidelity & Safe JSON | `TODO` | **P0** | W1 | `FIX-ECS-02`, `FIX-ANI-01` | ECS `#23`, `#25` (`SceneManager` unscaled dt) | `FIX-PHY-01`, `DOC-03` |
+| **`FIX-SER-01`** | `SceneSerializer` & `Prefab` Full Component/Active Fidelity & Safe JSON | `DONE` | **P0** | W1 | `FIX-ECS-02`, `FIX-ANI-01` | ECS `#23`, `#25` (`SceneManager` unscaled dt) | `FIX-PHY-01`, `DOC-03` |
 | **`FIX-ANI-01`** | `Animator` PlayGeneration Reentrancy Guard, `FlipX` Retention & Finite `dt` | `TODO` | **P0** | W0 | *None (Root)* | `C-09`, ECS `#21`, Med `PlayOneShot` | `FIX-ECS-03`, `FIX-SER-01`, `FIX-EDT-03` |
 | **`FIX-AIX-01`** | `StateMachine` Iterative Transition Queue, `SteeringSystem` & `Ballistics` Guards | `TODO` | **P0** | W1 | `FIX-PHY-04` | `C-10`, ECS `#26`, Med `Ballistics`, `StateMachine` | `OPT-01`, `DOC-06` |
 | **`FIX-LGT-01`** | `LightQuerySystem` Enabled/Occlusion Order & `CameraComponent` Pause Hold | `TODO` | **P1** | W1 | `FIX-PHY-04` | ECS `#20`, `#24` (`CameraComponent`) | `OPT-01`, `DOC-05` |
@@ -403,7 +403,7 @@ flowchart TD
 ---
 
 #### `FIX-SER-01` — `SceneSerializer` & `Prefab` Full Component/Active Fidelity & Safe JSON
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-ECS-02`, `FIX-ANI-01` | Unlocks: `FIX-PHY-01`, `DOC-03`
 - **Current Defects:**
   - [SceneSerializer.cpp](file://Engine/src/Scene/Serialization/SceneSerializer.cpp#L57-L81), [SceneSerializerCore.cpp](file://Engine/src/Scene/Serialization/SceneSerializerCore.cpp#L227-L236), [SceneSerializerPhysics.cpp](file://Engine/src/Scene/Serialization/SceneSerializerPhysics.cpp#L45-L99), [SceneSerializerUI.cpp](file://Engine/src/Scene/Serialization/SceneSerializerUI.cpp#L66-L274):

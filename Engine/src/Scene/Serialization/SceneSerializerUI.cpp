@@ -103,6 +103,7 @@ void SerializeUIRadialWheelComponent(const GameObject* go, json& compsJson) {
     if (!wheel) return;
 
     json wheelJson = {
+        {"Enabled", wheel->IsEnabled()},
         {"UseRectTransform", wheel->useRectTransform},
         {"SlowMoTimeScale", wheel->SlowMoTimeScale},
         {"AvailableWood", wheel->AvailableWood}
@@ -119,14 +120,27 @@ void SerializeUIRadialWheelComponent(const GameObject* go, json& compsJson) {
             {"IgnoreSafeArea", wheel->rectTransform.IgnoreSafeArea}
         };
     }
+    if (wheel->WheelTexture) {
+        wheelJson["WheelTexturePath"] = ResourceManager::ToRelativePath(wheel->WheelTexture->GetFilepath());
+    }
+    if (wheel->HighlightTexture) {
+        wheelJson["HighlightTexturePath"] = ResourceManager::ToRelativePath(wheel->HighlightTexture->GetFilepath());
+    }
     json slotsJson = json::array();
     for (const auto& slot : wheel->Slots) {
-        slotsJson.push_back({
+        json slotEntry = {
             {"Item", static_cast<int>(slot.Item)},
             {"Name", slot.Name},
             {"WoodCost", slot.WoodCost},
             {"ShortcutKey", slot.ShortcutKey}
-        });
+        };
+        if (slot.Icon) {
+            slotEntry["IconPath"] = ResourceManager::ToRelativePath(slot.Icon->GetFilepath());
+        }
+        if (slot.IconSubTex) {
+            slotEntry["IconSubTexture"] = SerializeSubTexture(slot.IconSubTex);
+        }
+        slotsJson.push_back(std::move(slotEntry));
     }
     wheelJson["Slots"] = std::move(slotsJson);
     compsJson["UIRadialWheelComponent"] = std::move(wheelJson);
@@ -245,11 +259,11 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
         const auto& fontJson = labelJson["Font"];
         std::string bmFontPath;
         if (fontJson.contains("BMFontPath") && fontJson["BMFontPath"].is_string()) {
-            bmFontPath = fontJson["BMFontPath"].get<std::string>();
+            bmFontPath = ResourceManager::ResolvePath(fontJson["BMFontPath"].get<std::string>());
         }
         std::string atlasPath;
         if (fontJson.contains("AtlasTexturePath") && fontJson["AtlasTexturePath"].is_string()) {
-            atlasPath = fontJson["AtlasTexturePath"].get<std::string>();
+            atlasPath = ResourceManager::ResolvePath(fontJson["AtlasTexturePath"].get<std::string>());
         }
 
         static std::mutex s_FontCacheMutex;
@@ -380,6 +394,7 @@ void DeserializeUIMinimapComponent(GameObject* go, const json& j, const std::str
 void DeserializeUIRadialWheelComponent(GameObject* go, const json& j, const std::string&) {
     if (!j.is_object()) return;
     auto* wheel = go->AddComponent<UIRadialWheelComponent>();
+    wheel->SetEnabled(j.value("Enabled", true));
     wheel->useRectTransform = j.value("UseRectTransform", true);
     wheel->SlowMoTimeScale = j.value("SlowMoTimeScale", 0.15f);
     wheel->AvailableWood = j.value("AvailableWood", 0u);
@@ -394,6 +409,18 @@ void DeserializeUIRadialWheelComponent(GameObject* go, const json& j, const std:
         wheel->rectTransform.ZOrder = rtJson.value("ZOrder", 100);
         wheel->rectTransform.IgnoreSafeArea = rtJson.value("IgnoreSafeArea", false);
     }
+    if (j.contains("WheelTexturePath") && j["WheelTexturePath"].is_string()) {
+        const std::string texPath = j["WheelTexturePath"].get<std::string>();
+        if (!texPath.empty()) {
+            wheel->WheelTexture = ResourceManager::Load<Texture>(texPath);
+        }
+    }
+    if (j.contains("HighlightTexturePath") && j["HighlightTexturePath"].is_string()) {
+        const std::string texPath = j["HighlightTexturePath"].get<std::string>();
+        if (!texPath.empty()) {
+            wheel->HighlightTexture = ResourceManager::Load<Texture>(texPath);
+        }
+    }
     if (j.contains("Slots") && j["Slots"].is_array()) {
         size_t idx = 0;
         for (const auto& slotJson : j["Slots"]) {
@@ -402,6 +429,15 @@ void DeserializeUIRadialWheelComponent(GameObject* go, const json& j, const std:
             wheel->Slots[idx].Name = slotJson.value("Name", wheel->Slots[idx].Name);
             wheel->Slots[idx].WoodCost = slotJson.value("WoodCost", wheel->Slots[idx].WoodCost);
             wheel->Slots[idx].ShortcutKey = slotJson.value("ShortcutKey", wheel->Slots[idx].ShortcutKey);
+            if (slotJson.contains("IconPath") && slotJson["IconPath"].is_string()) {
+                const std::string iconPath = slotJson["IconPath"].get<std::string>();
+                if (!iconPath.empty()) {
+                    wheel->Slots[idx].Icon = ResourceManager::Load<Texture>(iconPath);
+                }
+            }
+            if (slotJson.contains("IconSubTexture") && slotJson["IconSubTexture"].is_object()) {
+                wheel->Slots[idx].IconSubTex = DeserializeSubTexture(slotJson["IconSubTexture"]);
+            }
             idx++;
         }
     }

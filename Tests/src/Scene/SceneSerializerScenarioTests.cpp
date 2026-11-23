@@ -10,6 +10,11 @@
 #include "Engine/Scene/Components/LightComponents.h"
 #include "Engine/Scene/Components/PostProcessComponent.h"
 #include "Engine/Scene/Components/FoliageWindComponents.h"
+#include "Engine/Audio/AudioSource.h"
+#include "Engine/UI/UIButtonComponent.h"
+#include "Engine/Scene/Prefab.h"
+#include "Engine/Scene/SceneManager.h"
+#include "Engine/Core/Time.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Renderer/SpriteRenderer.h"
@@ -283,6 +288,200 @@ TEST(SceneSerializerTest, UseTerrainFrictionRoundTrip) {
 
     EXPECT_TRUE(loadedRb->UseTerrainFriction);
     EXPECT_NEAR(loadedRb->LinearDamping, 3.2f, 1e-4f);
+}
+
+TEST(SceneSerializerTest, RoundTripActiveAndEnabledState) {
+    auto srcScene = std::make_shared<Engine::Scene>("ActiveEnabledScene");
+    auto* go = srcScene->CreateGameObjectWithUUID(99901ULL, "InactiveEntity");
+    go->SetActive(false);
+    auto* col = go->AddComponent<Engine::BoxCollider2D>();
+    col->SetEnabled(false);
+
+    const std::string savedJson = Engine::SceneSerializer(srcScene).SerializeToString();
+    ASSERT_FALSE(savedJson.empty());
+
+    auto loadedScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(loadedScene).DeserializeFromString(savedJson));
+    auto* loadedGo = loadedScene->FindGameObjectByUUID(99901ULL);
+    ASSERT_NE(loadedGo, nullptr);
+    EXPECT_FALSE(loadedGo->IsActive());
+    auto* loadedCol = loadedGo->GetComponent<Engine::BoxCollider2D>();
+    ASSERT_NE(loadedCol, nullptr);
+    EXPECT_FALSE(loadedCol->IsEnabled());
+}
+
+TEST(SceneSerializerTest, RoundTripMultiColliderFidelity) {
+    auto srcScene = std::make_shared<Engine::Scene>("MultiColliderScene");
+    auto* go = srcScene->CreateGameObjectWithUUID(99902ULL, "MultiColliderEntity");
+    auto* col1 = go->AddComponent<Engine::CircleCollider2D>();
+    col1->Radius = 1.5f;
+    col1->IsSensor = false;
+
+    auto* col2 = go->AddComponent<Engine::CircleCollider2D>();
+    col2->Radius = 4.0f;
+    col2->IsSensor = true;
+
+    const std::string savedJson = Engine::SceneSerializer(srcScene).SerializeToString();
+    ASSERT_FALSE(savedJson.empty());
+
+    auto loadedScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(loadedScene).DeserializeFromString(savedJson));
+    auto* loadedGo = loadedScene->FindGameObjectByUUID(99902ULL);
+    ASSERT_NE(loadedGo, nullptr);
+
+    auto colliders = loadedGo->GetComponents<Engine::CircleCollider2D>();
+    ASSERT_EQ(colliders.size(), 2u);
+    EXPECT_NEAR(colliders[0]->Radius, 1.5f, 1e-4f);
+    EXPECT_FALSE(colliders[0]->IsSensor);
+    EXPECT_NEAR(colliders[1]->Radius, 4.0f, 1e-4f);
+    EXPECT_TRUE(colliders[1]->IsSensor);
+}
+
+TEST(SceneSerializerTest, RoundTripAudioSourceFullProperties) {
+    auto srcScene = std::make_shared<Engine::Scene>("AudioScene");
+    auto* go = srcScene->CreateGameObjectWithUUID(99903ULL, "SoundEmitter");
+    auto* src = go->AddComponent<Engine::AudioSource>();
+    src->SetBus(Engine::AudioBus::Music);
+    src->SetVolume(0.75f);
+    src->SetPitchRange(0.85f, 1.15f);
+    src->SetLooping(true);
+    src->SetSpatialized(true);
+    src->SetAttenuationDistances(3.5f, 45.0f);
+    src->SetPriority(64);
+
+    const std::string savedJson = Engine::SceneSerializer(srcScene).SerializeToString();
+    ASSERT_FALSE(savedJson.empty());
+
+    auto loadedScene = std::make_shared<Engine::Scene>();
+    ASSERT_TRUE(Engine::SceneSerializer(loadedScene).DeserializeFromString(savedJson));
+    auto* loadedGo = loadedScene->FindGameObjectByUUID(99903ULL);
+    ASSERT_NE(loadedGo, nullptr);
+    auto* loadedSrc = loadedGo->GetComponent<Engine::AudioSource>();
+    ASSERT_NE(loadedSrc, nullptr);
+
+    EXPECT_EQ(loadedSrc->GetBus(), Engine::AudioBus::Music);
+    EXPECT_NEAR(loadedSrc->GetVolume(), 0.75f, 1e-4f);
+    EXPECT_NEAR(loadedSrc->GetPitchMin(), 0.85f, 1e-4f);
+    EXPECT_NEAR(loadedSrc->GetPitchMax(), 1.15f, 1e-4f);
+    EXPECT_TRUE(loadedSrc->IsLooping());
+    EXPECT_TRUE(loadedSrc->IsSpatialized());
+    EXPECT_NEAR(loadedSrc->GetMinDistance(), 3.5f, 1e-4f);
+    EXPECT_NEAR(loadedSrc->GetMaxDistance(), 45.0f, 1e-4f);
+    EXPECT_EQ(loadedSrc->GetPriority(), 64);
+}
+
+TEST(SceneSerializerTest, SerializeExcludesPendingDestroyEntities) {
+    auto srcScene = std::make_shared<Engine::Scene>("PendingDestroyScene");
+    auto* e1 = srcScene->CreateGameObjectWithUUID(99910ULL, "Alive1");
+    auto* e2 = srcScene->CreateGameObjectWithUUID(99911ULL, "ToDestroy");
+    (void)e1;
+    srcScene->DestroyGameObject(e2);
+
+    const std::string savedJson = Engine::SceneSerializer(srcScene).SerializeToString();
+    EXPECT_FALSE(savedJson.find("ToDestroy") != std::string::npos);
+}
+
+TEST(SceneSerializerTest, PrefabInstantiateRemapsButtonNeighborsAndSyncsCamera) {
+    auto scene = std::make_shared<Engine::Scene>("PrefabTestScene");
+    
+    // Construct prefab JSON with two buttons pointing to each other + camera
+    nlohmann::json prefabJson = {
+        {"Entities", {
+            {
+                {"UUID", 1001ULL},
+                {"Name", "BtnA"},
+                {"Active", false},
+                {"Components", {
+                    {"UIButtonComponent", {
+                        {"DownNeighborUUID", 1002ULL}
+                    }}
+                }}
+            },
+            {
+                {"UUID", 1002ULL},
+                {"Name", "BtnB"},
+                {"Active", true},
+                {"Components", {
+                    {"UIButtonComponent", {
+                        {"UpNeighborUUID", 1001ULL}
+                    }}
+                }}
+            },
+            {
+                {"UUID", 1003ULL},
+                {"Name", "PrefabCamera"},
+                {"Components", {
+                    {"CameraComponent", {
+                        {"Distance", 20.0f}
+                    }}
+                }}
+            }
+        }}
+    };
+
+    Engine::Prefab prefab(prefabJson);
+    auto* root = scene->InstantiatePrefab(prefab, glm::vec3(42.0f, 10.0f, -5.0f));
+    ASSERT_NE(root, nullptr);
+
+    Engine::GameObject* newBtnA = nullptr;
+    Engine::GameObject* newBtnB = nullptr;
+    Engine::GameObject* newCamGo = nullptr;
+
+    for (const auto& go : scene->GetGameObjects()) {
+        if (go->GetName() == "BtnA") newBtnA = go.get();
+        if (go->GetName() == "BtnB") newBtnB = go.get();
+        if (go->GetName() == "PrefabCamera") newCamGo = go.get();
+    }
+
+    ASSERT_NE(newBtnA, nullptr);
+    ASSERT_NE(newBtnB, nullptr);
+    ASSERT_NE(newCamGo, nullptr);
+
+    // Active state preserved
+    EXPECT_FALSE(newBtnA->IsActive());
+    EXPECT_TRUE(newBtnB->IsActive());
+
+    // Neighbor UUID remapped
+    auto* compA = newBtnA->GetComponent<Engine::UIButtonComponent>();
+    auto* compB = newBtnB->GetComponent<Engine::UIButtonComponent>();
+    ASSERT_NE(compA, nullptr);
+    ASSERT_NE(compB, nullptr);
+    EXPECT_EQ(compA->DownNeighborUUID, newBtnB->GetUUID());
+    EXPECT_EQ(compB->UpNeighborUUID, newBtnA->GetUUID());
+
+    // CameraComponent synced to root position
+    auto* cam = newCamGo->GetComponent<Engine::CameraComponent>();
+    ASSERT_NE(cam, nullptr);
+    EXPECT_EQ(cam->Distance, 20.0f);
+}
+
+TEST(SceneSerializerTest, SceneManagerTransitionAdvancesWhenTimeScaleIsZero) {
+    auto initialScene = std::make_shared<Engine::Scene>("Scene1");
+    Engine::SceneManager::LoadScene(initialScene);
+
+    bool nextSceneLoaded = false;
+    Engine::SceneManager::TransitionToScene([&]() {
+        nextSceneLoaded = true;
+        return std::make_shared<Engine::Scene>("Scene2");
+    }, 0.2f);
+
+    EXPECT_TRUE(Engine::SceneManager::IsTransitioning());
+
+    // Pause gameplay
+    Engine::Time::SetTimeScale(0.0f);
+    Engine::Time::SetMockDeltaTime(0.3f);
+    Engine::Time::Update(); // Advances unscaled time by 0.3f, while scaled delta time becomes 0.0f
+
+    // Update with scaled delta = 0.0f
+    Engine::SceneManager::Update(Engine::Time::GetDeltaTime());
+
+    // Half duration is 0.1s; with 0.3s unscaled elapsed, peak blackout and scene swap must have triggered
+    EXPECT_TRUE(nextSceneLoaded);
+
+    // Restore time scale, active scene & reset mock
+    Engine::Time::Reset();
+    Engine::SceneManager::CancelTransition();
+    Engine::SceneManager::Shutdown();
 }
 
 } // namespace
