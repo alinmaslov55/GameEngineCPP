@@ -90,10 +90,15 @@ void Renderer::ResetPointLightUploadCount() {
 }
 
 void Renderer::SetViewport(uint32_t x, uint32_t y, uint32_t width, uint32_t height) {
-    glViewport(static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+    if (glad_glViewport != nullptr) {
+        glViewport(static_cast<GLint>(x), static_cast<GLint>(y), static_cast<GLsizei>(width), static_cast<GLsizei>(height));
+    }
 }
 
 void Renderer::SetDepthTest(bool enabled) {
+    if (glad_glEnable == nullptr || glad_glDisable == nullptr) {
+        return;
+    }
     if (enabled) {
         glEnable(GL_DEPTH_TEST);
     } else {
@@ -102,10 +107,15 @@ void Renderer::SetDepthTest(bool enabled) {
 }
 
 void Renderer::SetDepthMask(bool writeEnabled) {
-    glDepthMask(writeEnabled ? GL_TRUE : GL_FALSE);
+    if (glad_glDepthMask != nullptr) {
+        glDepthMask(writeEnabled ? GL_TRUE : GL_FALSE);
+    }
 }
 
 void Renderer::SetPolygonOffset(bool enabled, float factor, float units) {
+    if (glad_glEnable == nullptr || glad_glDisable == nullptr || glad_glPolygonOffset == nullptr) {
+        return;
+    }
     if (enabled) {
         glEnable(GL_POLYGON_OFFSET_FILL);
         glPolygonOffset(factor, units);
@@ -115,18 +125,40 @@ void Renderer::SetPolygonOffset(bool enabled, float factor, float units) {
 }
 
 void Renderer::SetClearColor(const glm::vec4& color) {
-    glClearColor(color.r, color.g, color.b, color.a);
+    if (glad_glClearColor != nullptr) {
+        glClearColor(color.r, color.g, color.b, color.a);
+    }
 }
 
 void Renderer::Clear() {
-    glDepthMask(GL_TRUE);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    if (glad_glDepthMask != nullptr) {
+        glDepthMask(GL_TRUE);
+    }
+    if (glad_glClear != nullptr) {
+        glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
+    }
 }
 
 void Renderer::DrawIndexed(const std::shared_ptr<VertexArray>& vertexArray, uint32_t indexCount, uint32_t baseVertex) {
-    uint32_t count = indexCount ? indexCount : vertexArray->GetIndexBuffer()->GetCount();
+    if (!vertexArray) {
+        return;
+    }
+    uint32_t count = indexCount;
+    if (count == 0) {
+        const auto& ib = vertexArray->GetIndexBuffer();
+        if (!ib) {
+            return;
+        }
+        count = ib->GetCount();
+    }
+    if (count == 0) {
+        return;
+    }
+
     if (baseVertex == 0 || glad_glDrawElementsBaseVertex == nullptr) {
-        glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(count), GL_UNSIGNED_INT, nullptr);
+        if (glad_glDrawElements != nullptr) {
+            glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(count), GL_UNSIGNED_INT, nullptr);
+        }
     } else {
         glDrawElementsBaseVertex(GL_TRIANGLES, static_cast<GLsizei>(count), GL_UNSIGNED_INT, nullptr, static_cast<GLint>(baseVertex));
     }

@@ -210,7 +210,7 @@ flowchart TD
 | **`FIX-PHY-03`** | 2.5D Yaw Handedness (`-θ`), Collider Offset Scale, Stasis & Tilemap Safety | `TODO` | **P0** | W1 | `FIX-PHY-01`, `FIX-PHY-02` | Physics `#27–#30`, `#32`, Med `Rigidbody2D`/`Tilemap` | `FIX-PHY-04`, `FIX-SBX-01`, `DOC-04` |
 | **`FIX-PHY-04`** | `PhysicsQueries` Custom Raycast Filter, `OverlapArcXZ` & Fallback Parity | `TODO` | **P1** | W1 | `FIX-PHY-03` | Physics `#33` | `FIX-AIX-01`, `FIX-LGT-01`, `DOC-04` |
 | **`FIX-VFX-01`** | `ParticleSystem` Rest Threshold, Swap-Remove Cleanup, PRNG & `DecalManager` | `DONE` | **P1** | W0 | *None (Root)* | Physics `#30`, `#34`, Med `Flipbook`, Imp `#5`, `#10` | `FIX-TER-03`, `DOC-04` |
-| **`FIX-RND-01`** | OpenGL 4.1 `#version 410` Line Shader, VAO/EBO Protection & `GL_BOOL` Fix | `TODO` | **P0** | W0 | *None (Root)* | `C-16`, RND `#35`, `#36`, `#41`, Med `glLineWidth` | `FIX-RND-03`, `FIX-UIX-01` |
+| **`FIX-RND-01`** | OpenGL 4.1 `#version 410` Line Shader, VAO/EBO Protection & `GL_BOOL` Fix | `DONE` | **P0** | W0 | *None (Root)* | `C-16`, RND `#35`, `#36`, `#41`, Med `glLineWidth` | `FIX-RND-03`, `FIX-UIX-01` |
 | **`FIX-RND-02`** | `DDSLoader` Overflow Guards, `GL_TEXTURE_MAX_LEVEL`, Anisotropy & `SpriteAtlas` | `TODO` | **P0** | W0 | `FIX-CORE-01` | `C-18`, `C-20`, RND `#37`, `#40`, Med `SubTexture2D`/`BC2` | `DOC-05` |
 | **`FIX-RND-03`** | `TerrainRenderer` `GL_TEXTURE6` Guard, Transitive Light Sort & Hitbox GC | `TODO` | **P0** | W1 | `FIX-RND-01` | `C-17`, `C-19`, RND `#39`, Med `GL state`/`WorldPos` | `FIX-RND-04` |
 | **`FIX-RND-04`** | `TerrainSplatmap.glsl` `textureGrad`/NaN Guards & `Batch2D.glsl` Flat FX | `TODO` | **P1** | W1 | `FIX-RND-03` | RND `#38`, Med `FlashColor`, `Silhouette`, `Vignette` | `OPT-01`, `DOC-05` |
@@ -514,7 +514,7 @@ flowchart TD
 ---
 
 #### `FIX-RND-01` — OpenGL 4.1 `#version 410` Line Shader, VAO/EBO Protection & `GL_BOOL` Fix
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `FIX-RND-03`, `FIX-UIX-01`
 - **Current Defects:**
   1. [Renderer2D.cpp](file://Engine/src/Renderer/Renderer2D.cpp#L227-L250), [lines 498-515](file://Engine/src/Renderer/Renderer2D.cpp#L498-L515): Debug line shader uses `#version 450 core` instead of `#version 410 core` and `FlushLines()` draws with stale shaders if invalid (`C-16`), uses unclamped `glLineWidth(1.5f)` (`GL_INVALID_VALUE` on strict 4.1 Core), and lacks VBO `Orphan()`.

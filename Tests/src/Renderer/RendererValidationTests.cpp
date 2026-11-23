@@ -7,7 +7,10 @@
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/Texture2DArray.h"
 #include "Engine/Renderer/RHI/VertexArray.h"
+#include "Engine/Renderer/RHI/IndexBuffer.h"
+#include "Engine/Renderer/RHI/Renderer.h"
 #include "Engine/Utils/Logger.h"
+#include <glad/glad.h>
 
 #include <cstdint>
 #include <filesystem>
@@ -133,6 +136,58 @@ TEST(RendererValidationTest, Renderer2DAndPostProcessorUninitializedSafetyGuards
 
     Engine::PostProcessor::Shutdown();
     EXPECT_FALSE(Engine::PostProcessor::IsValid());
+}
+
+TEST(RendererValidationTest, ShaderDataTypeBoolDoesNotMapToInvalidGLBool) {
+    Engine::VertexArray vao;
+    auto vbo = std::make_shared<Engine::VertexBuffer>(static_cast<uint32_t>(sizeof(uint8_t) * 4));
+    vbo->SetLayout({
+        { Engine::ShaderDataType::Bool, "a_ActiveFlag" }
+    });
+    // AddVertexBuffer internally processes ShaderDataType::Bool
+    vao.AddVertexBuffer(vbo);
+    EXPECT_EQ(vao.GetAttributeCount(), 1u);
+}
+
+TEST(RendererValidationTest, HeadlessRendererAPICallsDoNotCrash) {
+    // These methods should have null guards for glad_gl* function pointers
+    Engine::Renderer::SetViewport(0, 0, 1920, 1080);
+    Engine::Renderer::SetDepthTest(true);
+    Engine::Renderer::SetDepthTest(false);
+    Engine::Renderer::SetDepthMask(true);
+    Engine::Renderer::SetDepthMask(false);
+    Engine::Renderer::SetPolygonOffset(true, 1.0f, 1.0f);
+    Engine::Renderer::SetPolygonOffset(false, 0.0f, 0.0f);
+    Engine::Renderer::SetClearColor({ 0.1f, 0.2f, 0.3f, 1.0f });
+    Engine::Renderer::Clear();
+
+    // DrawIndexed with null vertex array or null index buffer must safely return
+    Engine::Renderer::DrawIndexed(nullptr, 0);
+
+    auto vao = std::make_shared<Engine::VertexArray>();
+    Engine::Renderer::DrawIndexed(vao, 0); // null index buffer, zero index count
+}
+
+TEST(RendererValidationTest, IndexBufferCreationPreservesBoundVAOAndIndexBuffer) {
+    auto vaoA = std::make_shared<Engine::VertexArray>();
+    const uint32_t indicesA[3] = { 0, 1, 2 };
+    auto ibA = std::make_shared<Engine::IndexBuffer>(indicesA, 3);
+    vaoA->SetIndexBuffer(ibA);
+
+    vaoA->Bind();
+    EXPECT_EQ(vaoA->GetIndexBuffer(), ibA);
+
+    // Construct an unrelated IndexBuffer B while vaoA is bound
+    const uint32_t indicesB[6] = { 0, 1, 2, 2, 3, 0 };
+    auto ibB = std::make_shared<Engine::IndexBuffer>(indicesB, 6);
+
+    // VAO A's bound index buffer pointer must not be clobbered
+    EXPECT_EQ(vaoA->GetIndexBuffer(), ibA);
+    EXPECT_EQ(ibB->GetCount(), 6u);
+
+    ibB->Unbind();
+    EXPECT_EQ(vaoA->GetIndexBuffer(), ibA);
+    vaoA->Unbind();
 }
 
 } // namespace

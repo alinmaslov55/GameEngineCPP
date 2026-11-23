@@ -224,7 +224,7 @@ void Renderer2D::Init() {
     s_Data->LineVertexBufferBase = std::make_unique<LineVertex[]>(Renderer2DStorage::MaxLineVertices);
     s_Data->LineVertexBufferPtr = s_Data->LineVertexBufferBase.get();
 
-    static const char* kLineVertexShader = R"(#version 450 core
+    static const char* kLineVertexShader = R"(#version 410 core
 layout(location = 0) in vec3 a_Position;
 layout(location = 1) in vec4 a_Color;
 
@@ -238,7 +238,7 @@ void main() {
 }
 )";
 
-    static const char* kLineFragmentShader = R"(#version 450 core
+    static const char* kLineFragmentShader = R"(#version 410 core
 layout(location = 0) in vec4 v_Color;
 
 layout(location = 0) out vec4 o_Color;
@@ -495,16 +495,26 @@ void Renderer2D::FlushLines() {
     );
     if (lineVertexCount == 0) return;
 
+    if (!s_Data->LineShader || !s_Data->LineShader->IsValid()) {
+        ENGINE_CORE_WARN("Renderer2D::FlushLines: LineShader is null or invalid; skipping draw");
+        s_Data->LineVertexBufferPtr = s_Data->LineVertexBufferBase.get();
+        return;
+    }
+
     const uint32_t dataSize = lineVertexCount * static_cast<uint32_t>(sizeof(LineVertex));
     s_Data->LineVertexBuffer->SetSubData(s_Data->LineVertexBufferBase.get(), dataSize, 0);
 
-    if (s_Data->LineShader && s_Data->LineShader->IsValid()) {
-        s_Data->LineShader->Bind();
-        s_Data->LineShader->SetMat4("u_ViewProjection", s_Data->CurrentViewProjection);
-    }
+    s_Data->LineShader->Bind();
+    s_Data->LineShader->SetMat4("u_ViewProjection", s_Data->CurrentViewProjection);
 
     if (glad_glLineWidth != nullptr) {
-        glLineWidth(s_Data->LineWidth);
+        float lineWidth = s_Data->LineWidth;
+        if (glad_glGetFloatv != nullptr) {
+            GLfloat range[2] = { 1.0f, 1.0f };
+            glGetFloatv(GL_ALIASED_LINE_WIDTH_RANGE, range);
+            lineWidth = std::clamp(lineWidth, range[0], range[1]);
+        }
+        glLineWidth(lineWidth);
     }
 
     if (s_Data->LineVertexArray) {

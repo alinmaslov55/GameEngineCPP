@@ -7,12 +7,33 @@
 namespace Engine {
 
 IndexBuffer::IndexBuffer(const uint32_t* indices, uint32_t count) : m_Count(count) {
-    if (glad_glGenBuffers == nullptr) {
+    if (glad_glGenBuffers == nullptr || glad_glBindBuffer == nullptr || glad_glBufferData == nullptr) {
         return;
     }
+
+    GLint prevVAO = 0;
+    GLint prevEBO = 0;
+    if (glad_glGetIntegerv != nullptr) {
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVAO);
+        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &prevEBO);
+    }
+
+    // Unbind VAO temporarily to avoid inadvertently mutating its element array buffer
+    if (prevVAO != 0 && glad_glBindVertexArray != nullptr) {
+        glBindVertexArray(0);
+    }
+
     glGenBuffers(1, &m_RendererID);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_RendererID);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(uint32_t), indices, GL_STATIC_DRAW);
+
+    // Restore previous VAO/EBO bindings
+    if (prevVAO != 0 && glad_glBindVertexArray != nullptr) {
+        glBindVertexArray(static_cast<GLuint>(prevVAO));
+    } else {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(prevEBO));
+    }
+
     ENGINE_CORE_DEBUG("IndexBuffer created with ID: {} (count: {})", m_RendererID, count);
 }
 
@@ -57,7 +78,14 @@ void IndexBuffer::Unbind() const {
     if (glad_glBindBuffer == nullptr) {
         return;
     }
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    GLint boundVAO = 0;
+    if (glad_glGetIntegerv != nullptr) {
+        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &boundVAO);
+    }
+    // Only unbind if no VAO is currently bound to avoid stripping the VAO's EBO
+    if (boundVAO == 0) {
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+    }
 }
 
 } // namespace Engine
