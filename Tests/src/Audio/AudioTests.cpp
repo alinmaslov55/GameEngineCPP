@@ -1111,4 +1111,123 @@ TEST(AudioStreamTrackTest, GetQueuedFramesAccuratelyReflectsInputQueuedBytes) {
     Engine::AudioManager::Shutdown();
 }
 
+TEST(MusicDirectorTest, SynchronizedStemsPhaseLockedPreBufferAndFadeInSlew) {
+    Engine::AudioManager::Init();
+    Engine::MusicDirector::Shutdown();
+
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    const std::array<std::span<const uint8_t>, 3> buffers = { oggSpan, oggSpan, oggSpan };
+
+    // Start stems with fadeInSec = 0.25s
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(buffers, /*fadeInSec=*/0.25f);
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingStems());
+
+    // Initially weights are 0.0f
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemWeight(0), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemWeight(1), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemWeight(2), 0.0f);
+
+    // Initial frame offsets must be identical across all 3 stems (phase locked)
+    EXPECT_EQ(Engine::MusicDirector::GetStemFrame(0), Engine::MusicDirector::GetStemFrame(1));
+    EXPECT_EQ(Engine::MusicDirector::GetStemFrame(1), Engine::MusicDirector::GetStemFrame(2));
+
+    // Advance halfway through the 0.25s fade (0.125s)
+    Engine::MusicDirector::Update(0.125f);
+
+    // Initial combat state has s_TorchFuel = 1.0f -> AshFrenzyCombat!
+    // AshFrenzyCombat target weights: Stem 0: 0.1f, Stem 1: 0.6f, Stem 2: 1.0f
+    // Slew rate = 1.0 / 0.25 = 4.0/s.
+    // In 0.125s, maxStep = 0.50.
+    // Stem 0: target 0.10f (reaches 0.10f within 0.025s)
+    // Stem 1: target 0.60f (reaches 0.50f in 0.125s)
+    // Stem 2: target 1.00f (reaches 0.50f in 0.125s)
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(0), 0.10f, 0.02f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(1), 0.50f, 0.02f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(2), 0.50f, 0.02f);
+
+    // Advance another 0.125s (total 0.25s) -> transition finishes
+    Engine::MusicDirector::Update(0.125f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(0), 0.10f, 0.02f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(1), 0.60f, 0.02f);
+    EXPECT_NEAR(Engine::MusicDirector::GetStemWeight(2), 1.00f, 0.02f);
+
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(MusicDirectorTest, CrossfadeToSingleTrackStopsFadedStems) {
+    Engine::AudioManager::Init();
+    Engine::MusicDirector::Shutdown();
+
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    const std::array<std::span<const uint8_t>, 3> buffers = { oggSpan, oggSpan, oggSpan };
+
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(buffers, 0.0f);
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingStems());
+
+    // Crossfade to single track with crossfadeSec = 0.20s
+    Engine::MusicDirector::PlaySingleTrackFromMemory(oggSpan, /*crossfadeSec=*/0.20f, "sanctuary_single.ogg");
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingSingleTrack());
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetSingleTrackWeight(), 0.0f);
+
+    // Update by 0.25s (> 0.20s crossfade duration)
+    Engine::MusicDirector::Update(0.25f);
+
+    EXPECT_NEAR(Engine::MusicDirector::GetSingleTrackWeight(), 1.0f, 1e-3f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemWeight(0), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemWeight(1), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemWeight(2), 0.0f);
+
+    // Verify all 3 stems have stopped playing
+    EXPECT_FALSE(Engine::MusicDirector::IsPlayingStems());
+
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(AudioSourceTest, PlayReplacesExistingVoiceAndUsesWorldPosition) {
+    Engine::AudioManager::Init();
+
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 44100u); // 1 second clip
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "source_test.wav");
+    ASSERT_NE(clip, nullptr);
+
+    auto parentGo = std::make_unique<Engine::GameObject>("Parent");
+    parentGo->GetTransform()->position = glm::vec3(10.0f, 0.0f, 10.0f);
+
+    auto childGo = std::make_unique<Engine::GameObject>("Child");
+    childGo->GetTransform()->SetParent(parentGo->GetTransform());
+    childGo->GetTransform()->position = glm::vec3(5.0f, 0.0f, 5.0f);
+
+    // World position of child is (15, 0, 15)
+    EXPECT_FLOAT_EQ(childGo->GetTransform()->GetWorldPosition().x, 15.0f);
+    EXPECT_FLOAT_EQ(childGo->GetTransform()->GetWorldPosition().z, 15.0f);
+
+    auto* source = childGo->AddComponent<Engine::AudioSource>();
+    source->SetClip(clip);
+    source->SetSpatialized(true);
+    source->SetLooping(true);
+
+    // Play 1st time
+    source->Play();
+    Engine::VoiceHandle v1 = source->GetActiveVoice();
+    EXPECT_NE(v1, Engine::kInvalidVoiceHandle);
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(v1));
+
+    // Play 2nd time on same source -> should stop v1 and start a new voice v2
+    source->Play();
+    Engine::VoiceHandle v2 = source->GetActiveVoice();
+    EXPECT_NE(v2, Engine::kInvalidVoiceHandle);
+    EXPECT_NE(v1, v2);
+
+    // Old voice v1 should be stopped, new voice v2 playing
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(v1));
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(v2));
+
+    source->Stop();
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(v2));
+
+    Engine::AudioManager::Shutdown();
+}
+
 } // namespace

@@ -20,6 +20,8 @@ float s_TorchFuel = 1.0f;
 uint32_t s_NearbyEnemyCount = 0;
 
 float s_SlewRate = MusicDirector::kDefaultSlewRate;
+float s_CurrentTransitionSlewRate = MusicDirector::kDefaultSlewRate;
+bool s_InTransition = false;
 float s_MasterVolume = 1.0f;
 
 // 3 Synchronized Stems
@@ -67,7 +69,9 @@ std::array<float, MusicDirector::kNumStems> GetTierTargetWeights(CombatMusicTier
 }
 
 void SlewWeightsInternal(float unscaledDt) noexcept {
-    const float maxStep = s_SlewRate * std::max(0.0f, unscaledDt);
+    const float rate = s_InTransition ? s_CurrentTransitionSlewRate : s_SlewRate;
+    const float maxStep = rate * std::max(0.0f, unscaledDt);
+    bool allTargetsReached = true;
 
     if (s_Mode == MusicMode::SynchronizedStems) {
         for (size_t i = 0; i < MusicDirector::kNumStems; ++i) {
@@ -76,8 +80,10 @@ void SlewWeightsInternal(float unscaledDt) noexcept {
                 s_StemWeights[i] = s_StemTargetWeights[i];
             } else if (diff > 0.0f) {
                 s_StemWeights[i] += maxStep;
+                allTargetsReached = false;
             } else {
                 s_StemWeights[i] -= maxStep;
+                allTargetsReached = false;
             }
             s_StemWeights[i] = std::clamp(s_StemWeights[i], 0.0f, 1.0f);
         }
@@ -85,6 +91,9 @@ void SlewWeightsInternal(float unscaledDt) noexcept {
         // Slew single track down to 0 if crossfading
         if (s_SingleTrackWeight > 0.0f) {
             s_SingleTrackWeight = std::max(0.0f, s_SingleTrackWeight - maxStep);
+            if (s_SingleTrackWeight > 0.0f) {
+                allTargetsReached = false;
+            }
             if (s_SingleTrackWeight == 0.0f && s_SingleTrack && s_SingleTrack->IsPlaying()) {
                 s_SingleTrack->Pause();
             }
@@ -95,29 +104,47 @@ void SlewWeightsInternal(float unscaledDt) noexcept {
             s_SingleTrackWeight = s_SingleTrackTargetWeight;
         } else if (diff > 0.0f) {
             s_SingleTrackWeight += maxStep;
+            allTargetsReached = false;
         } else {
             s_SingleTrackWeight -= maxStep;
+            allTargetsReached = false;
         }
         s_SingleTrackWeight = std::clamp(s_SingleTrackWeight, 0.0f, 1.0f);
 
         for (size_t i = 0; i < MusicDirector::kNumStems; ++i) {
             if (s_StemWeights[i] > 0.0f) {
                 s_StemWeights[i] = std::max(0.0f, s_StemWeights[i] - maxStep);
+                if (s_StemWeights[i] > 0.0f) {
+                    allTargetsReached = false;
+                }
+                if (s_StemWeights[i] == 0.0f && s_Stems[i] && s_Stems[i]->IsPlaying()) {
+                    s_Stems[i]->Stop();
+                }
             }
         }
     } else if (s_Mode == MusicMode::Stopped) {
         for (size_t i = 0; i < MusicDirector::kNumStems; ++i) {
             s_StemWeights[i] = std::max(0.0f, s_StemWeights[i] - maxStep);
+            if (s_StemWeights[i] > 0.0f) {
+                allTargetsReached = false;
+            }
             if (s_StemWeights[i] == 0.0f && s_Stems[i] && s_Stems[i]->IsPlaying()) {
                 s_Stems[i]->Stop();
             }
         }
         if (s_SingleTrackWeight > 0.0f) {
             s_SingleTrackWeight = std::max(0.0f, s_SingleTrackWeight - maxStep);
+            if (s_SingleTrackWeight > 0.0f) {
+                allTargetsReached = false;
+            }
             if (s_SingleTrackWeight == 0.0f && s_SingleTrack && s_SingleTrack->IsPlaying()) {
                 s_SingleTrack->Stop();
             }
         }
+    }
+
+    if (s_InTransition && allTargetsReached) {
+        s_InTransition = false;
     }
 }
 
@@ -183,6 +210,7 @@ void MusicDirector::PlaySynchronizedStems(const std::array<std::string, kNumStem
     EnsureInitializedLocked();
     const SDL_AudioDeviceID deviceId = AudioManager::GetPlaybackDevice();
 
+    // Pass 1: Open, seek, and pre-buffer all stems in lockstep
     for (size_t i = 0; i < kNumStems; ++i) {
         s_Stems[i]->Close();
         if (!s_Stems[i]->OpenFile(oggFilepaths[i], /*loop=*/true)) {
@@ -190,12 +218,16 @@ void MusicDirector::PlaySynchronizedStems(const std::array<std::string, kNumStem
             return;
         }
         s_Stems[i]->SetAutoUpdate(false);
+        s_Stems[i]->SeekToStart();
+        s_Stems[i]->PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
+    }
+
+    // Pass 2: Attach devices and play simultaneously
+    for (size_t i = 0; i < kNumStems; ++i) {
         if (deviceId != 0) {
             s_Stems[i]->AttachDevice(deviceId);
         }
-        s_Stems[i]->SeekToStart();
         s_Stems[i]->Play();
-        s_Stems[i]->PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
     }
 
     s_CombatTier = EvaluateCombatTier(s_TorchFuel, s_NearbyEnemyCount);
@@ -203,8 +235,11 @@ void MusicDirector::PlaySynchronizedStems(const std::array<std::string, kNumStem
 
     if (fadeInSec > 0.0f) {
         s_StemWeights.fill(0.0f);
+        s_CurrentTransitionSlewRate = 1.0f / std::max(0.01f, fadeInSec);
+        s_InTransition = true;
     } else {
         s_StemWeights = s_StemTargetWeights;
+        s_InTransition = false;
     }
 
     s_Mode = MusicMode::SynchronizedStems;
@@ -225,6 +260,7 @@ void MusicDirector::PlaySynchronizedStemsFromMemory(
     EnsureInitializedLocked();
     const SDL_AudioDeviceID deviceId = AudioManager::GetPlaybackDevice();
 
+    // Pass 1: Open, seek, and pre-buffer all stems in lockstep
     for (size_t i = 0; i < kNumStems; ++i) {
         s_Stems[i]->Close();
         if (!s_Stems[i]->OpenMemory(oggBuffers[i], /*loop=*/true, debugNames[i])) {
@@ -232,12 +268,16 @@ void MusicDirector::PlaySynchronizedStemsFromMemory(
             return;
         }
         s_Stems[i]->SetAutoUpdate(false);
+        s_Stems[i]->SeekToStart();
+        s_Stems[i]->PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
+    }
+
+    // Pass 2: Attach devices and play simultaneously
+    for (size_t i = 0; i < kNumStems; ++i) {
         if (deviceId != 0) {
             s_Stems[i]->AttachDevice(deviceId);
         }
-        s_Stems[i]->SeekToStart();
         s_Stems[i]->Play();
-        s_Stems[i]->PumpFrames(AudioStreamTrack::kDefaultTargetBufferedFrames);
     }
 
     s_CombatTier = EvaluateCombatTier(s_TorchFuel, s_NearbyEnemyCount);
@@ -245,8 +285,11 @@ void MusicDirector::PlaySynchronizedStemsFromMemory(
 
     if (fadeInSec > 0.0f) {
         s_StemWeights.fill(0.0f);
+        s_CurrentTransitionSlewRate = 1.0f / std::max(0.01f, fadeInSec);
+        s_InTransition = true;
     } else {
         s_StemWeights = s_StemTargetWeights;
+        s_InTransition = false;
     }
 
     s_Mode = MusicMode::SynchronizedStems;
@@ -278,14 +321,17 @@ void MusicDirector::PlaySingleTrack(const std::string& oggFilepath, float crossf
     s_SingleTrackTargetWeight = 1.0f;
     if (crossfadeSec > 0.0f) {
         s_SingleTrackWeight = 0.0f;
+        s_CurrentTransitionSlewRate = 1.0f / std::max(0.01f, crossfadeSec);
+        s_InTransition = true;
     } else {
         s_SingleTrackWeight = 1.0f;
         for (auto& stem : s_Stems) {
             if (stem && stem->IsPlaying()) {
-                stem->Pause();
+                stem->Stop();
             }
         }
         s_StemWeights.fill(0.0f);
+        s_InTransition = false;
     }
 
     s_Mode = MusicMode::SingleTrack;
@@ -320,14 +366,17 @@ void MusicDirector::PlaySingleTrackFromMemory(std::span<const uint8_t> oggBuffer
     s_SingleTrackTargetWeight = 1.0f;
     if (crossfadeSec > 0.0f) {
         s_SingleTrackWeight = 0.0f;
+        s_CurrentTransitionSlewRate = 1.0f / std::max(0.01f, crossfadeSec);
+        s_InTransition = true;
     } else {
         s_SingleTrackWeight = 1.0f;
         for (auto& stem : s_Stems) {
             if (stem && stem->IsPlaying()) {
-                stem->Pause();
+                stem->Stop();
             }
         }
         s_StemWeights.fill(0.0f);
+        s_InTransition = false;
     }
 
     s_Mode = MusicMode::SingleTrack;
@@ -372,10 +421,13 @@ void MusicDirector::Stop(float fadeOutSec) {
         if (s_SingleTrack) {
             s_SingleTrack->Stop();
         }
+        s_InTransition = false;
         s_Mode = MusicMode::Stopped;
     } else {
         s_StemTargetWeights.fill(0.0f);
         s_SingleTrackTargetWeight = 0.0f;
+        s_CurrentTransitionSlewRate = 1.0f / std::max(0.01f, fadeOutSec);
+        s_InTransition = true;
         s_Mode = MusicMode::Stopped;
     }
     ApplyGainsInternal();
@@ -403,6 +455,8 @@ void MusicDirector::Shutdown() {
     s_TorchFuel = 1.0f;
     s_NearbyEnemyCount = 0;
     s_SlewRate = kDefaultSlewRate;
+    s_CurrentTransitionSlewRate = kDefaultSlewRate;
+    s_InTransition = false;
     s_MasterVolume = 1.0f;
 }
 

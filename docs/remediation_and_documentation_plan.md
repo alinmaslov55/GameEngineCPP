@@ -195,7 +195,7 @@ flowchart TD
 | **`FIX-CORE-04`** | `CutoutProcessor` Per-Cell Alpha Bleed, Dynamic Frame Names & Bounds | `DONE` | **P1** | W0 | *None (Root)* | Core `#13`, Med `CutoutProcessor` | `DOC-08` |
 | **`FIX-AUD-01`** | SDL3 Shared-Device Stream Unbind/Bind, SIOF Fix & Track Thread Safety | `DONE` | **P0** | W0 | *None (Root)* | `C-13`, `C-14`, Audio `#9` | `FIX-AUD-02`, `FIX-AUD-03` |
 | **`FIX-AUD-02`** | WAV S16 Normalization, Dynamic Spatial Pan & `GetQueuedFrames` Fix | `DONE` | **P0** | W1 | `FIX-AUD-01` | `C-15`, Audio `#7`, Med `AudioClip` | `FIX-AUD-03`, `FIX-SAV-01` |
-| **`FIX-AUD-03`** | `MusicDirector` Phase-Locked Pre-Buffer, Fade Slew & `AudioSource` WorldPos | `TODO` | **P1** | W2 | `FIX-AUD-01`, `FIX-AUD-02` | Audio `#8`, Med `AudioSource` | `DOC-06` |
+| **`FIX-AUD-03`** | `MusicDirector` Phase-Locked Pre-Buffer, Fade Slew & `AudioSource` WorldPos | `DONE` | **P1** | W2 | `FIX-AUD-01`, `FIX-AUD-02` | Audio `#8`, Med `AudioSource` | `DOC-06` |
 | **`FIX-SAV-01`** | `SaveManager` Non-Destructive `.bak` Recovery, Atomic Replace & Settings | `TODO` | **P0** | W1 | `FIX-CORE-03`, `FIX-AUD-02` | `C-01`, Core `#10`, Med `SaveManager` | `FIX-SBX-01`, `DOC-08` |
 | **`FIX-SAV-02`** | `DataRegistry` Single-Object Parse, Path Resolution & Deterministic Order | `TODO` | **P1** | W1 | `FIX-CORE-01` | Core `#11`, Med `GameplayData`, Imp `#8` | `FIX-SBX-01`, `DOC-08` |
 | **`FIX-ECS-01`** | `GameObject` Transform Removal Guard, Reentrancy, `LateUpdate` & UUID Map | `TODO` | **P0** | W0 | *None (Root)* | `C-07`, ECS `#15`, `#16`, `#19`, Med `HasComponent` | `FIX-ECS-02`, `FIX-PHY-01`, `FIX-EDT-01` |
@@ -342,7 +342,7 @@ flowchart TD
 ---
 
 #### `FIX-AUD-03` — `MusicDirector` Phase-Locked Pre-Buffer, Fade Slew & `AudioSource` WorldPos
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `FIX-AUD-01`, `FIX-AUD-02` | Unlocks: `DOC-06`
 - **Current Defects:** [MusicDirector.cpp](file://Engine/src/Audio/MusicDirector.cpp#L91-L95), [lines 173-227](file://Engine/src/Audio/MusicDirector.cpp#L173-L227), [AudioSource.h](file://Engine/include/Engine/Audio/AudioSource.h#L51-L61): `PlaySynchronizedStems*` binds and starts Stem 0 before Stems 1–2 load from disk and double-pumps `24,576` frames; `fadeInSec`/`crossfadeSec`/`fadeOutSec` durations are ignored; switching to `SingleTrack` never stops `s_Stems`; `AudioSource::Play` uses local `transform->position` instead of `GetWorldPosition()` and leaks active looping voices.
 - **Proposed Fix:** Open and pre-buffer (`PumpFrames`) all 3 stems *before* binding all 3 streams together; compute transition slew rates as `1.0f / fadeDurationSec`; stop `s_Stems` when their weight hits `0.0f` in `SingleTrack` mode; use `GetWorldPosition()` in `AudioSource::Play()`.

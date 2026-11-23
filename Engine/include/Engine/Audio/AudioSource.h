@@ -48,11 +48,16 @@ public:
             return;
         }
 
+        if (m_ActiveVoice != kInvalidVoiceHandle && AudioManager::IsVoicePlaying(m_ActiveVoice)) {
+            AudioManager::StopVoice(m_ActiveVoice);
+            m_ActiveVoice = kInvalidVoiceHandle;
+        }
+
         SoundPlayParams params = m_Params;
         if (params.SpatializedXZ) {
             if (auto* go = GetGameObject()) {
                 if (auto* transform = go->GetTransform()) {
-                    params.WorldPos = transform->position;
+                    params.WorldPos = transform->GetWorldPosition();
                 }
             }
         }
