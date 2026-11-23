@@ -66,16 +66,18 @@ public:
         Rigidbody2D* rb = owner ? owner->GetComponent<Rigidbody2D>() : nullptr;
 
         if (transform) {
+            const glm::vec3 currentWorldPos = transform->GetWorldPosition();
             const float groundY = rb ? rb->GroundLevelY : 0.0f;
-            const bool grounded = (transform->position.y <= groundY + 1e-3f);
+            const bool grounded = (currentWorldPos.y <= groundY + 1e-3f);
 
             if (!m_InitializedTracking) {
-                m_LastPosition = transform->position;
+                m_LastPosition = currentWorldPos;
                 m_WasGrounded = grounded;
                 m_InitializedTracking = true;
             } else {
-                const glm::vec3 frameDelta = transform->position - m_LastPosition;
-                const float invDt = 1.0f / std::max(clampedDt, 1e-4f);
+                const glm::vec3 frameDelta = currentWorldPos - m_LastPosition;
+                const float speedDt = std::max(deltaTime, 1e-4f);
+                const float invDt = 1.0f / speedDt;
                 const float speedXZ = glm::length(glm::vec2(frameDelta.x, frameDelta.z)) * invDt;
                 const float verticalSpeed = frameDelta.y * invDt;
 
@@ -110,7 +112,7 @@ public:
                     m_WalkPhase += clampedDt * WalkBobFrequency;
                 }
 
-                m_LastPosition = transform->position;
+                m_LastPosition = currentWorldPos;
                 m_WasGrounded = grounded;
             }
         }

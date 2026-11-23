@@ -3,7 +3,11 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Scene/Components/SquashStretchComponent.h"
+#include "Engine/Physics/Rigidbody2D.h"
+#include "Engine/Physics/BoxCollider2D.h"
 #include "Engine/Core/JobSystem.h"
+#include <box2d/box2d.h>
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
@@ -368,6 +372,183 @@ TEST(TransformHierarchyTest, ConcurrentGetWorldMatrixReadsAreRaceFree) {
     }
 
     Engine::JobSystem::Shutdown();
+}
+
+namespace {
+
+class ActiveHierarchyTracker final : public Engine::Component {
+public:
+    int enableCount = 0;
+    int disableCount = 0;
+
+    void OnEnable() override { ++enableCount; }
+    void OnDisable() override { ++disableCount; }
+};
+
+} // namespace
+
+TEST(TransformHierarchyTest, ReparentingSyncsActiveInHierarchyAndRigidbody2D) {
+    Engine::Scene scene("ReparentActiveScene");
+    scene.OnRuntimeStart();
+
+    auto* parent = scene.CreateGameObject("Parent");
+    auto* child = scene.CreateGameObject("Child");
+    auto* rb2d = child->AddComponent<Engine::Rigidbody2D>();
+    auto* bc2d = child->AddComponent<Engine::BoxCollider2D>();
+    bc2d->size = { 1.0f, 1.0f };
+
+    b2BodyId bodyId = b2LoadBodyId(rb2d->RuntimeBody.Value);
+    ASSERT_TRUE(b2Body_IsValid(bodyId));
+    EXPECT_TRUE(b2Body_IsEnabled(bodyId));
+    EXPECT_TRUE(child->IsActiveInHierarchy());
+
+    // Deactivate parent while child is still active at root
+    parent->SetActive(false);
+    EXPECT_FALSE(parent->IsActiveInHierarchy());
+    EXPECT_TRUE(child->IsActiveInHierarchy());
+    EXPECT_TRUE(b2Body_IsEnabled(bodyId));
+
+    // Reparent active child under inactive parent: must transition to inactive and disable Box2D body
+    EXPECT_TRUE(child->GetTransform()->SetParent(parent->GetTransform(), false));
+    EXPECT_FALSE(child->IsActiveInHierarchy());
+    EXPECT_FALSE(b2Body_IsEnabled(bodyId));
+
+    // Reparent child back to root: must transition back to active and re-enable Box2D body
+    EXPECT_TRUE(child->GetTransform()->SetParent(nullptr, false));
+    EXPECT_TRUE(child->IsActiveInHierarchy());
+    EXPECT_TRUE(b2Body_IsEnabled(bodyId));
+
+    scene.OnRuntimeStop();
+}
+
+TEST(TransformHierarchyTest, SetActiveUnderInactiveParentFiresZeroSpuriousCallbacks) {
+    auto scene = std::make_shared<Engine::Scene>("HierarchyCallbacksScene");
+    auto* parent = scene->CreateGameObject("Parent");
+    auto* child = scene->CreateGameObject("Child");
+
+    auto* tracker = child->AddComponent<ActiveHierarchyTracker>();
+    EXPECT_EQ(tracker->enableCount, 1);
+    EXPECT_EQ(tracker->disableCount, 0);
+
+    // Parent child to parent
+    EXPECT_TRUE(child->GetTransform()->SetParent(parent->GetTransform(), false));
+
+    // Deactivate parent -> child transitions to inactive in hierarchy, OnDisable() fires once
+    parent->SetActive(false);
+    EXPECT_FALSE(child->IsActiveInHierarchy());
+    EXPECT_EQ(tracker->enableCount, 1);
+    EXPECT_EQ(tracker->disableCount, 1);
+
+    // Under inactive parent: child->SetActive(false) should NOT fire duplicate OnDisable()
+    child->SetActive(false);
+    EXPECT_FALSE(child->IsActiveInHierarchy());
+    EXPECT_EQ(tracker->enableCount, 1);
+    EXPECT_EQ(tracker->disableCount, 1);
+
+    // Under inactive parent: child->SetActive(true) should NOT fire premature OnEnable() or spurious OnDisable()
+    child->SetActive(true);
+    EXPECT_FALSE(child->IsActiveInHierarchy());
+    EXPECT_EQ(tracker->enableCount, 1);
+    EXPECT_EQ(tracker->disableCount, 1);
+
+    // Now activating parent: child (which had SetActive(true)) becomes active in hierarchy and receives OnEnable()
+    parent->SetActive(true);
+    EXPECT_TRUE(child->IsActiveInHierarchy());
+    EXPECT_EQ(tracker->enableCount, 2);
+    EXPECT_EQ(tracker->disableCount, 1);
+}
+
+TEST(TransformHierarchyTest, ZeroScaleParentInversionNeverProducesNaN) {
+    auto scene = std::make_shared<Engine::Scene>("ZeroScaleScene");
+    auto* parent = scene->CreateGameObject("Parent");
+    auto* child = scene->CreateGameObject("Child");
+
+    auto* parentTr = parent->GetTransform();
+    auto* childTr = child->GetTransform();
+
+    // 1. Test parent with complete zero scale (0, 0, 0)
+    parentTr->position = { 5.0f, 10.0f, 15.0f };
+    parentTr->rotation = { 0.0f, 45.0f, 0.0f };
+    parentTr->scale = { 0.0f, 0.0f, 0.0f };
+
+    childTr->position = { 10.0f, 20.0f, 30.0f };
+    childTr->rotation = { 0.0f, 0.0f, 0.0f };
+    childTr->scale = { 1.0f, 1.0f, 1.0f };
+
+    EXPECT_TRUE(childTr->SetParent(parentTr, /*keepWorldTransform=*/true));
+
+    EXPECT_FALSE(std::isnan(childTr->position.x));
+    EXPECT_FALSE(std::isnan(childTr->position.y));
+    EXPECT_FALSE(std::isnan(childTr->position.z));
+    EXPECT_FALSE(std::isinf(childTr->position.x));
+    EXPECT_FALSE(std::isinf(childTr->position.y));
+    EXPECT_FALSE(std::isinf(childTr->position.z));
+
+    EXPECT_FALSE(std::isnan(childTr->rotation.x));
+    EXPECT_FALSE(std::isnan(childTr->rotation.y));
+    EXPECT_FALSE(std::isnan(childTr->rotation.z));
+
+    EXPECT_FALSE(std::isnan(childTr->scale.x));
+    EXPECT_FALSE(std::isnan(childTr->scale.y));
+    EXPECT_FALSE(std::isnan(childTr->scale.z));
+
+    // SetWorldPosition with zero-scale parent
+    childTr->SetWorldPosition({ 25.0f, 30.0f, 35.0f });
+    EXPECT_FALSE(std::isnan(childTr->position.x));
+    EXPECT_FALSE(std::isnan(childTr->position.y));
+    EXPECT_FALSE(std::isnan(childTr->position.z));
+    EXPECT_FALSE(std::isinf(childTr->position.x));
+
+    // 2. Test parent with single zero axis (e.g. scale.y = 0)
+    parentTr->scale = { 2.0f, 0.0f, 2.0f };
+    childTr->SetWorldPosition({ 15.0f, 10.0f, 25.0f });
+    EXPECT_FALSE(std::isnan(childTr->position.x));
+    EXPECT_FALSE(std::isnan(childTr->position.y));
+    EXPECT_FALSE(std::isnan(childTr->position.z));
+
+    // Direct matrix test for SafeInvertMatrix
+    glm::mat4 zeroScaleMat = glm::scale(glm::mat4(1.0f), glm::vec3(0.0f));
+    glm::mat4 safeInv = Engine::Transform::SafeInvertMatrix(zeroScaleMat);
+    for (int col = 0; col < 4; ++col) {
+        for (int row = 0; row < 4; ++row) {
+            EXPECT_FALSE(std::isnan(safeInv[col][row]));
+            EXPECT_FALSE(std::isinf(safeInv[col][row]));
+        }
+    }
+}
+
+TEST(TransformHierarchyTest, SquashStretchTracksWorldPositionAndToleratesLagSpike) {
+    auto scene = std::make_shared<Engine::Scene>("SquashWorldPosScene");
+    auto* parent = scene->CreateGameObject("Parent");
+    auto* child = scene->CreateGameObject("Child");
+
+    EXPECT_TRUE(child->GetTransform()->SetParent(parent->GetTransform(), false));
+    auto* squash = child->AddComponent<Engine::SquashStretchComponent>();
+    squash->EnableWalkHop = false; // Isolate vertical deformations
+
+    // Initial frame seeds m_LastPosition
+    child->Update(0.016f);
+
+    // Move parent upward in world space: child local pos remains (0,0,0)
+    parent->GetTransform()->position = { 0.0f, 2.0f, 0.0f };
+    child->Update(0.016f);
+
+    // Child should detect jump launch based on world position change!
+    glm::vec2 scaleMult = squash->GetScaleMultiplier();
+    EXPECT_GT(scaleMult.y, 1.0f); // Stretch in Y
+
+    // Reset squash component
+    squash->Reset();
+    child->Update(0.016f);
+
+    // Lag spike test: 500ms frame delta with small physical displacement (0.05m upward => speed = 0.1 m/s)
+    parent->GetTransform()->position = { 0.0f, 2.05f, 0.0f };
+    child->Update(0.50f);
+
+    // Because actual deltaTime is used for velocity, verticalSpeed is 0.05 / 0.50 = 0.10 m/s
+    // (below the 0.25 m/s jump launch threshold), NOT 0.05 / 0.05 = 1.0 m/s!
+    scaleMult = squash->GetScaleMultiplier();
+    EXPECT_NEAR(scaleMult.y, 1.0f, 0.05f); // No false-positive giant jump stretch
 }
 
 } // namespace

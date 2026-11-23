@@ -79,6 +79,12 @@ TEST(DeferredLifecycleTest, DeferredDestroyInsideUpdateLoop) {
     EXPECT_EQ(scene.GetGameObjects().size(), 6u);
     EXPECT_EQ(scene.GetEntityUUIDMapCount(), 6u);
 
+    const uint64_t uuid0 = victims[0]->GetUUID();
+    const uint64_t uuid1 = victims[1]->GetUUID();
+    const uint64_t uuid2 = victims[2]->GetUUID();
+    const uint64_t uuid3 = victims[3]->GetUUID();
+    const uint64_t uuid4 = victims[4]->GetUUID();
+
     // Execute update where victims are destroyed mid-frame
     scene.Update(0.016f);
 
@@ -87,13 +93,13 @@ TEST(DeferredLifecycleTest, DeferredDestroyInsideUpdateLoop) {
     EXPECT_EQ(scene.GetEntityUUIDMapCount(), 4u);
 
     // Destroyed entities must return nullptr in UUID lookups
-    EXPECT_EQ(scene.FindGameObjectByUUID(victims[1]->GetUUID()), nullptr);
-    EXPECT_EQ(scene.FindGameObjectByUUID(victims[3]->GetUUID()), nullptr);
+    EXPECT_EQ(scene.FindGameObjectByUUID(uuid1), nullptr);
+    EXPECT_EQ(scene.FindGameObjectByUUID(uuid3), nullptr);
 
     // Surviving entities must be intact
-    EXPECT_EQ(scene.FindGameObjectByUUID(victims[0]->GetUUID()), victims[0]);
-    EXPECT_EQ(scene.FindGameObjectByUUID(victims[2]->GetUUID()), victims[2]);
-    EXPECT_EQ(scene.FindGameObjectByUUID(victims[4]->GetUUID()), victims[4]);
+    EXPECT_EQ(scene.FindGameObjectByUUID(uuid0), victims[0]);
+    EXPECT_EQ(scene.FindGameObjectByUUID(uuid2), victims[2]);
+    EXPECT_EQ(scene.FindGameObjectByUUID(uuid4), victims[4]);
 
     // OnDestroy() must have been called exactly once for destroyed entities
     EXPECT_EQ(externalDestroyCounts[1], 1);

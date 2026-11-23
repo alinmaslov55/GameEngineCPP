@@ -82,6 +82,10 @@ public:
     [[nodiscard]] glm::mat4 GetTransformMatrix() const noexcept { return GetWorldMatrix(); }
     [[nodiscard]] glm::mat4 GetWorldMatrix() const noexcept;
 
+    /// @brief Inverts an affine TRS transformation matrix safely, falling back to a regularized
+    /// pseudo-inverse if singular (det ~= 0 or zero scale along any axis) to strictly prevent NaNs/Infs.
+    [[nodiscard]] static glm::mat4 SafeInvertMatrix(const glm::mat4& mat) noexcept;
+
     [[nodiscard]] glm::vec3 GetWorldPosition() const noexcept;
     void SetWorldPosition(const glm::vec3& worldPos) noexcept;
     [[nodiscard]] glm::vec3 GetWorldRotation() const noexcept;

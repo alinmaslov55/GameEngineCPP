@@ -141,8 +141,12 @@ public:
 
     void SetActive(bool active) noexcept {
         if (m_Active == active) return;
+        const bool wasActiveInHier = IsActiveInHierarchy();
         m_Active = active;
-        NotifyHierarchyActiveChanged();
+        const bool isActiveInHier = IsActiveInHierarchy();
+        if (wasActiveInHier != isActiveInHier) {
+            NotifyHierarchyActiveChanged();
+        }
     }
 
     [[nodiscard]] bool IsIteratingComponents() const noexcept { return m_ComponentIterationDepth > 0; }

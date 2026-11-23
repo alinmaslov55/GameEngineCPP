@@ -199,7 +199,7 @@ flowchart TD
 | **`FIX-SAV-01`** | `SaveManager` Non-Destructive `.bak` Recovery, Atomic Replace & Settings | `DONE` | **P0** | W1 | `FIX-CORE-03`, `FIX-AUD-02` | `C-01`, Core `#10`, Med `SaveManager` | `FIX-SBX-01`, `DOC-08` |
 | **`FIX-SAV-02`** | `DataRegistry` Single-Object Parse, Path Resolution & Deterministic Order | `DONE` | **P1** | W1 | `FIX-CORE-01` | Core `#11`, Med `GameplayData`, Imp `#8` | `FIX-SBX-01`, `DOC-08` |
 | **`FIX-ECS-01`** | `GameObject` Transform Removal Guard, Reentrancy, `LateUpdate` & UUID Map | `DONE` | **P0** | W0 | *None (Root)* | `C-07`, ECS `#15`, `#16`, `#19`, Med `HasComponent` | `FIX-ECS-02`, `FIX-PHY-01`, `FIX-EDT-01` |
-| **`FIX-ECS-02`** | `Transform` Reparent Active Sync, Zero-Scale Guard & `SquashStretch` WorldPos | `TODO` | **P0** | W1 | `FIX-ECS-01` | ECS `#17`, `#18`, Med `SquashStretch` | `FIX-ECS-03`, `FIX-SER-01`, `DOC-01` |
+| **`FIX-ECS-02`** | `Transform` Reparent Active Sync, Zero-Scale Guard & `SquashStretch` WorldPos | `DONE` | **P0** | W1 | `FIX-ECS-01` | ECS `#17`, `#18`, Med `SquashStretch` | `FIX-ECS-03`, `FIX-SER-01`, `DOC-01` |
 | **`FIX-ECS-03`** | `EntityPoolManager` Key/Parent Safety & Pooled Component State Reset | `TODO` | **P0** | W2 | `FIX-ECS-02`, `FIX-ANI-01` | `C-08`, Med `EntityPoolManager`, Physics `#28` | `DOC-03` |
 | **`FIX-SER-01`** | `SceneSerializer` & `Prefab` Full Component/Active Fidelity & Safe JSON | `TODO` | **P0** | W1 | `FIX-ECS-02`, `FIX-ANI-01` | ECS `#23`, `#25` (`SceneManager` unscaled dt) | `FIX-PHY-01`, `DOC-03` |
 | **`FIX-ANI-01`** | `Animator` PlayGeneration Reentrancy Guard, `FlipX` Retention & Finite `dt` | `TODO` | **P0** | W0 | *None (Root)* | `C-09`, ECS `#21`, Med `PlayOneShot` | `FIX-ECS-03`, `FIX-SER-01`, `FIX-EDT-03` |
@@ -384,7 +384,7 @@ flowchart TD
 ---
 
 #### `FIX-ECS-02` — `Transform` Reparent Active Sync, Zero-Scale Guard & `SquashStretch` WorldPos
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-ECS-01` | Unlocks: `FIX-ECS-03`, `FIX-SER-01`, `DOC-01`
 - **Current Defects:**
   1. [Transform.cpp](file://Engine/src/Scene/Transform.cpp#L127-L172), [lines 208-219](file://Engine/src/Scene/Transform.cpp#L208-L219): `SetParent` never calls `NotifyHierarchyActiveChanged()` when moving an active child into/out of an inactive parent (desyncing Box2D bodies and audio); `glm::inverse(parentWorld)` produces `NaN` when parent scale is `0`.

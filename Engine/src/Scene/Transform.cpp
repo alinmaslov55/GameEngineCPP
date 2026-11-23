@@ -135,10 +135,12 @@ bool Transform::SetParent(Transform* newParent, bool keepWorldTransform) {
         return false;
     }
 
+    const bool wasActiveInHier = GetGameObject() ? GetGameObject()->IsActiveInHierarchy() : false;
+
     if (keepWorldTransform) {
         const glm::mat4 currentWorld = GetWorldMatrix();
         if (newParent) {
-            const glm::mat4 newParentWorldInv = glm::inverse(newParent->GetWorldMatrix());
+            const glm::mat4 newParentWorldInv = SafeInvertMatrix(newParent->GetWorldMatrix());
             const glm::mat4 newLocal = newParentWorldInv * currentWorld;
             DecomposeMatrix(newLocal, position, rotation, scale);
         } else {
@@ -164,11 +166,45 @@ bool Transform::SetParent(Transform* newParent, bool keepWorldTransform) {
     m_LastScale = scale;
     SetDirty();
     NotifySpatialTransformChanged();
+
+    const bool isActiveInHier = GetGameObject() ? GetGameObject()->IsActiveInHierarchy() : false;
+    if (wasActiveInHier != isActiveInHier) {
+        if (auto* go = GetGameObject()) {
+            go->NotifyHierarchyActiveChanged();
+        }
+    }
+
     ENGINE_CORE_DEBUG("Transform::SetParent: '{}' reparented to '{}' (keepWorld={})",
                       GetGameObject() ? GetGameObject()->GetName() : "<unnamed>",
                       (m_Parent && m_Parent->GetGameObject()) ? m_Parent->GetGameObject()->GetName() : "<root>",
                       keepWorldTransform);
     return true;
+}
+
+glm::mat4 Transform::SafeInvertMatrix(const glm::mat4& mat) noexcept {
+    const float det = glm::determinant(mat);
+    if (std::abs(det) >= 1e-6f) {
+        return glm::inverse(mat);
+    }
+
+    // Singular matrix (zero or near-zero scale along one or more axes).
+    // Construct regularized pseudo-inverse from TRS decomposition to prevent NaNs/Infs.
+    glm::vec3 scale(1.0f);
+    const glm::mat3 R = ExtractOrthonormalRotation(mat, scale);
+    const glm::vec3 T = glm::vec3(mat[3]);
+
+    glm::vec3 invScale(0.0f);
+    if (std::abs(scale.x) >= 1e-6f) invScale.x = 1.0f / scale.x;
+    if (std::abs(scale.y) >= 1e-6f) invScale.y = 1.0f / scale.y;
+    if (std::abs(scale.z) >= 1e-6f) invScale.z = 1.0f / scale.z;
+
+    // S^+ * R^T
+    const glm::mat3 invRotScale = glm::mat3(glm::scale(glm::mat4(1.0f), invScale)) * glm::transpose(R);
+    const glm::vec3 invT = -invRotScale * T;
+
+    glm::mat4 result(invRotScale);
+    result[3] = glm::vec4(invT, 1.0f);
+    return result;
 }
 
 glm::mat4 Transform::GetLocalMatrix() const noexcept {
@@ -209,7 +245,7 @@ void Transform::SetWorldPosition(const glm::vec3& worldPos) noexcept {
     if (!m_Parent) {
         position = worldPos;
     } else {
-        const glm::mat4 parentWorldInv = glm::inverse(m_Parent->GetWorldMatrix());
+        const glm::mat4 parentWorldInv = SafeInvertMatrix(m_Parent->GetWorldMatrix());
         const glm::vec4 localPos = parentWorldInv * glm::vec4(worldPos, 1.0f);
         position = glm::vec3(localPos);
     }
