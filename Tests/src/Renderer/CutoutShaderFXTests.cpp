@@ -75,21 +75,48 @@ TEST(SpriteRendererCombatFXTest, PropertyClampingAndFlashMode) {
 
     // Preset flash modes
     sprite->SetFlashMode(Engine::SpriteRenderer::FlashMode::PureWhite);
-    EXPECT_FLOAT_EQ(sprite->GetFlashColorMode(), 0.0f);
+    EXPECT_FLOAT_EQ(sprite->GetFlashColorMode(), -1.0f);
+    EXPECT_EQ(sprite->GetFlashColor(), glm::vec3(1.0f, 1.0f, 1.0f));
     sprite->SetFlashMode(Engine::SpriteRenderer::FlashMode::CrimsonImpact);
-    EXPECT_FLOAT_EQ(sprite->GetFlashColorMode(), 1.0f);
+    EXPECT_FLOAT_EQ(sprite->GetFlashColorMode(), -2.0f);
+    EXPECT_EQ(sprite->GetFlashColor(), glm::vec3(1.0f, 0.15f, 0.15f));
     sprite->SetFlashMode(Engine::SpriteRenderer::FlashMode::SpectralBlue);
-    EXPECT_FLOAT_EQ(sprite->GetFlashColorMode(), 2.0f);
+    EXPECT_FLOAT_EQ(sprite->GetFlashColorMode(), -3.0f);
+    EXPECT_EQ(sprite->GetFlashColor(), glm::vec3(0.35f, 0.75f, 1.5f));
     sprite->SetFlashMode(Engine::SpriteRenderer::FlashMode::DivineGold);
-    EXPECT_FLOAT_EQ(sprite->GetFlashColorMode(), 3.0f);
+    EXPECT_FLOAT_EQ(sprite->GetFlashColorMode(), -4.0f);
+    EXPECT_EQ(sprite->GetFlashColor(), glm::vec3(1.5f, 1.2f, 0.25f));
 
-    // Custom 24-bit packed RGB color
+    // Custom 24-bit packed RGB color (lossless round-trip in [0, 16777215])
     sprite->SetFlashColor(glm::vec3(1.0f, 0.5f, 0.25f));
-    EXPECT_GE(sprite->GetFlashColorMode(), 4.0f);
+    EXPECT_GE(sprite->GetFlashColorMode(), 0.0f);
     glm::vec3 unpackedColor = sprite->GetFlashColor();
     EXPECT_NEAR(unpackedColor.r, 1.0f, 0.01f);
     EXPECT_NEAR(unpackedColor.g, 0.5f, 0.01f);
     EXPECT_NEAR(unpackedColor.b, 0.25f, 0.01f);
+
+    // Exact white / extreme value test to guarantee no 24-bit mantissa clipping
+    sprite->SetFlashColor(glm::vec3(1.0f, 1.0f, 1.0f));
+    EXPECT_FLOAT_EQ(sprite->GetFlashColorMode(), -1.0f);
+    EXPECT_EQ(sprite->GetFlashColor(), glm::vec3(1.0f, 1.0f, 1.0f));
+
+    // Non-preset custom color with full bit coverage
+    sprite->SetFlashColor(glm::vec3(0.99f, 0.98f, 0.97f));
+    EXPECT_GE(sprite->GetFlashColorMode(), 0.0f);
+    glm::vec3 customHigh = sprite->GetFlashColor();
+    EXPECT_NEAR(customHigh.r, 0.99f, 0.01f);
+    EXPECT_NEAR(customHigh.g, 0.98f, 0.01f);
+    EXPECT_NEAR(customHigh.b, 0.97f, 0.01f);
+
+    // Backwards compatibility test: legacy non-negative preset modes (0, 1, 2, 3)
+    sprite->SetFlashColorMode(0.0f);
+    EXPECT_EQ(sprite->GetFlashColor(), glm::vec3(1.0f, 1.0f, 1.0f));
+    sprite->SetFlashColorMode(1.0f);
+    EXPECT_EQ(sprite->GetFlashColor(), glm::vec3(1.0f, 0.15f, 0.15f));
+    sprite->SetFlashColorMode(2.0f);
+    EXPECT_EQ(sprite->GetFlashColor(), glm::vec3(0.35f, 0.75f, 1.5f));
+    sprite->SetFlashColorMode(3.0f);
+    EXPECT_EQ(sprite->GetFlashColor(), glm::vec3(1.5f, 1.2f, 0.25f));
 
     // Silhouette toggle & color
     sprite->SetRenderSilhouette(true);
@@ -135,7 +162,8 @@ TEST(SceneSerializerCombatFXTest, RoundTripSerialization) {
     EXPECT_NEAR(restoredSprite->GetDissolveAmount(), 0.65f, 1e-4f);
     EXPECT_NEAR(restoredSprite->GetDissolveEdgeWidth(), 0.15f, 1e-4f);
     EXPECT_NEAR(restoredSprite->GetFlashAmount(), 0.90f, 1e-4f);
-    EXPECT_FLOAT_EQ(restoredSprite->GetFlashColorMode(), 1.0f);
+    EXPECT_FLOAT_EQ(restoredSprite->GetFlashColorMode(), -2.0f);
+    EXPECT_EQ(restoredSprite->GetFlashColor(), glm::vec3(1.0f, 0.15f, 0.15f));
     EXPECT_TRUE(restoredSprite->GetRenderSilhouette());
     const glm::vec4 silCol = restoredSprite->GetSilhouetteColor();
     EXPECT_NEAR(silCol.r, 0.1f, 1e-4f);

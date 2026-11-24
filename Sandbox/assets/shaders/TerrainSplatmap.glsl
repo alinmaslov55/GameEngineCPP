@@ -233,7 +233,9 @@ void evaluatePointLights(vec3 worldPos,
 
             // Half-vector Blinn-Phong specular highlight for Tar sheen and wet Cobblestone
             if (glossiness > 0.01) {
-                vec3 halfVec = normalize(lightDir + viewDir);
+                vec3 halfDir = lightDir + viewDir;
+                float halfLenSq = dot(halfDir, halfDir);
+                vec3 halfVec = halfLenSq > 1e-6 ? halfDir * inversesqrt(halfLenSq) : normalWorld;
                 float nDotH = max(dot(normalWorld, halfVec), 0.0);
                 float specFactor = pow(nDotH, shininess) * glossiness;
                 outSpecular += lightIntensity * specFactor;
@@ -268,6 +270,10 @@ void main() {
 
     float noiseVal = (u_BlendSharpness > 0.001) ? organicBreakup(worldXZ) : 0.5;
 
+    // Precompute screen-space derivatives to safely sample inside divergent layer loop
+    vec2 dX_world = dFdx(worldXZ);
+    vec2 dY_world = dFdy(worldXZ);
+
     // Fragment Fast-Path: Skip array texture fetches for inactive layers (< 0.004 weight)
     for (int i = 0; i < 8; ++i) {
         if (rawWeights[i] < 0.004) {
@@ -279,8 +285,10 @@ void main() {
         }
 
         vec2 uv = worldXZ * u_LayerTilingScales[i];
-        vec4 ah = texture(u_AlbedoHeightArray, vec3(uv, float(i)));
-        vec4 nr = texture(u_NormalRoughnessArray, vec3(uv, float(i)));
+        vec2 dX = dX_world * u_LayerTilingScales[i];
+        vec2 dY = dY_world * u_LayerTilingScales[i];
+        vec4 ah = textureGrad(u_AlbedoHeightArray, vec3(uv, float(i)), dX, dY);
+        vec4 nr = textureGrad(u_NormalRoughnessArray, vec3(uv, float(i)), dX, dY);
 
         layerAlbedos[i] = ah.rgb;
         layerHeights[i] = mix(ah.a, (i % 2 == 0) ? noiseVal : (1.0 - noiseVal), 0.28);
@@ -350,9 +358,15 @@ void main() {
 
     // Apply 2.5D Directional Shadows + Cool Indigo Sky Fill + Flickering PointLights & Specular
     if (u_LightingEnabled == 1) {
-        vec3 viewDir = normalize(u_CameraPos - v_WorldPos);
+        vec3 camDiff = u_CameraPos - v_WorldPos;
+        float camDistSq = dot(camDiff, camDiff);
+        vec3 viewDir = camDistSq > 1e-6 ? camDiff * inversesqrt(camDistSq) : vec3(0.0, 1.0, 0.0);
+
         float shadowVis = computeShadowVisibility(v_WorldPos);
-        vec3 toSun = normalize(-u_SunDirection);
+
+        float sunLenSq = dot(u_SunDirection, u_SunDirection);
+        vec3 toSun = sunLenSq > 1e-6 ? (-u_SunDirection) * inversesqrt(sunLenSq) : vec3(0.0, 1.0, 0.0);
+
         float sunSlope = clamp(dot(blendedNormal, toSun) / max(toSun.y, 0.25), 0.45, 1.35);
         vec3 sunAndAmbient = u_AmbientColor * u_AmbientIntensity +
                              u_SunColor * (u_SunIntensity * shadowVis * sunSlope);

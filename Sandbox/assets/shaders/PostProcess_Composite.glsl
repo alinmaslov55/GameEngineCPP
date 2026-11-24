@@ -108,7 +108,11 @@ void main() {
     // Colored Atmospheric Diorama Vignette
     if (u_VignetteEnabled == 1 && u_VignetteIntensity > 0.0001) {
         vec2 centered = (v_UV - 0.5) * 2.0;
-        centered.x *= mix(1.0, max(u_AspectRatio, 1.0) * 0.82, 0.35);
+        if (u_AspectRatio >= 1.0) {
+            centered.x *= mix(1.0, u_AspectRatio * 0.82, 0.35);
+        } else {
+            centered.y *= mix(1.0, (1.0 / max(u_AspectRatio, 0.01)) * 0.82, 0.35);
+        }
         float dist = length(centered);
         float inner = max(0.05, 1.35 - u_VignetteIntensity * 0.95 - u_VignetteSmoothness * 0.55);
         float outer = inner + max(0.08, u_VignetteSmoothness * 1.15);

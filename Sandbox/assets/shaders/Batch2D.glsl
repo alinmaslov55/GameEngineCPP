@@ -27,7 +27,7 @@ flat out int v_TexIndex;
 out float v_AlphaCutoff;
 out float v_Emissive;
 out float v_ShadowOffset;
-out vec4 v_CutoutFX;
+flat out vec4 v_CutoutFX;
 
 void main() {
     vec3 worldPos = a_Position;
@@ -64,7 +64,7 @@ flat in int v_TexIndex;
 in float v_AlphaCutoff;
 in float v_Emissive;
 in float v_ShadowOffset;
-in vec4 v_CutoutFX;
+flat in vec4 v_CutoutFX;
 
 out vec4 color;
 
@@ -220,6 +220,16 @@ vec3 evaluatePointLights(vec3 worldPos, float receiverOffset) {
 }
 
 vec3 getFlashTargetRGB(float modeOrPacked) {
+    // Negative presets (-1.0: Pure White, -2.0: Crimson, -3.0: Spectral Blue, -4.0: Divine Gold)
+    // Also support legacy non-negative preset modes (0.0 .. 3.0)
+    if (modeOrPacked <= -0.5) {
+        int preset = int(round(-modeOrPacked));
+        if (preset == 1) return vec3(1.0, 1.0, 1.0);   // Pure White
+        if (preset == 2) return vec3(1.0, 0.15, 0.15); // Crimson Impact
+        if (preset == 3) return vec3(0.35, 0.75, 1.5); // Spectral Blue
+        if (preset == 4) return vec3(1.5, 1.2, 0.25);  // Divine Gold
+        return vec3(1.0, 1.0, 1.0);
+    }
     if (modeOrPacked <= 0.5) {
         return vec3(1.0, 1.0, 1.0); // Pure White
     } else if (modeOrPacked < 1.5) {
@@ -229,8 +239,9 @@ vec3 getFlashTargetRGB(float modeOrPacked) {
     } else if (modeOrPacked < 3.5) {
         return vec3(1.5, 1.2, 0.25); // Divine Gold
     }
-    // Packed 24-bit RGB (stored as mode = 4.0 + float(packedInt))
-    int packedVal = int(round(modeOrPacked - 4.0));
+
+    // Exact 24-bit RGB packed integer: fits losslessly into float32 mantissa [0, 16777215]
+    int packedVal = int(round(modeOrPacked));
     float r = float((packedVal >> 16) & 0xFF) / 255.0;
     float g = float((packedVal >> 8) & 0xFF) / 255.0;
     float b = float(packedVal & 0xFF) / 255.0;
@@ -278,8 +289,8 @@ void main() {
         finalRGB = texColor.rgb * (sunAndAmbient + pointGlow + vec3(v_Emissive));
     }
 
-    // Dissolve glowing HDR ember edge
-    if (v_CutoutFX.x > 0.001 && dissolveNoise < (v_CutoutFX.x + v_CutoutFX.w)) {
+    // Dissolve glowing HDR ember edge (guarded from silhouette overlay pass)
+    if (v_Emissive >= -1.5 && v_CutoutFX.x > 0.001 && dissolveNoise < (v_CutoutFX.x + v_CutoutFX.w)) {
         float edgeT = clamp((dissolveNoise - v_CutoutFX.x) / max(v_CutoutFX.w, 0.001), 0.0, 1.0);
         finalRGB = mix(vec3(3.2, 0.85, 0.15), finalRGB, edgeT);
     }

@@ -93,9 +93,15 @@ void InspectorPanel::DrawSpriteRenderer(Engine::SpriteRenderer& spriteRenderer, 
         if (flash > 0.001f) {
             const char* flashModes[] = { "Pure White (Stun)", "Crimson Impact", "Spectral Blue", "Divine Gold" };
             float modeVal = spriteRenderer.GetFlashColorMode();
-            int currentMode = (modeVal >= 0.0f && modeVal <= 3.0f) ? static_cast<int>(modeVal) : 0;
+            int currentMode = 0;
+            if (modeVal <= -0.5f) {
+                currentMode = std::clamp(static_cast<int>(std::round(-modeVal)) - 1, 0, 3);
+            } else if (modeVal >= 0.0f && modeVal <= 3.0f) {
+                currentMode = static_cast<int>(modeVal);
+            }
             if (ImGui::Combo("Flash Tint Mode", &currentMode, flashModes, 4)) {
-                spriteRenderer.SetFlashMode(static_cast<Engine::SpriteRenderer::FlashMode>(currentMode));
+                // FlashMode enum maps -1 to PureWhite, -2 to Crimson, -3 to SpectralBlue, -4 to DivineGold
+                spriteRenderer.SetFlashMode(static_cast<Engine::SpriteRenderer::FlashMode>(-(currentMode + 1)));
             }
         }
 

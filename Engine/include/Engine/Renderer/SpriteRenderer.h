@@ -84,14 +84,20 @@ public:
     float GetWindPhaseOffset() const { return m_WindPhaseOffset; }
     void SetWindPhaseOffset(float offset) { m_WindPhaseOffset = offset; }
 
-    //Ash Dissolve, Hit-Flash & Canopy Occlusion Silhouette
-    enum class FlashMode : uint32_t {
-        PureWhite = 0,
-        Crimson = 1,
-        CrimsonImpact = 1,
-        SpectralBlue = 2,
-        DivineGold = 3,
-        Custom = 4
+    // Ash Dissolve, Hit-Flash & Canopy Occlusion Silhouette
+    // Presets are encoded as negative float modes (-1.0f .. -4.0f) or legacy 0.0f .. 3.0f,
+    // while custom 24-bit RGB values are encoded as positive floats in [1000.0f, 16777215.0f + 1000.0f]
+    // or negative floats (-1.0f .. -4.0f) for presets.
+    // To fit exactly within IEEE-754 24-bit mantissa [0, 16777215]:
+    // Presets: -1.0f (PureWhite), -2.0f (CrimsonImpact), -3.0f (SpectralBlue), -4.0f (DivineGold)
+    // Custom: raw 24-bit integer packed as float in [0.0f, 16777215.0f]
+    enum class FlashMode : int32_t {
+        PureWhite = -1,
+        Crimson = -2,
+        CrimsonImpact = -2,
+        SpectralBlue = -3,
+        DivineGold = -4,
+        Custom = 0
     };
 
     float GetDissolveAmount() const { return m_DissolveAmount; }
@@ -109,27 +115,32 @@ public:
 
     void SetFlashColor(const glm::vec3& rgb) {
         if (rgb == glm::vec3(1.0f, 1.0f, 1.0f)) {
-            m_FlashColorMode = 0.0f;
+            m_FlashColorMode = -1.0f;
         } else if (rgb == glm::vec3(1.0f, 0.15f, 0.15f)) {
-            m_FlashColorMode = 1.0f;
+            m_FlashColorMode = -2.0f;
         } else if (rgb == glm::vec3(0.35f, 0.75f, 1.5f)) {
-            m_FlashColorMode = 2.0f;
+            m_FlashColorMode = -3.0f;
         } else if (rgb == glm::vec3(1.5f, 1.2f, 0.25f)) {
-            m_FlashColorMode = 3.0f;
+            m_FlashColorMode = -4.0f;
         } else {
             const auto r = static_cast<uint32_t>(std::clamp(rgb.r, 0.0f, 1.0f) * 255.0f);
             const auto g = static_cast<uint32_t>(std::clamp(rgb.g, 0.0f, 1.0f) * 255.0f);
             const auto b = static_cast<uint32_t>(std::clamp(rgb.b, 0.0f, 1.0f) * 255.0f);
-            m_FlashColorMode = 4.0f + static_cast<float>((r << 16) | (g << 8) | b);
+            const uint32_t packed = ((r << 16) | (g << 8) | b) & 0x00FFFFFFu;
+            m_FlashColorMode = static_cast<float>(packed);
         }
     }
 
     [[nodiscard]] glm::vec3 GetFlashColor() const {
-        if (m_FlashColorMode <= 0.5f) return glm::vec3(1.0f, 1.0f, 1.0f);
-        if (m_FlashColorMode < 1.5f)  return glm::vec3(1.0f, 0.15f, 0.15f);
-        if (m_FlashColorMode < 2.5f)  return glm::vec3(0.35f, 0.75f, 1.5f);
-        if (m_FlashColorMode < 3.5f)  return glm::vec3(1.5f, 1.2f, 0.25f);
-        const auto packed = static_cast<uint32_t>(m_FlashColorMode - 4.0f);
+        // Negative presets (-1: Pure White, -2: Crimson, -3: Spectral Blue, -4: Divine Gold)
+        // Also support legacy non-negative indices 0, 1, 2, 3 for backwards compatibility
+        if (m_FlashColorMode == -1.0f || m_FlashColorMode == 0.0f) return glm::vec3(1.0f, 1.0f, 1.0f);
+        if (m_FlashColorMode == -2.0f || m_FlashColorMode == 1.0f) return glm::vec3(1.0f, 0.15f, 0.15f);
+        if (m_FlashColorMode == -3.0f || m_FlashColorMode == 2.0f) return glm::vec3(0.35f, 0.75f, 1.5f);
+        if (m_FlashColorMode == -4.0f || m_FlashColorMode == 3.0f) return glm::vec3(1.5f, 1.2f, 0.25f);
+        
+        // Exact 24-bit packed RGB [0, 16777215]
+        const auto packed = static_cast<uint32_t>(std::round(m_FlashColorMode));
         const float r = static_cast<float>((packed >> 16) & 0xFF) / 255.0f;
         const float g = static_cast<float>((packed >> 8) & 0xFF) / 255.0f;
         const float b = static_cast<float>(packed & 0xFF) / 255.0f;
