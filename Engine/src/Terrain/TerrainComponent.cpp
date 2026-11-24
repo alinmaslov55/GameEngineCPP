@@ -518,18 +518,16 @@ bool TerrainComponent::LoadSplatmapFromPNG(const std::string& resolvedFilepath) 
         return false;
     }
 
-    // Preserve row 0 = minZ orientation without vertical inversion, then restore engine default (1)
+    // Preserve row 0 = minZ orientation without vertical inversion, using thread-local state
     stbi_set_flip_vertically_on_load_thread(0);
-    stbi_set_flip_vertically_on_load(0);
     int w = 0;
     int h = 0;
     int channels = 0;
     unsigned char* pixels = stbi_load(resolvedFilepath.c_str(), &w, &h, &channels, 4);
 
-    if (!pixels || w <= 0 || h <= 0) {
+    if (!pixels || w < 4 || h < 4 || w > 2048 || h > 2048) {
         stbi_set_flip_vertically_on_load_thread(1);
-        stbi_set_flip_vertically_on_load(1);
-        ENGINE_CORE_ERROR("TerrainComponent: Failed to load splatmap PNG '{}'", resolvedFilepath);
+        ENGINE_CORE_ERROR("TerrainComponent: Failed to load splatmap PNG '{}' (w={}, h={})", resolvedFilepath, w, h);
         if (pixels) {
             stbi_image_free(pixels);
         }
@@ -543,7 +541,6 @@ bool TerrainComponent::LoadSplatmapFromPNG(const std::string& resolvedFilepath) 
     unsigned char* secPixels = stbi_load(secondaryPath.string().c_str(), &w1, &h1, &ch1, 4);
 
     stbi_set_flip_vertically_on_load_thread(1);
-    stbi_set_flip_vertically_on_load(1);
 
     m_SplatWidth = static_cast<uint32_t>(w);
     m_SplatHeight = static_cast<uint32_t>(h);
@@ -679,6 +676,11 @@ std::string TerrainComponent::EncodeSplatBase64() const {
 }
 
 bool TerrainComponent::DecodeSplatBase64(const std::string& base64Data, uint32_t width, uint32_t height) {
+    if (width < 4u || height < 4u || width > 2048u || height > 2048u) {
+        ENGINE_CORE_ERROR("TerrainComponent::DecodeSplatBase64: Invalid dimensions {}x{} (must be in [4, 2048])", width, height);
+        return false;
+    }
+
     std::vector<uint8_t> decoded;
     if (!DecodeRGBABase64(base64Data, width, height, decoded)) {
         return false;
@@ -701,6 +703,11 @@ std::string TerrainComponent::EncodeSplat1Base64() const {
 }
 
 bool TerrainComponent::DecodeSplat1Base64(const std::string& base64Data, uint32_t width, uint32_t height) {
+    if (width < 4u || height < 4u || width > 2048u || height > 2048u) {
+        ENGINE_CORE_ERROR("TerrainComponent::DecodeSplat1Base64: Invalid dimensions {}x{} (must be in [4, 2048])", width, height);
+        return false;
+    }
+
     std::vector<uint8_t> decoded;
     if (!DecodeRGBABase64(base64Data, width, height, decoded)) {
         return false;

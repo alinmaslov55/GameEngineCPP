@@ -24,6 +24,15 @@ TEST(TilemapTest, SetAndGetTile) {
 
     // Out of bounds SetTile should not crash
     tilemap.SetTile(10, 10, 99, true);
+
+    // Out of bounds GetTile should safely return invalid default tile without crashing
+    const auto& oobTileSigned = tilemap.GetTile(static_cast<uint32_t>(-1), 500);
+    EXPECT_EQ(oobTileSigned.id, 0u);
+    EXPECT_FALSE(oobTileSigned.walkable);
+
+    const auto& oobTileBoundary = tilemap.GetTile(4, 4);
+    EXPECT_EQ(oobTileBoundary.id, 0u);
+    EXPECT_FALSE(oobTileBoundary.walkable);
 }
 
 TEST(TileSetTest, AddAndRetrieveTiles) {

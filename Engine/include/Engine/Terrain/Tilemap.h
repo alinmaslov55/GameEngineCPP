@@ -53,7 +53,11 @@ public:
     }
 
     const Tile& GetTile(uint32_t x, uint32_t y) const {
-        return m_Grid[y * m_Width + x];
+        if (x < m_Width && y < m_Height && !m_Grid.empty()) {
+            return m_Grid[y * m_Width + x];
+        }
+        static const Tile s_InvalidTile{ 0, false };
+        return s_InvalidTile;
     }
 
     uint32_t GetWidth() const { return m_Width; }

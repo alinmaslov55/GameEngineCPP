@@ -1,6 +1,7 @@
 #include <gtest/gtest.h>
 #include "Engine/Terrain/TerrainComponent.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
+#include "Engine/Terrain/TerrainHelpers.h"
 #include "Engine/Terrain/WorldBiomeGenerator.h"
 #include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/Prefab.h"
@@ -380,6 +381,35 @@ TEST(TerrainRendererTest, MultiTerrainDistinctLayerSetsDoNotThrashCache) {
 
     Engine::TerrainRenderer::Shutdown();
     EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 0u);
+}
+
+TEST(TerrainHelpersTest, EvaluateBilinearSurfaceSampleZeroDimensionsSafety) {
+    std::vector<uint8_t> emptySplat;
+    // Calling with width == 0, height == 0 must not underflow or crash
+    auto sample = Engine::TerrainHelpers::EvaluateBilinearSurfaceSample(emptySplat, emptySplat, 0u, 0u, 5.0f, 5.0f, false);
+    EXPECT_EQ(sample.DominantBiome, Engine::BiomeType::AshBarrens);
+
+    // Calling with width < 2
+    auto sample1 = Engine::TerrainHelpers::EvaluateBilinearSurfaceSample(emptySplat, emptySplat, 1u, 64u, 0.5f, 0.5f, false);
+    EXPECT_EQ(sample1.DominantBiome, Engine::BiomeType::AshBarrens);
+}
+
+TEST(TerrainComponentBoundsTest, DecodeSplatBase64RejectsInvalidDimensions) {
+    Engine::TerrainComponent terrain(16.0f, 16.0f, 64u, 64u);
+    std::string dummyData = "AAAA"; // minimal string
+
+    // Sub-4 dimension rejection
+    EXPECT_FALSE(terrain.DecodeSplatBase64(dummyData, 1u, 1u));
+    EXPECT_FALSE(terrain.DecodeSplatBase64(dummyData, 2u, 64u));
+    EXPECT_FALSE(terrain.DecodeSplatBase64(dummyData, 64u, 3u));
+
+    // Exceeding 2048 rejection
+    EXPECT_FALSE(terrain.DecodeSplatBase64(dummyData, 4096u, 4096u));
+    EXPECT_FALSE(terrain.DecodeSplatBase64(dummyData, 2049u, 64u));
+
+    // Same for DecodeSplat1Base64
+    EXPECT_FALSE(terrain.DecodeSplat1Base64(dummyData, 1u, 1u));
+    EXPECT_FALSE(terrain.DecodeSplat1Base64(dummyData, 4096u, 4096u));
 }
 
 } // namespace

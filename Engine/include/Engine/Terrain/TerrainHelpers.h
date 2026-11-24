@@ -161,6 +161,10 @@ inline bool WriteSplatTexel8(std::vector<uint8_t>& splat0,
                                                                  float fx,
                                                                  float fz,
                                                                  bool isBurning) noexcept {
+    if (width < 2u || height < 2u || splat0.empty()) {
+        return SurfaceSample{};
+    }
+
     const float clampedFx = std::clamp(fx, 0.0f, static_cast<float>(width - 1u));
     const float clampedFz = std::clamp(fz, 0.0f, static_cast<float>(height - 1u));
 
