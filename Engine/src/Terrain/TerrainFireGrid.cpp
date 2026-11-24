@@ -1,6 +1,7 @@
 #include "Engine/Terrain/TerrainFireGrid.h"
 #include "Engine/Utils/Logger.h"
 
+#include <glm/common.hpp>
 #include <glm/geometric.hpp>
 #include <algorithm>
 #include <cmath>
@@ -38,11 +39,15 @@ void TerrainFireGrid::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
                 continue;
             }
 
-            const glm::vec2 center = CoordToWorldCenter(coord);
-            const glm::vec2 delta = center - centerXZ;
+            const glm::vec2 cellMin{ static_cast<float>(cx) * CellSize, static_cast<float>(cz) * CellSize };
+            const glm::vec2 cellMax{ cellMin.x + CellSize, cellMin.y + CellSize };
+            const glm::vec2 closestPoint = glm::clamp(centerXZ, cellMin, cellMax);
+            const glm::vec2 delta = closestPoint - centerXZ;
             if (glm::dot(delta, delta) > radSq) {
                 continue;
             }
+
+            const glm::vec2 center = CoordToWorldCenter(coord);
 
             const float flammability = m_FlammabilityQuery ? m_FlammabilityQuery(center.x, center.y) : 0.0f;
             if (flammability >= MinFlammability) {
@@ -77,8 +82,10 @@ void TerrainFireGrid::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
     toRemove.reserve(m_ActiveCells.size());
 
     for (const auto& [coord, cell] : m_ActiveCells) {
-        const glm::vec2 center = CoordToWorldCenter(coord);
-        const glm::vec2 delta = center - centerXZ;
+        const glm::vec2 cellMin{ static_cast<float>(coord.x) * CellSize, static_cast<float>(coord.z) * CellSize };
+        const glm::vec2 cellMax{ cellMin.x + CellSize, cellMin.y + CellSize };
+        const glm::vec2 closestPoint = glm::clamp(centerXZ, cellMin, cellMax);
+        const glm::vec2 delta = closestPoint - centerXZ;
         if (glm::dot(delta, delta) <= radSq) {
             toRemove.push_back(coord);
         }
@@ -160,9 +167,15 @@ bool TerrainFireGrid::IsBurningAtXZ(float worldX, float worldZ) const noexcept {
 }
 
 void TerrainFireGrid::Update(float dt) {
-    if (dt <= 0.0f || m_ActiveCells.empty()) {
-        m_TickAccumulator = 0.0f;
+    if (!std::isfinite(dt) || dt <= 0.0f || m_ActiveCells.empty()) {
+        if (!std::isfinite(m_TickAccumulator)) {
+            m_TickAccumulator = 0.0f;
+        }
         return;
+    }
+
+    if (!std::isfinite(m_TickAccumulator)) {
+        m_TickAccumulator = 0.0f;
     }
 
     m_TickAccumulator += dt;
@@ -204,7 +217,8 @@ void TerrainFireGrid::SimulateTick(float tickDt) {
         cell.BurnTime += tickDt;
         cell.SpreadTimer += tickDt;
 
-        if (!cell.HasSpread && cell.SpreadTimer >= SpreadDelay) {
+        if (cell.SpreadTimer >= SpreadDelay) {
+            cell.SpreadTimer -= SpreadDelay;
             cell.HasSpread = true;
             for (const auto& [dx, dz] : kNeighbors) {
                 const FireCellCoord nCoord{ coord.x + dx, coord.z + dz };

@@ -317,6 +317,15 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
             chunk.State = ChunkLoadState::CachedInRam;
             chunk.InUploadQueue = false;
             ReleaseChunkEntities(chunk);
+            const glm::vec2 minXZ{
+                static_cast<float>(coord.cx) * ChunkSizeMeters,
+                static_cast<float>(coord.cz) * ChunkSizeMeters
+            };
+            const glm::vec2 maxXZ{
+                static_cast<float>(coord.cx + 1) * ChunkSizeMeters,
+                static_cast<float>(coord.cz + 1) * ChunkSizeMeters
+            };
+            m_FireGrid.ExtinguishInBoundsXZ(minXZ, maxXZ);
         }
     }
 
@@ -672,6 +681,7 @@ void TerrainChunkManager::RegenerateWorld() {
     ENGINE_CORE_INFO("TerrainChunkManager::RegenerateWorld: Clearing {} chunks (seed={})",
                      m_Chunks.size(), m_WorldGenConfig.Seed);
     ShutdownAsyncWorkers();
+    m_FireGrid.Clear();
     for (auto& [coord, chunk] : m_Chunks) {
         (void)coord;
         ReleaseChunkEntities(chunk);
@@ -790,6 +800,17 @@ void TerrainChunkManager::InitFireGrid() {
         },
         [this](const glm::vec2& centerXZ, float radius, float strength) {
             PaintMaterialWorld(centerXZ, 5u /*Scorched Ash*/, radius, strength);
+            if (auto* owner = GetGameObject()) {
+                if (auto* scene = owner->GetScene()) {
+                    GroundDecal decal{};
+                    decal.Position = glm::vec3(centerXZ.x, 0.0f, centerXZ.y);
+                    decal.SizeXZ = glm::vec2(radius * 2.0f);
+                    decal.Color = glm::vec4(0.12f, 0.10f, 0.08f, 0.85f);
+                    decal.MaxLifetime = 30.0f;
+                    decal.FadeOutDuration = 5.0f;
+                    scene->GetDecalManager().SpawnDecal(decal);
+                }
+            }
         },
         [this](const glm::vec2& centerXZ) -> uint64_t {
             return SpawnFirewallEntity(centerXZ);
@@ -803,7 +824,7 @@ void TerrainChunkManager::InitFireGrid() {
 uint64_t TerrainChunkManager::SpawnFirewallEntity(const glm::vec2& centerXZ) {
     GameObject* owner = GetGameObject();
     Scene* scene = owner ? owner->GetScene() : nullptr;
-    if (!scene || !m_WorldGenConfig.SpawnSceneEntities) {
+    if (!scene) {
         return 0;
     }
 

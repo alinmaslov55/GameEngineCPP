@@ -31,6 +31,7 @@ class DecalManager;
 class Prefab;
 class TerrainChunkManager;
 class TerrainComponent;
+class TerrainFireGrid;
 struct RaycastHitXZ;
 
 /// @brief Core Scene orchestrator coordinating entity lifecycle (ECS), UUID indexing,
@@ -143,9 +144,12 @@ public:
     void PaintMaterialWorld(const glm::vec2& centerXZ, uint32_t layerIdx, float radius, float strength = 1.0f);
     void IgniteAtXZ(const glm::vec2& centerXZ, float radius);
     void ExtinguishAtXZ(const glm::vec2& centerXZ, float radius);
+    void ExtinguishInBoundsXZ(const glm::vec2& minXZ, const glm::vec2& maxXZ);
     [[nodiscard]] bool IsBurningAtXZ(float worldX, float worldZ) const noexcept;
     void InvalidateTerrainCache() noexcept { m_TerrainCacheDirty = true; }
     void RefreshTerrainCache() const noexcept;
+    [[nodiscard]] TerrainFireGrid* GetFiniteFireGrid() noexcept { return m_FiniteFireGrid.get(); }
+    [[nodiscard]] const TerrainFireGrid* GetFiniteFireGrid() const noexcept { return m_FiniteFireGrid.get(); }
 
     // FixedUpdate entity registry
     [[nodiscard]] const std::vector<GameObject*>& GetFixedUpdateEntities() const noexcept { return m_FixedUpdateEntities; }
@@ -208,6 +212,7 @@ private:
     std::unique_ptr<EntityPoolManager> m_PoolManager;
     std::unique_ptr<SceneRenderer> m_Renderer;
     std::unique_ptr<DecalManager> m_DecalManager;
+    std::unique_ptr<TerrainFireGrid> m_FiniteFireGrid;
 
     std::vector<Transform*> m_TempChildrenScratch;
     std::unordered_map<uint64_t, GameObject*> m_EntityUUIDMap;

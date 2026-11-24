@@ -125,6 +125,29 @@ std::shared_ptr<Prefab> ProceduralPropFactory::BuildTarFirewallPrefab() {
             { "Rotation", { 0.0f, 0.0f, 0.0f } },
             { "Scale", { 1.0f, 1.0f, 1.0f } }
         } },
+        { "SpriteRenderer", {
+            { "Color", { 1.0f, 0.45f, 0.10f, 0.95f } },
+            { "BillboardMode", 1 }, // CylindricalY
+            { "AlphaCutoff", 0.05f },
+            { "CastShadows", false },
+            { "ReceiveLighting", false },
+            { "Emissive", 2.5f }
+        } },
+        { "ParticleSystem", {
+            { "PoolSize", 64u },
+            { "AutoEmit", true },
+            { "EmitRate", 16.0f },
+            { "EmissiveParticles", true },
+            { "TemplateProps", {
+                { "LifeTime", 0.45f },
+                { "ColorBegin", { 1.0f, 0.65f, 0.2f, 0.9f } },
+                { "ColorEnd", { 0.85f, 0.15f, 0.05f, 0.0f } },
+                { "SizeBegin", 0.25f },
+                { "SizeEnd", 0.05f },
+                { "Velocity", { 0.0f, 0.85f, 0.0f } },
+                { "VelocityVariation", { 0.2f, 0.3f, 0.2f } }
+            } }
+        } },
         { "PointLight", {
             { "Color", { 1.0f, 0.48f, 0.12f } },
             { "Intensity", 1.6f },

@@ -14,6 +14,8 @@
 #include "Engine/Scene/SceneSerializer.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
 #include "Engine/Terrain/TerrainComponent.h"
+#include "Engine/Terrain/TerrainFireGrid.h"
+#include "Engine/Terrain/ProceduralPropFactory.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Utils/Logger.h"
 
@@ -33,12 +35,55 @@ Scene::Scene(const std::string& name)
       m_PhysicsWorld(std::make_unique<PhysicsWorld2D>(this)),
       m_PoolManager(std::make_unique<EntityPoolManager>(this)),
       m_Renderer(std::make_unique<SceneRenderer>()),
-      m_DecalManager(std::make_unique<DecalManager>(512u)) {
+      m_DecalManager(std::make_unique<DecalManager>(512u)),
+      m_FiniteFireGrid(std::make_unique<TerrainFireGrid>()) {
     m_TempChildrenScratch.reserve(64);
+
+    m_FiniteFireGrid->ConfigureCallbacks(
+        [this](float wx, float wz) -> float {
+            return SampleSurfaceAtXZ(wx, wz).Flammability;
+        },
+        [this](const glm::vec2& centerXZ, float radius, float strength) {
+            PaintMaterialWorld(centerXZ, 5u /*Scorched Ash*/, radius, strength);
+            if (m_DecalManager) {
+                GroundDecal decal{};
+                decal.Position = glm::vec3(centerXZ.x, 0.0f, centerXZ.y);
+                decal.SizeXZ = glm::vec2(radius * 2.0f);
+                decal.Color = glm::vec4(0.12f, 0.10f, 0.08f, 0.85f);
+                decal.MaxLifetime = 30.0f;
+                decal.FadeOutDuration = 5.0f;
+                m_DecalManager->SpawnDecal(decal);
+            }
+        },
+        [this](const glm::vec2& centerXZ) -> uint64_t {
+            if (!m_PoolManager) return 0;
+            static const std::shared_ptr<Prefab> s_FirewallPrefab = ProceduralPropFactory::BuildTarFirewallPrefab();
+            if (!s_FirewallPrefab) return 0;
+            GameObject* firewall = m_PoolManager->AcquirePooled(
+                "pool_tar_firewall", *s_FirewallPrefab, glm::vec3(centerXZ.x, 0.45f, centerXZ.y));
+            if (!firewall) return 0;
+            if (auto* t = firewall->GetTransform()) {
+                t->position = glm::vec3(centerXZ.x, 0.45f, centerXZ.y);
+                t->SnapshotPrevious();
+            }
+            return firewall->GetUUID();
+        },
+        [this](uint64_t uuid) {
+            if (uuid == 0 || !m_PoolManager) return;
+            if (GameObject* go = FindGameObjectByUUID(uuid)) {
+                m_PoolManager->ReleaseToPool("pool_tar_firewall", go);
+            }
+        }
+    );
+
     ENGINE_CORE_INFO("Scene created: '{}'", m_Name);
 }
 
 Scene::~Scene() {
+    if (m_FiniteFireGrid) {
+        m_FiniteFireGrid->Clear();
+        m_FiniteFireGrid->ConfigureCallbacks(nullptr, nullptr, nullptr, nullptr);
+    }
     if (m_PhysicsWorld && m_PhysicsWorld->IsRuntimeRunning()) {
         m_PhysicsWorld->OnRuntimeStop();
     }
@@ -627,6 +672,13 @@ void Scene::Update(float deltaTime) {
     if (m_DecalManager) {
         m_DecalManager->Update(deltaTime);
     }
+
+    if (m_TerrainCacheDirty) {
+        RefreshTerrainCache();
+    }
+    if (!m_CachedChunkManager && m_CachedTerrain && m_FiniteFireGrid) {
+        m_FiniteFireGrid->Update(deltaTime);
+    }
 }
 
 void Scene::Render(const PerspectiveCamera* overrideCamera) {
@@ -832,7 +884,9 @@ SurfaceSample Scene::SampleSurfaceAtXZ(float worldX, float worldZ) const noexcep
     if (m_CachedTerrain) {
         const glm::vec3 origin = m_CachedTerrainTransform ? m_CachedTerrainTransform->GetWorldPosition() : glm::vec3(0.0f);
         const glm::vec3 scale = m_CachedTerrainTransform ? m_CachedTerrainTransform->scale : glm::vec3(1.0f);
-        return m_CachedTerrain->SampleSurfaceAtXZ(worldX, worldZ, origin, scale);
+        SurfaceSample sample = m_CachedTerrain->SampleSurfaceAtXZ(worldX, worldZ, origin, scale);
+        sample.IsBurning = m_FiniteFireGrid ? m_FiniteFireGrid->IsBurningAtXZ(worldX, worldZ) : false;
+        return sample;
     }
     return SurfaceSample{};
 }
@@ -859,6 +913,8 @@ void Scene::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
     }
     if (m_CachedChunkManager) {
         m_CachedChunkManager->IgniteAtXZ(centerXZ, radius);
+    } else if (m_CachedTerrain && m_FiniteFireGrid) {
+        m_FiniteFireGrid->IgniteAtXZ(centerXZ, radius);
     }
 }
 
@@ -868,6 +924,19 @@ void Scene::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
     }
     if (m_CachedChunkManager) {
         m_CachedChunkManager->ExtinguishAtXZ(centerXZ, radius);
+    } else if (m_CachedTerrain && m_FiniteFireGrid) {
+        m_FiniteFireGrid->ExtinguishAtXZ(centerXZ, radius);
+    }
+}
+
+void Scene::ExtinguishInBoundsXZ(const glm::vec2& minXZ, const glm::vec2& maxXZ) {
+    if (m_TerrainCacheDirty) {
+        RefreshTerrainCache();
+    }
+    if (m_CachedChunkManager) {
+        m_CachedChunkManager->ExtinguishInBoundsXZ(minXZ, maxXZ);
+    } else if (m_CachedTerrain && m_FiniteFireGrid) {
+        m_FiniteFireGrid->ExtinguishInBoundsXZ(minXZ, maxXZ);
     }
 }
 
@@ -877,6 +946,9 @@ bool Scene::IsBurningAtXZ(float worldX, float worldZ) const noexcept {
     }
     if (m_CachedChunkManager) {
         return m_CachedChunkManager->IsBurningAtXZ(worldX, worldZ);
+    }
+    if (m_CachedTerrain && m_FiniteFireGrid) {
+        return m_FiniteFireGrid->IsBurningAtXZ(worldX, worldZ);
     }
     return false;
 }
