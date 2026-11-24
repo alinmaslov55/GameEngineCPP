@@ -175,8 +175,16 @@ private:
     // Box2D v3 multithreaded task management pool (zero heap allocation)
     alignas(64) std::array<Box2DTask, kMaxBox2DTasks> m_Box2DTasks;
     std::array<std::array<Box2DTask::ChunkPacket, kMaxChunksPerTask>, kMaxBox2DTasks> m_Box2DTaskChunks{};
+    std::atomic<uint64_t> m_WorkerLeaseMask{ 0 };
     std::atomic<uint64_t> m_Box2DParallelTasksDispatched{ 0 };
     std::atomic<uint64_t> m_Box2DSerialTasksExecuted{ 0 };
+
+    // Reusable event scratch buffers (copied before user callbacks to prevent UAF on OnRuntimeStop)
+    std::vector<b2ContactHitEvent> m_HitEventsScratch;
+    std::vector<b2ContactBeginTouchEvent> m_ContactBeginScratch;
+    std::vector<b2ContactEndTouchEvent> m_ContactEndScratch;
+    std::vector<b2SensorBeginTouchEvent> m_SensorBeginScratch;
+    std::vector<b2SensorEndTouchEvent> m_SensorEndScratch;
 
     // 2D Spatial Hash Grid for static colliders
     std::unordered_map<uint64_t, std::vector<uint32_t>> m_StaticGrid;

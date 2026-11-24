@@ -206,7 +206,7 @@ flowchart TD
 | **`FIX-AIX-01`** | `StateMachine` Iterative Transition Queue, `SteeringSystem` & `Ballistics` Guards | `TODO` | **P0** | W1 | `FIX-PHY-04` | `C-10`, ECS `#26`, Med `Ballistics`, `StateMachine` | `OPT-01`, `DOC-06` |
 | **`FIX-LGT-01`** | `LightQuerySystem` Enabled/Occlusion Order & `CameraComponent` Pause Hold | `TODO` | **P1** | W1 | `FIX-PHY-04` | ECS `#20`, `#24` (`CameraComponent`) | `OPT-01`, `DOC-05` |
 | **`FIX-PHY-01`** | Deferred Prefab Body Registration, Static Transform Sync & Shape Filter/Mass | `DONE` | **P0** | W1 | `FIX-ECS-01`, `FIX-SER-01` | `C-12` (Static `(0,0)`, filters, density, velocity) | `FIX-PHY-03`, `FIX-PHY-04` |
-| **`FIX-PHY-02`** | `Box2D` 64-Worker Lease Bitmask, `Box2DTask` Lifetime & Event Buffer Copy | `TODO` | **P0** | W0 | `FIX-CORE-01` | `C-04`, `C-05`, `C-06`, Physics `#31` | `FIX-PHY-03`, `DOC-04` |
+| **`FIX-PHY-02`** | `Box2D` 64-Worker Lease Bitmask, `Box2DTask` Lifetime & Event Buffer Copy | `DONE` | **P0** | W0 | `FIX-CORE-01` | `C-04`, `C-05`, `C-06`, Physics `#31` | `FIX-PHY-03`, `DOC-04` |
 | **`FIX-PHY-03`** | 2.5D Yaw Handedness (`-θ`), Collider Offset Scale, Stasis & Tilemap Safety | `TODO` | **P0** | W1 | `FIX-PHY-01`, `FIX-PHY-02` | Physics `#27–#30`, `#32`, Med `Rigidbody2D`/`Tilemap` | `FIX-PHY-04`, `FIX-SBX-01`, `DOC-04` |
 | **`FIX-PHY-04`** | `PhysicsQueries` Custom Raycast Filter, `OverlapArcXZ` & Fallback Parity | `TODO` | **P1** | W1 | `FIX-PHY-03` | Physics `#33` | `FIX-AIX-01`, `FIX-LGT-01`, `DOC-04` |
 | **`FIX-VFX-01`** | `ParticleSystem` Rest Threshold, Swap-Remove Cleanup, PRNG & `DecalManager` | `DONE` | **P1** | W0 | *None (Root)* | Physics `#30`, `#34`, Med `Flipbook`, Imp `#5`, `#10` | `FIX-TER-03`, `DOC-04` |
@@ -472,7 +472,7 @@ flowchart TD
 ---
 
 #### `FIX-PHY-02` — `Box2D` 64-Worker Lease Bitmask, `Box2DTask` Lifetime & Event Buffer Copy
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `FIX-CORE-01` | Unlocks: `FIX-PHY-03`, `DOC-04`
 - **Current Defects:**
   1. [PhysicsWorld2D.cpp](file://Engine/src/Physics/PhysicsWorld2D.cpp#L555-L611): Worker `63`, workers `>= 64`, and the main thread all pass `wIdx = 63` concurrently to Box2D (`C-04`).

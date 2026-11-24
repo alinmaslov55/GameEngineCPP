@@ -561,3 +561,95 @@ TEST_F(ContactAndSensorEventTest, DeduplicatedHitAndBeginEventsViaBinarySearch) 
 
     scene.OnRuntimeStop();
 }
+
+namespace {
+class ReentrantStopTriggerComponent : public Engine::Component {
+public:
+    Engine::Scene* TargetScene = nullptr;
+    Engine::GameObject* BystanderToDestroy = nullptr;
+    uint32_t TriggerCount = 0;
+
+    void OnTriggerEnter2D(Engine::GameObject* /*other*/) override {
+        ++TriggerCount;
+        if (TargetScene) {
+            if (BystanderToDestroy) {
+                TargetScene->DestroyGameObject(BystanderToDestroy);
+            }
+            TargetScene->OnRuntimeStop();
+        }
+    }
+};
+} // namespace
+
+TEST_F(ContactAndSensorEventTest, TriggerEnter_DestroyColliderAndStopRuntime_NoUAF) {
+    Engine::Scene scene("ReentrantStopTriggerScene");
+
+    auto* sensorA = scene.CreateGameObject("SensorA");
+    sensorA->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* colA = sensorA->AddComponent<Engine::CircleCollider2D>();
+    colA->Radius = 1.5f;
+    colA->IsSensor = true;
+    auto* reentrant = sensorA->AddComponent<ReentrantStopTriggerComponent>();
+    reentrant->TargetScene = &scene;
+
+    auto* visitorA = scene.CreateGameObject("VisitorA");
+    visitorA->GetTransform()->position = { 0.2f, 0.0f, 0.0f };
+    auto* rbA = visitorA->AddComponent<Engine::Rigidbody2D>();
+    rbA->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    visitorA->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+
+    auto* bystander = scene.CreateGameObject("Bystander");
+    bystander->GetTransform()->position = { 5.0f, 0.0f, 0.0f };
+    bystander->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+    reentrant->BystanderToDestroy = bystander;
+
+    // Second overlapping pair to verify remaining events in copied buffer are safely aborted after OnRuntimeStop()
+    auto* sensorB = scene.CreateGameObject("SensorB");
+    sensorB->GetTransform()->position = { 20.0f, 0.0f, 0.0f };
+    auto* colB = sensorB->AddComponent<Engine::CircleCollider2D>();
+    colB->Radius = 1.5f;
+    colB->IsSensor = true;
+    auto* recvB = sensorB->AddComponent<TestEventReceiver>();
+
+    auto* visitorB = scene.CreateGameObject("VisitorB");
+    visitorB->GetTransform()->position = { 20.2f, 0.0f, 0.0f };
+    auto* rbB = visitorB->AddComponent<Engine::Rigidbody2D>();
+    rbB->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    visitorB->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+
+    scene.OnRuntimeStart();
+    scene.UpdateRuntime(1.0f / 60.0f);
+
+    EXPECT_FALSE(scene.IsRuntimeRunning());
+    EXPECT_GE(reentrant->TriggerCount + recvB->TriggerEnterCount, 1u);
+}
+
+TEST_F(ContactAndSensorEventTest, TriggerEnter_SkipsPendingDestroyEntities) {
+    Engine::Scene scene("PendingDestroyTriggerScene");
+
+    auto* sensor = scene.CreateGameObject("Sensor");
+    sensor->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* col = sensor->AddComponent<Engine::CircleCollider2D>();
+    col->Radius = 1.5f;
+    col->IsSensor = true;
+    auto* recv = sensor->AddComponent<TestEventReceiver>();
+
+    auto* visitor = scene.CreateGameObject("Visitor");
+    visitor->GetTransform()->position = { 0.2f, 0.0f, 0.0f };
+    auto* rb = visitor->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    visitor->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+
+    scene.OnRuntimeStart();
+
+    // Mark visitor pending-destroy inside an iteration guard before stepping physics
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+        scene.DestroyGameObject(visitor);
+        ASSERT_TRUE(visitor->IsPendingDestroy());
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+
+    EXPECT_EQ(recv->TriggerEnterCount, 0u);
+    scene.OnRuntimeStop();
+}

@@ -234,6 +234,58 @@ TEST(Box2DPhysicsTest, MultithreadedStepWithWorkerPool) {
     EXPECT_FALSE(Engine::JobSystem::IsInitialized());
 }
 
+TEST(Box2DPhysicsTest, MultithreadedStepWith64WorkersAnd200Bodies) {
+    Engine::JobSystem::Shutdown();
+    Engine::JobSystem::Init(64);
+    ASSERT_TRUE(Engine::JobSystem::IsInitialized());
+    EXPECT_EQ(Engine::JobSystem::GetWorkerCount(), 64u);
+
+    {
+        Engine::Scene scene("64WorkerStressScene");
+        constexpr int kNumBodies = 200;
+        std::vector<Engine::GameObject*> bodies;
+        bodies.reserve(kNumBodies);
+
+        for (int i = 0; i < kNumBodies; ++i) {
+            auto* ball = scene.CreateGameObject("StressBody_" + std::to_string(i));
+            const int row = i / 20;
+            const int col = i % 20;
+            const float x = (static_cast<float>(col) - 9.5f) * 1.1f;
+            const float z = (static_cast<float>(row) - 4.5f) * 1.1f;
+            ball->GetTransform()->position = { x, 0.0f, z };
+
+            auto* rb = ball->AddComponent<Engine::Rigidbody2D>();
+            rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+            rb->InitialLinearVelocityXZ = { -x * 0.5f, -z * 0.5f };
+
+            auto* circle = ball->AddComponent<Engine::CircleCollider2D>();
+            circle->Radius = 0.5f;
+            circle->Density = 1.0f;
+            circle->Friction = 0.2f;
+            circle->Restitution = 0.4f;
+            bodies.push_back(ball);
+        }
+
+        scene.OnRuntimeStart();
+
+        for (int step = 0; step < 15; ++step) {
+            scene.UpdateRuntime(0.016f);
+        }
+
+        for (auto* body : bodies) {
+            const glm::vec3& pos = body->GetTransform()->position;
+            EXPECT_FALSE(std::isnan(pos.x));
+            EXPECT_FALSE(std::isnan(pos.z));
+        }
+
+        EXPECT_GT(scene.GetBox2DTotalTasks(), 0u);
+        scene.OnRuntimeStop();
+    }
+
+    Engine::JobSystem::Shutdown();
+    EXPECT_FALSE(Engine::JobSystem::IsInitialized());
+}
+
 TEST(SpatialGrid2DTest, CellKeyGeneration) {
     uint64_t keyOrigin = Engine::Scene::GetCellKey(0, 0);
     uint64_t keyNeg = Engine::Scene::GetCellKey(-1, -1);

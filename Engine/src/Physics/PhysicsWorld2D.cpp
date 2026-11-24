@@ -14,7 +14,9 @@
 #include <box2d/box2d.h>
 #include <box2d/math_functions.h>
 #include <algorithm>
+#include <bit>
 #include <cmath>
+#include <thread>
 #include <utility>
 
 namespace Engine {
@@ -581,22 +583,88 @@ void PhysicsWorld2D::CreateRuntimeTilemapBody(GameObject* go) {
                       go->GetName(), width, height, shapeCount);
 }
 
+namespace {
+
+class ScopedBox2DWorkerSlot {
+public:
+    ScopedBox2DWorkerSlot(std::atomic<uint64_t>* leaseMask, uint32_t limit) noexcept
+        : m_LeaseMask(leaseMask) {
+        if (!m_LeaseMask) {
+            m_Slot = 0;
+            return;
+        }
+        const uint32_t clampedLimit = std::clamp(limit, 1u, 64u);
+        const uint64_t validMask = (clampedLimit == 64u) ? ~0ULL : ((1ULL << clampedLimit) - 1ULL);
+        const int32_t preferred = JobSystem::GetCurrentWorkerIndex();
+        uint64_t mask = m_LeaseMask->load(std::memory_order_relaxed);
+        for (;;) {
+            if (preferred >= 0 && static_cast<uint32_t>(preferred) < clampedLimit) {
+                const uint64_t prefBit = 1ULL << static_cast<uint32_t>(preferred);
+                if ((mask & prefBit) == 0) {
+                    if (m_LeaseMask->compare_exchange_weak(mask, mask | prefBit,
+                                                           std::memory_order_acquire,
+                                                           std::memory_order_relaxed)) {
+                        m_Slot = static_cast<uint32_t>(preferred);
+                        m_Bit = prefBit;
+                        return;
+                    }
+                    continue;
+                }
+            }
+            const uint64_t freeBits = (~mask) & validMask;
+            if (freeBits != 0) {
+                const uint32_t slot = static_cast<uint32_t>(std::countr_zero(freeBits));
+                const uint64_t bit = 1ULL << slot;
+                if (m_LeaseMask->compare_exchange_weak(mask, mask | bit,
+                                                       std::memory_order_acquire,
+                                                       std::memory_order_relaxed)) {
+                    m_Slot = slot;
+                    m_Bit = bit;
+                    return;
+                }
+                continue;
+            }
+            std::this_thread::yield();
+            mask = m_LeaseMask->load(std::memory_order_relaxed);
+        }
+    }
+
+    ~ScopedBox2DWorkerSlot() noexcept {
+        if (m_LeaseMask && m_Bit != 0) {
+            m_LeaseMask->fetch_and(~m_Bit, std::memory_order_release);
+        }
+    }
+
+    ScopedBox2DWorkerSlot(const ScopedBox2DWorkerSlot&) = delete;
+    ScopedBox2DWorkerSlot& operator=(const ScopedBox2DWorkerSlot&) = delete;
+
+    [[nodiscard]] uint32_t GetSlot() const noexcept { return m_Slot; }
+
+private:
+    std::atomic<uint64_t>* m_LeaseMask = nullptr;
+    uint64_t m_Bit = 0;
+    uint32_t m_Slot = 0;
+};
+
+} // namespace
+
 void PhysicsWorld2D::ExecuteBox2DChunk(void* userData) noexcept {
     auto* packet = static_cast<Box2DTask::ChunkPacket*>(userData);
     if (!packet || !packet->task || !packet->parentTask) {
         return;
     }
 
-    const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
-    const uint32_t wIdx = (currentWorker >= 0 && currentWorker < static_cast<int32_t>(packet->workerLimit))
-                              ? static_cast<uint32_t>(currentWorker)
-                              : (packet->workerLimit > 0 ? packet->workerLimit - 1u : 0u);
+    Box2DTask* const parentTask = packet->parentTask;
+    {
+        ScopedBox2DWorkerSlot slot(packet->workerLeaseMask, packet->workerLimit);
+        packet->task(packet->startIndex, packet->endIndex, slot.GetSlot(), packet->taskContext);
+    }
 
-    packet->task(packet->startIndex, packet->endIndex, wIdx, packet->taskContext);
-
-    if (packet->parentTask->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
-        packet->parentTask->done.store(true, std::memory_order_release);
-        packet->parentTask->done.notify_all();
+    if (parentTask->remaining.fetch_sub(1, std::memory_order_acq_rel) == 1) {
+        parentTask->notifying.store(true, std::memory_order_release);
+        parentTask->done.store(true, std::memory_order_release);
+        parentTask->done.notify_all();
+        parentTask->notifying.store(false, std::memory_order_release);
     }
 }
 
@@ -617,11 +685,9 @@ void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int 
     const int chunkCount = std::min({ availableThreads, maxChunks, static_cast<int>(kMaxChunksPerTask) });
 
     if (chunkCount <= 1 || !JobSystem::IsInitialized() || workers == 0 || !physWorld) {
-        const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
-        const uint32_t callerWorker = (physWorld && currentWorker >= 0 && currentWorker < static_cast<int32_t>(physWorld->m_Box2DWorkerCount))
-                                          ? static_cast<uint32_t>(currentWorker)
-                                          : (physWorld && physWorld->m_Box2DWorkerCount > 0 ? physWorld->m_Box2DWorkerCount - 1u : 0u);
-        task(0, itemCount, callerWorker, taskContext);
+        ScopedBox2DWorkerSlot slot(physWorld ? &physWorld->m_WorkerLeaseMask : nullptr,
+                                   physWorld ? physWorld->m_Box2DWorkerCount : 1u);
+        task(0, itemCount, slot.GetSlot(), taskContext);
         if (physWorld) {
             physWorld->m_Box2DSerialTasksExecuted.fetch_add(1, std::memory_order_relaxed);
         }
@@ -639,17 +705,15 @@ void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int 
 
     if (!taskSlot) {
         ENGINE_CORE_TRACE("PhysicsWorld2D: Box2D task slots exhausted; executing {} items inline", itemCount);
-        const int32_t currentWorker = JobSystem::GetCurrentWorkerIndex();
-        const uint32_t callerWorker = (physWorld && currentWorker >= 0 && currentWorker < static_cast<int32_t>(physWorld->m_Box2DWorkerCount))
-                                          ? static_cast<uint32_t>(currentWorker)
-                                          : (physWorld->m_Box2DWorkerCount > 0 ? physWorld->m_Box2DWorkerCount - 1u : 0u);
-        task(0, itemCount, callerWorker, taskContext);
+        ScopedBox2DWorkerSlot slot(&physWorld->m_WorkerLeaseMask, physWorld->m_Box2DWorkerCount);
+        task(0, itemCount, slot.GetSlot(), taskContext);
         physWorld->m_Box2DSerialTasksExecuted.fetch_add(1, std::memory_order_relaxed);
         return nullptr;
     }
 
     taskSlot->remaining.store(chunkCount, std::memory_order_release);
     taskSlot->done.store(false, std::memory_order_release);
+    taskSlot->notifying.store(false, std::memory_order_release);
     physWorld->m_Box2DParallelTasksDispatched.fetch_add(1, std::memory_order_relaxed);
 
     const int baseSize = itemCount / chunkCount;
@@ -665,6 +729,7 @@ void* PhysicsWorld2D::Box2DEnqueueTask(b2TaskCallback* task, int itemCount, int 
         packet.endIndex = end;
         packet.taskContext = taskContext;
         packet.parentTask = taskSlot;
+        packet.workerLeaseMask = &physWorld->m_WorkerLeaseMask;
         packet.workerLimit = physWorld->m_Box2DWorkerCount;
 
         JobSystem::SubmitRawJob(&PhysicsWorld2D::ExecuteBox2DChunk, &packet);
@@ -685,6 +750,9 @@ void PhysicsWorld2D::Box2DFinishTask(void* userTask, void* userContext) {
         if (!JobSystem::ExecuteOneJob()) {
             taskSlot->done.wait(false, std::memory_order_acquire);
         }
+    }
+    while (taskSlot->notifying.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
     }
 
     taskSlot->inUse.store(false, std::memory_order_release);
@@ -1032,6 +1100,34 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
                       contacts.hitCount, contacts.beginCount, contacts.endCount,
                       sensors.beginCount, sensors.endCount);
 
+    // Copy raw Box2D event arrays into owned scratch buffers before dispatching user callbacks,
+    // because callbacks may destroy shapes or call scene.OnRuntimeStop() (destroying b2World).
+    if (contacts.hitCount > 0 && contacts.hitEvents) {
+        m_HitEventsScratch.assign(contacts.hitEvents, contacts.hitEvents + contacts.hitCount);
+    } else {
+        m_HitEventsScratch.clear();
+    }
+    if (contacts.beginCount > 0 && contacts.beginEvents) {
+        m_ContactBeginScratch.assign(contacts.beginEvents, contacts.beginEvents + contacts.beginCount);
+    } else {
+        m_ContactBeginScratch.clear();
+    }
+    if (contacts.endCount > 0 && contacts.endEvents) {
+        m_ContactEndScratch.assign(contacts.endEvents, contacts.endEvents + contacts.endCount);
+    } else {
+        m_ContactEndScratch.clear();
+    }
+    if (sensors.beginCount > 0 && sensors.beginEvents) {
+        m_SensorBeginScratch.assign(sensors.beginEvents, sensors.beginEvents + sensors.beginCount);
+    } else {
+        m_SensorBeginScratch.clear();
+    }
+    if (sensors.endCount > 0 && sensors.endEvents) {
+        m_SensorEndScratch.assign(sensors.endEvents, sensors.endEvents + sensors.endCount);
+    } else {
+        m_SensorEndScratch.clear();
+    }
+
     // Guard entity lifecycle so DestroyGameObject calls during event dispatch defer to lifecycle queues
     Scene::ScopedIterationGuard guard(*m_Scene);
 
@@ -1045,8 +1141,8 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
     };
 
     // 1. Process Contact Hit Events
-    for (int i = 0; i < contacts.hitCount; ++i) {
-        const b2ContactHitEvent& hit = contacts.hitEvents[i];
+    for (const b2ContactHitEvent& hit : m_HitEventsScratch) {
+        if (!m_IsRuntimeRunning) return;
         if (!b2Shape_IsValid(hit.shapeIdA) || !b2Shape_IsValid(hit.shapeIdB)) continue;
 
         b2BodyId bodyA = b2Shape_GetBody(hit.shapeIdA);
@@ -1093,6 +1189,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         infoB.EffectiveImpulse = effectiveImpulse;
 
         goA->DispatchCollisionEnter2D(infoA);
+        if (!m_IsRuntimeRunning) return;
         if (!goB->IsPendingDestroy()) {
             goB->DispatchCollisionEnter2D(infoB);
         }
@@ -1106,8 +1203,8 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
     );
 
     // 2. Process Contact Begin Events (for pairs not already dispatched by hitEvents)
-    for (int i = 0; i < contacts.beginCount; ++i) {
-        const b2ContactBeginTouchEvent& begin = contacts.beginEvents[i];
+    for (const b2ContactBeginTouchEvent& begin : m_ContactBeginScratch) {
+        if (!m_IsRuntimeRunning) return;
         if (!b2Shape_IsValid(begin.shapeIdA) || !b2Shape_IsValid(begin.shapeIdB)) continue;
 
         const ShapePairKey pair = makePair(begin.shapeIdA, begin.shapeIdB);
@@ -1173,14 +1270,15 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         infoB.EffectiveImpulse = effectiveImpulse;
 
         goA->DispatchCollisionEnter2D(infoA);
+        if (!m_IsRuntimeRunning) return;
         if (!goB->IsPendingDestroy()) {
             goB->DispatchCollisionEnter2D(infoB);
         }
     }
 
     // 3. Process Contact End Events
-    for (int i = 0; i < contacts.endCount; ++i) {
-        const b2ContactEndTouchEvent& end = contacts.endEvents[i];
+    for (const b2ContactEndTouchEvent& end : m_ContactEndScratch) {
+        if (!m_IsRuntimeRunning) return;
         if (!b2Shape_IsValid(end.shapeIdA) || !b2Shape_IsValid(end.shapeIdB)) continue;
 
         b2BodyId bodyA = b2Shape_GetBody(end.shapeIdA);
@@ -1193,6 +1291,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
 
         if (!goA->IsPendingDestroy()) {
             goA->DispatchCollisionExit2D(goB);
+            if (!m_IsRuntimeRunning) return;
         }
         if (!goB->IsPendingDestroy()) {
             goB->DispatchCollisionExit2D(goA);
@@ -1200,8 +1299,8 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
     }
 
     // 4. Process Sensor Begin Events
-    for (int i = 0; i < sensors.beginCount; ++i) {
-        const b2SensorBeginTouchEvent& begin = sensors.beginEvents[i];
+    for (const b2SensorBeginTouchEvent& begin : m_SensorBeginScratch) {
+        if (!m_IsRuntimeRunning) return;
         if (!b2Shape_IsValid(begin.sensorShapeId) || !b2Shape_IsValid(begin.visitorShapeId)) continue;
 
         b2BodyId sensorBody = b2Shape_GetBody(begin.sensorShapeId);
@@ -1211,18 +1310,18 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         auto* sensorGo = static_cast<GameObject*>(b2Body_GetUserData(sensorBody));
         auto* visitorGo = static_cast<GameObject*>(b2Body_GetUserData(visitorBody));
         if (!sensorGo || !visitorGo || sensorGo == visitorGo) continue;
+        if (sensorGo->IsPendingDestroy() || visitorGo->IsPendingDestroy()) continue;
 
-        if (!sensorGo->IsPendingDestroy()) {
-            sensorGo->DispatchTriggerEnter2D(visitorGo);
-        }
-        if (!visitorGo->IsPendingDestroy()) {
+        sensorGo->DispatchTriggerEnter2D(visitorGo);
+        if (!m_IsRuntimeRunning) return;
+        if (!visitorGo->IsPendingDestroy() && !sensorGo->IsPendingDestroy()) {
             visitorGo->DispatchTriggerEnter2D(sensorGo);
         }
     }
 
     // 5. Process Sensor End Events
-    for (int i = 0; i < sensors.endCount; ++i) {
-        const b2SensorEndTouchEvent& end = sensors.endEvents[i];
+    for (const b2SensorEndTouchEvent& end : m_SensorEndScratch) {
+        if (!m_IsRuntimeRunning) return;
         if (!b2Shape_IsValid(end.sensorShapeId) || !b2Shape_IsValid(end.visitorShapeId)) continue;
 
         b2BodyId sensorBody = b2Shape_GetBody(end.sensorShapeId);
@@ -1235,6 +1334,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
 
         if (!sensorGo->IsPendingDestroy()) {
             sensorGo->DispatchTriggerExit2D(visitorGo);
+            if (!m_IsRuntimeRunning) return;
         }
         if (!visitorGo->IsPendingDestroy()) {
             visitorGo->DispatchTriggerExit2D(sensorGo);

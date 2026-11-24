@@ -20,11 +20,13 @@ struct alignas(64) Box2DTask {
         int endIndex = 0;
         void* taskContext = nullptr;
         Box2DTask* parentTask = nullptr;
+        std::atomic<uint64_t>* workerLeaseMask = nullptr;
         uint32_t workerLimit = 0;
     };
 
     std::atomic<int> remaining{ 0 };
     std::atomic<bool> done{ false };
+    std::atomic<bool> notifying{ false };
     std::atomic<bool> inUse{ false };
     uint32_t taskIndex{ 0 };
     ChunkPacket* chunks{ nullptr };
