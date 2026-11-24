@@ -84,6 +84,7 @@ public:
     static void AddDebugHitboxBox(const glm::vec3& center, const glm::vec2& sizeXZ, float yawRad, float lifetimeSec = 0.0f);
     static void AddDebugHitboxCircle(const glm::vec3& center, float radius, float lifetimeSec = 0.0f);
     static void ClearDebugHitboxes();
+    [[nodiscard]] static size_t GetDebugHitboxCount() noexcept;
 
 private:
     struct PointLightCandidate {

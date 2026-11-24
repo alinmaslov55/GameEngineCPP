@@ -21,6 +21,8 @@ struct ShadowMapStorage {
 
     GLint SavedFBO = 0;
     GLint SavedViewport[4] = { 0, 0, 1280, 720 };
+    GLint SavedScissorBox[4] = { 0, 0, 1280, 720 };
+    GLboolean SavedScissorEnabled = GL_FALSE;
 
     ~ShadowMapStorage() {
         if (HasGLFramebufferSupport()) {
@@ -112,6 +114,12 @@ void ShadowMap::BeginCapture() {
 
     glGetIntegerv(GL_FRAMEBUFFER_BINDING, &s_ShadowData->SavedFBO);
     glGetIntegerv(GL_VIEWPORT, s_ShadowData->SavedViewport);
+    if (glad_glIsEnabled != nullptr) {
+        s_ShadowData->SavedScissorEnabled = glIsEnabled(GL_SCISSOR_TEST);
+    }
+    if (glad_glGetIntegerv != nullptr) {
+        glGetIntegerv(GL_SCISSOR_BOX, s_ShadowData->SavedScissorBox);
+    }
 
     // Ensure the shadow depth texture is unbound from shader sampler units (slots 5 & 13) before FBO write
     glActiveTexture(GL_TEXTURE5);
@@ -119,6 +127,10 @@ void ShadowMap::BeginCapture() {
     glActiveTexture(GL_TEXTURE13);
     glBindTexture(GL_TEXTURE_2D, 0);
     glActiveTexture(GL_TEXTURE0);
+
+    if (glad_glDisable != nullptr) {
+        glDisable(GL_SCISSOR_TEST);
+    }
 
     glBindFramebuffer(GL_FRAMEBUFFER, s_ShadowData->FramebufferID);
     glViewport(0, 0, static_cast<GLsizei>(s_ShadowData->Resolution), static_cast<GLsizei>(s_ShadowData->Resolution));
@@ -130,6 +142,22 @@ void ShadowMap::BeginCapture() {
 void ShadowMap::EndCapture() {
     if (!IsValid()) {
         return;
+    }
+
+    if (s_ShadowData->SavedScissorEnabled) {
+        if (glad_glEnable != nullptr) {
+            glEnable(GL_SCISSOR_TEST);
+        }
+    } else {
+        if (glad_glDisable != nullptr) {
+            glDisable(GL_SCISSOR_TEST);
+        }
+    }
+    if (glad_glScissor != nullptr) {
+        glScissor(s_ShadowData->SavedScissorBox[0],
+                  s_ShadowData->SavedScissorBox[1],
+                  s_ShadowData->SavedScissorBox[2],
+                  s_ShadowData->SavedScissorBox[3]);
     }
 
     glBindFramebuffer(GL_FRAMEBUFFER, static_cast<GLuint>(s_ShadowData->SavedFBO));

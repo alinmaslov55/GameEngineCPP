@@ -231,6 +231,56 @@ TEST(TorchShadowMapTest, HeadlessLifecycleAndAtlasConstants) {
     SUCCEED();
 }
 
+TEST(SceneLightingPipelineTest, StrictWeakOrderingSubEpsilonAndNaN) {
+    Engine::Scene scene("SubEpsilonLightSortScene");
+    Engine::SceneRenderer renderer;
+    renderer.OnViewportResize(scene, 1920u, 1080u);
+    const glm::vec3 camFocal = renderer.GetCamera().GetFocalPoint();
+
+    // Create 50 point lights with sub-1e-6f distance intervals and duplicate distances
+    for (int i = 0; i < 50; ++i) {
+        auto* go = scene.CreateGameObject("Light_" + std::to_string(i));
+        // Sub-1e-6f step: 1e-8f difference per light
+        const float dist = 2.0f + static_cast<float>(i % 10) * 1e-8f;
+        go->GetTransform()->position = { camFocal.x + dist, 0.0f, camFocal.z };
+        auto* pl = go->AddComponent<Engine::PointLightComponent>();
+        pl->Priority = Engine::LightPriority::Normal_World;
+        pl->Intensity = 1.0f + static_cast<float>(i);
+        pl->Flicker = false;
+    }
+
+    // Add 2 point lights with NaN positions to test NaN edge case robustness
+    auto* nanGo1 = scene.CreateGameObject("Light_NaN1");
+    nanGo1->GetTransform()->position = { std::numeric_limits<float>::quiet_NaN(), 0.0f, 0.0f };
+    auto* nanPl1 = nanGo1->AddComponent<Engine::PointLightComponent>();
+    nanPl1->Priority = Engine::LightPriority::Normal_World;
+    nanPl1->Flicker = false;
+
+    auto* nanGo2 = scene.CreateGameObject("Light_NaN2");
+    nanGo2->GetTransform()->position = { 0.0f, 0.0f, std::numeric_limits<float>::quiet_NaN() };
+    auto* nanPl2 = nanGo2->AddComponent<Engine::PointLightComponent>();
+    nanPl2->Priority = Engine::LightPriority::Normal_World;
+    nanPl2->Flicker = false;
+
+    // GatherRenderContext triggers std::partial_sort / std::sort under MSVC _Debug_lt_pred.
+    // Must complete with 0 assertions.
+    Engine::SceneRenderContext ctx = renderer.GatherRenderContext(scene);
+    EXPECT_GT(ctx.lighting.PointLightCount, 0u);
+    EXPECT_LE(ctx.lighting.PointLightCount, static_cast<uint32_t>(Engine::SceneLightingData::MaxPointLights));
+
+    // Valid distance lights must precede any NaN-distance lights
+    bool seenNan = false;
+    for (uint32_t i = 0; i < ctx.lighting.PointLightCount; ++i) {
+        const float posNormSq = ctx.lighting.PointLights[i].PositionAndRadius.x * ctx.lighting.PointLights[i].PositionAndRadius.x +
+                                ctx.lighting.PointLights[i].PositionAndRadius.z * ctx.lighting.PointLights[i].PositionAndRadius.z;
+        if (std::isnan(posNormSq)) {
+            seenNan = true;
+        } else {
+            EXPECT_FALSE(seenNan) << "Non-NaN point light appeared after NaN point light in sorted array";
+        }
+    }
+}
+
 TEST(TorchShadowMapTest, FourQuadrantFrustumCoverageAndRadialBillboardTangents) {
     const glm::vec3 torchPos = { 2.0f, 0.85f, -3.0f };
     const float radius = 12.0f;

@@ -66,6 +66,21 @@ struct DebugHitboxEntry {
 static bool s_ShowDebugGizmos = false;
 static std::vector<DebugHitboxEntry> s_DebugHitboxes;
 
+static void PruneDebugHitboxes(float dt) {
+    for (auto it = s_DebugHitboxes.begin(); it != s_DebugHitboxes.end(); ) {
+        if (it->RemainingLifetime <= 0.0f) {
+            it = s_DebugHitboxes.erase(it);
+        } else {
+            it->RemainingLifetime -= dt;
+            if (it->RemainingLifetime <= 0.0f) {
+                it = s_DebugHitboxes.erase(it);
+            } else {
+                ++it;
+            }
+        }
+    }
+}
+
 } // namespace
 
 SceneWindData SceneRenderContext::BuildWindUniforms(const glm::vec3& swayRightAxis) const {
@@ -284,7 +299,12 @@ SceneRenderContext SceneRenderer::GatherRenderContext(Scene& scene, const Perspe
             if (a.Priority != b.Priority) {
                 return a.Priority > b.Priority;
             }
-            if (std::abs(a.DistToFocalSq - b.DistToFocalSq) > 1e-6f) {
+            const bool aNan = std::isnan(a.DistToFocalSq);
+            const bool bNan = std::isnan(b.DistToFocalSq);
+            if (aNan != bNan) {
+                return !aNan; // Valid numbers come before NaNs
+            }
+            if (!aNan && a.DistToFocalSq != b.DistToFocalSq) {
                 return a.DistToFocalSq < b.DistToFocalSq;
             }
             return a.SubmissionOrder < b.SubmissionOrder;
@@ -652,13 +672,13 @@ void SceneRenderer::RenderPassGroundPlane(SceneRenderContext& ctx) {
     bool hasSplatTerrain = false;
     Renderer::SetPolygonOffset(true, 1.0f, 1.0f);
     for (const auto& [terrain, transform] : m_TerrainScratch) {
-        const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
-        const glm::vec3 scale  = transform ? transform->scale    : glm::vec3(1.0f);
+        const glm::vec3 origin = transform ? transform->GetWorldPosition() : glm::vec3(0.0f);
+        const glm::vec3 scale  = transform ? transform->GetWorldScale()    : glm::vec3(1.0f);
         TerrainRenderer::RenderTerrain(*terrain, origin, scale, *ctx.activeCam, &ctx.lighting);
         hasSplatTerrain = true;
     }
     for (const auto& [chunkMgr, transform] : m_TerrainChunkScratch) {
-        const float groundY = transform ? transform->position.y : 0.0f;
+        const float groundY = transform ? transform->GetWorldPosition().y : 0.0f;
         TerrainRenderer::RenderChunkManager(*chunkMgr, groundY, *ctx.activeCam, &ctx.lighting);
         hasSplatTerrain = true;
     }
@@ -673,8 +693,8 @@ void SceneRenderer::RenderPassGroundPlane(SceneRenderContext& ctx) {
     for (const auto& [tilemap, transform] : m_TilemapRenderScratch) {
         if (!tilemap || !tilemap->tileSet) continue;
 
-        const glm::vec3 mapOrigin = transform ? transform->position : glm::vec3(0.0f);
-        const glm::vec3 mapScale  = transform ? transform->scale    : glm::vec3(1.0f);
+        const glm::vec3 mapOrigin = transform ? transform->GetWorldPosition() : glm::vec3(0.0f);
+        const glm::vec3 mapScale  = transform ? transform->GetWorldScale()    : glm::vec3(1.0f);
         const float scaleX = (std::abs(mapScale.x) > 1e-4f) ? std::abs(mapScale.x) : 1.0f;
         const float scaleZ = (std::abs(mapScale.z) > 1e-4f) ? std::abs(mapScale.z) : 1.0f;
 
@@ -721,12 +741,14 @@ void SceneRenderer::RenderPassGroundPlane(SceneRenderContext& ctx) {
     for (const auto& [sprite, transform] : m_FlatDecalScratch) {
         if (!sprite || !transform) continue;
 
-        glm::vec3 decalPos = transform->position;
+        glm::vec3 decalPos = transform->GetWorldPosition();
         decalPos.y += 0.004f;
         const float decalEmissive = sprite->GetReceiveLighting() ? sprite->GetEmissive() : -1.0f;
+        const glm::vec3 worldRot = transform->GetWorldRotation();
+        const glm::vec3 worldScale = transform->GetWorldScale();
 
-        if (std::abs(transform->rotation.y) < 1e-4f) {
-            const glm::vec2 decalSize = { transform->scale.x, transform->scale.z };
+        if (std::abs(worldRot.y) < 1e-4f) {
+            const glm::vec2 decalSize = { worldScale.x, worldScale.z };
             if (sprite->GetSubTexture()) {
                 Renderer2D::DrawGroundTile(decalPos, decalSize, sprite->GetSubTexture(), sprite->GetColor(),
                                            sprite->GetAlphaCutoff(), decalEmissive, 0.02f);
@@ -736,9 +758,9 @@ void SceneRenderer::RenderPassGroundPlane(SceneRenderContext& ctx) {
             }
         } else {
             const glm::mat4 decalMatrix = glm::translate(glm::mat4(1.0f), decalPos) *
-                                          glm::rotate(glm::mat4(1.0f), glm::radians(transform->rotation.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
+                                          glm::rotate(glm::mat4(1.0f), glm::radians(worldRot.y), glm::vec3(0.0f, 1.0f, 0.0f)) *
                                           groundFlatRotation *
-                                          glm::scale(glm::mat4(1.0f), glm::vec3(transform->scale.x, transform->scale.z, 1.0f));
+                                          glm::scale(glm::mat4(1.0f), glm::vec3(worldScale.x, worldScale.z, 1.0f));
 
             if (sprite->GetSubTexture()) {
                 Renderer2D::DrawQuad(decalMatrix, sprite->GetSubTexture(), sprite->GetColor(),
@@ -1072,6 +1094,10 @@ void SceneRenderer::ClearDebugHitboxes() {
     s_DebugHitboxes.clear();
 }
 
+size_t SceneRenderer::GetDebugHitboxCount() noexcept {
+    return s_DebugHitboxes.size();
+}
+
 void SceneRenderer::RenderPassDebugGizmos(SceneRenderContext& ctx, Scene& scene) {
     if (!ctx.activeCam) {
         return;
@@ -1091,7 +1117,7 @@ void SceneRenderer::RenderPassDebugGizmos(SceneRenderContext& ctx, Scene& scene)
     // 1. Terrain Chunk Borders (Dim Slate Grey)
     for (const auto& [chunkMgr, transform] : m_TerrainChunkScratch) {
         if (!chunkMgr) continue;
-        const float groundY = transform ? transform->position.y + 0.01f : 0.01f;
+        const float groundY = transform ? transform->GetWorldPosition().y + 0.01f : 0.01f;
         const float chunkSize = chunkMgr->ChunkSizeMeters > 0.0f ? chunkMgr->ChunkSizeMeters : 16.0f;
         const auto& loadedChunks = chunkMgr->GetChunks();
         for (const auto& [coord, chunk] : loadedChunks) {
@@ -1107,8 +1133,8 @@ void SceneRenderer::RenderPassDebugGizmos(SceneRenderContext& ctx, Scene& scene)
     }
     for (const auto& [terrain, transform] : m_TerrainScratch) {
         if (!terrain) continue;
-        const glm::vec3 origin = transform ? transform->position : glm::vec3(0.0f);
-        const glm::vec3 scale = transform ? transform->scale : glm::vec3(1.0f);
+        const glm::vec3 origin = transform ? transform->GetWorldPosition() : glm::vec3(0.0f);
+        const glm::vec3 scale = transform ? transform->GetWorldScale() : glm::vec3(1.0f);
         const float w = terrain->GetWidth() * scale.x;
         const float d = terrain->GetDepth() * scale.z;
         const float groundY = origin.y + 0.01f;
@@ -1140,8 +1166,8 @@ void SceneRenderer::RenderPassDebugGizmos(SceneRenderContext& ctx, Scene& scene)
 
         auto* transform = go->GetTransform();
         const glm::vec3 worldPos = transform ? transform->GetWorldPosition() : glm::vec3(0.0f);
-        const glm::vec3 worldScale = transform ? transform->scale : glm::vec3(1.0f);
-        const float yawRad = transform ? glm::radians(transform->rotation.y) : 0.0f;
+        const glm::vec3 worldScale = transform ? transform->GetWorldScale() : glm::vec3(1.0f);
+        const float yawRad = transform ? glm::radians(transform->GetWorldRotation().y) : 0.0f;
         const float groundY = worldPos.y + 0.02f;
 
         // BoxCollider2D
@@ -1217,17 +1243,7 @@ void SceneRenderer::RenderPassDebugGizmos(SceneRenderContext& ctx, Scene& scene)
     }
 
     // Age and prune transient hitboxes
-    const float dt = Time::GetDeltaTime();
-    for (auto it = s_DebugHitboxes.begin(); it != s_DebugHitboxes.end(); ) {
-        if (it->RemainingLifetime > 0.0f) {
-            it->RemainingLifetime -= dt;
-            if (it->RemainingLifetime <= 0.0f) {
-                it = s_DebugHitboxes.erase(it);
-                continue;
-            }
-        }
-        ++it;
-    }
+    PruneDebugHitboxes(Time::GetDeltaTime());
 
     Renderer2D::EndScene();
 }
@@ -1254,6 +1270,8 @@ void SceneRenderer::Render(Scene& scene, const PerspectiveCamera* overrideCamera
 
     if (s_ShowDebugGizmos) {
         RenderPassDebugGizmos(ctx, scene);
+    } else {
+        PruneDebugHitboxes(Time::GetDeltaTime());
     }
 
     RenderPassScreenUI();

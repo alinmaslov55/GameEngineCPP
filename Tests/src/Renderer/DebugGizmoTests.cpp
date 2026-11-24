@@ -157,6 +157,35 @@ TEST(DebugGizmoTests, SceneRendererGizmoToggleAndTransientHitboxes) {
     Engine::SceneRenderer::SetShowDebugGizmos(false);
 }
 
+TEST(DebugGizmoTests, TransientHitboxGarbageCollectionBothGizmoStates) {
+    Engine::Scene scene("HitboxGCScene");
+    Engine::SceneRenderer renderer;
+    renderer.OnViewportResize(scene, 1280u, 720u);
+
+    // 1. With debug gizmos ENABLED: 100 transient hitboxes (lifetime = 0.0f) must be cleaned up in 1 frame
+    Engine::SceneRenderer::SetShowDebugGizmos(true);
+    Engine::SceneRenderer::ClearDebugHitboxes();
+
+    for (int i = 0; i < 100; ++i) {
+        Engine::SceneRenderer::AddDebugHitboxBox({ 0.0f, 0.0f, 0.0f }, { 1.0f, 1.0f }, 0.0f, 0.0f);
+    }
+    EXPECT_EQ(Engine::SceneRenderer::GetDebugHitboxCount(), 100u);
+
+    // One render pass processes and prunes all 1-frame transient hitboxes
+    renderer.Render(scene);
+    EXPECT_EQ(Engine::SceneRenderer::GetDebugHitboxCount(), 0u);
+
+    // 2. With debug gizmos DISABLED: 100 transient hitboxes must ALSO be pruned without memory leak
+    Engine::SceneRenderer::SetShowDebugGizmos(false);
+    for (int i = 0; i < 100; ++i) {
+        Engine::SceneRenderer::AddDebugHitboxCircle({ 0.0f, 0.0f, 0.0f }, 1.0f, 0.0f);
+    }
+    EXPECT_EQ(Engine::SceneRenderer::GetDebugHitboxCount(), 100u);
+
+    renderer.Render(scene);
+    EXPECT_EQ(Engine::SceneRenderer::GetDebugHitboxCount(), 0u);
+}
+
 TEST(DebugGizmoTests, LineVertexLayoutAndAlignment) {
     EXPECT_EQ(sizeof(Engine::LineVertex), 28u);
     Engine::LineVertex v{};

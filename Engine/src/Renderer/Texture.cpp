@@ -361,6 +361,13 @@ void Texture::SetData(const void* rgbaData, uint32_t sizeBytes) {
         return;
     }
 
+    GLint prevActive = GL_TEXTURE0;
+    GLint prevBound = 0;
+    if (glad_glGetIntegerv != nullptr) {
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActive);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevBound);
+    }
+
     glBindTexture(GL_TEXTURE_2D, m_RendererID);
     {
         ScopedUnpackAlignment unpackAlign(1);
@@ -369,7 +376,13 @@ void Texture::SetData(const void* rgbaData, uint32_t sizeBytes) {
     if (m_HasMipmaps) {
         glGenerateMipmap(GL_TEXTURE_2D);
     }
-    glBindTexture(GL_TEXTURE_2D, 0);
+
+    if (glad_glBindTexture != nullptr) {
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(prevBound));
+    }
+    if (glad_glActiveTexture != nullptr) {
+        glActiveTexture(static_cast<GLenum>(prevActive));
+    }
 }
 
 void Texture::SetSubData(uint32_t xOffset,
@@ -393,6 +406,13 @@ void Texture::SetSubData(uint32_t xOffset,
         return;
     }
 
+    GLint prevActive = GL_TEXTURE0;
+    GLint prevBound = 0;
+    if (glad_glGetIntegerv != nullptr) {
+        glGetIntegerv(GL_ACTIVE_TEXTURE, &prevActive);
+        glGetIntegerv(GL_TEXTURE_BINDING_2D, &prevBound);
+    }
+
     glBindTexture(GL_TEXTURE_2D, m_RendererID);
     {
         ScopedUnpackAlignment unpackAlign(1);
@@ -409,7 +429,13 @@ void Texture::SetSubData(uint32_t xOffset,
     if (m_HasMipmaps) {
         glGenerateMipmap(GL_TEXTURE_2D);
     }
-    glBindTexture(GL_TEXTURE_2D, 0);
+
+    if (glad_glBindTexture != nullptr) {
+        glBindTexture(GL_TEXTURE_2D, static_cast<GLuint>(prevBound));
+    }
+    if (glad_glActiveTexture != nullptr) {
+        glActiveTexture(static_cast<GLenum>(prevActive));
+    }
 }
 
 void Texture::Bind(uint32_t slot) const {

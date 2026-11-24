@@ -331,6 +331,10 @@ void BindSplatShaderAndState(const std::array<TerrainLayer, TerrainComponent::Ma
         shader.SetFloat("u_BrushRadius", s_TerrainData->BrushRadiusWorld);
         shader.SetFloat("u_BrushFalloff", s_TerrainData->BrushFalloff);
     }
+
+    // C-17: Restore active texture to slot 0 so subsequent texture uploads / bindings
+    // don't inadvertently unbind or corrupt u_ShadowMap (slot 5) or u_TorchShadowMap (slot 6).
+    glActiveTexture(GL_TEXTURE0);
 }
 
 } // namespace
