@@ -146,11 +146,13 @@ bool IsInsideExclusionZone(const glm::vec2& posXZ,
 } // namespace
 
 glm::u8vec4 BiomeSample::ToSplatRGBA8() const noexcept {
+    // Canonical 4-layer mapping:
+    // R: Grass (BlackwoodThickets), G: Ash (AshBarrens), B: Tar (TarBogs), A: Chalk (ChalkHighlands)
     const float r = Weights[static_cast<size_t>(BiomeType::BlackwoodThickets)];
-    const float chalk = Weights[static_cast<size_t>(BiomeType::ChalkHighlands)];
-    const float g = Weights[static_cast<size_t>(BiomeType::AshBarrens)] + 0.5f * chalk;
-    const float b = Weights[static_cast<size_t>(BiomeType::SanctuaryCobble)] + 0.5f * chalk;
-    const float a = Weights[static_cast<size_t>(BiomeType::TarBogs)];
+    const float g = Weights[static_cast<size_t>(BiomeType::AshBarrens)];
+    const float b = Weights[static_cast<size_t>(BiomeType::TarBogs)];
+    const float a = Weights[static_cast<size_t>(BiomeType::ChalkHighlands)] +
+                    Weights[static_cast<size_t>(BiomeType::SanctuaryCobble)];
     return TerrainComponent::NormalizeWeights(r, g, b, a);
 }
 
@@ -416,11 +418,15 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
     std::vector<glm::vec2> nearbyTier0Trunks;
 
     auto getDominantBiomeAt = [&](float wx, float wz) noexcept -> BiomeType {
-        const float u = std::clamp((wx - chunkMinX) / safeSize, 0.0f, 1.0f);
-        const float v = std::clamp((wz - chunkMinZ) / safeSize, 0.0f, 1.0f);
-        const uint32_t px = std::min(static_cast<uint32_t>(std::round(u * static_cast<float>(cellSpan))), cellSpan);
-        const uint32_t pz = std::min(static_cast<uint32_t>(std::round(v * static_cast<float>(cellSpan))), cellSpan);
-        return outBiomeMap[pz * res + px];
+        if (wx >= chunkMinX && wx <= chunkMaxX && wz >= chunkMinZ && wz <= chunkMaxZ) {
+            const float u = std::clamp((wx - chunkMinX) / safeSize, 0.0f, 1.0f);
+            const float v = std::clamp((wz - chunkMinZ) / safeSize, 0.0f, 1.0f);
+            const uint32_t px = std::min(static_cast<uint32_t>(std::round(u * static_cast<float>(cellSpan))), cellSpan);
+            const uint32_t pz = std::min(static_cast<uint32_t>(std::round(v * static_cast<float>(cellSpan))), cellSpan);
+            return outBiomeMap[pz * res + px];
+        }
+        // For neighbor candidates in adjacent chunks, evaluate true global biome to preserve Poisson MinDist
+        return EvaluateBiomeAtXZWithPOIs(wx, wz, safeSize, exclusionPOIs).DominantBiome;
     };
 
     auto scatterTier = [&](const PropTierSpec& spec, bool recordTrunks) {

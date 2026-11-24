@@ -142,6 +142,10 @@ TEST(SteeringSystemTest, FireCellAvoidance) {
     auto* tcmGo = scene->CreateGameObject("ChunkManager");
     auto* mgr = tcmGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 65u, 1, 2);
 
+    // Make chunk (0, 0) editable and paint flammable tar at (0, 5)
+    mgr->EnsureEditableChunk({ 0, 0 });
+    mgr->PaintMaterialWorld(glm::vec2(0.0f, 5.0f), 2u /*Tar*/, 2.0f, 1.0f);
+
     // Ignite a fire cell at (0, 5) with radius 1.0m
     mgr->IgniteAtXZ(glm::vec2(0.0f, 5.0f), 1.0f);
     EXPECT_TRUE(scene->IsBurningAtXZ(0.0f, 5.0f));

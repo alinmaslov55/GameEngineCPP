@@ -215,7 +215,7 @@ flowchart TD
 | **`FIX-RND-03`** | `TerrainRenderer` `GL_TEXTURE6` Guard, Transitive Light Sort & Hitbox GC | `DONE` | **P0** | W1 | `FIX-RND-01` | `C-17`, `C-19`, RND `#39`, Med `GL state`/`WorldPos` | `FIX-RND-04` |
 | **`FIX-RND-04`** | `TerrainSplatmap.glsl` `textureGrad`/NaN Guards & `Batch2D.glsl` Flat FX | `DONE` | **P1** | W1 | `FIX-RND-03` | RND `#38`, Med `FlashColor`, `Silhouette`, `Vignette` | `OPT-01`, `DOC-05` |
 | **`FIX-TER-01`** | Thread-Local `stbi` Flip, Delete Orphan `Scene/TerrainChunkManager.h` & Bounds | `DONE` | **P0** | W0 | *None (Root)* | Terrain `#49`, Med `Duplicate Header`, `Bounds` | `FIX-TER-02` |
-| **`FIX-TER-02`** | Cross-Chunk Poisson True Biome Lookup & `SampleSurfaceAtXZ` Hardening | `TODO` | **P1** | W1 | `FIX-TER-01` | Terrain `#48`, Med `SampleSurfaceAtXZ`, `ToSplatRGBA8` | `FIX-TER-03` |
+| **`FIX-TER-02`** | Cross-Chunk Poisson True Biome Lookup & `SampleSurfaceAtXZ` Hardening | `DONE` | **P1** | W1 | `FIX-TER-01` | Terrain `#48`, Med `SampleSurfaceAtXZ`, `ToSplatRGBA8` | `FIX-TER-03` |
 | **`FIX-TER-03`** | `TerrainFireGrid` Reset/Corner Fix, Finite Terrain Fire & Firewall VFX/Decals | `TODO` | **P1** | W2 | `FIX-TER-02`, `FIX-VFX-01` | ECS `#22`, Terrain `#47`, Med `FireGrid`, `TER-04 VFX` | `FIX-SBX-02`, `DOC-05` |
 | **`FIX-UIX-01`** | Per-Quad `UIQuad` Texture Binding, Minimap Z-Axis Flip & Active-Window Guard | `TODO` | **P0** | W1 | `FIX-RND-01` | `C-21`, UI `#45` | `DOC-07` |
 | **`FIX-UIX-02`** | `UIButtonComponent` Single-Frame Focus Step, Dangling Pointer Guard & Z-Order | `TODO` | **P0** | W1 | `FIX-CORE-03` | `C-22` (Part 1), UI `#42`, Med `UIButton`/`UICanvas` | `DOC-07` |
@@ -571,7 +571,7 @@ flowchart TD
 ---
 
 #### `FIX-TER-02` — Cross-Chunk Poisson True Biome Lookup & `SampleSurfaceAtXZ` Hardening
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-TER-01` | Unlocks: `FIX-TER-03`
 - **Current Defects:**
   1. [WorldBiomeGenerator.cpp](file://Engine/src/Terrain/WorldBiomeGenerator.cpp#L148-L155), [lines 418-501](file://Engine/src/Terrain/WorldBiomeGenerator.cpp#L418-L501): `getDominantBiomeAt(wx, wz)` clamps out-of-chunk coordinates to the current chunk's border texel, breaking cross-chunk Poisson `MinDist` separation near biome seams; `ToSplatRGBA8()` swaps Tar and Chalk channels.

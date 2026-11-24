@@ -446,4 +446,49 @@ TEST(TerrainChunkManagerTest, TarFirewallEntityPooling) {
     EXPECT_EQ(scene.GetPoolManager().GetPoolFreeCount("pool_tar_firewall"), 0u);
 }
 
+TEST(TerrainChunkManagerTest, SampleSurfaceAtXZCachedInRamAndWorldGenDisabled) {
+    Engine::Scene scene("CachedInRamTestScene");
+    auto* terrainGo = scene.CreateGameObject("Terrain");
+    auto* mgr = terrainGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 17u, 1, 2);
+
+    // 1. Create a chunk, populate it with pure Cobblestone (Layer 4), and transition to CachedInRam
+    Engine::TerrainChunk& chunk = mgr->EnsureEditableChunk({ 0, 0 });
+    const std::array<uint8_t, Engine::TerrainComponent::MaxLayers> pureCobble{ 0, 0, 0, 0, 255, 0, 0, 0 };
+    for (uint32_t pz = 0; pz < chunk.SplatResolution; ++pz) {
+        for (uint32_t px = 0; px < chunk.SplatResolution; ++px) {
+            chunk.SetSplatTexel8(px, pz, pureCobble);
+        }
+    }
+    chunk.State = Engine::ChunkLoadState::CachedInRam;
+
+    // Must sample user data from CachedInRam chunk
+    Engine::SurfaceSample sample = mgr->SampleSurfaceAtXZ(8.0f, 8.0f);
+    EXPECT_EQ(sample.DominantBiome, Engine::BiomeType::SanctuaryCobble);
+    EXPECT_FLOAT_EQ(sample.LinearDamping, Engine::SurfacePhysics::LayerDamping[4]);
+    EXPECT_FLOAT_EQ(sample.MaxSpeedMultiplier, Engine::SurfacePhysics::LayerSpeedMultiplier[4]);
+
+    // 2. Unloaded chunk with WorldGen disabled must return neutral default Ash surface
+    Engine::WorldGenConfig cfg{};
+    cfg.Enabled = false;
+    mgr->ConfigureProceduralWorld(cfg);
+
+    Engine::SurfaceSample unloadedSample = mgr->SampleSurfaceAtXZ(100.0f, 100.0f);
+    EXPECT_EQ(unloadedSample.DominantBiome, Engine::BiomeType::AshBarrens);
+    EXPECT_FLOAT_EQ(unloadedSample.LinearDamping, Engine::SurfacePhysics::LayerDamping[1]);
+    EXPECT_FLOAT_EQ(unloadedSample.MaxSpeedMultiplier, Engine::SurfacePhysics::LayerSpeedMultiplier[1]);
+}
+
+TEST(TerrainChunkManagerTest, PaintWorldSegmentZeroLengthSafety) {
+    Engine::Scene scene("ZeroLengthSegmentTest");
+    auto* terrainGo = scene.CreateGameObject("Terrain");
+    auto* mgr = terrainGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 17u, 1, 2);
+    Engine::TerrainChunk& chunk = mgr->EnsureEditableChunk({ 0, 0 });
+
+    // Paint a zero-length segment: start == end
+    mgr->PaintWorldSegment({ 8.0f, 8.0f }, { 8.0f, 8.0f }, 2u, 3.0f, 0.5f, 0.5f);
+    // Texel at center should have received layer 2 paint without double-multiplication
+    auto texel = chunk.GetSplatTexel8(8, 8);
+    EXPECT_GT(texel[2], 0u);
+}
+
 } // namespace

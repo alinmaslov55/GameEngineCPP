@@ -387,4 +387,75 @@ TEST(TerrainSurfaceSamplingTest, TerrainComponentAndChunkManagerShareSurfaceEval
     EXPECT_FALSE(chunkSample.IsBurning);
 }
 
+TEST(BiomeAndScatterTest, CrossChunkPoissonBoundaryPairwiseMinDistSeparation) {
+    Engine::WorldGenConfig cfg{};
+    cfg.Seed = 12345ULL;
+    cfg.OriginSafeRadius = 0.0f; // Allow trees everywhere for testing boundary
+    Engine::WorldBiomeGenerator gen(cfg);
+
+    const float chunkSize = 16.0f;
+    const uint32_t res = 33u;
+
+    // Generate two adjacent chunks horizontally: (0, 0) and (1, 0)
+    std::vector<uint8_t> s0_A, s1_A, s0_B, s1_B;
+    std::vector<Engine::BiomeType> bmap_A, bmap_B;
+    std::vector<Engine::PropSpawnDesc> props_A, props_B;
+    std::vector<Engine::POISpawnDesc> pois_A, pois_B;
+
+    gen.GenerateChunkData(0, 0, chunkSize, res, s0_A, s1_A, bmap_A, props_A, pois_A);
+    gen.GenerateChunkData(1, 0, chunkSize, res, s0_B, s1_B, bmap_B, props_B, pois_B);
+
+    // Extract all Tier 0 ConiferPine blockers
+    std::vector<glm::vec2> pines_A, pines_B;
+    for (const auto& p : props_A) {
+        if (p.Kind == Engine::ProceduralPropKind::ConiferPine) {
+            pines_A.emplace_back(p.WorldPosition.x, p.WorldPosition.z);
+        }
+    }
+    for (const auto& p : props_B) {
+        if (p.Kind == Engine::ProceduralPropKind::ConiferPine) {
+            pines_B.emplace_back(p.WorldPosition.x, p.WorldPosition.z);
+        }
+    }
+
+    // Assert that every pine in chunk A maintains MinDist (3.2m) against every pine in chunk B
+    const float minDist = 3.2f;
+    const float minDistSq = (minDist - 1e-3f) * (minDist - 1e-3f); // Allow epsilon tolerance
+
+    for (const auto& posA : pines_A) {
+        for (const auto& posB : pines_B) {
+            const glm::vec2 diff = posA - posB;
+            const float distSq = glm::dot(diff, diff);
+            EXPECT_GE(distSq, minDistSq)
+                << "Pine A at (" << posA.x << ", " << posA.y << ") and Pine B at ("
+                << posB.x << ", " << posB.y << ") violate MinDist separation! dist=" << std::sqrt(distSq);
+        }
+    }
+}
+
+TEST(BiomeAndScatterTest, BiomeSampleToSplatRGBA8CanonicalChannelMapping) {
+    Engine::BiomeSample sample{};
+    // R: Blackwood (Grass), G: Ash, B: Tar, A: Chalk
+    sample.Weights[static_cast<size_t>(Engine::BiomeType::BlackwoodThickets)] = 1.0f;
+    sample.Weights[static_cast<size_t>(Engine::BiomeType::AshBarrens)] = 0.0f;
+    sample.Weights[static_cast<size_t>(Engine::BiomeType::TarBogs)] = 0.0f;
+    sample.Weights[static_cast<size_t>(Engine::BiomeType::ChalkHighlands)] = 0.0f;
+    sample.Weights[static_cast<size_t>(Engine::BiomeType::SanctuaryCobble)] = 0.0f;
+
+    glm::u8vec4 rgbaGrass = sample.ToSplatRGBA8();
+    EXPECT_EQ(rgbaGrass, glm::u8vec4(255, 0, 0, 0));
+
+    // Tar must map to Blue (channel 2)
+    sample.Weights[static_cast<size_t>(Engine::BiomeType::BlackwoodThickets)] = 0.0f;
+    sample.Weights[static_cast<size_t>(Engine::BiomeType::TarBogs)] = 1.0f;
+    glm::u8vec4 rgbaTar = sample.ToSplatRGBA8();
+    EXPECT_EQ(rgbaTar, glm::u8vec4(0, 0, 255, 0));
+
+    // Chalk must map to Alpha (channel 3)
+    sample.Weights[static_cast<size_t>(Engine::BiomeType::TarBogs)] = 0.0f;
+    sample.Weights[static_cast<size_t>(Engine::BiomeType::ChalkHighlands)] = 1.0f;
+    glm::u8vec4 rgbaChalk = sample.ToSplatRGBA8();
+    EXPECT_EQ(rgbaChalk, glm::u8vec4(0, 0, 0, 255));
+}
+
 } // namespace

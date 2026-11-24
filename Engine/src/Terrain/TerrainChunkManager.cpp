@@ -586,6 +586,11 @@ void TerrainChunkManager::PaintWorldSegment(const glm::vec2& startXZ,
                                             float falloff,
                                             float strength) {
     const float segLen = glm::length(endXZ - startXZ);
+    if (segLen < 1e-4f) {
+        PaintWorldBrush(startXZ.x, startXZ.y, layerIndex, radiusWorld, falloff, strength);
+        return;
+    }
+
     const float stepDist = std::max(0.1f, radiusWorld * 0.35f);
     const int steps = std::max(1, static_cast<int>(std::ceil(segLen / stepDist)));
 
@@ -840,7 +845,8 @@ SurfaceSample TerrainChunkManager::SampleSurfaceAtXZ(float worldX, float worldZ)
     const TerrainChunk* chunk = GetChunk(coord);
     const bool isBurning = m_FireGrid.IsBurningAtXZ(worldX, worldZ);
 
-    if (chunk && chunk->IsResident() && !chunk->SplatData.empty() && chunk->SplatResolution >= 2u) {
+    if (chunk && (chunk->IsResident() || chunk->State == ChunkLoadState::CachedInRam) &&
+        !chunk->SplatData.empty() && chunk->SplatResolution >= 2u) {
         const float chunkOriginX = static_cast<float>(coord.cx) * ChunkSizeMeters;
         const float chunkOriginZ = static_cast<float>(coord.cz) * ChunkSizeMeters;
         const float u = std::clamp((worldX - chunkOriginX) / ChunkSizeMeters, 0.0f, 1.0f);
@@ -850,6 +856,16 @@ SurfaceSample TerrainChunkManager::SampleSurfaceAtXZ(float worldX, float worldZ)
         return TerrainHelpers::EvaluateBilinearSurfaceSample(
             chunk->SplatData, chunk->SplatData1, chunk->SplatResolution, chunk->SplatResolution,
             u * span, v * span, isBurning);
+    }
+
+    if (!m_WorldGenConfig.Enabled) {
+        SurfaceSample defaultSample{};
+        defaultSample.DominantBiome = BiomeType::AshBarrens;
+        defaultSample.LinearDamping = SurfacePhysics::LayerDamping[1];
+        defaultSample.MaxSpeedMultiplier = SurfacePhysics::LayerSpeedMultiplier[1];
+        defaultSample.Flammability = 0.0f;
+        defaultSample.IsBurning = isBurning;
+        return defaultSample;
     }
 
     const BiomeSample bs = SampleBiomeAtXZ(worldX, worldZ);
