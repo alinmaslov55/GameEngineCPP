@@ -674,4 +674,107 @@ TEST(SpatialQueriesAndStasisTest, ChronosStasis_LaunchVerticalDuringStasisLaunch
     scene.OnRuntimeStop();
 }
 
+TEST(SpatialQueriesAndStasisTest, RaycastClosestXZ_IgnoresSensorsAndPendingDestroyObstacles) {
+    Engine::Scene scene("RaycastCustomFilterScene");
+
+    // Pickup sensor directly in front of solid wall
+    auto* sensorGo = scene.CreateGameObject("PickupSensor");
+    sensorGo->GetTransform()->position = { 3.0f, 0.0f, 0.0f };
+    auto* sensorCol = sensorGo->AddComponent<Engine::CircleCollider2D>();
+    sensorCol->Radius = 1.0f;
+    sensorCol->IsSensor = true;
+
+    // Solid wall behind sensor
+    auto* wallGo = scene.CreateGameObject("SolidWall");
+    wallGo->GetTransform()->position = { 7.0f, 0.0f, 0.0f };
+    auto* wallCol = wallGo->AddComponent<Engine::BoxCollider2D>();
+    wallCol->size = { 1.0f, 4.0f };
+
+    // Non-runtime fallback must ignore sensor and hit wall
+    Engine::RaycastHitXZ hit;
+    EXPECT_TRUE(scene.RaycastClosestXZ({ 0.0f, 0.0f }, { 10.0f, 0.0f }, Engine::PhysicsLayer::All, hit));
+    EXPECT_EQ(hit.Entity, wallGo);
+
+    // Runtime Box2D must also ignore sensor and hit wall
+    scene.OnRuntimeStart();
+    hit = Engine::RaycastHitXZ{};
+    EXPECT_TRUE(scene.RaycastClosestXZ({ 0.0f, 0.0f }, { 10.0f, 0.0f }, Engine::PhysicsLayer::All, hit));
+    EXPECT_EQ(hit.Entity, wallGo);
+
+    // Pending-destroy solid obstacle in front of wall must also be ignored
+    auto* debrisGo = scene.CreateGameObject("PendingDestroyDebris");
+    debrisGo->GetTransform()->position = { 5.0f, 0.0f, 0.0f };
+    debrisGo->AddComponent<Engine::CircleCollider2D>()->Radius = 0.75f;
+    scene.RegisterRuntimeBody(debrisGo);
+
+    {
+        Engine::Scene::ScopedIterationGuard guard(scene);
+        scene.DestroyGameObject(debrisGo);
+        ASSERT_TRUE(debrisGo->IsPendingDestroy());
+        hit = Engine::RaycastHitXZ{};
+        EXPECT_TRUE(scene.RaycastClosestXZ({ 0.0f, 0.0f }, { 10.0f, 0.0f }, Engine::PhysicsLayer::All, hit));
+        EXPECT_EQ(hit.Entity, wallGo);
+    }
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SpatialQueriesAndStasisTest, OverlapArcXZ_NegativeOrZeroHalfAngleReturnsEmpty) {
+    Engine::Scene scene("NegativeArcScene");
+    auto* target = scene.CreateGameObject("Target");
+    target->GetTransform()->position = { 0.0f, 0.0f, 2.0f };
+    target->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+
+    std::vector<Engine::GameObject*> hits;
+    scene.OverlapArcXZ({ 0.0f, 0.0f }, { 0.0f, 1.0f }, 5.0f, -30.0f, Engine::PhysicsLayer::All, hits);
+    EXPECT_TRUE(hits.empty());
+
+    scene.OverlapArcXZ({ 0.0f, 0.0f }, { 0.0f, 1.0f }, 5.0f, 0.0f, Engine::PhysicsLayer::All, hits);
+    EXPECT_TRUE(hits.empty());
+}
+
+TEST(SpatialQueriesAndStasisTest, NonRuntimeFallbackParity_MultiCollidersDisabledRotationAndTilemap) {
+    Engine::Scene scene("FallbackParityScene");
+
+    // Entity with 2nd collider active and 1st collider disabled
+    auto* multiGo = scene.CreateGameObject("MultiCollider");
+    multiGo->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* col1 = multiGo->AddComponent<Engine::CircleCollider2D>();
+    col1->OffsetXZ = { -5.0f, 0.0f };
+    col1->Radius = 0.5f;
+    col1->SetEnabled(false);
+    auto* col2 = multiGo->AddComponent<Engine::CircleCollider2D>();
+    col2->OffsetXZ = { 5.0f, 0.0f };
+    col2->Radius = 0.5f;
+
+    std::vector<Engine::GameObject*> hits;
+    scene.OverlapCircleXZ({ -5.0f, 0.0f }, 0.4f, Engine::PhysicsLayer::All, hits);
+    EXPECT_TRUE(hits.empty());
+
+    scene.OverlapCircleXZ({ 5.0f, 0.0f }, 0.4f, Engine::PhysicsLayer::All, hits);
+    ASSERT_EQ(hits.size(), 1u);
+    EXPECT_EQ(hits[0], multiGo);
+
+    // Rotated CircleCollider2D offset (+90 deg yaw rotates (+5, 0) -> (0, -5))
+    auto* rotCircleGo = scene.CreateGameObject("RotatedCircleOffset");
+    rotCircleGo->GetTransform()->rotation = { 0.0f, 90.0f, 0.0f };
+    rotCircleGo->AddComponent<Engine::CircleCollider2D>()->OffsetXZ = { 5.0f, 0.0f };
+
+    hits.clear();
+    scene.OverlapCircleXZ({ 0.0f, -5.0f }, 0.4f, Engine::PhysicsLayer::All, hits);
+    ASSERT_EQ(hits.size(), 1u);
+    EXPECT_EQ(hits[0], rotCircleGo);
+
+    // Tilemap in non-runtime OverlapCircleXZ
+    auto* tmGo = scene.CreateGameObject("TilemapObstacle");
+    tmGo->GetTransform()->position = { 20.0f, 0.0f, 20.0f };
+    auto* tm = tmGo->AddComponent<Engine::Tilemap>(2, 2);
+    tm->SetTile(1, 1, 1, false);
+
+    hits.clear();
+    scene.OverlapCircleXZ({ 21.0f, 21.0f }, 0.4f, Engine::PhysicsLayer::Environment, hits);
+    ASSERT_EQ(hits.size(), 1u);
+    EXPECT_EQ(hits[0], tmGo);
+}
+
 } // namespace

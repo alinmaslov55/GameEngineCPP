@@ -208,7 +208,7 @@ flowchart TD
 | **`FIX-PHY-01`** | Deferred Prefab Body Registration, Static Transform Sync & Shape Filter/Mass | `DONE` | **P0** | W1 | `FIX-ECS-01`, `FIX-SER-01` | `C-12` (Static `(0,0)`, filters, density, velocity) | `FIX-PHY-03`, `FIX-PHY-04` |
 | **`FIX-PHY-02`** | `Box2D` 64-Worker Lease Bitmask, `Box2DTask` Lifetime & Event Buffer Copy | `DONE` | **P0** | W0 | `FIX-CORE-01` | `C-04`, `C-05`, `C-06`, Physics `#31` | `FIX-PHY-03`, `DOC-04` |
 | **`FIX-PHY-03`** | 2.5D Yaw Handedness (`-θ`), Collider Offset Scale, Stasis & Tilemap Safety | `DONE` | **P0** | W1 | `FIX-PHY-01`, `FIX-PHY-02` | Physics `#27–#30`, `#32`, Med `Rigidbody2D`/`Tilemap` | `FIX-PHY-04`, `FIX-SBX-01`, `DOC-04` |
-| **`FIX-PHY-04`** | `PhysicsQueries` Custom Raycast Filter, `OverlapArcXZ` & Fallback Parity | `TODO` | **P1** | W1 | `FIX-PHY-03` | Physics `#33` | `FIX-AIX-01`, `FIX-LGT-01`, `DOC-04` |
+| **`FIX-PHY-04`** | `PhysicsQueries` Custom Raycast Filter, `OverlapArcXZ` & Fallback Parity | `DONE` | **P1** | W1 | `FIX-PHY-03` | Physics `#33` | `FIX-AIX-01`, `FIX-LGT-01`, `DOC-04` |
 | **`FIX-VFX-01`** | `ParticleSystem` Rest Threshold, Swap-Remove Cleanup, PRNG & `DecalManager` | `DONE` | **P1** | W0 | *None (Root)* | Physics `#30`, `#34`, Med `Flipbook`, Imp `#5`, `#10` | `FIX-TER-03`, `DOC-04` |
 | **`FIX-RND-01`** | OpenGL 4.1 `#version 410` Line Shader, VAO/EBO Protection & `GL_BOOL` Fix | `DONE` | **P0** | W0 | *None (Root)* | `C-16`, RND `#35`, `#36`, `#41`, Med `glLineWidth` | `FIX-RND-03`, `FIX-UIX-01` |
 | **`FIX-RND-02`** | `DDSLoader` Overflow Guards, `GL_TEXTURE_MAX_LEVEL`, Anisotropy & `SpriteAtlas` | `DONE` | **P0** | W0 | `FIX-CORE-01` | `C-18`, `C-20`, RND `#37`, `#40`, Med `SubTexture2D`/`BC2` | `DOC-05` |
@@ -494,7 +494,7 @@ flowchart TD
 ---
 
 #### `FIX-PHY-04` — `PhysicsQueries` Custom Raycast Filter, `OverlapArcXZ` & Fallback Parity
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-PHY-03` | Unlocks: `FIX-AIX-01`, `FIX-LGT-01`, `DOC-04`
 - **Current Defects:** [PhysicsQueries.cpp](file://Engine/src/Physics/PhysicsQueries.cpp#L85-L553): `b2World_CastRayClosest` stops and returns `false` if the nearest shape is a sensor or pending-destroy entity (shadowing real obstacles behind it) and ignores initial overlaps; `OverlapArcXZ` with `halfAngleDegrees < 0` matches a positive cone (`cos(-θ) == cos(θ)`); non-runtime fallbacks skip 2nd+ colliders, `IsEnabled()`, rotation, and `Tilemap`.
 - **Verification (`EngineTests`):** Place a pickup sensor directly in front of a solid wall and cast a ray through both; assert `RaycastClosestXZ` ignores the sensor and hits the wall. Assert `OverlapArcXZ` with `halfAngleDegrees = -30.0f` returns empty.
