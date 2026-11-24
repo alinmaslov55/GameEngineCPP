@@ -239,10 +239,13 @@ void Collider2D::CreateOrUpdateShape(BodyHandle body, const Transform& transform
     // Call subclass hook to build or update shape geometry
     BuildShapeDefAndCreate(body, transform, go);
 
-    // Synchronize material properties and hit events on shape
+    // Synchronize material properties, density, filter, and hit events on shape
     if (RuntimeShape.IsValid()) {
         b2ShapeId shapeId = ToB2(RuntimeShape);
         if (b2Shape_IsValid(shapeId)) {
+            if (std::abs(b2Shape_GetDensity(shapeId) - Density) > 1e-4f) {
+                b2Shape_SetDensity(shapeId, Density, true);
+            }
             if (std::abs(b2Shape_GetFriction(shapeId) - Friction) > 1e-4f) {
                 b2Shape_SetFriction(shapeId, Friction);
             }
@@ -251,6 +254,19 @@ void Collider2D::CreateOrUpdateShape(BodyHandle body, const Transform& transform
             }
             if (b2Shape_AreHitEventsEnabled(shapeId) != EnableHitEvents) {
                 b2Shape_EnableHitEvents(shapeId, EnableHitEvents);
+            }
+            if (CategoryBits == PhysicsLayer::Default && go && go->GetLayer() != EntityLayer::Default) {
+                CategoryBits = PhysicsLayer::FromEntityLayer(go->GetLayer());
+            }
+            b2Filter effectiveFilter;
+            effectiveFilter.categoryBits = CategoryBits;
+            effectiveFilter.maskBits = ResolveEffectiveMaskBits(go, MaskBits);
+            effectiveFilter.groupIndex = GroupIndex;
+            const b2Filter currentFilter = b2Shape_GetFilter(shapeId);
+            if (currentFilter.categoryBits != effectiveFilter.categoryBits ||
+                currentFilter.maskBits != effectiveFilter.maskBits ||
+                currentFilter.groupIndex != effectiveFilter.groupIndex) {
+                b2Shape_SetFilter(shapeId, effectiveFilter);
             }
         }
     }

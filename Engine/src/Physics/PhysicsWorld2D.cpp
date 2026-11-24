@@ -113,8 +113,12 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             if (rb2d->IsStasisFrozen()) {
                 b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
                 b2Body_SetAngularVelocity(bodyId, 0.0f);
-            } else if (rb2d->InitialLinearVelocityXZ.x != 0.0f || rb2d->InitialLinearVelocityXZ.y != 0.0f) {
-                b2Body_SetLinearVelocity(bodyId, b2Vec2{ rb2d->InitialLinearVelocityXZ.x, rb2d->InitialLinearVelocityXZ.y });
+                rb2d->m_InitialVelocityApplied = false;
+            } else {
+                if (rb2d->InitialLinearVelocityXZ.x != 0.0f || rb2d->InitialLinearVelocityXZ.y != 0.0f) {
+                    b2Body_SetLinearVelocity(bodyId, b2Vec2{ rb2d->InitialLinearVelocityXZ.x, rb2d->InitialLinearVelocityXZ.y });
+                }
+                rb2d->m_InitialVelocityApplied = true;
             }
 
             if (!go->IsActiveInHierarchy()) {
@@ -126,13 +130,27 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                 if (b2Body_GetUserData(bodyId) != go) {
                     b2Body_SetUserData(bodyId, go);
                 }
-                if (!rb2d->IsStasisFrozen()) {
+                if (rb2d->IsStasisFrozen()) {
+                    if (rb2d->Type != Rigidbody2D::BodyType::Static) {
+                        if (b2Body_GetType(bodyId) != b2_kinematicBody) {
+                            b2Body_SetType(bodyId, b2_kinematicBody);
+                        }
+                        b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
+                        b2Body_SetAngularVelocity(bodyId, 0.0f);
+                    }
+                } else {
                     b2BodyType targetType = b2_dynamicBody;
                     if (rb2d->Type == Rigidbody2D::BodyType::Static) targetType = b2_staticBody;
                     else if (rb2d->Type == Rigidbody2D::BodyType::Kinematic) targetType = b2_kinematicBody;
                     if (b2Body_GetType(bodyId) != targetType) {
                         b2Body_SetType(bodyId, targetType);
                         baseMassRecomputed = true;
+                    }
+                    if (!rb2d->m_InitialVelocityApplied) {
+                        if (rb2d->InitialLinearVelocityXZ.x != 0.0f || rb2d->InitialLinearVelocityXZ.y != 0.0f) {
+                            b2Body_SetLinearVelocity(bodyId, b2Vec2{ rb2d->InitialLinearVelocityXZ.x, rb2d->InitialLinearVelocityXZ.y });
+                        }
+                        rb2d->m_InitialVelocityApplied = true;
                     }
                 }
                 if (b2Body_IsFixedRotation(bodyId) != rb2d->FixedRotation) {
@@ -190,7 +208,7 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                 continue;
             }
             col->CreateOrUpdateShape(rb2d->RuntimeBody, *transform, go);
-            if (!hadShape && col->RuntimeShape.IsValid()) {
+            if (col->RuntimeShape.IsValid()) {
                 baseMassRecomputed = true;
             }
         }
@@ -199,8 +217,10 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             if (b2Body_GetShapeCount(bodyId) > 0) {
                 b2Body_ApplyMassFromShapes(bodyId);
             }
-            const float unscaledMass = b2Body_GetMass(bodyId);
-            rb2d->SetBaseMass((unscaledMass > 0.0001f) ? unscaledMass : 1.0f);
+            if (rb2d->Type == Rigidbody2D::BodyType::Dynamic && !rb2d->IsStasisFrozen()) {
+                const float unscaledMass = b2Body_GetMass(bodyId);
+                rb2d->SetBaseMass((unscaledMass > 0.0001f) ? unscaledMass : 1.0f);
+            }
         }
         rb2d->ApplyMassMultiplierToBody();
 
@@ -232,6 +252,21 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             b2BodyId bodyId;
             if (bodyHandle.IsValid()) {
                 bodyId = b2LoadBodyId(bodyHandle.Value);
+                if (b2Body_IsValid(bodyId)) {
+                    if (b2Body_GetUserData(bodyId) != go) {
+                        b2Body_SetUserData(bodyId, go);
+                    }
+                    const glm::vec3 worldPos = transform->GetWorldPosition();
+                    const glm::vec3 worldRot = transform->GetWorldRotation();
+                    const b2Vec2 currentB2Pos = b2Body_GetPosition(bodyId);
+                    const float currentAngle = b2Rot_GetAngle(b2Body_GetRotation(bodyId));
+                    const float targetAngle = glm::radians(worldRot.y);
+                    if (std::abs(currentB2Pos.x - worldPos.x) > 1e-4f ||
+                        std::abs(currentB2Pos.y - worldPos.z) > 1e-4f ||
+                        std::abs(currentAngle - targetAngle) > 1e-4f) {
+                        b2Body_SetTransform(bodyId, b2Vec2{ worldPos.x, worldPos.z }, b2MakeRot(targetAngle));
+                    }
+                }
             } else {
                 b2BodyDef bodyDef = b2DefaultBodyDef();
                 bodyDef.type = b2_staticBody;

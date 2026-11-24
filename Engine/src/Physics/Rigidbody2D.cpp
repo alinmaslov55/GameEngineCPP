@@ -405,6 +405,7 @@ void Rigidbody2D::OnPoolAcquire() {
             } else {
                 b2Body_SetLinearVelocity(bodyId, b2Vec2{ 0.0f, 0.0f });
             }
+            m_InitialVelocityApplied = true;
             b2Body_SetAngularVelocity(bodyId, 0.0f);
             b2Body_SetAwake(bodyId, true);
         }

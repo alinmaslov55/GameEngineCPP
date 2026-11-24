@@ -1,11 +1,13 @@
 #include <gtest/gtest.h>
 #include "Engine/Scene/Scene.h"
+#include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Terrain/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Physics/PhysicsWorld2D.h"
 #include <box2d/box2d.h>
+#include <cmath>
 #include <thread>
 #ifdef _MSC_VER
 #include <crtdbg.h>
@@ -594,4 +596,100 @@ TEST_F(RigidbodyLifecycleTest, NonRuntimeStaticColliderSwapSameCount_RefreshesCa
     EXPECT_EQ(scene.GetPhysicsWorld().GetStaticColliderCount(), 1u);
     // Dyn at 5.0 overlapping WallB at 5.2 should be pushed away along X (< 4.9)
     EXPECT_LT(dynGo->GetTransform()->position.x, 4.9f);
+}
+
+TEST_F(RigidbodyLifecycleTest, RuntimePrefabInstantiation_StaticTrunkAndDynamicProjectile) {
+    Engine::Scene templateScene("TemplateScene");
+    auto* trunkTpl = templateScene.CreateGameObject("PineTrunk");
+    trunkTpl->SetLayer(Engine::EntityLayer::Environment);
+    auto* trunkCol = trunkTpl->AddComponent<Engine::CircleCollider2D>();
+    trunkCol->Radius = 0.5f;
+    trunkCol->CategoryBits = Engine::PhysicsLayer::Environment;
+    auto trunkPrefab = Engine::Prefab::CreateFromGameObject(trunkTpl);
+    ASSERT_NE(trunkPrefab, nullptr);
+
+    auto* projTpl = templateScene.CreateGameObject("Projectile");
+    auto* projRb = projTpl->AddComponent<Engine::Rigidbody2D>();
+    projRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    projRb->InitialLinearVelocityXZ = { 10.0f, 0.0f };
+    projRb->LinearDamping = 0.0f;
+    auto* projCol = projTpl->AddComponent<Engine::CircleCollider2D>();
+    projCol->Radius = 0.5f;
+    projCol->Density = 3.0f;
+    auto projPrefab = Engine::Prefab::CreateFromGameObject(projTpl);
+    ASSERT_NE(projPrefab, nullptr);
+
+    Engine::Scene runtimeScene("RuntimePrefabScene");
+    runtimeScene.OnRuntimeStart();
+
+    Engine::GameObject* trunk = runtimeScene.InstantiatePrefab(*trunkPrefab, { 25.0f, 0.0f, -18.0f });
+    ASSERT_NE(trunk, nullptr);
+
+    std::vector<Engine::GameObject*> hits;
+    runtimeScene.OverlapCircleXZ({ 25.0f, -18.0f }, 0.5f, Engine::PhysicsLayer::Environment, hits);
+    ASSERT_EQ(hits.size(), 1u);
+    EXPECT_EQ(hits[0], trunk);
+
+    hits.clear();
+    runtimeScene.OverlapCircleXZ({ 0.0f, 0.0f }, 0.5f, Engine::PhysicsLayer::All, hits);
+    EXPECT_TRUE(hits.empty());
+
+    Engine::GameObject* proj = runtimeScene.InstantiatePrefab(*projPrefab, { 5.0f, 0.0f, 5.0f });
+    ASSERT_NE(proj, nullptr);
+    auto* spawnedRb = proj->GetComponent<Engine::Rigidbody2D>();
+    ASSERT_NE(spawnedRb, nullptr);
+
+    const float expectedMass = 3.14159265f * 0.5f * 0.5f * 3.0f;
+    EXPECT_NEAR(spawnedRb->GetMass(), expectedMass, 1e-3f);
+    EXPECT_NEAR(spawnedRb->GetVelocityXZ().x, 10.0f, 1e-4f);
+    EXPECT_NEAR(spawnedRb->GetVelocityXZ().y, 0.0f, 1e-4f);
+
+    runtimeScene.OnRuntimeStop();
+}
+
+TEST_F(RigidbodyLifecycleTest, RuntimeExistingShapeSync_DensityFilterAndStaticRelocate) {
+    Engine::Scene scene("ExistingShapeSyncScene");
+    scene.OnRuntimeStart();
+
+    // Dynamic body whose collider Density & MaskBits change after initial registration
+    auto* dynGo = scene.CreateGameObject("DynBody");
+    auto* dynRb = dynGo->AddComponent<Engine::Rigidbody2D>();
+    dynRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    auto* dynCol = dynGo->AddComponent<Engine::CircleCollider2D>();
+    dynCol->Radius = 1.0f;
+    dynCol->Density = 1.0f;
+    scene.RegisterRuntimeBody(dynGo);
+
+    const float initialMass = dynRb->GetMass();
+    EXPECT_NEAR(initialMass, 3.14159265f * 1.0f * 1.0f * 1.0f, 1e-3f);
+
+    dynCol->Density = 4.0f;
+    dynCol->MaskBits = Engine::PhysicsLayer::Environment;
+    scene.RegisterRuntimeBody(dynGo);
+
+    EXPECT_NEAR(dynRb->GetMass(), 3.14159265f * 1.0f * 1.0f * 4.0f, 1e-3f);
+    ASSERT_TRUE(dynCol->RuntimeShape.IsValid());
+    const b2Filter updatedFilter = b2Shape_GetFilter(b2LoadShapeId(dynCol->RuntimeShape.Value));
+    EXPECT_EQ(updatedFilter.maskBits, Engine::PhysicsLayer::Environment);
+
+    // Standalone static collider relocated after initial registration
+    auto* staticGo = scene.CreateGameObject("StaticCrate");
+    staticGo->GetTransform()->position = { 2.0f, 0.0f, 2.0f };
+    staticGo->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+    scene.RegisterRuntimeBody(staticGo);
+
+    staticGo->GetTransform()->position = { -12.0f, 0.0f, 8.0f };
+    staticGo->GetTransform()->SetDirty();
+    scene.RegisterRuntimeBody(staticGo);
+
+    std::vector<Engine::GameObject*> hits;
+    scene.OverlapCircleXZ({ 2.0f, 2.0f }, 0.4f, Engine::PhysicsLayer::All, hits);
+    EXPECT_TRUE(hits.empty());
+
+    hits.clear();
+    scene.OverlapCircleXZ({ -12.0f, 8.0f }, 0.4f, Engine::PhysicsLayer::All, hits);
+    ASSERT_EQ(hits.size(), 1u);
+    EXPECT_EQ(hits[0], staticGo);
+
+    scene.OnRuntimeStop();
 }

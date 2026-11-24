@@ -96,6 +96,27 @@ public:
         Scene& m_Scene;
     };
 
+    class ScopedDeferPhysicsRegistration {
+    public:
+        explicit ScopedDeferPhysicsRegistration(Scene& scene) noexcept
+            : m_Scene(scene), m_PreviousState(scene.m_DeferPhysicsRegistration) {
+            m_Scene.m_DeferPhysicsRegistration = true;
+        }
+        ~ScopedDeferPhysicsRegistration() noexcept {
+            m_Scene.m_DeferPhysicsRegistration = m_PreviousState;
+        }
+        ScopedDeferPhysicsRegistration(const ScopedDeferPhysicsRegistration&) = delete;
+        ScopedDeferPhysicsRegistration& operator=(const ScopedDeferPhysicsRegistration&) = delete;
+        ScopedDeferPhysicsRegistration(ScopedDeferPhysicsRegistration&&) = delete;
+        ScopedDeferPhysicsRegistration& operator=(ScopedDeferPhysicsRegistration&&) = delete;
+
+    private:
+        Scene& m_Scene;
+        bool m_PreviousState;
+    };
+
+    [[nodiscard]] bool IsPhysicsRegistrationDeferred() const noexcept { return m_DeferPhysicsRegistration; }
+
     // Prefab instantiation with recursive UUID remapping and world positioning
     GameObject* InstantiatePrefab(const Prefab& prefab, const glm::vec3& worldPos = glm::vec3(0.0f));
 
@@ -220,6 +241,7 @@ private:
     std::vector<std::unique_ptr<GameObject>> m_GameObjects;
     std::vector<std::unique_ptr<GameObject>> m_PendingSpawnQueue;
     uint32_t m_IterationDepth = 0;
+    bool m_DeferPhysicsRegistration = false;
 
     // Terrain fast-lookup cache for O(1) surface queries
     mutable TerrainChunkManager* m_CachedChunkManager{ nullptr };

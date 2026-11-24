@@ -482,106 +482,110 @@ GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worl
     std::vector<std::pair<GameObject*, uint64_t>> parentLinks;
     GameObject* rootGameObject = nullptr;
 
-    // Pass 1: Instantiate GameObjects with fresh UUIDs and deserialize components
-    for (const auto& entityJson : entitiesArray) {
-        const uint64_t oldUUID = entityJson.value("UUID", 0ULL);
-        const std::string name = entityJson.value("Name", "GameObject");
+    {
+        ScopedDeferPhysicsRegistration deferPhysics(*this);
 
-        GameObject* go = CreateGameObject(name);
-        const uint64_t newUUID = go->GetUUID();
-        if (oldUUID != 0) {
-            oldToNewUUID[oldUUID] = newUUID;
-        }
-        createdEntities[newUUID] = go;
+        // Pass 1: Instantiate GameObjects with fresh UUIDs and deserialize components
+        for (const auto& entityJson : entitiesArray) {
+            const uint64_t oldUUID = entityJson.value("UUID", 0ULL);
+            const std::string name = entityJson.value("Name", "GameObject");
 
-        if (entityJson.contains("Tag")) {
-            if (entityJson["Tag"].is_string()) {
-                go->SetTag(StringToEntityTag(entityJson["Tag"].get<std::string>()));
-            } else if (entityJson["Tag"].is_number()) {
-                go->SetTag(static_cast<EntityTag>(entityJson["Tag"].get<uint16_t>()));
+            GameObject* go = CreateGameObject(name);
+            const uint64_t newUUID = go->GetUUID();
+            if (oldUUID != 0) {
+                oldToNewUUID[oldUUID] = newUUID;
             }
-        }
-        if (entityJson.contains("LayerMask") && entityJson["LayerMask"].is_number()) {
-            go->SetLayer(entityJson["LayerMask"].get<uint32_t>());
-        }
+            createdEntities[newUUID] = go;
 
-        if (entityJson.contains("Components")) {
-            SceneSerializer::DeserializeEntityComponents(go, entityJson["Components"], name);
-        }
-
-        const uint64_t oldParentUUID = entityJson.value("ParentUUID", 0ULL);
-        if (oldParentUUID != 0) {
-            parentLinks.emplace_back(go, oldParentUUID);
-        } else if (!rootGameObject) {
-            rootGameObject = go;
-        }
-    }
-
-    if (!rootGameObject && !createdEntities.empty()) {
-        rootGameObject = createdEntities.begin()->second;
-    }
-
-    // Pass 2: Position root entity at requested world position
-    if (rootGameObject) {
-        if (auto* tr = rootGameObject->GetTransform()) {
-            tr->position = worldPos;
-            tr->SnapshotPrevious();
-            tr->SetDirty();
-        }
-    }
-
-    // Pass 3: Re-link parent-child hierarchy using remapped UUIDs
-    for (const auto& [childGo, oldParentUUID] : parentLinks) {
-        auto mapIt = oldToNewUUID.find(oldParentUUID);
-        if (mapIt != oldToNewUUID.end()) {
-            const uint64_t newParentUUID = mapIt->second;
-            auto parentGoIt = createdEntities.find(newParentUUID);
-            if (parentGoIt != createdEntities.end() && parentGoIt->second) {
-                childGo->GetTransform()->SetParent(parentGoIt->second->GetTransform(), /*keepWorldTransform=*/false);
-            }
-        }
-    }
-
-    // Pass 4: Remap UIButtonComponent neighbor UUIDs and sync CameraComponents
-    for (const auto& [uuid, go] : createdEntities) {
-        if (!go) continue;
-
-        if (auto* btn = go->GetComponent<UIButtonComponent>()) {
-            if (btn->UpNeighborUUID != 0) {
-                if (auto it = oldToNewUUID.find(btn->UpNeighborUUID); it != oldToNewUUID.end()) {
-                    btn->UpNeighborUUID = it->second;
+            if (entityJson.contains("Tag")) {
+                if (entityJson["Tag"].is_string()) {
+                    go->SetTag(StringToEntityTag(entityJson["Tag"].get<std::string>()));
+                } else if (entityJson["Tag"].is_number()) {
+                    go->SetTag(static_cast<EntityTag>(entityJson["Tag"].get<uint16_t>()));
                 }
             }
-            if (btn->DownNeighborUUID != 0) {
-                if (auto it = oldToNewUUID.find(btn->DownNeighborUUID); it != oldToNewUUID.end()) {
-                    btn->DownNeighborUUID = it->second;
-                }
+            if (entityJson.contains("LayerMask") && entityJson["LayerMask"].is_number()) {
+                go->SetLayer(entityJson["LayerMask"].get<uint32_t>());
             }
-            if (btn->LeftNeighborUUID != 0) {
-                if (auto it = oldToNewUUID.find(btn->LeftNeighborUUID); it != oldToNewUUID.end()) {
-                    btn->LeftNeighborUUID = it->second;
-                }
+
+            if (entityJson.contains("Components")) {
+                SceneSerializer::DeserializeEntityComponents(go, entityJson["Components"], name);
             }
-            if (btn->RightNeighborUUID != 0) {
-                if (auto it = oldToNewUUID.find(btn->RightNeighborUUID); it != oldToNewUUID.end()) {
-                    btn->RightNeighborUUID = it->second;
+
+            const uint64_t oldParentUUID = entityJson.value("ParentUUID", 0ULL);
+            if (oldParentUUID != 0) {
+                parentLinks.emplace_back(go, oldParentUUID);
+            } else if (!rootGameObject) {
+                rootGameObject = go;
+            }
+        }
+
+        if (!rootGameObject && !createdEntities.empty()) {
+            rootGameObject = createdEntities.begin()->second;
+        }
+
+        // Pass 2: Position root entity at requested world position
+        if (rootGameObject) {
+            if (auto* tr = rootGameObject->GetTransform()) {
+                tr->position = worldPos;
+                tr->SnapshotPrevious();
+                tr->SetDirty();
+            }
+        }
+
+        // Pass 3: Re-link parent-child hierarchy using remapped UUIDs
+        for (const auto& [childGo, oldParentUUID] : parentLinks) {
+            auto mapIt = oldToNewUUID.find(oldParentUUID);
+            if (mapIt != oldToNewUUID.end()) {
+                const uint64_t newParentUUID = mapIt->second;
+                auto parentGoIt = createdEntities.find(newParentUUID);
+                if (parentGoIt != createdEntities.end() && parentGoIt->second) {
+                    childGo->GetTransform()->SetParent(parentGoIt->second->GetTransform(), /*keepWorldTransform=*/false);
                 }
             }
         }
 
-        if (auto* cam = go->GetComponent<CameraComponent>()) {
-            cam->SyncFromTransform(go->GetTransform());
-        }
-    }
+        // Pass 4: Remap UIButtonComponent neighbor UUIDs and sync CameraComponents
+        for (const auto& [uuid, go] : createdEntities) {
+            if (!go) continue;
 
-    // Pass 5: Apply active state saved in prefab
-    for (const auto& entityJson : entitiesArray) {
-        const uint64_t oldUUID = entityJson.value("UUID", 0ULL);
-        auto it = oldToNewUUID.find(oldUUID);
-        if (it != oldToNewUUID.end()) {
-            if (auto goIt = createdEntities.find(it->second); goIt != createdEntities.end() && goIt->second) {
-                if (entityJson.contains("Active") && entityJson["Active"].is_boolean()) {
-                    goIt->second->SetActive(entityJson["Active"].get<bool>());
+            if (auto* btn = go->GetComponent<UIButtonComponent>()) {
+                if (btn->UpNeighborUUID != 0) {
+                    if (auto it = oldToNewUUID.find(btn->UpNeighborUUID); it != oldToNewUUID.end()) {
+                        btn->UpNeighborUUID = it->second;
+                    }
+                }
+                if (btn->DownNeighborUUID != 0) {
+                    if (auto it = oldToNewUUID.find(btn->DownNeighborUUID); it != oldToNewUUID.end()) {
+                        btn->DownNeighborUUID = it->second;
+                    }
+                }
+                if (btn->LeftNeighborUUID != 0) {
+                    if (auto it = oldToNewUUID.find(btn->LeftNeighborUUID); it != oldToNewUUID.end()) {
+                        btn->LeftNeighborUUID = it->second;
+                    }
+                }
+                if (btn->RightNeighborUUID != 0) {
+                    if (auto it = oldToNewUUID.find(btn->RightNeighborUUID); it != oldToNewUUID.end()) {
+                        btn->RightNeighborUUID = it->second;
+                    }
+                }
+            }
+
+            if (auto* cam = go->GetComponent<CameraComponent>()) {
+                cam->SyncFromTransform(go->GetTransform());
+            }
+        }
+
+        // Pass 5: Apply active state saved in prefab
+        for (const auto& entityJson : entitiesArray) {
+            const uint64_t oldUUID = entityJson.value("UUID", 0ULL);
+            auto it = oldToNewUUID.find(oldUUID);
+            if (it != oldToNewUUID.end()) {
+                if (auto goIt = createdEntities.find(it->second); goIt != createdEntities.end() && goIt->second) {
+                    if (entityJson.contains("Active") && entityJson["Active"].is_boolean()) {
+                        goIt->second->SetActive(entityJson["Active"].get<bool>());
+                    }
                 }
             }
         }
@@ -753,6 +757,7 @@ void Scene::ResetPhysicsAccumulator() noexcept {
 }
 
 void Scene::RegisterRuntimeBody(GameObject* go) {
+    if (m_DeferPhysicsRegistration) return;
     if (m_PhysicsWorld) m_PhysicsWorld->RegisterRuntimeBody(go);
 }
 
@@ -761,6 +766,7 @@ void Scene::UnregisterRuntimeBody(GameObject* go) {
 }
 
 void Scene::MarkPhysicsDirty(GameObject* go) {
+    if (m_DeferPhysicsRegistration) return;
     if (m_PhysicsWorld) m_PhysicsWorld->MarkPhysicsDirty(go);
 }
 

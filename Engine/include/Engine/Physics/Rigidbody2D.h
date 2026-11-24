@@ -88,6 +88,7 @@ public:
         m_BaseMass = 0.0f;
         m_AppliedMassMultiplier = 1.0f;
         m_LastAppliedLinearDamping = -1.0f;
+        m_InitialVelocityApplied = false;
     }
     void SetBullet(bool bullet);
     [[nodiscard]] bool GetBullet() const noexcept;
@@ -122,6 +123,7 @@ private:
     friend class PhysicsWorld2D;
 
     bool m_AirbornePassThroughActive = false;
+    bool m_InitialVelocityApplied = false;
     float m_BaseMass = 0.0f;
     float m_AppliedMassMultiplier = 1.0f;
     float m_LastAppliedLinearDamping = -1.0f;
