@@ -2,6 +2,7 @@
 #include "Engine/Core/Time.h"
 #include "Engine/Core/JobSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsQueries.h"
 #include "Engine/Physics/PhysicsWorld2D.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
@@ -351,10 +352,10 @@ TEST(GroundPlanePhysicsTest, ParentedRigidbody2D_SpawnsAtWorldPositionAndRotatio
     b2Vec2 pos = b2Body_GetPosition(bodyId);
     b2Rot rot = b2Body_GetRotation(bodyId);
 
-    // Box2D body must spawn at the parented entity's composite WORLD position and rotation
+    // Box2D body must spawn at the parented entity's composite WORLD position and negated 2D yaw (-theta)
     EXPECT_NEAR(pos.x, 10.0f, 1e-3f);
     EXPECT_NEAR(pos.y, 5.0f, 1e-3f);
-    EXPECT_NEAR(glm::degrees(b2Rot_GetAngle(rot)), 45.0f, 1e-2f);
+    EXPECT_NEAR(glm::degrees(b2Rot_GetAngle(rot)), -45.0f, 1e-2f);
 
     scene.OnRuntimeStop();
 }
@@ -649,6 +650,91 @@ TEST(GroundPlanePhysicsTest, ParallelVerticalIntegration_BatchedExecutionAcrossM
     if (weInitializedJobs) {
         Engine::JobSystem::Shutdown();
     }
+}
+
+TEST(GroundPlanePhysicsTest, YawHandedness_45DegBoxMatchesTransformWorldMatrixAndDebugGizmo) {
+    Engine::Scene scene("YawHandednessScene");
+    auto* boxGo = scene.CreateGameObject("RotatedBox");
+    boxGo->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    boxGo->GetTransform()->rotation = { 0.0f, 45.0f, 0.0f };
+    auto* boxCol = boxGo->AddComponent<Engine::BoxCollider2D>();
+    boxCol->size = { 4.0f, 1.0f };
+
+    // Verify Transform::GetWorldMatrix() corners for 4x1 box rotated +45 deg around Y
+    const glm::mat4 worldMat = boxGo->GetTransform()->GetWorldMatrix();
+    const glm::vec2 localCorners[4] = {
+        { -2.0f, -0.5f }, { 2.0f, -0.5f }, { 2.0f, 0.5f }, { -2.0f, 0.5f }
+    };
+    const float yawRad = glm::radians(45.0f);
+    const float cosY = std::cos(yawRad);
+    const float sinY = std::sin(yawRad);
+    for (const auto& lc : localCorners) {
+        const glm::vec3 matCorner = glm::vec3(worldMat * glm::vec4(lc.x, 0.0f, lc.y, 1.0f));
+        const float gizmoX = lc.x * cosY + lc.y * sinY;
+        const float gizmoZ = -lc.x * sinY + lc.y * cosY;
+        EXPECT_NEAR(gizmoX, matCorner.x, 1e-4f);
+        EXPECT_NEAR(gizmoZ, matCorner.z, 1e-4f);
+    }
+
+    // With +45 deg yaw, local +X (length 4m) points along (+0.707, -0.707).
+    // Point (1.4, -1.4) lies along the long axis (inside 2m half-length), whereas (1.4, +1.4) lies outside the 0.5m half-width!
+    Engine::RaycastHitXZ hit;
+    EXPECT_TRUE(scene.RaycastClosestXZ({ 1.4f, -2.5f }, { 1.4f, -0.5f }, Engine::PhysicsLayer::All, hit));
+    EXPECT_EQ(hit.Entity, boxGo);
+    EXPECT_FALSE(scene.RaycastClosestXZ({ 1.4f, 0.5f }, { 1.4f, 2.5f }, Engine::PhysicsLayer::All, hit));
+
+    // Verify runtime Box2D agrees identically with non-runtime RaycastClosestXZ
+    scene.OnRuntimeStart();
+    EXPECT_TRUE(scene.RaycastClosestXZ({ 1.4f, -2.5f }, { 1.4f, -0.5f }, Engine::PhysicsLayer::All, hit));
+    EXPECT_EQ(hit.Entity, boxGo);
+    EXPECT_FALSE(scene.RaycastClosestXZ({ 1.4f, 0.5f }, { 1.4f, 2.5f }, Engine::PhysicsLayer::All, hit));
+    scene.OnRuntimeStop();
+}
+
+TEST(GroundPlanePhysicsTest, HighGravityRestingBody_NoMicroBounce) {
+    Engine::Scene scene("HighGravityRestingScene");
+    auto* go = scene.CreateGameObject("HeavyActor");
+    go->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* rb = go->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->UseGravityY = true;
+    rb->GravityY = -80.0f;
+    rb->GroundLevelY = 0.0f;
+    rb->GroundRestitutionY = 0.6f;
+    go->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+
+    scene.OnRuntimeStart();
+    for (int i = 0; i < 60; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+        EXPECT_FLOAT_EQ(go->GetTransform()->position.y, 0.0f);
+        EXPECT_FLOAT_EQ(rb->VerticalVelocity, 0.0f);
+    }
+    scene.OnRuntimeStop();
+}
+
+TEST(GroundPlanePhysicsTest, ParentedIsAirborne_UsesWorldY) {
+    Engine::Scene scene("ParentedAirborneScene");
+    auto* parent = scene.CreateGameObject("Platform");
+    parent->GetTransform()->position = { 0.0f, 2.0f, 0.0f };
+    auto* child = scene.CreateGameObject("Passenger");
+    child->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    child->GetTransform()->SetParent(parent->GetTransform(), false);
+    auto* rb = child->AddComponent<Engine::Rigidbody2D>();
+    rb->GroundLevelY = 0.0f;
+
+    EXPECT_TRUE(rb->IsAirborne());
+}
+
+TEST(GroundPlanePhysicsTest, TilemapZeroScale_ClampsSafelyAndEmitsContactEvents) {
+    Engine::Scene scene("TilemapZeroScaleScene");
+    auto* mapGo = scene.CreateGameObject("Tilemap");
+    mapGo->GetTransform()->scale = { 0.0f, 1.0f, -2.0f };
+    auto* tm = mapGo->AddComponent<Engine::Tilemap>(2, 2);
+    tm->SetTile(0, 0, 1, false);
+
+    scene.OnRuntimeStart();
+    EXPECT_TRUE(tm->RuntimeBody.IsValid());
+    scene.OnRuntimeStop();
 }
 
 } // namespace

@@ -1182,14 +1182,14 @@ void SceneRenderer::RenderPassDebugGizmos(SceneRenderContext& ctx, Scene& scene)
             };
 
             glm::vec2 offsetRotated = {
-                box->offset.x * worldScale.x,
-                box->offset.y * worldScale.z
+                box->offset.x * std::abs(worldScale.x),
+                box->offset.y * std::abs(worldScale.z)
             };
             if (std::abs(yawRad) > 1e-5f) {
                 const float cosY = std::cos(yawRad);
                 const float sinY = std::sin(yawRad);
-                const float rx = offsetRotated.x * cosY - offsetRotated.y * sinY;
-                const float rz = offsetRotated.x * sinY + offsetRotated.y * cosY;
+                const float rx = offsetRotated.x * cosY + offsetRotated.y * sinY;
+                const float rz = -offsetRotated.x * sinY + offsetRotated.y * cosY;
                 offsetRotated = { rx, rz };
             }
 
@@ -1209,12 +1209,15 @@ void SceneRenderer::RenderPassDebugGizmos(SceneRenderContext& ctx, Scene& scene)
 
             const float scaledRadius = circle->Radius * std::max(std::abs(worldScale.x), std::abs(worldScale.z));
 
-            glm::vec2 offsetRotated = circle->OffsetXZ;
+            glm::vec2 offsetRotated = {
+                circle->OffsetXZ.x * std::abs(worldScale.x),
+                circle->OffsetXZ.y * std::abs(worldScale.z)
+            };
             if (std::abs(yawRad) > 1e-5f) {
                 const float cosY = std::cos(yawRad);
                 const float sinY = std::sin(yawRad);
-                const float rx = offsetRotated.x * cosY - offsetRotated.y * sinY;
-                const float rz = offsetRotated.x * sinY + offsetRotated.y * cosY;
+                const float rx = offsetRotated.x * cosY + offsetRotated.y * sinY;
+                const float rz = -offsetRotated.x * sinY + offsetRotated.y * cosY;
                 offsetRotated = { rx, rz };
             }
 

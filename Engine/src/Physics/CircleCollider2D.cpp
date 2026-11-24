@@ -17,7 +17,7 @@ void CircleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& 
     float scaleFactor = std::max(std::abs(worldScale.x), std::abs(worldScale.z));
     float effectiveRadius = std::max(0.001f, Radius * scaleFactor);
     b2Circle circle;
-    circle.center = b2Vec2{ OffsetXZ.x, OffsetXZ.y };
+    circle.center = b2Vec2{ OffsetXZ.x * std::abs(worldScale.x), OffsetXZ.y * std::abs(worldScale.z) };
     circle.radius = effectiveRadius;
 
     if (!RuntimeShape.IsValid()) {

@@ -268,11 +268,26 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
         // 2. BoxCollider2D
         if (auto* bc = go->GetComponent<BoxCollider2D>()) {
             if ((bc->CategoryBits & maskBits) != 0) {
-                const glm::vec2 bMin = posXZ + bc->offset * scaleXZ - bc->size * scaleXZ * 0.5f;
-                const glm::vec2 bMax = posXZ + bc->offset * scaleXZ + bc->size * scaleXZ * 0.5f;
+                const float yawRad = glm::radians(t->GetWorldRotation().y);
+                const float cosY = std::cos(yawRad);
+                const float sinY = std::sin(yawRad);
 
-                if (startXZ.x >= bMin.x && startXZ.x <= bMax.x &&
-                    startXZ.y >= bMin.y && startXZ.y <= bMax.y) {
+                // Transform ray into box's local XZ frame (inverse of right-handed +yawRad around Y)
+                const glm::vec2 relStart = startXZ - posXZ;
+                const glm::vec2 localStart = {
+                    relStart.x * cosY - relStart.y * sinY,
+                    relStart.x * sinY + relStart.y * cosY
+                };
+                const glm::vec2 localDiff = {
+                    diff.x * cosY - diff.y * sinY,
+                    diff.x * sinY + diff.y * cosY
+                };
+
+                const glm::vec2 bMin = bc->offset * scaleXZ - bc->size * scaleXZ * 0.5f;
+                const glm::vec2 bMax = bc->offset * scaleXZ + bc->size * scaleXZ * 0.5f;
+
+                if (localStart.x >= bMin.x && localStart.x <= bMax.x &&
+                    localStart.y >= bMin.y && localStart.y <= bMax.y) {
                     // Containment: Ray starts inside box
                     if (0.0f < closestFraction) {
                         closestFraction = 0.0f;
@@ -285,19 +300,19 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
                 } else {
                     float tMin = 0.0f;
                     float tMax = closestFraction;
-                    glm::vec2 hitNormal{ 0.0f };
+                    glm::vec2 hitNormalLocal{ 0.0f };
 
                     bool hitBox = true;
                     for (int axis = 0; axis < 2; ++axis) {
-                        if (std::abs(diff[axis]) < 1e-6f) {
-                            if (startXZ[axis] < bMin[axis] || startXZ[axis] > bMax[axis]) {
+                        if (std::abs(localDiff[axis]) < 1e-6f) {
+                            if (localStart[axis] < bMin[axis] || localStart[axis] > bMax[axis]) {
                                 hitBox = false;
                                 break;
                             }
                         } else {
-                            const float ood = 1.0f / diff[axis];
-                            float t1 = (bMin[axis] - startXZ[axis]) * ood;
-                            float t2 = (bMax[axis] - startXZ[axis]) * ood;
+                            const float ood = 1.0f / localDiff[axis];
+                            float t1 = (bMin[axis] - localStart[axis]) * ood;
+                            float t2 = (bMax[axis] - localStart[axis]) * ood;
                             glm::vec2 n1{ 0.0f }, n2{ 0.0f };
                             n1[axis] = -1.0f;
                             n2[axis] = 1.0f;
@@ -308,7 +323,7 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
                             }
                             if (t1 > tMin) {
                                 tMin = t1;
-                                hitNormal = n1;
+                                hitNormalLocal = n1;
                             }
                             tMax = std::min(tMax, t2);
                             if (tMin > tMax) {
@@ -322,7 +337,10 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
                         outHit.Entity = go.get();
                         outHit.Fraction = tMin;
                         outHit.PointXZ = startXZ + tMin * diff;
-                        outHit.NormalXZ = hitNormal;
+                        outHit.NormalXZ = {
+                            hitNormalLocal.x * cosY + hitNormalLocal.y * sinY,
+                            -hitNormalLocal.x * sinY + hitNormalLocal.y * cosY
+                        };
                         foundHit = true;
                     }
                 }

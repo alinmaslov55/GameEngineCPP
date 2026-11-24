@@ -19,7 +19,7 @@ bool Rigidbody2D::IsAirborne() const noexcept {
     float currentY = GroundLevelY;
     if (auto* go = GetGameObject()) {
         if (const auto* t = go->GetTransform()) {
-            currentY = t->position.y;
+            currentY = t->GetParent() ? t->GetWorldPosition().y : t->position.y;
         }
     }
     return IsAirborne(currentY);
@@ -396,7 +396,7 @@ void Rigidbody2D::OnPoolAcquire() {
             if (auto* go = GetGameObject()) {
                 if (auto* transform = go->GetTransform()) {
                     glm::vec3 worldPos = transform->GetWorldPosition();
-                    float angleRad = glm::radians(transform->GetWorldRotation().y);
+                    float angleRad = -glm::radians(transform->GetWorldRotation().y);
                     b2Body_SetTransform(bodyId, b2Vec2{ worldPos.x, worldPos.z }, b2MakeRot(angleRad));
                 }
             }

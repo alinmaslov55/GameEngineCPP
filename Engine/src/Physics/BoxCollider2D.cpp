@@ -13,9 +13,9 @@ using namespace PhysicsDetail;
 
 void BoxCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) {
     b2BodyId bodyId = ToB2(body);
-    b2Vec2 center = { offset.x, offset.y };
-    b2Rot rot = b2MakeRot(0.0f);
     const glm::vec3 worldScale = transform.GetWorldScale();
+    b2Vec2 center = { offset.x * std::abs(worldScale.x), offset.y * std::abs(worldScale.z) };
+    b2Rot rot = b2MakeRot(0.0f);
     float halfW = std::max(0.001f, size.x * std::abs(worldScale.x) * 0.5f);
     float halfD = std::max(0.001f, size.y * std::abs(worldScale.z) * 0.5f);
     b2Polygon box = b2MakeOffsetBox(halfW, halfD, center, rot);

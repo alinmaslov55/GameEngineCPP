@@ -50,7 +50,11 @@ public:
     Rigidbody2D() = default;
 
     void LaunchVertical(float upwardImpulseVelocity) noexcept {
-        VerticalVelocity = upwardImpulseVelocity;
+        if (m_IsStasisFrozen) {
+            m_StasisCachedVerticalVelocity = upwardImpulseVelocity;
+        } else {
+            VerticalVelocity = upwardImpulseVelocity;
+        }
     }
 
     [[nodiscard]] bool IsAirborne(float currentY) const noexcept {

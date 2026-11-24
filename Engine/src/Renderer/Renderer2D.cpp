@@ -1205,8 +1205,8 @@ void Renderer2D::DrawDebugWireBoxXZ(const glm::vec3& center, const glm::vec2& si
         const float cosY = std::cos(yawRad);
         const float sinY = std::sin(yawRad);
         for (auto& c : corners) {
-            const float rx = c.x * cosY - c.y * sinY;
-            const float rz = c.x * sinY + c.y * cosY;
+            const float rx = c.x * cosY + c.y * sinY;
+            const float rz = -c.x * sinY + c.y * cosY;
             c.x = rx;
             c.y = rz;
         }

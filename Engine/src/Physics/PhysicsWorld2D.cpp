@@ -97,7 +97,7 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             const glm::vec3 worldPos = transform->GetWorldPosition();
             const glm::vec3 worldRot = transform->GetWorldRotation();
             bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
-            bodyDef.rotation = b2MakeRot(glm::radians(worldRot.y));
+            bodyDef.rotation = b2MakeRot(-glm::radians(worldRot.y));
             bodyDef.fixedRotation = rb2d->FixedRotation;
             bodyDef.linearDamping = rb2d->LinearDamping;
             bodyDef.angularDamping = rb2d->AngularDamping;
@@ -174,7 +174,7 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                 b2Vec2 currentB2Pos = b2Body_GetPosition(bodyId);
                 b2Rot currentB2Rot = b2Body_GetRotation(bodyId);
                 float currentAngle = b2Rot_GetAngle(currentB2Rot);
-                float targetAngle = glm::radians(worldRot.y);
+                float targetAngle = -glm::radians(worldRot.y);
                 if (std::abs(currentB2Pos.x - worldPos.x) > 1e-4f ||
                     std::abs(currentB2Pos.y - worldPos.z) > 1e-4f ||
                     (!rb2d->FixedRotation && std::abs(currentAngle - targetAngle) > 1e-4f)) {
@@ -262,7 +262,7 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                     const glm::vec3 worldRot = transform->GetWorldRotation();
                     const b2Vec2 currentB2Pos = b2Body_GetPosition(bodyId);
                     const float currentAngle = b2Rot_GetAngle(b2Body_GetRotation(bodyId));
-                    const float targetAngle = glm::radians(worldRot.y);
+                    const float targetAngle = -glm::radians(worldRot.y);
                     if (std::abs(currentB2Pos.x - worldPos.x) > 1e-4f ||
                         std::abs(currentB2Pos.y - worldPos.z) > 1e-4f ||
                         std::abs(currentAngle - targetAngle) > 1e-4f) {
@@ -275,7 +275,7 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                 const glm::vec3 worldPos = transform->GetWorldPosition();
                 const glm::vec3 worldRot = transform->GetWorldRotation();
                 bodyDef.position = b2Vec2{ worldPos.x, worldPos.z };
-                bodyDef.rotation = b2MakeRot(glm::radians(worldRot.y));
+                bodyDef.rotation = b2MakeRot(-glm::radians(worldRot.y));
                 bodyDef.name = go->GetName().c_str();
                 bodyDef.userData = go;
 
@@ -544,12 +544,17 @@ void PhysicsWorld2D::CreateRuntimeTilemapBody(GameObject* go) {
         b2Body_Disable(bodyId);
     }
 
-    const glm::vec3 origin = transform->position;
-    const glm::vec3 scale = transform->scale;
+    const glm::vec3 origin = transform->GetWorldPosition();
+    const glm::vec3 worldScale = transform->GetWorldScale();
+    const float safeScaleX = std::max(0.001f, std::abs(worldScale.x));
+    const float safeScaleZ = std::max(0.001f, std::abs(worldScale.z));
 
     b2ShapeDef shapeDef = b2DefaultShapeDef();
     shapeDef.material.friction = 0.5f;
     shapeDef.material.restitution = 0.0f;
+    shapeDef.enableContactEvents = true;
+    shapeDef.enableSensorEvents = true;
+    shapeDef.userData = tilemap;
     shapeDef.filter.categoryBits = PhysicsLayer::Environment;
     shapeDef.filter.maskBits = PhysicsLayer::All;
 
@@ -567,11 +572,11 @@ void PhysicsWorld2D::CreateRuntimeTilemapBody(GameObject* go) {
             uint32_t endGx = gx;
 
             const float spanTiles = static_cast<float>(endGx - startGx + 1);
-            const float halfW = spanTiles * scale.x * 0.5f;
-            const float halfD = 1.0f * scale.z * 0.5f;
+            const float halfW = spanTiles * safeScaleX * 0.5f;
+            const float halfD = 1.0f * safeScaleZ * 0.5f;
 
-            const float centerX = origin.x + 0.5f * static_cast<float>(startGx + endGx) * scale.x;
-            const float centerZ = origin.z + static_cast<float>(gz) * scale.z;
+            const float centerX = origin.x + 0.5f * static_cast<float>(startGx + endGx) * safeScaleX;
+            const float centerZ = origin.z + static_cast<float>(gz) * safeScaleZ;
 
             b2Polygon tileBox = b2MakeOffsetBox(halfW, halfD, b2Vec2{ centerX, centerZ }, b2MakeRot(0.0f));
             b2CreatePolygonShape(bodyId, &shapeDef, &tileBox);
@@ -865,16 +870,18 @@ void PhysicsWorld2D::SyncMovedBodyTransform(const b2BodyMoveEvent& ev) {
 
     const b2Vec2 pos = ev.transform.p;
     const b2Rot rot = ev.transform.q;
+    const float worldYawDeg = -glm::degrees(b2Rot_GetAngle(rot));
     if (transform->GetParent()) {
         transform->SetWorldPosition({ pos.x, transform->GetWorldPosition().y, pos.y });
         if (!rb2d->FixedRotation) {
-            transform->SetWorldRotation({ transform->rotation.x, glm::degrees(b2Rot_GetAngle(rot)), transform->rotation.z });
+            const glm::vec3 worldRot = transform->GetWorldRotation();
+            transform->SetWorldRotation({ worldRot.x, worldYawDeg, worldRot.z });
         }
     } else {
         transform->position.x = pos.x;
         transform->position.z = pos.y;
         if (!rb2d->FixedRotation) {
-            transform->rotation.y = glm::degrees(b2Rot_GetAngle(rot));
+            transform->rotation.y = worldYawDeg;
         }
         transform->SetDirty();
     }
@@ -972,19 +979,27 @@ void PhysicsWorld2D::EvaluateVerticalEntry(PhysicsBodyEntry& entry, float fixedD
 
     if (rb2d->UseGravityY) {
         const float prevY = transform->position.y;
-        rb2d->VerticalVelocity += (rb2d->GravityY * rb2d->GravityScaleY) * fixedDt;
-        transform->position.y += rb2d->VerticalVelocity * fixedDt;
+        const float prevVel = rb2d->VerticalVelocity;
+        if (prevY <= rb2d->GroundLevelY + 1e-4f && prevVel <= 0.0f) {
+            transform->position.y = rb2d->GroundLevelY;
+            rb2d->VerticalVelocity = 0.0f;
+            entry.pendingTransformDirty = (transform->position.y != prevY);
+        } else {
+            rb2d->VerticalVelocity += (rb2d->GravityY * rb2d->GravityScaleY) * fixedDt;
+            transform->position.y += rb2d->VerticalVelocity * fixedDt;
 
-        if (transform->position.y <= rb2d->GroundLevelY && rb2d->VerticalVelocity < 0.0f) {
-            if (rb2d->GroundRestitutionY > 0.05f && std::abs(rb2d->VerticalVelocity) > 0.8f) {
-                transform->position.y = rb2d->GroundLevelY;
-                rb2d->VerticalVelocity = -rb2d->VerticalVelocity * rb2d->GroundRestitutionY;
-            } else {
-                transform->position.y = rb2d->GroundLevelY;
-                rb2d->VerticalVelocity = 0.0f;
+            if (transform->position.y <= rb2d->GroundLevelY && rb2d->VerticalVelocity < 0.0f) {
+                const float bounceThreshold = std::max(0.8f, std::abs(rb2d->GravityY * rb2d->GravityScaleY) * fixedDt * 1.5f);
+                if (rb2d->GroundRestitutionY > 0.05f && std::abs(rb2d->VerticalVelocity) > bounceThreshold) {
+                    transform->position.y = rb2d->GroundLevelY;
+                    rb2d->VerticalVelocity = -rb2d->VerticalVelocity * rb2d->GroundRestitutionY;
+                } else {
+                    transform->position.y = rb2d->GroundLevelY;
+                    rb2d->VerticalVelocity = 0.0f;
+                }
             }
+            entry.pendingTransformDirty = (transform->position.y != prevY);
         }
-        entry.pendingTransformDirty = (transform->position.y != prevY);
     }
 
     if (rb2d->EnableAirbornePassThrough) {

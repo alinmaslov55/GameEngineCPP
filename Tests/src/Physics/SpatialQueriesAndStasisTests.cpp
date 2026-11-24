@@ -642,4 +642,36 @@ TEST(SpatialQueriesAndStasisTest, StasisFrozen_PreservesStaticBodyType_BaseMass_
     scene.OnRuntimeStop();
 }
 
+TEST(SpatialQueriesAndStasisTest, ChronosStasis_LaunchVerticalDuringStasisLaunchesOnUnfreeze) {
+    Engine::Scene scene("StasisVerticalLaunchScene");
+    auto* go = scene.CreateGameObject("StasisJumper");
+    go->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* rb = go->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->UseGravityY = true;
+    rb->GravityY = -20.0f;
+    rb->GroundLevelY = 0.0f;
+    go->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+
+    scene.OnRuntimeStart();
+    rb->SetStasisFrozen(true);
+    rb->LaunchVertical(8.0f);
+
+    // Must remain on ground while frozen
+    for (int i = 0; i < 5; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FLOAT_EQ(go->GetTransform()->position.y, 0.0f);
+
+    // Unfreezing immediately launches upward with stored 8.0 m/s
+    rb->SetStasisFrozen(false);
+    for (int i = 0; i < 10; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_GT(go->GetTransform()->position.y, 0.5f);
+    EXPECT_GT(rb->VerticalVelocity, 0.0f);
+
+    scene.OnRuntimeStop();
+}
+
 } // namespace
