@@ -34,8 +34,8 @@ void InspectorPanel::DrawSpriteRenderer(Engine::SpriteRenderer& spriteRenderer, 
         "Flat Ground (Decal)",
         "None (3D Transform)"
     };
-    int modeIdx = static_cast<int>(spriteRenderer.GetBillboardMode());
-    if (ImGui::Combo("Billboard Mode", &modeIdx, billboardLabels, 4)) {
+    int modeIdx = std::clamp(static_cast<int>(spriteRenderer.GetBillboardMode()), 0, IM_ARRAYSIZE(billboardLabels) - 1);
+    if (ImGui::Combo("Billboard Mode", &modeIdx, billboardLabels, IM_ARRAYSIZE(billboardLabels))) {
         spriteRenderer.SetBillboardMode(static_cast<Engine::SpriteRenderer::BillboardMode>(modeIdx));
     }
 
@@ -166,8 +166,8 @@ void InspectorPanel::DrawParticleSystem(Engine::ParticleSystem& particleSystem, 
     ImGui::Text("Texture: %s", texLabel);
 
     static const char* kOrientations[] = { "CameraBillboard", "FlatGroundXZ", "VelocityAligned" };
-    int orientationIdx = static_cast<int>(particleSystem.Orientation);
-    if (ImGui::Combo("Orientation", &orientationIdx, kOrientations, 3)) {
+    int orientationIdx = std::clamp(static_cast<int>(particleSystem.Orientation), 0, IM_ARRAYSIZE(kOrientations) - 1);
+    if (ImGui::Combo("Orientation", &orientationIdx, kOrientations, IM_ARRAYSIZE(kOrientations))) {
         particleSystem.Orientation = static_cast<Engine::ParticleOrientation>(orientationIdx);
     }
 
@@ -361,8 +361,8 @@ void InspectorPanel::DrawPostProcess(Engine::PostProcessComponent& pp, Engine::G
         "Reinhard",
         "None (Linear Clamp)"
     };
-    int tmIdx = static_cast<int>(pp.ToneMapping);
-    if (ImGui::Combo("Tone Mapper", &tmIdx, toneMapLabels, 4)) {
+    int tmIdx = std::clamp(static_cast<int>(pp.ToneMapping), 0, IM_ARRAYSIZE(toneMapLabels) - 1);
+    if (ImGui::Combo("Tone Mapper", &tmIdx, toneMapLabels, IM_ARRAYSIZE(toneMapLabels))) {
         pp.ToneMapping = static_cast<Engine::PostProcessComponent::ToneMapMode>(tmIdx);
         ENGINE_DEBUG("Inspector: Tone mapper changed to '{}' on '{}'", toneMapLabels[tmIdx], entity->GetName());
     }
@@ -463,7 +463,7 @@ void InspectorPanel::DrawSquashStretch(Engine::SquashStretchComponent& ss, Engin
 void InspectorPanel::DrawCamera(Engine::CameraComponent& camComp, Engine::GameObject* entity) {
     bool changed = false;
     const char* modeItems[] = { "Fixed Vertical (Hor+)", "Adaptive (Landscape vFOV / Portrait hFOV)" };
-    int currentMode = static_cast<int>(camComp.FOVMode);
+    int currentMode = std::clamp(static_cast<int>(camComp.FOVMode), 0, IM_ARRAYSIZE(modeItems) - 1);
     if (ImGui::Combo("FOV Adaptation", &currentMode, modeItems, IM_ARRAYSIZE(modeItems))) {
         camComp.FOVMode = static_cast<Engine::FOVAdaptationMode>(currentMode);
         changed = true;
@@ -521,13 +521,13 @@ void InspectorPanel::DrawCamera(Engine::CameraComponent& camComp, Engine::GameOb
 void InspectorPanel::DrawAnimator(Engine::Animator& animator, [[maybe_unused]] Engine::GameObject* entity) {
     // 1. Directional Scheme & Orientation Controls
     const char* schemeNames[] = { "Omni 1-Way", "Front/Back 2-Way", "Cardinal 4-Way" };
-    int schemeIdx = static_cast<int>(animator.GetDirectionalScheme());
+    int schemeIdx = std::clamp(static_cast<int>(animator.GetDirectionalScheme()), 0, IM_ARRAYSIZE(schemeNames) - 1);
     if (ImGui::Combo("Directional Scheme", &schemeIdx, schemeNames, IM_ARRAYSIZE(schemeNames))) {
         animator.SetDirectionalScheme(static_cast<Engine::DirectionalScheme>(schemeIdx));
     }
 
     const char* facingNames[] = { "None", "Down / Front", "Side", "Up / Back", "Diag" };
-    int facingIdx = static_cast<int>(animator.GetCurrentFacingDirection());
+    int facingIdx = std::clamp(static_cast<int>(animator.GetCurrentFacingDirection()), 0, IM_ARRAYSIZE(facingNames) - 1);
     if (ImGui::Combo("Facing Direction", &facingIdx, facingNames, IM_ARRAYSIZE(facingNames))) {
         animator.SetCurrentFacingDirection(static_cast<Engine::FacingDirection>(facingIdx));
     }

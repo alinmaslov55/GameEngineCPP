@@ -12,10 +12,13 @@
 #include <Engine/Terrain/TerrainChunkManager.h>
 #include <Engine/Terrain/TerrainComponent.h>
 #include <Engine/Terrain/Tilemap.h>
+#include <Engine/Scene/GameObject.h>
+#include <Engine/Scene/Scene.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/Utils/Logger.h>
 
 #include <imgui.h>
+#include <algorithm>
 #include <cstdio>
 
 namespace Sandbox {
@@ -162,7 +165,7 @@ void InspectorPanel::DrawEntityHeader(Engine::GameObject* entity) {
         "HarvestableTree", "DestructibleProp", "TacticalStructure",
         "SafeZoneBrazier", "Shrine", "ResourcePickup", "Projectile"
     };
-    int currentTagIdx = static_cast<int>(entity->GetTag());
+    int currentTagIdx = std::clamp(static_cast<int>(entity->GetTag()), 0, IM_ARRAYSIZE(kTagLabels) - 1);
     if (ImGui::Combo("Tag", &currentTagIdx, kTagLabels, IM_ARRAYSIZE(kTagLabels))) {
         entity->SetTag(static_cast<Engine::EntityTag>(currentTagIdx));
     }
@@ -172,6 +175,7 @@ void InspectorPanel::DrawEntityHeader(Engine::GameObject* entity) {
 
 void InspectorPanel::DrawTransform(Engine::Transform* transform) {
     if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+        bool transformChanged = false;
         if (auto* parent = transform->GetParent()) {
             std::string parentName = "Unknown";
             if (auto* parentGo = parent->GetGameObject()) {
@@ -182,15 +186,24 @@ void InspectorPanel::DrawTransform(Engine::Transform* transform) {
             if (ImGui::SmallButton("Unparent")) {
                 transform->SetParent(nullptr, /*keepWorldTransform=*/true);
             }
-            ImGui::DragFloat3("Position (Local)", &transform->position.x, 0.1f);
-            ImGui::DragFloat3("Rotation (Local)", &transform->rotation.x, 1.0f);
-            ImGui::DragFloat3("Scale (Local)", &transform->scale.x, 0.1f);
+            transformChanged |= ImGui::DragFloat3("Position (Local)", &transform->position.x, 0.1f);
+            transformChanged |= ImGui::DragFloat3("Rotation (Local)", &transform->rotation.x, 1.0f);
+            transformChanged |= ImGui::DragFloat3("Scale (Local)", &transform->scale.x, 0.1f);
             const glm::vec3 worldPos = transform->GetWorldPosition();
             ImGui::TextDisabled("World Pos: (%.2f, %.2f, %.2f)", worldPos.x, worldPos.y, worldPos.z);
         } else {
-            ImGui::DragFloat3("Position", &transform->position.x, 0.1f);
-            ImGui::DragFloat3("Rotation", &transform->rotation.x, 1.0f);
-            ImGui::DragFloat3("Scale", &transform->scale.x, 0.1f);
+            transformChanged |= ImGui::DragFloat3("Position", &transform->position.x, 0.1f);
+            transformChanged |= ImGui::DragFloat3("Rotation", &transform->rotation.x, 1.0f);
+            transformChanged |= ImGui::DragFloat3("Scale", &transform->scale.x, 0.1f);
+        }
+
+        if (transformChanged) {
+            transform->SetDirty();
+            if (auto* go = transform->GetGameObject()) {
+                if (auto* scene = go->GetScene()) {
+                    scene->MarkPhysicsDirty(go);
+                }
+            }
         }
     }
 }

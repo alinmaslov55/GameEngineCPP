@@ -7,6 +7,7 @@
 #include <Engine/Utils/Logger.h>
 
 #include <imgui.h>
+#include <algorithm>
 #include <functional>
 
 namespace Sandbox {
@@ -71,7 +72,8 @@ void DrawCollisionFilterUI(uint64_t& categoryBits, uint64_t& maskBits, int32_t& 
 
 void InspectorPanel::DrawRigidbody2D(Engine::Rigidbody2D& rb2d, Engine::GameObject* entity) {
     const char* bodyTypeStrings[] = { "Static", "Dynamic", "Kinematic" };
-    const char* currentBodyTypeString = bodyTypeStrings[static_cast<int>(rb2d.Type)];
+    const int bodyTypeIdx = std::clamp(static_cast<int>(rb2d.Type), 0, IM_ARRAYSIZE(bodyTypeStrings) - 1);
+    const char* currentBodyTypeString = bodyTypeStrings[bodyTypeIdx];
 
     if (ImGui::BeginCombo("Body Type", currentBodyTypeString)) {
         for (int i = 0; i < 3; ++i) {

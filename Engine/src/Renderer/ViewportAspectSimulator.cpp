@@ -34,7 +34,7 @@ ViewportAspectMetrics ViewportAspectSimulator::CalculateMetrics(const glm::vec2&
     const float availH = std::max(availableSize.y, 1.0f);
 
     if (mode == ViewportAspectMode::Free) {
-        metrics.RenderSize = { std::round(availW), std::round(availH) };
+        metrics.RenderSize = { std::floor(availW), std::floor(availH) };
         metrics.Offset = { 0.0f, 0.0f };
         metrics.AspectRatio = availW / availH;
         metrics.IsPillarboxed = false;
@@ -47,8 +47,8 @@ ViewportAspectMetrics ViewportAspectSimulator::CalculateMetrics(const glm::vec2&
 
     if (currentAspect > targetAspect + 1e-4f) {
         // Available space is wider than target aspect ratio -> Pillarbox (bars on left/right)
-        const float renderW = std::clamp(std::round(availH * targetAspect), 1.0f, availW);
-        const float renderH = std::round(availH);
+        const float renderW = std::clamp(std::floor(availH * targetAspect), 1.0f, availW);
+        const float renderH = std::floor(availH);
         metrics.RenderSize = { renderW, renderH };
         metrics.Offset = { std::max((availW - renderW) * 0.5f, 0.0f), 0.0f };
         metrics.AspectRatio = renderW / renderH;
@@ -56,8 +56,8 @@ ViewportAspectMetrics ViewportAspectSimulator::CalculateMetrics(const glm::vec2&
         metrics.IsLetterboxed = false;
     } else if (currentAspect < targetAspect - 1e-4f) {
         // Available space is taller than target aspect ratio -> Letterbox (bars on top/bottom)
-        const float renderW = std::round(availW);
-        const float renderH = std::clamp(std::round(availW / targetAspect), 1.0f, availH);
+        const float renderW = std::floor(availW);
+        const float renderH = std::clamp(std::floor(availW / targetAspect), 1.0f, availH);
         metrics.RenderSize = { renderW, renderH };
         metrics.Offset = { 0.0f, std::max((availH - renderH) * 0.5f, 0.0f) };
         metrics.AspectRatio = renderW / renderH;
@@ -65,7 +65,7 @@ ViewportAspectMetrics ViewportAspectSimulator::CalculateMetrics(const glm::vec2&
         metrics.IsLetterboxed = true;
     } else {
         // Exact fit
-        metrics.RenderSize = { std::round(availW), std::round(availH) };
+        metrics.RenderSize = { std::floor(availW), std::floor(availH) };
         metrics.Offset = { 0.0f, 0.0f };
         metrics.AspectRatio = targetAspect;
         metrics.IsPillarboxed = false;

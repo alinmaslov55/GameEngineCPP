@@ -222,7 +222,7 @@ flowchart TD
 | **`FIX-UIX-03`** | `Font` UTF-8 Decoder, `.fnt` Input Validation, Wrap Space Trim & Baseline | `DONE` | **P0** | W0 | *None (Root)* | `C-22` (Part 2), UI `#46` | `DOC-07` |
 | **`FIX-UIX-04`** | `UIRadialWheel` TimeScale Teardown, Viewport Coords & `UIPanel` 9-Slice/Winding | `DONE` | **P1** | W1 | `FIX-CORE-03` | UI `#43`, `#44` | `FIX-SBX-02`, `DOC-07` |
 | **`FIX-EDT-01`** | UUID-Backed `EditorLayer` Selection & `"HIERARCHY_ENTITY"` Drag-Drop Payload | `DONE` | **P0** | W1 | `FIX-ECS-01` | `C-11`, Sandbox `#53`, `#55`, Med `EditMode active` | `FIX-EDT-02`, `FIX-EDT-03` |
-| **`FIX-EDT-02`** | `SceneViewportPanel` Play-Mode Paint Guard, Scrollbar/Hotkeys & Inspector Sync | `TODO` | **P1** | W2 | `FIX-EDT-01` | Sandbox `#51`, Med `Viewport`, `Inspector` | `DOC-08` |
+| **`FIX-EDT-02`** | `SceneViewportPanel` Play-Mode Paint Guard, Scrollbar/Hotkeys & Inspector Sync | `DONE` | **P1** | W2 | `FIX-EDT-01` | Sandbox `#51`, Med `Viewport`, `Inspector` | `DOC-08` |
 | **`FIX-EDT-03`** | `ContentBrowserPanel` Child Drop Target/Sanitizer & `DrawAnimator` Inspector | `TODO` | **P1** | W2 | `FIX-EDT-01`, `FIX-ANI-01` | Sandbox `#56`, `#57`, Med `ContentBrowser` | `DOC-08` |
 | **`FIX-SBX-01`** | `RuntimeLayer` `GameplayData::Init`, `SceneManager` Transitions & `PlayerController` | `TODO` | **P0** | W2 | `FIX-SAV-01`, `FIX-SAV-02`, `FIX-PHY-03` | Sandbox `#50`, `#52`, `#54`, Med `CameraController` | `DOC-08` |
 | **`FIX-SBX-02`** | `DemoScene` Layer 4 Cobble Plaza, Anchored HUD & `drops.json` Prefab Alignment | `TODO` | **P1** | W2 | `FIX-TER-03`, `FIX-UIX-04` | Sandbox `#58`, `#59`, Med `DemoScene overwrite` | `DOC-08` |
@@ -649,7 +649,7 @@ flowchart TD
 ---
 
 #### `FIX-EDT-02` — `SceneViewportPanel` Play-Mode Paint Guard, Scrollbar/Hotkeys & Inspector Sync
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `FIX-EDT-01` | Unlocks: `DOC-08`
 - **Current Defects:** [SceneViewportPanel.cpp](file://Sandbox/src/Panels/SceneViewportPanel.cpp#L106-L533), [InspectorPanel.cpp](file://Sandbox/src/Panels/Inspector/InspectorPanel.cpp#L147-L196), [InspectorPhysicsDrawers.cpp](file://Sandbox/src/Panels/Inspector/InspectorPhysicsDrawers.cpp#L74), [InspectorTerrainDrawers.cpp](file://Sandbox/src/Panels/Inspector/InspectorTerrainDrawers.cpp#L110-L154): Left-clicking in Play Mode paints tiles onto a selected `Tilemap`; viewport window lacks `NoScrollbar` (`std::round` in `ViewportAspectSimulator` causes 1px scrollbar oscillation); `Q`/`E`/`[`/`]` hotkeys fire while typing text; `DrawTransform` edits bypass `SetDirty()` and `MarkPhysicsDirty()`; `DrawTerrainChunkManager` sliders trigger full `RegenerateWorld()` on every drag frame; enum combos lack index clamping.
 - **Verification (`EngineTests`):** Update `ViewportAspectSimulatorTests` to verify `CalculateMetrics` uses `std::floor` and never exceeds `availableSize` on fractional `.5f` panel dimensions.

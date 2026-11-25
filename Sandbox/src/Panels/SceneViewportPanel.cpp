@@ -103,7 +103,7 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                                        TilePalettePanel& palettePanel,
                                        const ContentBrowserPanel& contentBrowser) {
     ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2{ 0.0f, 0.0f });
-    ImGui::Begin("Scene");
+    ImGui::Begin("Scene", nullptr, ImGuiWindowFlags_NoScrollbar | ImGuiWindowFlags_NoScrollWithMouse);
 
     // 0. Simulator Toolbar: Aspect Combo Box & 5% Safe Area Toggle
     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(4.0f, 2.0f));
@@ -118,7 +118,7 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
         "9:16 Portrait",
         "10:16 Portrait"
     };
-    int currentAspect = static_cast<int>(m_AspectMode);
+    int currentAspect = std::clamp(static_cast<int>(m_AspectMode), 0, IM_ARRAYSIZE(aspectNames) - 1);
     if (ImGui::Combo("##AspectModeCombo", &currentAspect, aspectNames, IM_ARRAYSIZE(aspectNames))) {
         m_AspectMode = static_cast<Engine::ViewportAspectMode>(currentAspect);
     }
@@ -394,19 +394,21 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
             editorCamera.Pan({ io.MouseDelta.x, io.MouseDelta.y }, m_ViewportSize);
         }
 
-        const float orbitSpeed = 65.0f * io.DeltaTime;
-        if (ImGui::IsKeyDown(ImGuiKey_Q)) {
-            editorCamera.Orbit(-orbitSpeed, 0.0f);
-        }
-        if (ImGui::IsKeyDown(ImGuiKey_E)) {
-            editorCamera.Orbit(orbitSpeed, 0.0f);
-        }
+        if (!io.WantTextInput) {
+            const float orbitSpeed = 65.0f * io.DeltaTime;
+            if (ImGui::IsKeyDown(ImGuiKey_Q)) {
+                editorCamera.Orbit(-orbitSpeed, 0.0f);
+            }
+            if (ImGui::IsKeyDown(ImGuiKey_E)) {
+                editorCamera.Orbit(orbitSpeed, 0.0f);
+            }
 
-        if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket)) {
-            palettePanel.SetBrushRadius(palettePanel.GetBrushRadius() - 0.20f);
-        }
-        if (ImGui::IsKeyPressed(ImGuiKey_RightBracket)) {
-            palettePanel.SetBrushRadius(palettePanel.GetBrushRadius() + 0.20f);
+            if (ImGui::IsKeyPressed(ImGuiKey_LeftBracket)) {
+                palettePanel.SetBrushRadius(palettePanel.GetBrushRadius() - 0.20f);
+            }
+            if (ImGui::IsKeyPressed(ImGuiKey_RightBracket)) {
+                palettePanel.SetBrushRadius(palettePanel.GetBrushRadius() + 0.20f);
+            }
         }
     }
 
@@ -504,7 +506,8 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                         }
                     }
                 }
-            } else if (ImGui::IsMouseDown(ImGuiMouseButton_Left) && selectedEntity) {
+            } else if (isEditMode && palettePanel.GetPaintMode() == GroundPaintMode::TileGrid &&
+                       ImGui::IsMouseDown(ImGuiMouseButton_Left) && selectedEntity) {
                 if (auto* tilemap = selectedEntity->GetComponent<Engine::Tilemap>()) {
                     const glm::vec3 mapOrigin = selectedEntity->GetTransform()
                         ? selectedEntity->GetTransform()->position

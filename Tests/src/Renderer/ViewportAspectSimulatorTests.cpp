@@ -63,9 +63,9 @@ TEST(ViewportAspectSimulatorTests, LandscapePillarboxAndLetterbox) {
     EXPECT_FALSE(m2.IsPillarboxed);
     EXPECT_TRUE(m2.IsLetterboxed);
     EXPECT_FLOAT_EQ(m2.RenderSize.x, 1000.0f);
-    EXPECT_FLOAT_EQ(m2.RenderSize.y, 563.0f); // 1000 / (16/9) = 562.5 -> rounded to 563
+    EXPECT_FLOAT_EQ(m2.RenderSize.y, 562.0f); // floor(1000 / (16/9)) = floor(562.5) = 562
     EXPECT_FLOAT_EQ(m2.Offset.x, 0.0f);
-    EXPECT_FLOAT_EQ(m2.Offset.y, 218.5f); // (1000 - 563) / 2
+    EXPECT_FLOAT_EQ(m2.Offset.y, 219.0f); // (1000 - 562) / 2
 
     // Exact fit 1280x720 with 16:9 -> no black bars
     const glm::vec2 exact = { 1280.0f, 720.0f };
@@ -85,9 +85,9 @@ TEST(ViewportAspectSimulatorTests, PortraitPillarboxAndLetterbox) {
     const auto m1 = ViewportAspectSimulator::CalculateMetrics(landscape, ViewportAspectMode::Portrait_9_16);
     EXPECT_TRUE(m1.IsPillarboxed);
     EXPECT_FALSE(m1.IsLetterboxed);
-    EXPECT_FLOAT_EQ(m1.RenderSize.x, 608.0f); // 1080 * (9/16) = 607.5 -> rounded to 608
+    EXPECT_FLOAT_EQ(m1.RenderSize.x, 607.0f); // floor(1080 * (9/16)) = floor(607.5) = 607
     EXPECT_FLOAT_EQ(m1.RenderSize.y, 1080.0f);
-    EXPECT_FLOAT_EQ(m1.Offset.x, 656.0f); // (1920 - 608) / 2
+    EXPECT_FLOAT_EQ(m1.Offset.x, 656.5f); // (1920 - 607) / 2
     EXPECT_FLOAT_EQ(m1.Offset.y, 0.0f);
 
     // Excessively tall / thin window (300x1200) with 9:16 -> letterboxed vertically
@@ -163,4 +163,31 @@ TEST(ViewportAspectSimulatorTests, IntegrationWithCameraAndCanvas) {
     EXPECT_NEAR(resolvedPos.y, expectedMarginY, 0.5f);
     EXPECT_GT(resolvedSize.x, 0.0f);
     EXPECT_GT(resolvedSize.y, 0.0f);
+}
+
+// Test 7: Fractional .5f panel dimensions use std::floor and never exceed availableSize
+TEST(ViewportAspectSimulatorTests, FractionalHalfPixelDimensionsNeverExceedAvailableSize) {
+    const ViewportAspectMode modes[] = {
+        ViewportAspectMode::Free,
+        ViewportAspectMode::Landscape_16_9,
+        ViewportAspectMode::Landscape_16_10,
+        ViewportAspectMode::Portrait_9_16,
+        ViewportAspectMode::Portrait_10_16
+    };
+    const glm::vec2 fractionalSizes[] = {
+        { 800.5f, 600.5f },
+        { 1280.5f, 720.5f },
+        { 500.5f, 900.5f },
+        { 1000.5f, 1000.5f }
+    };
+
+    for (const auto mode : modes) {
+        for (const auto& avail : fractionalSizes) {
+            const auto m = ViewportAspectSimulator::CalculateMetrics(avail, mode);
+            EXPECT_LE(m.RenderSize.x, avail.x);
+            EXPECT_LE(m.RenderSize.y, avail.y);
+            EXPECT_FLOAT_EQ(m.RenderSize.x, std::floor(m.RenderSize.x));
+            EXPECT_FLOAT_EQ(m.RenderSize.y, std::floor(m.RenderSize.y));
+        }
+    }
 }
