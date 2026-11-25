@@ -225,7 +225,7 @@ flowchart TD
 | **`FIX-EDT-02`** | `SceneViewportPanel` Play-Mode Paint Guard, Scrollbar/Hotkeys & Inspector Sync | `DONE` | **P1** | W2 | `FIX-EDT-01` | Sandbox `#51`, Med `Viewport`, `Inspector` | `DOC-08` |
 | **`FIX-EDT-03`** | `ContentBrowserPanel` Child Drop Target/Sanitizer & `DrawAnimator` Inspector | `DONE` | **P1** | W2 | `FIX-EDT-01`, `FIX-ANI-01` | Sandbox `#56`, `#57`, Med `ContentBrowser` | `DOC-08` |
 | **`FIX-SBX-01`** | `RuntimeLayer` `GameplayData::Init`, `SceneManager` Transitions & `PlayerController` | `DONE` | **P0** | W2 | `FIX-SAV-01`, `FIX-SAV-02`, `FIX-PHY-03` | Sandbox `#50`, `#52`, `#54`, Med `CameraController` | `DOC-08` |
-| **`FIX-SBX-02`** | `DemoScene` Layer 4 Cobble Plaza, Anchored HUD & `drops.json` Prefab Alignment | `TODO` | **P1** | W2 | `FIX-TER-03`, `FIX-UIX-04` | Sandbox `#58`, `#59`, Med `DemoScene overwrite` | `DOC-08` |
+| **`FIX-SBX-02`** | `DemoScene` Layer 4 Cobble Plaza, Anchored HUD & `drops.json` Prefab Alignment | `DONE` | **P1** | W2 | `FIX-TER-03`, `FIX-UIX-04` | Sandbox `#58`, `#59`, Med `DemoScene overwrite` | `DOC-08` |
 | **`OPT-01`** | Hot-Path Optimizations: Terrain Array Slice Update, Light/Steering/Minimap LUT | `TODO` | **P2** | W2 | `FIX-RND-04`, `FIX-AIX-01`, `FIX-LGT-01` | Section 5 Improvements `#1–#12` | `DOC-05`, `DOC-06` |
 | **`DOC-01`** | Master Engine Architecture & *"Life of a Frame"* Execution Guide | `TODO` | **P1** | W3 | `FIX-CORE-02`, `FIX-ECS-02` | Architecture Overview & Frame Pipeline | Onboarding & System Map |
 | **`DOC-02`** | Core, JobSystem Concurrency, Time, Input & ResourceManager Reference | `TODO` | **P1** | W3 | `FIX-CORE-02`, `FIX-CORE-03` | `Core/`, `Utils/`, `ImGui/` Docs | Engine Core Reference |
@@ -675,7 +675,7 @@ flowchart TD
 ---
 
 #### `FIX-SBX-02` — `DemoScene` Layer 4 Cobble Plaza, Anchored HUD & `drops.json` Prefab Alignment
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `FIX-TER-03`, `FIX-UIX-04` | Unlocks: `DOC-08`
 - **Current Defects:**
   1. [DemoScene.cpp](file://Sandbox/src/Scene/DemoScene.cpp#L91-L184), [lines 359-393](file://Sandbox/src/Scene/DemoScene.cpp#L359-L393): Paints the central Sanctuary cobblestone plaza on Layer 2 (`TarBogs`, slowing the player by 30% and making cobblestones flammable) instead of Layer 4 (`SanctuaryCobble`, `+8%` speed); leaves `Player` `Untagged`; uses unanchored 720p HUD coordinates; unconditionally overwrites `Village.scene` on startup.

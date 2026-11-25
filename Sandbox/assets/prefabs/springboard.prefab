@@ -1,0 +1,24 @@
+{
+  "Format": "EnginePrefab",
+  "Version": 1,
+  "Entities": [
+    {
+      "UUID": 9001004,
+      "Name": "Thumper",
+      "Tag": 7,
+      "Active": true,
+      "Components": {
+        "Transform": {
+          "Position": [0.0, 0.0, 0.0],
+          "Rotation": [0.0, 0.0, 0.0],
+          "Scale": [1.0, 0.85, 1.0]
+        },
+        "BoxCollider2D": {
+          "Size": [0.8, 0.8],
+          "Offset": [0.0, 0.0],
+          "IsSensor": true
+        }
+      }
+    }
+  ]
+}

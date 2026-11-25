@@ -3,6 +3,7 @@
 #include "Engine/Data/DataRegistry.h"
 #include "Engine/Data/GameplayData.h"
 #include "Engine/Data/GameplayDefinitions.h"
+#include "Engine/Scene/Prefab.h"
 
 #include <filesystem>
 #include <fstream>
@@ -392,4 +393,23 @@ TEST(DataRegistryTests, TransparentStringViewLookupNoAllocation) {
     // Lookup using const char* string literal
     EXPECT_NE(registry.Find("very_long_identifier_exceeding_small_string_optimization_threshold"), nullptr);
     EXPECT_EQ(registry.Find("non_existent_long_identifier_string_view_lookup"), nullptr);
+}
+
+// Test 10: Every PrefabPath in Sandbox/assets/data/drops.json resolves to an existing, loadable .prefab
+TEST(DataRegistryTests, DropPrefabPathsResolveAndLoad) {
+    ASSERT_TRUE(GameplayData::Init("Sandbox/assets/data"));
+    const auto& drops = GameplayData::Drops().GetAll();
+    ASSERT_FALSE(drops.empty());
+
+    const std::filesystem::path assetsRoot("Sandbox/assets");
+    for (const auto& drop : drops) {
+        ASSERT_FALSE(drop.PrefabPath.empty()) << "Drop '" << drop.Id << "' has empty PrefabPath";
+        const std::filesystem::path fullPath = assetsRoot / drop.PrefabPath;
+        EXPECT_TRUE(std::filesystem::exists(fullPath)) << "Missing prefab file: " << fullPath.string();
+        auto prefab = Prefab::LoadFromFile(fullPath.string());
+        ASSERT_NE(prefab, nullptr) << "Failed to load prefab: " << fullPath.string();
+        EXPECT_TRUE(prefab->IsValid()) << "Invalid prefab JSON: " << fullPath.string();
+    }
+
+    GameplayData::Shutdown();
 }

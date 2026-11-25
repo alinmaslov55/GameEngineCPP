@@ -1,0 +1,32 @@
+{
+  "Format": "EnginePrefab",
+  "Version": 1,
+  "Entities": [
+    {
+      "UUID": 9001002,
+      "Name": "Flare Peg",
+      "Tag": 8,
+      "Active": true,
+      "Components": {
+        "Transform": {
+          "Position": [0.0, 0.0, 0.0],
+          "Rotation": [0.0, 0.0, 0.0],
+          "Scale": [0.85, 1.25, 1.0]
+        },
+        "BoxCollider2D": {
+          "Size": [0.45, 0.45],
+          "Offset": [0.0, 0.0],
+          "IsSensor": false
+        },
+        "PointLightComponent": {
+          "Color": [1.0, 0.68, 0.28],
+          "Intensity": 2.2,
+          "Radius": 6.5,
+          "Falloff": 1.6,
+          "HeightOffset": 0.9,
+          "CastShadows": true
+        }
+      }
+    }
+  ]
+}

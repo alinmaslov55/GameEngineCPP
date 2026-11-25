@@ -14,13 +14,16 @@
 #include <Engine/Scene/Components/FoliageWindComponents.h>
 #include <Engine/Scene/Components/LightComponents.h>
 #include <Engine/Scene/Components/PostProcessComponent.h>
+#include <Engine/Scene/EntityTag.h>
 #include <Engine/Scene/SceneSerializer.h>
 #include <Engine/Terrain/TerrainComponent.h>
 #include <Engine/Terrain/Tilemap.h>
 #include <Engine/UI/Font.h>
+#include <Engine/UI/UICanvas.h>
 #include <Engine/UI/UILabel.h>
 #include <Engine/UI/UIPanel.h>
 
+#include <filesystem>
 #include <glm/glm.hpp>
 #include <string>
 
@@ -119,9 +122,9 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     terrain->PaintWorldSegment({ 10.4f, 6.7f }, { 12.6f, 6.2f }, terrainOrigin, terrainScale, 1u, 1.10f, 0.68f, 0.90f);
     terrain->PaintWorldSegment({ 5.2f,  6.5f }, { 4.3f,  7.4f }, terrainOrigin, terrainScale, 1u, 0.95f, 0.70f, 0.88f);
 
-    // Central Mossy Cobblestone Shrine Plaza (Layer 2)
-    terrain->PaintWorldBrush(6.5f, 5.5f, terrainOrigin, terrainScale, 2u, 2.30f, 0.52f, 1.0f);
-    terrain->PaintWorldBrush(6.5f, 7.2f, terrainOrigin, terrainScale, 2u, 1.40f, 0.58f, 0.92f);
+    // Central Sanctuary Cobblestone Shrine Plaza (Layer 4: SanctuaryCobble, +8% speed, non-flammable)
+    terrain->PaintWorldBrush(6.5f, 5.5f, terrainOrigin, terrainScale, 4u, 2.30f, 0.52f, 1.0f);
+    terrain->PaintWorldBrush(6.5f, 7.2f, terrainOrigin, terrainScale, 4u, 1.40f, 0.58f, 0.92f);
 
     // 1B. Coexisting Walkability / Discrete Overlay Tilemap (14x14 XZ grid, ID 0 = transparent walkable)
     Engine::GameObject* mapObject = editorScene->CreateGameObject("Map");
@@ -142,6 +145,7 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     // 2. Player ("Hero Lamb" 2.5D Cutout Standee)
     auto heroTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/hero_lamb.png");
     Engine::GameObject* player = editorScene->CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
     auto* playerTransform = player->GetTransform();
     playerTransform->position = { 6.5f, 0.0f, 9.2f };
     playerTransform->scale = { 1.25f, 1.35f, 1.0f };
@@ -355,16 +359,25 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
         ++grassIdx;
     }
 
-    // 6. Screen-Space UI HUD Canvas
+    // 6. Screen-Space UI HUD Canvas (TopLeft safe-area anchored in 1080p Reference Units)
     Engine::GameObject* hud = editorScene->CreateGameObject("HUD");
+    Engine::UIRectTransform hpBgRect;
+    hpBgRect.Anchor = Engine::UIAnchor::TopLeft;
+    hpBgRect.Pivot = { 0.0f, 1.0f };
+    hpBgRect.AnchoredOffset = { 92.0f, -20.0f };
+    hpBgRect.Size = { 260.0f, 28.0f };
     hud->AddComponent<Engine::UIPanel>(
-        glm::vec2(130.0f, 675.0f),
-        glm::vec2(200.0f, 22.0f),
+        hpBgRect,
         glm::vec4(0.14f, 0.12f, 0.15f, 0.92f)
     );
+
+    Engine::UIRectTransform hpFillRect;
+    hpFillRect.Anchor = Engine::UIAnchor::TopLeft;
+    hpFillRect.Pivot = { 0.0f, 1.0f };
+    hpFillRect.AnchoredOffset = { 96.0f, -24.0f };
+    hpFillRect.Size = { 252.0f, 20.0f };
     hud->AddComponent<Engine::UIPanel>(
-        glm::vec2(105.0f, 675.0f),
-        glm::vec2(150.0f, 18.0f),
+        hpFillRect,
         glm::vec4(0.82f, 0.14f, 0.18f, 1.0f)
     );
 
@@ -380,17 +393,26 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     mainFont->AddCharacter('P', charP);
     mainFont->AddCharacter(':', charColon);
 
+    Engine::UIRectTransform hpLabelRect;
+    hpLabelRect.Anchor = Engine::UIAnchor::TopLeft;
+    hpLabelRect.Pivot = { 0.0f, 1.0f };
+    hpLabelRect.AnchoredOffset = { 24.0f, -18.0f };
+    hpLabelRect.Size = { 64.0f, 32.0f };
     hud->AddComponent<Engine::UILabel>(
         "HP:",
         mainFont,
-        glm::vec2(38.0f, 670.0f)
+        hpLabelRect
     );
 
     ENGINE_INFO("DemoScene: Configured 2.5D Diorama Showcase scene with Wind Zone, Squash & Stretch, and Foliage standees");
 
-    // Persist updated 2.5D diorama scene + village_splatmap.png to disk for standalone distribution & reload
-    Engine::SceneSerializer serializer(editorScene);
-    serializer.Serialize("Village.scene");
+    // Persist Village.scene only if missing so user edits on disk are not overwritten on startup
+    const std::string resolvedVillagePath = Engine::ResourceManager::ResolvePath("Village.scene");
+    std::error_code villageEc;
+    if (!std::filesystem::exists(resolvedVillagePath, villageEc)) {
+        Engine::SceneSerializer serializer(editorScene);
+        serializer.Serialize("Village.scene");
+    }
 
     return editorScene;
 }
