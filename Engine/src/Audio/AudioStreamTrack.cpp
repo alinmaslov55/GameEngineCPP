@@ -23,9 +23,11 @@ AudioStreamTrack::~AudioStreamTrack() {
 }
 
 AudioStreamTrack::AudioStreamTrack(AudioStreamTrack&& other) noexcept {
+    {
+        std::lock_guard lock(other.m_TrackMutex);
+        MoveFrom(std::move(other));
+    }
     AudioManager::RegisterStreamTrack(this);
-    std::lock_guard lock(other.m_TrackMutex);
-    MoveFrom(std::move(other));
 }
 
 AudioStreamTrack& AudioStreamTrack::operator=(AudioStreamTrack&& other) noexcept {
@@ -54,6 +56,7 @@ void AudioStreamTrack::MoveFrom(AudioStreamTrack&& other) noexcept {
     m_TargetBufferedFrames = other.m_TargetBufferedFrames;
     m_Gain = other.m_Gain;
     m_Looping = other.m_Looping;
+    m_AutoUpdate = other.m_AutoUpdate;
     m_IsPlaying = std::exchange(other.m_IsPlaying, false);
     m_EndOfStream = std::exchange(other.m_EndOfStream, false);
 }

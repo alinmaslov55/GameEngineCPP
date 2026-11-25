@@ -23,7 +23,8 @@ std::atomic<bool> s_AudioInitialized{ false };
 SDL_AudioDeviceID s_PlaybackDevice = 0;
 std::mutex s_AudioMutex;
 
-// Stream Tracks
+// Stream Tracks (protected by s_TrackRegistryMutex, ordered after s_MusicMutex and before m_TrackMutex)
+std::mutex s_TrackRegistryMutex;
 std::vector<AudioStreamTrack*> s_ActiveStreamTracks;
 
 // Audio Buses
@@ -300,7 +301,6 @@ void AudioManager::Shutdown() {
 
 namespace {
 void UpdateInternal(const glm::vec3& listenerWorldPos, const glm::vec3& listenerRightXZ, bool overrideListener) {
-    std::vector<AudioStreamTrack*> tracksCopy;
     {
         std::lock_guard lock(s_AudioMutex);
         if (overrideListener) {
@@ -355,11 +355,10 @@ void UpdateInternal(const glm::vec3& listenerWorldPos, const glm::vec3& listener
                 ApplySpatialParamsToVoice(slot, s_ListenerPos, s_ListenerRight);
             }
         }
-
-        tracksCopy = s_ActiveStreamTracks;
     }
 
-    for (AudioStreamTrack* track : tracksCopy) {
+    std::lock_guard trackLock(s_TrackRegistryMutex);
+    for (AudioStreamTrack* track : s_ActiveStreamTracks) {
         if (track && track->IsPlaying() && track->IsAutoUpdateEnabled()) {
             track->Update();
         }
@@ -726,7 +725,7 @@ void AudioManager::RegisterStreamTrack(AudioStreamTrack* track) {
     if (!track) {
         return;
     }
-    std::lock_guard lock(s_AudioMutex);
+    std::lock_guard lock(s_TrackRegistryMutex);
     if (std::find(s_ActiveStreamTracks.begin(), s_ActiveStreamTracks.end(), track) == s_ActiveStreamTracks.end()) {
         s_ActiveStreamTracks.push_back(track);
     }
@@ -736,7 +735,7 @@ void AudioManager::UnregisterStreamTrack(AudioStreamTrack* track) {
     if (!track) {
         return;
     }
-    std::lock_guard lock(s_AudioMutex);
+    std::lock_guard lock(s_TrackRegistryMutex);
     s_ActiveStreamTracks.erase(
         std::remove(s_ActiveStreamTracks.begin(), s_ActiveStreamTracks.end(), track),
         s_ActiveStreamTracks.end()

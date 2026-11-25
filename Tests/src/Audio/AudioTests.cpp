@@ -1230,4 +1230,31 @@ TEST(AudioSourceTest, PlayReplacesExistingVoiceAndUsesWorldPosition) {
     Engine::AudioManager::Shutdown();
 }
 
+TEST(AudioManagerTest, ConcurrentStreamTrackConstructionDestructionAndUpdateSafe) {
+    Engine::AudioManager::Init();
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+
+    std::atomic<bool> running{ true };
+    std::thread updater([&]() {
+        while (running.load(std::memory_order_relaxed)) {
+            Engine::AudioManager::Update();
+            std::this_thread::yield();
+        }
+    });
+
+    for (int i = 0; i < 100; ++i) {
+        auto track = std::make_unique<Engine::AudioStreamTrack>();
+        if (track->OpenMemory(oggSpan, true)) {
+            track->Play();
+            Engine::AudioStreamTrack movedTrack(std::move(*track));
+            std::this_thread::yield();
+        }
+    }
+
+    running.store(false, std::memory_order_relaxed);
+    updater.join();
+    Engine::AudioManager::Shutdown();
+    SUCCEED();
+}
+
 } // namespace
