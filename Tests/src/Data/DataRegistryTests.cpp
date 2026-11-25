@@ -3,7 +3,11 @@
 #include "Engine/Data/DataRegistry.h"
 #include "Engine/Data/GameplayData.h"
 #include "Engine/Data/GameplayDefinitions.h"
+#include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Scene/Components/PointLightComponent.h"
+#include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Prefab.h"
+#include "Engine/Scene/Scene.h"
 
 #include <filesystem>
 #include <fstream>
@@ -401,6 +405,7 @@ TEST(DataRegistryTests, DropPrefabPathsResolveAndLoad) {
     const auto& drops = GameplayData::Drops().GetAll();
     ASSERT_FALSE(drops.empty());
 
+    Engine::Scene testScene("DropPrefabVerifyScene");
     const std::filesystem::path assetsRoot("Sandbox/assets");
     for (const auto& drop : drops) {
         ASSERT_FALSE(drop.PrefabPath.empty()) << "Drop '" << drop.Id << "' has empty PrefabPath";
@@ -409,6 +414,16 @@ TEST(DataRegistryTests, DropPrefabPathsResolveAndLoad) {
         auto prefab = Prefab::LoadFromFile(fullPath.string());
         ASSERT_NE(prefab, nullptr) << "Failed to load prefab: " << fullPath.string();
         EXPECT_TRUE(prefab->IsValid()) << "Invalid prefab JSON: " << fullPath.string();
+
+        auto* go = testScene.InstantiatePrefab(*prefab, { 1.0f, 0.0f, 2.0f });
+        ASSERT_NE(go, nullptr) << "Failed to instantiate prefab: " << fullPath.string();
+        EXPECT_NE(go->GetComponent<Engine::BoxCollider2D>(), nullptr) << "Missing BoxCollider2D on " << drop.Id;
+        if (drop.Id == "drop_beacon") {
+            auto* pl = go->GetComponent<Engine::PointLightComponent>();
+            ASSERT_NE(pl, nullptr) << "drop_beacon spawned without PointLightComponent";
+            EXPECT_EQ(pl->Semantic, Engine::LightSemantic::SafeLifeline);
+            EXPECT_EQ(pl->Priority, Engine::LightPriority::High_Tactical);
+        }
     }
 
     GameplayData::Shutdown();

@@ -65,25 +65,38 @@ public:
         if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid()) {
             glm::vec3 movement = GetMovementInput();
             const bool isMoving = (movement.x * movement.x + movement.z * movement.z) > 1e-5f;
+            float effectiveSpeed = moveSpeed;
             if (isMoving) {
-                float effectiveSpeed = moveSpeed;
                 if (auto* scene = GetGameObject()->GetScene()) {
                     if (auto* transform = GetGameObject()->GetTransform()) {
                         const auto sample = scene->SampleSurfaceAtXZ(transform->position.x, transform->position.z);
                         effectiveSpeed *= sample.MaxSpeedMultiplier;
                     }
                 }
-                rb->SetVelocityXZ(movement.x * effectiveSpeed, movement.z * effectiveSpeed);
+            }
+
+            const glm::vec2 curVel = rb->GetVelocityXZ();
+            const glm::vec2 targetVel = isMoving
+                ? glm::vec2(movement.x * effectiveSpeed, movement.z * effectiveSpeed)
+                : glm::vec2(0.0f, 0.0f);
+            // Bounded acceleration preserves Box2D knockback impulses while giving crisp idle braking
+            const float maxAccel = isMoving ? 28.0f : 35.0f;
+            const float maxDeltaV = maxAccel * std::max(0.0f, fixedDt);
+            const glm::vec2 dv = targetVel - curVel;
+            const float dvLen = glm::length(dv);
+            if (dvLen > 1e-5f) {
+                const glm::vec2 newVel = (dvLen <= maxDeltaV) ? targetVel : (curVel + (dv / dvLen) * maxDeltaV);
+                rb->SetVelocityXZ(newVel.x, newVel.y);
             }
         }
     }
 
     void Update(float deltaTime) override {
         auto* transform = GetGameObject()->GetTransform();
+        if (!transform || !std::isfinite(deltaTime) || deltaTime <= 0.0f) return;
         auto* animator = GetGameObject()->GetComponent<Engine::Animator>();
         auto* audioSource = GetGameObject()->GetComponent<Engine::AudioSource>();
         auto* rb = GetGameObject()->GetComponent<Engine::Rigidbody2D>();
-        if (!transform) return;
 
         glm::vec3 movement = GetMovementInput();
 
@@ -115,7 +128,7 @@ public:
         // Apply fallback gravity if no dynamic Rigidbody2D handles vertical physics
         if (!rb || rb->Type != Engine::Rigidbody2D::BodyType::Dynamic || !rb->UseGravityY) {
             if (transform->position.y > 0.0f || m_FallbackVerticalVelocity != 0.0f) {
-                m_FallbackVerticalVelocity += -9.8f * deltaTime;
+                m_FallbackVerticalVelocity += -22.0f * deltaTime;
                 transform->position.y += m_FallbackVerticalVelocity * deltaTime;
                 if (transform->position.y <= 0.0f) {
                     transform->position.y = 0.0f;
@@ -126,6 +139,7 @@ public:
 
         const bool isMoving = (movement.x * movement.x + movement.z * movement.z) > 1e-5f;
         const bool hasDynamicBody = (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid());
+        const bool isGrounded = hasDynamicBody ? rb->IsGrounded(transform->position.y) : (transform->position.y <= 1e-4f);
 
         if (isMoving) {
             ENGINE_DEBUG("PlayerController moving: ({:.2f}, {:.2f}, {:.2f})", movement.x, movement.y, movement.z);
@@ -137,18 +151,24 @@ public:
 
             if (animator) animator->PlayState("Walk", m_LastFacingXZ);
 
-            if (auto* particleSystem = GetGameObject()->GetComponent<Engine::ParticleSystem>()) {
-                m_DustProps.position = transform->position;
-                m_DustProps.position.y += 0.08f; // Spawn slightly above Y = 0 ground plane
-                particleSystem->Emit(m_DustProps);
+            m_DustTimer += deltaTime;
+            if (isGrounded && m_DustTimer >= 0.08f) {
+                m_DustTimer = 0.0f;
+                if (auto* particleSystem = GetGameObject()->GetComponent<Engine::ParticleSystem>()) {
+                    m_DustProps.position = transform->position;
+                    m_DustProps.position.y += 0.08f; // Spawn slightly above Y = 0 ground plane
+                    particleSystem->Emit(m_DustProps);
+                }
             }
         } else {
+            m_DustTimer = 0.0f;
             if (animator) animator->PlayState("Idle", m_LastFacingXZ);
         }
     }
 
 private:
     float m_FallbackVerticalVelocity = 0.0f;
+    float m_DustTimer = 0.0f;
     glm::vec2 m_LastFacingXZ{ 0.0f, 1.0f };
 };
 

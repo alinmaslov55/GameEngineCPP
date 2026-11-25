@@ -90,7 +90,15 @@ void EditorLayer::OnUpdate(float deltaTime) {
     }
     if (m_SceneState == SceneState::Play && m_ActiveScene) {
         Engine::SceneManager::UpdateRuntime(deltaTime);
-        m_ActiveScene = Engine::SceneManager::GetActiveScene();
+        auto nextScene = Engine::SceneManager::GetActiveScene();
+        if (nextScene != m_ActiveScene) {
+            m_ActiveScene = nextScene;
+            m_RuntimeScene = nextScene;
+            if (m_ActiveScene && viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
+                m_ActiveScene->OnViewportResize(static_cast<uint32_t>(viewportSize.x),
+                                                static_cast<uint32_t>(viewportSize.y));
+            }
+        }
     } else if (m_SceneState == SceneState::Edit && m_ActiveScene) {
         for (const auto& go : m_ActiveScene->GetGameObjects()) {
             if (!go || !go->IsActiveInHierarchy()) {
@@ -200,7 +208,10 @@ void EditorLayer::OnSceneStop() {
     }
 
     Engine::SceneManager::CancelTransition();
-    if (m_RuntimeScene && m_RuntimeScene->IsRuntimeRunning()) {
+    if (m_ActiveScene && m_ActiveScene != m_EditorScene && m_ActiveScene->IsRuntimeRunning()) {
+        m_ActiveScene->OnRuntimeStop();
+    }
+    if (m_RuntimeScene && m_RuntimeScene != m_ActiveScene && m_RuntimeScene->IsRuntimeRunning()) {
         m_RuntimeScene->OnRuntimeStop();
     }
 
