@@ -43,7 +43,7 @@ public:
 
     /// @brief Computes smoothstep radial attenuation matching Batch2D.glsl / TerrainSplatmap.glsl.
     [[nodiscard]] static float EvaluateSmoothstepAttenuation(float distance, float radius, float falloff) noexcept {
-        if (radius <= 0.0f) {
+        if (!std::isfinite(distance) || !std::isfinite(radius) || !std::isfinite(falloff) || radius <= 0.0f) {
             return 0.0f;
         }
         const float safeRadius = std::max(0.05f, radius);

@@ -72,6 +72,9 @@ IlluminationSample LightQuerySystem::EvaluateIlluminationDetailedXZ(
         const glm::vec2 delta = worldXZ - lightXZ;
         const float distSqXZ = glm::dot(delta, delta);
         const float distXZ = std::sqrt(distSqXZ);
+        if (!std::isfinite(worldPos.x) || !std::isfinite(worldPos.z) || !std::isfinite(distXZ)) {
+            return;
+        }
         const float safeRadius = std::max(0.05f, pl->Radius);
         const float normDist = distXZ / safeRadius;
 

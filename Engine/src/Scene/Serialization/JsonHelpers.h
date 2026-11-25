@@ -23,21 +23,21 @@ inline json ToJson(const glm::vec3& v) { return { v.x, v.y, v.z }; }
 inline json ToJson(const glm::vec4& v) { return { v.r, v.g, v.b, v.a }; }
 
 inline glm::vec2 AsVec2(const json& j, const glm::vec2& def = glm::vec2(0.0f)) {
-    if (j.is_array() && j.size() >= 2) {
+    if (j.is_array() && j.size() >= 2 && j[0].is_number() && j[1].is_number()) {
         return { j[0].get<float>(), j[1].get<float>() };
     }
     return def;
 }
 
 inline glm::vec3 AsVec3(const json& j, const glm::vec3& def = glm::vec3(0.0f)) {
-    if (j.is_array() && j.size() >= 3) {
+    if (j.is_array() && j.size() >= 3 && j[0].is_number() && j[1].is_number() && j[2].is_number()) {
         return { j[0].get<float>(), j[1].get<float>(), j[2].get<float>() };
     }
     return def;
 }
 
 inline glm::vec4 AsVec4(const json& j, const glm::vec4& def = glm::vec4(0.0f)) {
-    if (j.is_array() && j.size() >= 4) {
+    if (j.is_array() && j.size() >= 4 && j[0].is_number() && j[1].is_number() && j[2].is_number() && j[3].is_number()) {
         return { j[0].get<float>(), j[1].get<float>(), j[2].get<float>(), j[3].get<float>() };
     }
     return def;

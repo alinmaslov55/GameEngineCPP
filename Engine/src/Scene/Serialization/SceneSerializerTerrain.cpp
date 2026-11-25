@@ -71,6 +71,7 @@ void SerializeTilemap(const GameObject* go, json& compsJson) {
     if (!tilemap) return;
 
     json tilemapJson;
+    tilemapJson["Enabled"] = tilemap->IsEnabled();
     tilemapJson["Width"] = tilemap->GetWidth();
     tilemapJson["Height"] = tilemap->GetHeight();
 
@@ -126,6 +127,7 @@ void SerializeTerrain(const GameObject* go, json& compsJson) {
     if (!terrain) return;
 
     json terrainJson;
+    terrainJson["Enabled"] = terrain->IsEnabled();
     terrainJson["Width"] = terrain->GetWidth();
     terrainJson["Depth"] = terrain->GetDepth();
     terrainJson["SplatWidth"] = terrain->GetSplatWidth();
@@ -154,6 +156,7 @@ void SerializeTerrainChunkManager(const GameObject* go, json& compsJson) {
     if (!mgr) return;
 
     json tcmJson;
+    tcmJson["Enabled"] = mgr->IsEnabled();
     tcmJson["ChunkSizeMeters"] = mgr->ChunkSizeMeters;
     tcmJson["SplatResolution"] = mgr->SplatResolution;
     tcmJson["ActiveRadiusChunks"] = mgr->ActiveRadiusChunks;
@@ -201,9 +204,11 @@ void SerializeTerrainChunkManager(const GameObject* go, json& compsJson) {
 
 
 void DeserializeTilemap(GameObject* go, const json& tmJson, const std::string&) {
+    if (!tmJson.is_object()) return;
     uint32_t width = tmJson.value("Width", 10u);
     uint32_t height = tmJson.value("Height", 10u);
     auto* tilemap = go->AddComponent<Tilemap>(width, height);
+    tilemap->SetEnabled(tmJson.value("Enabled", true));
 
     if (tmJson.contains("TileSet") && tmJson["TileSet"].is_array()) {
         for (const auto& entry : tmJson["TileSet"]) {
@@ -245,6 +250,7 @@ void DeserializeTerrain(GameObject* go, const json& trJson, const std::string& n
     const uint32_t splatH = trJson.value("SplatHeight", 128u);
 
     auto* terrain = go->AddComponent<TerrainComponent>(width, depth, splatW, splatH);
+    terrain->SetEnabled(trJson.value("Enabled", true));
     terrain->SetBlendSharpness(trJson.value("BlendSharpness", 0.68f));
     terrain->SetEdgeDarkening(trJson.value("EdgeDarkening", 0.16f));
 
@@ -280,6 +286,7 @@ void DeserializeTerrainChunkManager(GameObject* go, const json& tcmJson, const s
     const int32_t retentionRadius = tcmJson.value("CacheRetentionRadius", 6);
 
     auto* mgr = go->AddComponent<TerrainChunkManager>(chunkSize, splatRes, activeRadius, retentionRadius);
+    mgr->SetEnabled(tcmJson.value("Enabled", true));
     mgr->MaxGpuUploadsPerFrame = std::max(1u, tcmJson.value("MaxGpuUploadsPerFrame", 2u));
     mgr->AutoStreamWithCamera = tcmJson.value("AutoStreamWithCamera", true);
     mgr->SetBlendSharpness(tcmJson.value("BlendSharpness", 0.68f));

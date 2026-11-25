@@ -270,7 +270,7 @@ void Scene::FlushEntityLifecycleQueues() {
     if (m_IterationDepth > 0) {
         return;
     }
-    if (m_PendingSpawnQueue.empty() && m_PendingDestroyQueue.empty()) {
+    if (m_PendingSpawnQueue.empty() && m_PendingDestroyQueue.empty() && m_PendingFixedUpdateAdditions.empty()) {
         return;
     }
 
@@ -500,15 +500,32 @@ GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worl
     std::unordered_map<uint64_t, uint64_t> oldToNewUUID;
     std::unordered_map<uint64_t, GameObject*> createdEntities;
     std::vector<std::pair<GameObject*, uint64_t>> parentLinks;
+    std::vector<std::pair<GameObject*, bool>> pendingActiveStates;
     GameObject* rootGameObject = nullptr;
 
-    {
+    try {
         ScopedDeferPhysicsRegistration deferPhysics(*this);
 
         // Pass 1: Instantiate GameObjects with fresh UUIDs and deserialize components
         for (const auto& entityJson : entitiesArray) {
-            const uint64_t oldUUID = entityJson.value("UUID", 0ULL);
-            const std::string name = entityJson.value("Name", "GameObject");
+            if (!entityJson.is_object()) {
+                continue;
+            }
+
+            uint64_t oldUUID = 0ULL;
+            if (entityJson.contains("UUID") && entityJson["UUID"].is_number_unsigned()) {
+                oldUUID = entityJson["UUID"].get<uint64_t>();
+            } else if (entityJson.contains("UUID") && entityJson["UUID"].is_number_integer()) {
+                const int64_t signedUuid = entityJson["UUID"].get<int64_t>();
+                if (signedUuid > 0) {
+                    oldUUID = static_cast<uint64_t>(signedUuid);
+                }
+            }
+
+            std::string name = "GameObject";
+            if (entityJson.contains("Name") && entityJson["Name"].is_string()) {
+                name = entityJson["Name"].get<std::string>();
+            }
 
             GameObject* go = CreateGameObject(name);
             const uint64_t newUUID = go->GetUUID();
@@ -520,19 +537,32 @@ GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worl
             if (entityJson.contains("Tag")) {
                 if (entityJson["Tag"].is_string()) {
                     go->SetTag(StringToEntityTag(entityJson["Tag"].get<std::string>()));
-                } else if (entityJson["Tag"].is_number()) {
+                } else if (entityJson["Tag"].is_number_integer()) {
                     go->SetTag(static_cast<EntityTag>(entityJson["Tag"].get<uint16_t>()));
                 }
             }
-            if (entityJson.contains("LayerMask") && entityJson["LayerMask"].is_number()) {
+            if (entityJson.contains("LayerMask") && entityJson["LayerMask"].is_number_integer()) {
                 go->SetLayer(entityJson["LayerMask"].get<uint32_t>());
             }
 
-            if (entityJson.contains("Components")) {
+            if (entityJson.contains("Components") && entityJson["Components"].is_object()) {
                 SceneSerializer::DeserializeEntityComponents(go, entityJson["Components"], name);
             }
 
-            const uint64_t oldParentUUID = entityJson.value("ParentUUID", 0ULL);
+            if (entityJson.contains("Active") && entityJson["Active"].is_boolean()) {
+                pendingActiveStates.emplace_back(go, entityJson["Active"].get<bool>());
+            }
+
+            uint64_t oldParentUUID = 0ULL;
+            if (entityJson.contains("ParentUUID") && entityJson["ParentUUID"].is_number_unsigned()) {
+                oldParentUUID = entityJson["ParentUUID"].get<uint64_t>();
+            } else if (entityJson.contains("ParentUUID") && entityJson["ParentUUID"].is_number_integer()) {
+                const int64_t signedParent = entityJson["ParentUUID"].get<int64_t>();
+                if (signedParent > 0) {
+                    oldParentUUID = static_cast<uint64_t>(signedParent);
+                }
+            }
+
             if (oldParentUUID != 0) {
                 parentLinks.emplace_back(go, oldParentUUID);
             } else if (!rootGameObject) {
@@ -593,22 +623,24 @@ GameObject* Scene::InstantiatePrefab(const Prefab& prefab, const glm::vec3& worl
             }
 
             if (auto* cam = go->GetComponent<CameraComponent>()) {
-                cam->SyncFromTransform(go->GetTransform());
+                cam->ForceSyncFromTransform(go->GetTransform());
             }
         }
 
-        // Pass 5: Apply active state saved in prefab
-        for (const auto& entityJson : entitiesArray) {
-            const uint64_t oldUUID = entityJson.value("UUID", 0ULL);
-            auto it = oldToNewUUID.find(oldUUID);
-            if (it != oldToNewUUID.end()) {
-                if (auto goIt = createdEntities.find(it->second); goIt != createdEntities.end() && goIt->second) {
-                    if (entityJson.contains("Active") && entityJson["Active"].is_boolean()) {
-                        goIt->second->SetActive(entityJson["Active"].get<bool>());
-                    }
-                }
+        // Pass 5: Apply active state saved in prefab (works even if UUID was omitted or 0)
+        for (const auto& [go, active] : pendingActiveStates) {
+            if (go) {
+                go->SetActive(active);
             }
         }
+    } catch (const std::exception& e) {
+        ENGINE_CORE_ERROR("Scene::InstantiatePrefab: Exception while instantiating prefab: {}", e.what());
+        for (const auto& [uuid, go] : createdEntities) {
+            if (go) {
+                DestroyGameObject(go);
+            }
+        }
+        return nullptr;
     }
 
     // Pass 6: Create runtime physics bodies if runtime is active

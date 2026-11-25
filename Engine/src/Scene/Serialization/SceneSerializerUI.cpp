@@ -22,6 +22,7 @@ void SerializeUIPanels(const GameObject* go, json& compsJson) {
     json panelsJson = json::array();
     for (const auto* panel : uiPanels) {
         json panelJson = {
+            {"Enabled",  panel->IsEnabled()},
             {"Position", ToJson(panel->position)},
             {"Size",     ToJson(panel->size)},
             {"Color",    ToJson(panel->color)},
@@ -56,6 +57,7 @@ void SerializeUIButtonComponent(const GameObject* go, json& compsJson) {
     if (!btn) return;
 
     compsJson["UIButtonComponent"] = {
+        {"Enabled", btn->IsEnabled()},
         {"NormalTint", ToJson(btn->NormalTint)},
         {"HoverTint", ToJson(btn->HoverTint)},
         {"PressedTint", ToJson(btn->PressedTint)},
@@ -75,6 +77,7 @@ void SerializeUIMinimapComponent(const GameObject* go, json& compsJson) {
     if (!minimap) return;
 
     json minimapJson = {
+        {"Enabled", minimap->IsEnabled()},
         {"UseRectTransform", minimap->useRectTransform},
         {"PinSize", minimap->pinSize},
         {"FrameColor", ToJson(minimap->frameColor)},
@@ -153,6 +156,7 @@ void SerializeUILabels(const GameObject* go, json& compsJson) {
     json labelsJson = json::array();
     for (const auto* label : uiLabels) {
         json labelJson = {
+            {"Enabled",  label->IsEnabled()},
             {"Text",     label->text},
             {"Position", ToJson(label->position)},
             {"Scale",    label->scale},
@@ -219,10 +223,12 @@ void SerializeUILabels(const GameObject* go, json& compsJson) {
 
 namespace {
 void DeserializeSingleUIPanel(GameObject* go, const json& panelJson) {
-    glm::vec2 pos = AsVec2(panelJson["Position"]);
-    glm::vec2 sz  = AsVec2(panelJson["Size"]);
-    glm::vec4 col = AsVec4(panelJson["Color"], glm::vec4(1.0f));
+    if (!panelJson.is_object()) return;
+    glm::vec2 pos = panelJson.contains("Position") ? AsVec2(panelJson["Position"]) : glm::vec2(0.0f);
+    glm::vec2 sz  = panelJson.contains("Size") ? AsVec2(panelJson["Size"]) : glm::vec2(100.0f, 100.0f);
+    glm::vec4 col = panelJson.contains("Color") ? AsVec4(panelJson["Color"], glm::vec4(1.0f)) : glm::vec4(1.0f);
     auto* panel = go->AddComponent<UIPanel>(pos, sz, col);
+    panel->SetEnabled(panelJson.value("Enabled", true));
     if (panelJson.contains("TexturePath") && panelJson["TexturePath"].is_string()) {
         std::string texPath = panelJson["TexturePath"].get<std::string>();
         if (!texPath.empty()) {
@@ -251,8 +257,9 @@ void DeserializeSingleUIPanel(GameObject* go, const json& panelJson) {
 
 
 void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
+    if (!labelJson.is_object()) return;
     std::string text = labelJson.value("Text", "");
-    glm::vec2 pos = AsVec2(labelJson["Position"]);
+    glm::vec2 pos = labelJson.contains("Position") ? AsVec2(labelJson["Position"]) : glm::vec2(0.0f);
 
     std::shared_ptr<Font> font = nullptr;
     if (labelJson.contains("Font") && labelJson["Font"].is_object()) {
@@ -267,7 +274,7 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
         }
 
         static std::mutex s_FontCacheMutex;
-        static std::unordered_map<std::string, std::shared_ptr<Font>> s_FontCache;
+        static std::unordered_map<std::string, std::weak_ptr<Font>> s_FontCache;
 
         const std::string& cacheKey = !bmFontPath.empty() ? bmFontPath : atlasPath;
 
@@ -275,7 +282,10 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
             std::lock_guard<std::mutex> lock(s_FontCacheMutex);
             auto it = s_FontCache.find(cacheKey);
             if (it != s_FontCache.end()) {
-                font = it->second;
+                font = it->second.lock();
+                if (!font) {
+                    s_FontCache.erase(it);
+                }
             }
         }
 
@@ -319,6 +329,7 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
     }
 
     auto* label = go->AddComponent<UILabel>(text, font, pos);
+    label->SetEnabled(labelJson.value("Enabled", true));
     label->scale = labelJson.value("Scale", 1.0f);
     if (labelJson.contains("Color")) {
         label->color = AsVec4(labelJson["Color"], label->color);
@@ -352,6 +363,7 @@ void DeserializeSingleUILabel(GameObject* go, const json& labelJson) {
 void DeserializeUIButtonComponent(GameObject* go, const json& j, const std::string&) {
     if (!j.is_object()) return;
     auto* btn = go->AddComponent<UIButtonComponent>();
+    btn->SetEnabled(j.value("Enabled", true));
     if (j.contains("NormalTint")) btn->NormalTint = AsVec4(j["NormalTint"], btn->NormalTint);
     if (j.contains("HoverTint")) btn->HoverTint = AsVec4(j["HoverTint"], btn->HoverTint);
     if (j.contains("PressedTint")) btn->PressedTint = AsVec4(j["PressedTint"], btn->PressedTint);
@@ -368,6 +380,7 @@ void DeserializeUIButtonComponent(GameObject* go, const json& j, const std::stri
 void DeserializeUIMinimapComponent(GameObject* go, const json& j, const std::string&) {
     if (!j.is_object()) return;
     auto* minimap = go->AddComponent<UIMinimapComponent>();
+    minimap->SetEnabled(j.value("Enabled", true));
     minimap->useRectTransform = j.value("UseRectTransform", true);
     minimap->pinSize = j.value("PinSize", 8.0f);
     if (j.contains("FrameColor")) minimap->frameColor = AsVec4(j["FrameColor"], minimap->frameColor);

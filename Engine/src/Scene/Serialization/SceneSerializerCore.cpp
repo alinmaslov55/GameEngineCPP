@@ -28,7 +28,7 @@ json SerializeSubTexture(const std::shared_ptr<SubTexture2D>& subTex) {
 }
 
 std::shared_ptr<SubTexture2D> DeserializeSubTexture(const json& subTexJson) {
-    if (!subTexJson.is_object() || !subTexJson.contains("TexturePath")) {
+    if (!subTexJson.is_object() || !subTexJson.contains("TexturePath") || !subTexJson["TexturePath"].is_string()) {
         return nullptr;
     }
     std::string texPath = subTexJson["TexturePath"].get<std::string>();
@@ -39,8 +39,8 @@ std::shared_ptr<SubTexture2D> DeserializeSubTexture(const json& subTexJson) {
     if (!tex) {
         return nullptr;
     }
-    glm::vec2 minUV = AsVec2(subTexJson["MinUV"]);
-    glm::vec2 maxUV = AsVec2(subTexJson["MaxUV"], glm::vec2(1.0f));
+    glm::vec2 minUV = subTexJson.contains("MinUV") ? AsVec2(subTexJson["MinUV"]) : glm::vec2(0.0f);
+    glm::vec2 maxUV = subTexJson.contains("MaxUV") ? AsVec2(subTexJson["MaxUV"], glm::vec2(1.0f)) : glm::vec2(1.0f);
     return std::make_shared<SubTexture2D>(tex, minUV, maxUV);
 }
 
@@ -100,6 +100,7 @@ void SerializeDirectionalLight(const GameObject* go, json& compsJson) {
     if (!dirLight) return;
 
     compsJson["DirectionalLight"] = {
+        {"Enabled", dirLight->IsEnabled()},
         {"Elevation", dirLight->ElevationDegrees},
         {"Azimuth", dirLight->AzimuthDegrees},
         {"SunColor", ToJson(dirLight->SunColor)},
@@ -117,6 +118,7 @@ void SerializePointLight(const GameObject* go, json& compsJson) {
     if (!pointLight) return;
 
     compsJson["PointLight"] = {
+        {"Enabled", pointLight->IsEnabled()},
         {"Color", ToJson(pointLight->Color)},
         {"Intensity", pointLight->Intensity},
         {"Radius", pointLight->Radius},
@@ -203,6 +205,7 @@ void SerializeCameraComponent(const GameObject* go, json& compsJson) {
     if (!cameraComp) return;
 
     compsJson["CameraComponent"] = {
+        {"Enabled", cameraComp->IsEnabled()},
         {"FOV", cameraComp->FOV},
         {"PortraitHorizontalFOV", cameraComp->PortraitHorizontalFOV},
         {"FOVMode", static_cast<int>(cameraComp->FOVMode)},
@@ -261,6 +264,7 @@ void DeserializeTransform(GameObject* go, const json& tJson, const std::string&)
 void DeserializeDirectionalLight(GameObject* go, const json& dlJson, const std::string& name) {
     if (!dlJson.is_object()) return;
     auto* dirLight = go->AddComponent<DirectionalLightComponent>();
+    dirLight->SetEnabled(dlJson.value("Enabled", true));
     dirLight->ElevationDegrees = dlJson.value("Elevation", 42.0f);
     dirLight->AzimuthDegrees = dlJson.value("Azimuth", -38.0f);
     if (dlJson.contains("SunColor"))     dirLight->SunColor = AsVec3(dlJson["SunColor"], dirLight->SunColor);
@@ -277,6 +281,7 @@ void DeserializeDirectionalLight(GameObject* go, const json& dlJson, const std::
 void DeserializePointLight(GameObject* go, const json& plJson, const std::string& name) {
     if (!plJson.is_object()) return;
     auto* pointLight = go->AddComponent<PointLightComponent>();
+    pointLight->SetEnabled(plJson.value("Enabled", true));
     if (plJson.contains("Color")) pointLight->Color = AsVec3(plJson["Color"], pointLight->Color);
     pointLight->Intensity = plJson.value("Intensity", 1.75f);
     pointLight->Radius = plJson.value("Radius", 4.5f);
@@ -365,7 +370,9 @@ void DeserializeSquashStretch(GameObject* go, const json& ssJson, const std::str
 
 
 void DeserializeCameraComponent(GameObject* go, const json& camJson, const std::string&) {
+    if (!camJson.is_object()) return;
     auto* camComp = go->AddComponent<CameraComponent>();
+    camComp->SetEnabled(camJson.value("Enabled", true));
     camComp->FOV = camJson.value("FOV", 32.0f);
     camComp->PortraitHorizontalFOV = camJson.value("PortraitHorizontalFOV", 22.0f);
     const int rawMode = camJson.value("FOVMode", static_cast<int>(FOVAdaptationMode::LandscapeVert_PortraitHorz));

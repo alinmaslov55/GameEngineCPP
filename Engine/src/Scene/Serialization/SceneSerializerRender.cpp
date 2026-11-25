@@ -17,6 +17,7 @@ void SerializeSpriteRenderer(const GameObject* go, json& compsJson) {
     if (!spriteRenderer) return;
 
     json spriteJson;
+    spriteJson["Enabled"] = spriteRenderer->IsEnabled();
     spriteJson["Color"] = ToJson(spriteRenderer->GetColor());
     spriteJson["BillboardMode"] = static_cast<int>(spriteRenderer->GetBillboardMode());
     spriteJson["AlphaCutoff"] = spriteRenderer->GetAlphaCutoff();
@@ -51,6 +52,7 @@ void SerializeParticleSystem(const GameObject* go, json& compsJson) {
     const auto& tp = particleSystem->TemplateProps;
     const auto& fb = particleSystem->Flipbook;
     json psJson = {
+        {"Enabled", particleSystem->IsEnabled()},
         {"PoolSize", particleSystem->GetParticles().size()},
         {"AutoEmit", particleSystem->AutoEmit},
         {"EmitRate", particleSystem->EmitRate},
@@ -97,6 +99,7 @@ void SerializeAnimator(const GameObject* go, json& compsJson) {
     if (!animator) return;
 
     json animJson;
+    animJson["Enabled"] = animator->IsEnabled();
     animJson["CurrentClip"] = animator->GetCurrentClipName();
     animJson["DirectionalScheme"] = static_cast<int>(animator->GetDirectionalScheme());
     animJson["PlaybackSpeed"] = animator->GetPlaybackSpeed();
@@ -149,7 +152,9 @@ void SerializeAnimator(const GameObject* go, json& compsJson) {
 }
 
 void DeserializeSpriteRenderer(GameObject* go, const json& srJson, [[maybe_unused]] const std::string& name) {
+    if (!srJson.is_object()) return;
     auto* sprite = go->AddComponent<SpriteRenderer>();
+    sprite->SetEnabled(srJson.value("Enabled", true));
     if (srJson.contains("Color")) {
         sprite->SetColor(AsVec4(srJson["Color"], glm::vec4(1.0f)));
     }
@@ -191,8 +196,10 @@ void DeserializeSpriteRenderer(GameObject* go, const json& srJson, [[maybe_unuse
 
 
 void DeserializeParticleSystem(GameObject* go, const json& psJson, const std::string&) {
+    if (!psJson.is_object()) return;
     uint32_t poolSize = psJson.value("PoolSize", 1000u);
     auto* ps = go->AddComponent<ParticleSystem>(poolSize);
+    ps->SetEnabled(psJson.value("Enabled", true));
     ps->AutoEmit = psJson.value("AutoEmit", false);
     ps->EmitRate = psJson.value("EmitRate", 8.0f);
     if (psJson.contains("SpawnOffset")) {
@@ -244,7 +251,9 @@ void DeserializeParticleSystem(GameObject* go, const json& psJson, const std::st
 
 
 void DeserializeAnimator(GameObject* go, const json& animJson, const std::string&) {
+    if (!animJson.is_object()) return;
     auto* animator = go->AddComponent<Animator>();
+    animator->SetEnabled(animJson.value("Enabled", true));
     animator->SetDirectionalScheme(static_cast<DirectionalScheme>(animJson.value("DirectionalScheme", 2)));
     animator->SetPlaybackSpeed(animJson.value("PlaybackSpeed", 1.0f));
     animator->SetHysteresisDegrees(animJson.value("HysteresisDegrees", 7.0f));

@@ -1,6 +1,8 @@
 #include <gtest/gtest.h>
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Scene/Prefab.h"
+#include "Engine/Animation/Animator.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Terrain/Tilemap.h"
@@ -517,6 +519,89 @@ TEST(SceneSerializerTest, DeserializedUILabelsShareCachedFont) {
     // Both labels sharing the same atlas path must share the exact same Font instance
     ASSERT_NE(label1->font, nullptr);
     EXPECT_EQ(label1->font, label2->font);
+}
+
+TEST(SceneSerializerTest, PrefabCameraSyncActiveWithoutUuidEnabledAndMalformedJsonSafe) {
+    auto scene = std::make_shared<Engine::Scene>("PrefabFixesScene");
+
+    // 1. Prefab with CameraComponent, Active=false without UUID, and disabled components
+    const std::string prefabStr = R"({
+        "Entities": [
+            {
+                "Name": "CamAndDisabledRoot",
+                "Active": false,
+                "Components": {
+                    "CameraComponent": {
+                        "Enabled": false,
+                        "Distance": 18.0
+                    },
+                    "PointLight": {
+                        "Enabled": false,
+                        "Radius": 5.0
+                    },
+                    "SpriteRenderer": {
+                        "Enabled": false
+                    },
+                    "Animator": {
+                        "Enabled": false
+                    },
+                    "UIPanels": [
+                        {
+                            "Enabled": false,
+                            "Position": [10.0, 20.0],
+                            "Size": [50.0, 60.0]
+                        }
+                    ]
+                }
+            }
+        ]
+    })";
+
+    Engine::Prefab prefab(nlohmann::json::parse(prefabStr));
+    auto* go = scene->InstantiatePrefab(prefab, { 25.0f, 3.0f, -12.0f });
+    ASSERT_NE(go, nullptr);
+
+    EXPECT_FALSE(go->IsActive());
+
+    auto* cam = go->GetComponent<Engine::CameraComponent>();
+    ASSERT_NE(cam, nullptr);
+    EXPECT_FALSE(cam->IsEnabled());
+    EXPECT_NEAR(cam->Camera.GetFocalPoint().x, 25.0f, 1e-3f);
+    EXPECT_NEAR(cam->Camera.GetFocalPoint().z, -12.0f, 1e-3f);
+
+    auto* pl = go->GetComponent<Engine::PointLightComponent>();
+    ASSERT_NE(pl, nullptr);
+    EXPECT_FALSE(pl->IsEnabled());
+
+    auto* sr = go->GetComponent<Engine::SpriteRenderer>();
+    ASSERT_NE(sr, nullptr);
+    EXPECT_FALSE(sr->IsEnabled());
+
+    auto* anim = go->GetComponent<Engine::Animator>();
+    ASSERT_NE(anim, nullptr);
+    EXPECT_FALSE(anim->IsEnabled());
+
+    auto* panel = go->GetComponent<Engine::UIPanel>();
+    ASSERT_NE(panel, nullptr);
+    EXPECT_FALSE(panel->IsEnabled());
+
+    // 2. Malformed Vec3/SubTexture/UI fields must not throw uncaught exceptions
+    const std::string malformedStr = R"({
+        "Entities": [
+            {
+                "UUID": "not_a_number",
+                "Name": 12345,
+                "Components": {
+                    "Transform": { "Position": ["bad", 1.0, 2.0] },
+                    "UIPanels": [ { "Color": ["r", "g", "b", "a"] } ],
+                    "UILabels": [ { "Text": "Ok" } ]
+                }
+            }
+        ]
+    })";
+    Engine::Prefab malformedPrefab(nlohmann::json::parse(malformedStr));
+    auto* malformedGo = scene->InstantiatePrefab(malformedPrefab, { 0.0f, 0.0f, 0.0f });
+    EXPECT_NE(malformedGo, nullptr);
 }
 
 } // namespace

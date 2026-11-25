@@ -2,6 +2,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Component.h"
+#include "Engine/Scene/Components/LightComponents.h"
 #include "LifecycleTestHelpers.h"
 
 #include <string>
@@ -410,6 +411,11 @@ private:
     std::string m_Name;
 };
 
+struct DeferredFixedComp : public Engine::Component {
+    int fixedCount = 0;
+    void FixedUpdate(float) override { ++fixedCount; }
+};
+
 } // namespace
 
 TEST(DeferredLifecycleTest, SceneUpdateDispatchesLateUpdateAfterAllUpdates) {
@@ -432,6 +438,27 @@ TEST(DeferredLifecycleTest, SceneUpdateDispatchesLateUpdateAfterAllUpdates) {
     EXPECT_EQ(executionOrder[1], "B:Update");
     EXPECT_EQ(executionOrder[2], "A:LateUpdate");
     EXPECT_EQ(executionOrder[3], "B:LateUpdate");
+}
+
+TEST(DeferredLifecycleTest, RemoveComponentViaBaseClassCleansUpLightAndFixedUpdateFlush) {
+    Engine::Scene scene("BaseRemoveAndFixedFlush");
+    auto* go = scene.CreateGameObject("Entity");
+    auto* pl = go->AddComponent<Engine::PointLightComponent>();
+    ASSERT_NE(pl, nullptr);
+    EXPECT_EQ(scene.GetPointLightEntities().size(), 1u);
+
+    // Removing via base Component* must still unregister from Scene::m_PointLightEntities
+    EXPECT_TRUE(go->RemoveComponent<Engine::Component>());
+    EXPECT_EQ(scene.GetPointLightEntities().size(), 0u);
+
+    // Adding a FixedUpdate component mid-iteration without spawns/destroys must still flush
+    scene.FlushEntityLifecycleQueues();
+    scene.BeginIteration();
+    auto* fx = go->AddComponent<DeferredFixedComp>();
+    scene.EndIteration();
+    ASSERT_NE(fx, nullptr);
+
+    EXPECT_EQ(scene.GetFixedUpdateEntities().size(), 1u);
 }
 
 } // namespace

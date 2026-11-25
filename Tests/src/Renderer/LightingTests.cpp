@@ -620,5 +620,24 @@ TEST(LightingTests, LightQuerySystemScalesWithLightCountNotEntityCount) {
 #endif
 }
 
+TEST(LightingTests, SmoothstepAttenuationRejectsNaNAndQueryIgnoresNaNLight) {
+    const float nanVal = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_FLOAT_EQ(Engine::PointLightComponent::EvaluateSmoothstepAttenuation(nanVal, 5.0f, 1.0f), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::PointLightComponent::EvaluateSmoothstepAttenuation(1.0f, nanVal, 1.0f), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::PointLightComponent::EvaluateSmoothstepAttenuation(1.0f, 5.0f, nanVal), 0.0f);
+
+    Engine::Scene scene("NaNLightScene");
+    auto* badLight = scene.CreateGameObject("NaNLight");
+    badLight->GetTransform()->position = { nanVal, 0.0f, 0.0f };
+    auto* pl = badLight->AddComponent<Engine::PointLightComponent>();
+    pl->Semantic = Engine::LightSemantic::SafeLifeline;
+    pl->Radius = 10.0f;
+    pl->Intensity = 2.0f;
+
+    const auto sample = scene.EvaluateIlluminationAtXZ({ 0.0f, 0.0f });
+    EXPECT_FLOAT_EQ(sample.SafeIntensity, 0.0f);
+    EXPECT_EQ(sample.DominantSafeSource, nullptr);
+}
+
 } // namespace
 

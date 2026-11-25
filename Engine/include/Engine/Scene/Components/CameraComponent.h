@@ -81,6 +81,9 @@ public:
     void SyncFromTransform(const Transform* transform);
     void SyncFromTransform(const Transform& transform) { SyncFromTransform(&transform); }
 
+    /// @brief Forces an immediate transform sync bypassing the per-frame multi-pass guard
+    void ForceSyncFromTransform(const Transform* transform);
+
     // --- Mathematical Utilities ---
     [[nodiscard]] static float PerlinNoise1D(float t) noexcept;
     [[nodiscard]] static float SmoothDamp(float current, float target, float& currentVelocity, float smoothTime, float deltaTime) noexcept;

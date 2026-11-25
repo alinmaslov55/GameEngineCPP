@@ -649,4 +649,36 @@ TEST(PrefabAndPoolingTest, PoolGrowthFiresOnEnableExactlyOnce) {
     EXPECT_EQ(tracker->events[4], "OnEnable");
 }
 
+namespace {
+struct ReentrantReleaseComp : public Engine::Component {
+    Engine::Scene* scene = nullptr;
+    int releaseCount = 0;
+    void OnPoolRelease() override {
+        ++releaseCount;
+        if (scene) {
+            scene->ReleaseToPool(GetGameObject());
+        }
+    }
+};
+} // namespace
+
+TEST(PrefabAndPoolingTest, ReentrantReleaseToPoolDoesNotDuplicateFreeList) {
+    auto scene = std::make_shared<Engine::Scene>("ReentrantPoolScene");
+    auto* templateGo = scene->CreateGameObject("PoolTemplate");
+    templateGo->AddComponent<Engine::SpriteRenderer>();
+    auto prefab = Engine::Prefab::CreateFromGameObject(templateGo, true);
+    ASSERT_NE(prefab, nullptr);
+    scene->DestroyGameObject(templateGo);
+    scene->FlushEntityLifecycleQueues();
+
+    auto* inst = scene->AcquirePooled("ReentrantPool", *prefab, { 0.0f, 0.0f, 0.0f });
+    ASSERT_NE(inst, nullptr);
+    auto* comp = inst->AddComponent<ReentrantReleaseComp>();
+    comp->scene = scene.get();
+
+    scene->ReleaseToPool("ReentrantPool", inst);
+    EXPECT_EQ(comp->releaseCount, 1);
+    EXPECT_EQ(scene->GetPoolFreeCount("ReentrantPool"), 1u);
+}
+
 } // namespace

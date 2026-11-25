@@ -143,10 +143,15 @@ void EntityPoolManager::ReleaseToPool(const std::string& poolKey, GameObject* in
         }
     }
 
+    instance->SetInFreeList(true);
     instance->SetActive(false);
     PropagatePoolRelease(instance);
 
-    instance->SetInFreeList(true);
+    if (instance->IsPendingDestroy() || instance->IsDestroyed()) {
+        instance->SetInFreeList(false);
+        return;
+    }
+
     auto& pool = m_Pools[actualKey];
     pool.freeList.push_back(instance);
     ENGINE_CORE_TRACE("EntityPoolManager::ReleaseToPool('{}'): Released UUID {} (free={}, total={})",

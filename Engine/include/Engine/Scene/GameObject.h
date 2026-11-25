@@ -522,13 +522,14 @@ public:
                 m_ComponentMask &= ~ComponentMask128::FromBit(targetID);
             }
 
-            if constexpr (std::is_same_v<CleanT, Rigidbody2D> ||
-                          std::is_same_v<CleanT, Tilemap> ||
-                          Detail::IsComponentWithBase<CleanT, Collider2D>()) {
-                NotifyPhysicsComponentRemoved(
-                    std::is_same_v<CleanT, Tilemap>,
-                    std::is_same_v<CleanT, Rigidbody2D>,
-                    comp);
+            const uint16_t rigidbodyID = Detail::GetComponentTypeID<Rigidbody2D>();
+            const uint16_t tilemapID = Detail::GetComponentTypeID<Tilemap>();
+            const uint16_t colliderBaseID = Detail::GetComponentTypeID<Collider2D>();
+            const bool isTilemap = (removedExactID == tilemapID);
+            const bool isRigidbody = (removedExactID == rigidbodyID);
+            const bool isCollider = (removedExactID == colliderBaseID) || (removedBaseID == colliderBaseID);
+            if (isRigidbody || isTilemap || isCollider) {
+                NotifyPhysicsComponentRemoved(isTilemap, isRigidbody, comp);
             }
 
             if (hasOverriddenFixedUpdate) {
@@ -540,12 +541,23 @@ public:
                 }
             }
 
-            if constexpr (std::is_same_v<CleanT, TerrainChunkManager> || std::is_same_v<CleanT, TerrainComponent>) {
+            if (removedExactID == Detail::GetComponentTypeID<TerrainChunkManager>() ||
+                removedExactID == Detail::GetComponentTypeID<TerrainComponent>()) {
                 InvalidateSceneTerrainCache();
             }
 
-            if constexpr (std::is_same_v<CleanT, PointLightComponent>) {
-                if (!hasMoreOfTarget) {
+            const uint16_t pointLightID = Detail::GetComponentTypeID<PointLightComponent>();
+            if (removedExactID == pointLightID) {
+                bool hasMorePointLights = false;
+                for (const auto& other : m_Components) {
+                    const Component* otherPtr = other.get();
+                    if (otherPtr && otherPtr != comp && otherPtr != m_Transform &&
+                        !otherPtr->IsPendingRemoval() && otherPtr->GetTypeID() == pointLightID) {
+                        hasMorePointLights = true;
+                        break;
+                    }
+                }
+                if (!hasMorePointLights) {
                     UnregisterPointLight();
                 }
             }

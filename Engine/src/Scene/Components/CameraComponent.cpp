@@ -187,6 +187,12 @@ void CameraComponent::SyncFromTransform(const Transform* transform) {
     m_LastSyncedFrame = currentFrame;
 }
 
+void CameraComponent::ForceSyncFromTransform(const Transform* transform) {
+    m_FirstSync = true;
+    m_LastSyncedFrame = std::numeric_limits<uint64_t>::max();
+    SyncFromTransform(transform);
+}
+
 float CameraComponent::PerlinNoise1D(float t) noexcept {
     const float floorVal = std::floor(t);
     const auto i0 = static_cast<int32_t>(floorVal);

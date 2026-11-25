@@ -146,4 +146,31 @@ TEST(StateMachineTest, IterativeTransitionQueue_OnExitTransitionsWithoutRecursio
     EXPECT_TRUE(ctx.TraceLog.empty());
 }
 
+TEST(StateMachineTest, TransitionToSurvivesRehashInOnExit) {
+    Engine::StateMachine<MonsterAIContext> fsm;
+    MonsterAIContext ctx;
+    bool enteredTarget = false;
+
+    fsm.RegisterState(0, {
+        .OnEnter = nullptr,
+        .OnUpdate = nullptr,
+        .OnExit = [&fsm](MonsterAIContext&) {
+            // Force unordered_map rehash during OnExit
+            for (int i = 100; i < 200; ++i) {
+                fsm.RegisterState(i, {});
+            }
+        }
+    });
+    fsm.RegisterState(1, {
+        .OnEnter = [&enteredTarget](MonsterAIContext&) { enteredTarget = true; },
+        .OnUpdate = nullptr,
+        .OnExit = nullptr
+    });
+
+    fsm.SetInitialState(0, ctx);
+    fsm.TransitionTo(1, ctx);
+    EXPECT_TRUE(enteredTarget);
+    EXPECT_EQ(fsm.GetCurrentState(), 1);
+}
+
 } // namespace

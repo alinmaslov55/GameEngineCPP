@@ -64,15 +64,15 @@ public:
             if (m_HasInitialState && m_CurrentState == targetStateID) {
                 continue;
             }
-            auto nextIt = m_States.find(targetStateID);
-            if (nextIt == m_States.end()) {
+            if (!m_States.contains(targetStateID)) {
                 continue;
             }
 
             if (m_HasInitialState) {
                 auto curIt = m_States.find(m_CurrentState);
                 if (curIt != m_States.end() && curIt->second.OnExit) {
-                    curIt->second.OnExit(ctx);
+                    auto onExit = curIt->second.OnExit;
+                    onExit(ctx);
                 }
             }
 
@@ -81,8 +81,11 @@ public:
             m_ElapsedInState = 0.0f;
             m_HasInitialState = true;
 
-            if (nextIt->second.OnEnter) {
-                nextIt->second.OnEnter(ctx);
+            // Re-lookup targetStateID after OnExit() in case OnExit() called RegisterState() and rehashed m_States
+            auto postExitIt = m_States.find(targetStateID);
+            if (postExitIt != m_States.end() && postExitIt->second.OnEnter) {
+                auto onEnter = postExitIt->second.OnEnter;
+                onEnter(ctx);
             }
         }
     }
