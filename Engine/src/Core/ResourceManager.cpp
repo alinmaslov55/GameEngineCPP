@@ -37,7 +37,7 @@ struct StbiPixelDeleter {
 };
 
 struct PendingTextureUpload {
-    std::shared_ptr<Texture> TargetTexture;
+    std::weak_ptr<Texture> TargetTexture;
     std::unique_ptr<unsigned char[], StbiPixelDeleter> PixelData;
     std::vector<uint8_t> CompressedPayload;
     int Width = 0;
@@ -451,12 +451,11 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
                 std::lock_guard lock(AssetCache<Texture>::mutex);
                 auto& cache = AssetCache<Texture>::data;
                 auto it = cache.find(cacheKey);
-                if (it != cache.end()) {
-                    auto target = placeholderWeak.lock();
-                    if (!target || it->second == target) {
-                        doomed = it->second;
-                        cache.erase(it);
-                    }
+                if (it != cache.end() &&
+                    !placeholderWeak.owner_before(it->second) &&
+                    !it->second.owner_before(placeholderWeak)) {
+                    doomed = std::move(it->second);
+                    cache.erase(it);
                 }
             }
             if (doomed) {
@@ -487,15 +486,14 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
             }
 
             if (ddsSucceeded) {
-                auto target = placeholderWeak.lock();
-                if (!target) {
+                if (placeholderWeak.expired()) {
                     return;
                 }
                 ENGINE_CORE_DEBUG("ResourceManager::LoadTextureAsync decoded DDS '{}' ({}x{}, mips={})", actualDiskPath, dds.Width, dds.Height, dds.MipCount);
                 {
                     std::lock_guard lock(s_PendingUploadsMutex);
                     PendingTextureUpload upload;
-                    upload.TargetTexture = std::move(target);
+                    upload.TargetTexture = placeholderWeak;
                     upload.CompressedPayload = std::move(ddsBuffer);
                     upload.Width = dds.Width;
                     upload.Height = dds.Height;
@@ -530,8 +528,7 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
             return;
         }
 
-        auto target = placeholderWeak.lock();
-        if (!target) {
+        if (placeholderWeak.expired()) {
             return;
         }
 
@@ -539,7 +536,7 @@ std::shared_ptr<Texture> ResourceManager::LoadTextureAsync(const std::string& fi
         {
             std::lock_guard lock(s_PendingUploadsMutex);
             PendingTextureUpload upload;
-            upload.TargetTexture = std::move(target);
+            upload.TargetTexture = placeholderWeak;
             upload.PixelData = std::move(pixelData);
             upload.Width = w;
             upload.Height = h;
@@ -578,14 +575,14 @@ size_t ResourceManager::ProcessPendingUploads(uint32_t maxUploads) {
 
     ENGINE_CORE_DEBUG("ResourceManager: Uploading {} decoded async textures to GPU", batch.size());
     for (auto& upload : batch) {
-        if (upload.TargetTexture) {
+        if (auto target = upload.TargetTexture.lock()) {
             if (upload.IsCompressed && !upload.CompressedPayload.empty()) {
                 Texture::DDSInfo dds = Texture::ParseDDS(upload.CompressedPayload.data(), upload.CompressedPayload.size());
                 if (dds.Valid) {
-                    upload.TargetTexture->PopulateFromCompressedData(dds.Width, dds.Height, dds.GLFormat, dds.Mips);
+                    target->PopulateFromCompressedData(dds.Width, dds.Height, dds.GLFormat, dds.Mips);
                 }
             } else if (upload.PixelData) {
-                upload.TargetTexture->PopulateFromData(upload.Width, upload.Height, upload.BPP, upload.PixelData.get());
+                target->PopulateFromData(upload.Width, upload.Height, upload.BPP, upload.PixelData.get());
             }
         }
         upload.PixelData.reset();

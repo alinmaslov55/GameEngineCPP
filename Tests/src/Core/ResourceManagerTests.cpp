@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
+#include "Engine/Core/JobSystem.h"
 #include "Engine/Core/ResourceManager.h"
+#include "Engine/Renderer/Texture.h"
 #include <filesystem>
 #include <string>
 #include <thread>
@@ -152,6 +154,38 @@ TEST(ResourceManagerTest, BoundedUploadsWithDeque) {
     // ProcessPendingUploads with 0 or empty queue returns 0 safely
     EXPECT_EQ(Engine::ResourceManager::ProcessPendingUploads(0), 0u);
     EXPECT_EQ(Engine::ResourceManager::ProcessPendingUploads(4), 0u);
+}
+
+TEST(ResourceManagerTest, StaleAsyncLoadFailureDoesNotEvictReplacedCacheEntry) {
+    const bool wasInitialized = Engine::JobSystem::IsInitialized();
+    if (!wasInitialized) {
+        Engine::JobSystem::Init(2);
+    }
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+
+    const std::string missingPath = "textures/crit02_nonexistent_async_test.png";
+    {
+        // Kick off an async load for a missing file, then immediately drop caller ref and clear cache
+        auto stalePlaceholder = Engine::ResourceManager::LoadTextureAsync(missingPath);
+        ASSERT_NE(stalePlaceholder, nullptr);
+        Engine::ResourceManager::ClearType<Engine::Texture>();
+        stalePlaceholder.reset();
+
+        // Insert a replacement Texture under the exact same path before/during stale failure completion
+        auto replacement = Engine::ResourceManager::LoadTexture(missingPath);
+        ASSERT_NE(replacement, nullptr);
+
+        Engine::ResourceManager::WaitForPendingUploads();
+
+        // Reloading from cache must still return the replacement entry (not evicted by stale worker)
+        auto cachedAfter = Engine::ResourceManager::LoadTexture(missingPath);
+        EXPECT_EQ(cachedAfter.get(), replacement.get());
+    }
+
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+    if (!wasInitialized) {
+        Engine::JobSystem::Shutdown();
+    }
 }
 
 } // namespace
