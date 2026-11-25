@@ -38,7 +38,7 @@ public:
     void SetCurrentFrameIndex(uint32_t frameIndex);
     void ScrubToFrame(uint32_t frameIndex, bool triggerEvents = false);
     [[nodiscard]] bool IsPreviewPlaying() const noexcept { return m_IsPreviewPlaying; }
-    void SetPreviewPlaying(bool playing) noexcept { m_IsPreviewPlaying = playing; }
+    void SetPreviewPlaying(bool playing);
 
     // Directional configuration & speed scaling
     void SetDirectionalScheme(DirectionalScheme scheme) noexcept { m_DirectionalScheme = scheme; }

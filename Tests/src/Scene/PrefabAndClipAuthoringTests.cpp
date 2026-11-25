@@ -214,4 +214,45 @@ TEST(PrefabAndClipAuthoringTest, AnimatorPreviewPlayingMode) {
     EXPECT_EQ(animator->GetCurrentFrameIndex(), 0u);
 }
 
+TEST(PrefabAndClipAuthoringTest, AnimatorPreviewActivationWhenNoClipIsPlaying) {
+    auto scene = std::make_shared<Engine::Scene>("PreviewActivationScene");
+    auto* go = scene->CreateGameObject("AnimEntity");
+    go->AddComponent<Engine::SpriteRenderer>();
+    auto* animator = go->AddComponent<Engine::Animator>();
+
+    auto clip = std::make_shared<Engine::AnimationClip>("Walk", 0.1f, true);
+    clip->AddFrame(nullptr); // Frame 0
+    clip->AddFrame(nullptr); // Frame 1
+    clip->AddFrame(nullptr); // Frame 2
+    animator->AddClip(clip);
+
+    // No clip is initially playing
+    ASSERT_EQ(animator->GetCurrentClip(), nullptr);
+
+    // Enabling preview activates the registered clip and advances on Update()
+    animator->SetPreviewPlaying(true);
+    EXPECT_TRUE(animator->IsPreviewPlaying());
+    ASSERT_NE(animator->GetCurrentClip(), nullptr);
+
+    animator->Update(0.15f);
+    EXPECT_EQ(animator->GetCurrentFrameIndex(), 1u);
+}
+
+TEST(PrefabAndClipAuthoringTest, AnimationClipSetUniformFrameDurationSynchronizesAllFrames) {
+    auto clip = std::make_shared<Engine::AnimationClip>("Slash", 0.1f, false);
+    clip->AddFrame(nullptr);
+    clip->AddFrame(nullptr);
+    clip->AddFrame(nullptr);
+
+    ASSERT_EQ(clip->Frames.size(), 3u);
+    EXPECT_FLOAT_EQ(clip->GetTotalDuration(), 0.3f);
+
+    clip->SetUniformFrameDuration(0.25f);
+    EXPECT_FLOAT_EQ(clip->frameDuration, 0.25f);
+    for (const auto& frame : clip->Frames) {
+        EXPECT_FLOAT_EQ(frame.DurationSeconds, 0.25f);
+    }
+    EXPECT_FLOAT_EQ(clip->GetTotalDuration(), 0.75f);
+}
+
 } // namespace

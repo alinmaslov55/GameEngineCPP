@@ -72,6 +72,13 @@ void Animator::SetCurrentFrameIndex(uint32_t frameIndex) {
     ScrubToFrame(frameIndex, false);
 }
 
+void Animator::SetPreviewPlaying(bool playing) {
+    if (playing && !m_CurrentClip && !m_Clips.empty()) {
+        Play(m_Clips.begin()->first);
+    }
+    m_IsPreviewPlaying = playing;
+}
+
 void Animator::ScrubToFrame(uint32_t frameIndex, bool triggerEvents) {
     if (!m_CurrentClip) {
         return;

@@ -223,7 +223,7 @@ flowchart TD
 | **`FIX-UIX-04`** | `UIRadialWheel` TimeScale Teardown, Viewport Coords & `UIPanel` 9-Slice/Winding | `DONE` | **P1** | W1 | `FIX-CORE-03` | UI `#43`, `#44` | `FIX-SBX-02`, `DOC-07` |
 | **`FIX-EDT-01`** | UUID-Backed `EditorLayer` Selection & `"HIERARCHY_ENTITY"` Drag-Drop Payload | `DONE` | **P0** | W1 | `FIX-ECS-01` | `C-11`, Sandbox `#53`, `#55`, Med `EditMode active` | `FIX-EDT-02`, `FIX-EDT-03` |
 | **`FIX-EDT-02`** | `SceneViewportPanel` Play-Mode Paint Guard, Scrollbar/Hotkeys & Inspector Sync | `DONE` | **P1** | W2 | `FIX-EDT-01` | Sandbox `#51`, Med `Viewport`, `Inspector` | `DOC-08` |
-| **`FIX-EDT-03`** | `ContentBrowserPanel` Child Drop Target/Sanitizer & `DrawAnimator` Inspector | `TODO` | **P1** | W2 | `FIX-EDT-01`, `FIX-ANI-01` | Sandbox `#56`, `#57`, Med `ContentBrowser` | `DOC-08` |
+| **`FIX-EDT-03`** | `ContentBrowserPanel` Child Drop Target/Sanitizer & `DrawAnimator` Inspector | `DONE` | **P1** | W2 | `FIX-EDT-01`, `FIX-ANI-01` | Sandbox `#56`, `#57`, Med `ContentBrowser` | `DOC-08` |
 | **`FIX-SBX-01`** | `RuntimeLayer` `GameplayData::Init`, `SceneManager` Transitions & `PlayerController` | `TODO` | **P0** | W2 | `FIX-SAV-01`, `FIX-SAV-02`, `FIX-PHY-03` | Sandbox `#50`, `#52`, `#54`, Med `CameraController` | `DOC-08` |
 | **`FIX-SBX-02`** | `DemoScene` Layer 4 Cobble Plaza, Anchored HUD & `drops.json` Prefab Alignment | `TODO` | **P1** | W2 | `FIX-TER-03`, `FIX-UIX-04` | Sandbox `#58`, `#59`, Med `DemoScene overwrite` | `DOC-08` |
 | **`OPT-01`** | Hot-Path Optimizations: Terrain Array Slice Update, Light/Steering/Minimap LUT | `TODO` | **P2** | W2 | `FIX-RND-04`, `FIX-AIX-01`, `FIX-LGT-01` | Section 5 Improvements `#1–#12` | `DOC-05`, `DOC-06` |
@@ -657,7 +657,7 @@ flowchart TD
 ---
 
 #### `FIX-EDT-03` — `ContentBrowserPanel` Child Drop Target/Sanitizer & `DrawAnimator` Inspector
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W2`
 - **Dependencies:** Hard: `FIX-EDT-01`, `FIX-ANI-01` | Unlocks: `DOC-08`
 - **Current Defects:** [ContentBrowserPanel.cpp](file://Sandbox/src/Panels/ContentBrowserPanel.cpp#L33-L122), [lines 336-363](file://Sandbox/src/Panels/ContentBrowserPanel.cpp#L336-L363), [InspectorRenderDrawers.cpp](file://Sandbox/src/Panels/Inspector/InspectorRenderDrawers.cpp#L564-L678): Dropping an entity onto a populated `ContentBrowserPanel` fails because `Dummy(avail)` is skipped when `avail.y <= 0`; existing `.prefab` files are overwritten without unique suffixing; `SanitizeFilename` allows control chars and Windows reserved names (`CON`, `NUL`, `AUX`); `DrawAnimator` transport/scrub buttons do nothing when `GetCurrentClip() == nullptr` and `"Frame Dur"` edits never update `Frames[i].DurationSeconds`.
 - **Verification (`EngineTests`):** Add unit tests in `PrefabAndClipAuthoringTests` verifying clip preview activation when no clip is initially playing and frame duration synchronization across `Clip::Frames`.

@@ -89,6 +89,13 @@ struct AnimationClip {
 
     void ClearEvents() noexcept { Events.clear(); }
 
+    void SetUniformFrameDuration(float durationSeconds) noexcept {
+        frameDuration = std::max(0.001f, durationSeconds);
+        for (auto& f : Frames) {
+            f.DurationSeconds = frameDuration;
+        }
+    }
+
     [[nodiscard]] float GetTotalDuration() const noexcept {
         float total = 0.0f;
         if (!Frames.empty()) {

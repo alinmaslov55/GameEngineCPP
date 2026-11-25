@@ -35,16 +35,41 @@ std::string SanitizeFilename(std::string_view name) {
     std::string safe;
     safe.reserve(name.size());
     for (char c : name) {
-        if (c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
-            c == '"' || c == '<' || c == '>' || c == '|' || c == '\0') {
+        const unsigned char uc = static_cast<unsigned char>(c);
+        if (uc < 32 || uc == 127 ||
+            c == '/' || c == '\\' || c == ':' || c == '*' || c == '?' ||
+            c == '"' || c == '<' || c == '>' || c == '|') {
             safe += '_';
         } else {
             safe += c;
         }
     }
     while (!safe.empty() && (safe.front() == ' ' || safe.front() == '\t')) safe.erase(safe.begin());
-    while (!safe.empty() && (safe.back() == ' ' || safe.back() == '\t')) safe.pop_back();
-    if (safe.empty()) safe = "GameObject";
+    while (!safe.empty() && (safe.back() == ' ' || safe.back() == '\t' || safe.back() == '.')) safe.pop_back();
+    if (safe.empty()) {
+        return "GameObject";
+    }
+
+    // Prefix Windows reserved device names (CON, PRN, AUX, NUL, COM1-9, LPT1-9)
+    const size_t dotPos = safe.find('.');
+    const std::string upperStem = [&]() {
+        std::string s = safe.substr(0, dotPos);
+        std::transform(s.begin(), s.end(), s.begin(), [](unsigned char ch) {
+            return static_cast<char>(std::toupper(ch));
+        });
+        return s;
+    }();
+    static constexpr const char* kReservedNames[] = {
+        "CON", "PRN", "AUX", "NUL",
+        "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+        "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9"
+    };
+    for (const char* reserved : kReservedNames) {
+        if (upperStem == reserved) {
+            safe.insert(safe.begin(), '_');
+            break;
+        }
+    }
     return safe;
 }
 
@@ -163,7 +188,8 @@ void ContentBrowserPanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& ac
 
     ImGui::Separator();
 
-    // 2. Render cached directories first, then files matching optional search filter
+    // 2. Render cached directories first, then files matching optional search filter inside a scrollable child
+    ImGui::BeginChild("AssetBrowserGrid", ImVec2(0.0f, 0.0f), false);
     if (!m_CachedEntries.empty()) {
         const std::string filterLower = ToLowerASCII(m_SearchFilter);
 
@@ -333,12 +359,9 @@ void ContentBrowserPanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& ac
 
         ImGui::Columns(1);
     }
+    ImGui::EndChild();
 
-    // Support dropping any GameObject from SceneHierarchyPanel to export as .prefab
-    const ImVec2 avail = ImGui::GetContentRegionAvail();
-    if (avail.y > 0.0f) {
-        ImGui::Dummy(avail);
-    }
+    // Support dropping any GameObject from SceneHierarchyPanel onto the Asset Browser grid to export as .prefab
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY")) {
             if (activeScene && payload->DataSize == sizeof(uint64_t)) {
@@ -347,8 +370,15 @@ void ContentBrowserPanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& ac
                 if (go) {
                     auto prefab = Engine::Prefab::CreateFromGameObject(go, /*zeroRootPosition=*/true);
                     if (prefab && prefab->IsValid()) {
-                        const std::string filename = SanitizeFilename(go->GetName()) + ".prefab";
-                        const std::filesystem::path targetPath = m_CurrentDirectory / filename;
+                        const std::string baseName = SanitizeFilename(go->GetName());
+                        std::string filename = baseName + ".prefab";
+                        std::filesystem::path targetPath = m_CurrentDirectory / filename;
+                        int suffix = 1;
+                        std::error_code existsEc;
+                        while (std::filesystem::exists(targetPath, existsEc)) {
+                            filename = baseName + "_" + std::to_string(suffix++) + ".prefab";
+                            targetPath = m_CurrentDirectory / filename;
+                        }
                         if (prefab->SaveToFile(targetPath.string())) {
                             m_NeedsRefresh = true;
                             m_LastStatusMessage = "Exported prefab: " + filename;

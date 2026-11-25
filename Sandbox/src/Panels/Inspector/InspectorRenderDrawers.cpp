@@ -601,36 +601,52 @@ void InspectorPanel::DrawAnimator(Engine::Animator& animator, [[maybe_unused]] E
         ImGui::Text("Frames: %u | Total Duration: %.3f s", frameCount, totalDuration);
         ImGui::Checkbox("Looping", &currentClip->loop);
         ImGui::SameLine();
-        ImGui::DragFloat("Frame Dur", &currentClip->frameDuration, 0.005f, 0.01f, 1.0f, "%.3f s");
+        if (ImGui::DragFloat("Frame Dur", &currentClip->frameDuration, 0.005f, 0.01f, 1.0f, "%.3f s")) {
+            currentClip->SetUniformFrameDuration(currentClip->frameDuration);
+        }
 
         if (frameCount > 0) {
+            auto ensureClipActive = [&]() {
+                if (!animator.GetCurrentClip()) {
+                    animator.Play(clipNames[currentClipIndex]);
+                }
+            };
+
             // Transport buttons
             if (ImGui::Button("|<")) {
+                ensureClipActive();
                 animator.ScrubToFrame(0);
             }
             ImGui::SameLine();
             if (ImGui::Button("< Prev")) {
+                ensureClipActive();
                 const uint32_t cur = animator.GetCurrentFrameIndex();
                 if (cur > 0) animator.ScrubToFrame(cur - 1);
             }
             ImGui::SameLine();
             const bool isPlaying = animator.IsPreviewPlaying();
             if (ImGui::Button(isPlaying ? "Pause Preview" : "Play Preview")) {
+                if (!isPlaying) {
+                    ensureClipActive();
+                }
                 animator.SetPreviewPlaying(!isPlaying);
             }
             ImGui::SameLine();
             if (ImGui::Button("Next >")) {
+                ensureClipActive();
                 const uint32_t cur = animator.GetCurrentFrameIndex();
                 if (cur + 1 < frameCount) animator.ScrubToFrame(cur + 1);
             }
             ImGui::SameLine();
             if (ImGui::Button(">|")) {
+                ensureClipActive();
                 animator.ScrubToFrame(frameCount - 1);
             }
 
             // Scrub slider
             int curFrame = static_cast<int>(animator.GetCurrentFrameIndex());
             if (ImGui::SliderInt("Scrub Bar", &curFrame, 0, static_cast<int>(frameCount - 1), "Frame %d")) {
+                ensureClipActive();
                 animator.ScrubToFrame(static_cast<uint32_t>(curFrame));
             }
 
@@ -662,6 +678,7 @@ void InspectorPanel::DrawAnimator(Engine::Animator& animator, [[maybe_unused]] E
                         char badgeLabel[128];
                         std::snprintf(badgeLabel, sizeof(badgeLabel), "F%u: %s##%zu", f, ev.EventID.c_str(), evIdx);
                         if (ImGui::SmallButton(badgeLabel)) {
+                            ensureClipActive();
                             animator.ScrubToFrame(f);
                         }
                         ImGui::PopStyleColor();
