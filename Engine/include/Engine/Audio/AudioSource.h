@@ -84,6 +84,16 @@ public:
         }
     }
 
+    void SyncWorldPosition() {
+        if (m_ActiveVoice != kInvalidVoiceHandle && m_Params.SpatializedXZ) {
+            if (auto* go = GetGameObject()) {
+                if (auto* transform = go->GetTransform()) {
+                    AudioManager::SetVoiceWorldPosition(m_ActiveVoice, transform->GetWorldPosition());
+                }
+            }
+        }
+    }
+
     [[nodiscard]] bool IsPlaying() const noexcept {
         if (m_ActiveVoice == kInvalidVoiceHandle) {
             return false;

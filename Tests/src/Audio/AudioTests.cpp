@@ -1092,7 +1092,8 @@ TEST(AudioStreamTrackTest, GetQueuedFramesAccuratelyReflectsInputQueuedBytes) {
     EXPECT_EQ(track.GetQueuedFrames(), 0u);
 
     // In testing without a physical audio device, AttachDevice to a mock stream or create stream
-    SDL_AudioStream* stream = SDL_CreateAudioStream(&track.GetSpec(), &track.GetSpec());
+    const SDL_AudioSpec trackSpec = track.GetSpec();
+    SDL_AudioStream* stream = SDL_CreateAudioStream(&trackSpec, &trackSpec);
     ASSERT_NE(stream, nullptr);
 
     // Push 2048 frames into stream
@@ -1255,6 +1256,106 @@ TEST(AudioManagerTest, ConcurrentStreamTrackConstructionDestructionAndUpdateSafe
     updater.join();
     Engine::AudioManager::Shutdown();
     SUCCEED();
+}
+
+TEST(AudioManagerTest, SetVoiceWorldPositionUpdatesAttenuationLive) {
+    Engine::AudioManager::Init();
+    Engine::AudioManager::SetListener({ 0.0f, 0.0f, 0.0f }, { 1.0f, 0.0f, 0.0f });
+
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 44100u);
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "spatial_move.wav");
+    ASSERT_NE(clip, nullptr);
+
+    Engine::SoundPlayParams params;
+    params.SpatializedXZ = true;
+    params.Loop = true;
+    params.MinDistance = 2.0f;
+    params.MaxDistance = 12.0f;
+    params.WorldPos = { 12.0f, 0.0f, 0.0f }; // At maxDistance -> gain 0
+
+    const auto voice = Engine::AudioManager::PlayOneShot(clip, params);
+    ASSERT_NE(voice, Engine::kInvalidVoiceHandle);
+    EXPECT_FLOAT_EQ(Engine::AudioManager::GetVoiceEffectiveGain(voice), 0.0f);
+
+    Engine::AudioManager::SetVoiceWorldPosition(voice, { 1.0f, 0.0f, 0.0f });
+    Engine::AudioManager::Update();
+    EXPECT_NEAR(Engine::AudioManager::GetVoiceEffectiveGain(voice), 1.0f, 1e-3f);
+
+    Engine::AudioManager::StopVoice(voice);
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(AudioManagerTest, BusPausePreservesUserPauseAndPausesStreamTracks) {
+    Engine::AudioManager::Init();
+
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 44100u);
+    auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "bus_pause.wav");
+    ASSERT_NE(clip, nullptr);
+
+    Engine::SoundPlayParams sfxParams;
+    sfxParams.Bus = Engine::AudioBus::SFX;
+    sfxParams.Loop = true;
+
+    const auto vUserPaused = Engine::AudioManager::PlayOneShot(clip, sfxParams);
+    const auto vActive = Engine::AudioManager::PlayOneShot(clip, sfxParams);
+    ASSERT_NE(vUserPaused, Engine::kInvalidVoiceHandle);
+    ASSERT_NE(vActive, Engine::kInvalidVoiceHandle);
+
+    Engine::AudioManager::PauseVoice(vUserPaused);
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(vUserPaused));
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(vActive));
+
+    Engine::AudioManager::PauseBus(Engine::AudioBus::SFX);
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(vUserPaused));
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(vActive));
+
+    Engine::AudioManager::ResumeBus(Engine::AudioBus::SFX);
+    EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(vUserPaused));
+    EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(vActive));
+
+    Engine::AudioStreamTrack musicTrack;
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+    ASSERT_TRUE(musicTrack.OpenMemory(oggSpan, true));
+    musicTrack.Play();
+    EXPECT_FALSE(musicTrack.IsBusPaused());
+
+    Engine::AudioManager::PauseBus(Engine::AudioBus::Music);
+    EXPECT_TRUE(musicTrack.IsBusPaused());
+    Engine::AudioManager::ResumeBus(Engine::AudioBus::Music);
+    EXPECT_FALSE(musicTrack.IsBusPaused());
+
+    Engine::AudioManager::Shutdown();
+}
+
+TEST(MusicDirectorTest, FadeInZeroGainAndFadeOutZeroWeightStemStop) {
+    Engine::AudioManager::Init();
+    const auto oggSpan = std::span<const uint8_t>(Engine::TestFixtures::kTestOggData);
+
+    // 1. Fade-in > 0 starts at 0.0f gain (no initial pop)
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(
+        { oggSpan, oggSpan, oggSpan },
+        /*fadeInSec=*/1.0f
+    );
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemGain(0), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemGain(1), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetStemGain(2), 0.0f);
+
+    // 2. Switching to SingleTrack stops even zero-weight stems once fade completes
+    Engine::MusicDirector::PlaySingleTrackFromMemory(oggSpan, /*crossfadeSec=*/0.1f, "hub.ogg");
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetSingleTrackGain(), 0.0f);
+    Engine::MusicDirector::Update(0.2f);
+    EXPECT_NEAR(Engine::MusicDirector::GetSingleTrackWeight(), 1.0f, 1e-3f);
+
+    // 3. Instant fadeInSec <= 0 to synchronized stems stops the single track
+    Engine::MusicDirector::PlaySynchronizedStemsFromMemory(
+        { oggSpan, oggSpan, oggSpan },
+        /*fadeInSec=*/0.0f
+    );
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetSingleTrackWeight(), 0.0f);
+    EXPECT_FLOAT_EQ(Engine::MusicDirector::GetSingleTrackGain(), 0.0f);
+
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::Shutdown();
 }
 
 } // namespace

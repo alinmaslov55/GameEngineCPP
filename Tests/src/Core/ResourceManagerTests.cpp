@@ -188,4 +188,27 @@ TEST(ResourceManagerTest, StaleAsyncLoadFailureDoesNotEvictReplacedCacheEntry) {
     }
 }
 
+TEST(ResourceManagerTest, ResolvePathHandlesTrailingSlashAndRejectsTraversalEscape) {
+    const auto prevRoot = Engine::ResourceManager::GetAssetRoot();
+    const auto tempRoot = std::filesystem::temp_directory_path() / "rm_trailing_slash_test";
+    std::error_code ec;
+    std::filesystem::remove_all(tempRoot, ec);
+    std::filesystem::create_directories(tempRoot / "assets", ec);
+
+    const std::string rootWithSlash = (tempRoot.generic_string() + "/");
+    Engine::ResourceManager::SetAssetRoot(rootWithSlash);
+
+    const std::string resolvedInside = Engine::ResourceManager::ResolvePath("textures/example.png");
+    EXPECT_FALSE(resolvedInside.empty());
+    EXPECT_NE(resolvedInside.find("rm_trailing_slash_test"), std::string::npos);
+
+    const std::string escaped = Engine::ResourceManager::ResolvePath("../../outside_secret.txt");
+    EXPECT_TRUE(escaped.empty());
+
+    if (!prevRoot.empty()) {
+        Engine::ResourceManager::SetAssetRoot(prevRoot);
+    }
+    std::filesystem::remove_all(tempRoot, ec);
+}
+
 } // namespace

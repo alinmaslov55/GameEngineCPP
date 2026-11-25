@@ -63,30 +63,33 @@ public:
     bool SeekToStart() noexcept;
     bool SeekToFrame(uint64_t frameIndex) noexcept;
 
-    void SetLooping(bool loop) noexcept { m_Looping = loop; }
-    [[nodiscard]] bool IsLooping() const noexcept { return m_Looping; }
+    void SetLooping(bool loop) noexcept;
+    [[nodiscard]] bool IsLooping() const noexcept;
 
-    void SetAutoUpdate(bool enabled) noexcept { m_AutoUpdate = enabled; }
-    [[nodiscard]] bool IsAutoUpdateEnabled() const noexcept { return m_AutoUpdate; }
+    void SetAutoUpdate(bool enabled) noexcept;
+    [[nodiscard]] bool IsAutoUpdateEnabled() const noexcept;
+
+    void SetBusPaused(bool paused) noexcept;
+    [[nodiscard]] bool IsBusPaused() const noexcept;
 
     void SetGain(float gain) noexcept;
-    [[nodiscard]] float GetGain() const noexcept { return m_Gain; }
+    [[nodiscard]] float GetGain() const noexcept;
 
     void SetTargetBufferedFrames(uint32_t targetFrames) noexcept;
-    [[nodiscard]] uint32_t GetTargetBufferedFrames() const noexcept { return m_TargetBufferedFrames; }
+    [[nodiscard]] uint32_t GetTargetBufferedFrames() const noexcept;
 
-    [[nodiscard]] bool IsOpen() const noexcept { return m_Vorbis != nullptr; }
-    [[nodiscard]] bool IsPlaying() const noexcept { return m_IsPlaying; }
-    [[nodiscard]] bool IsEndOfStream() const noexcept { return m_EndOfStream; }
-    [[nodiscard]] const SDL_AudioSpec& GetSpec() const noexcept { return m_Spec; }
-    [[nodiscard]] int GetSampleRate() const noexcept { return m_Spec.freq; }
-    [[nodiscard]] int GetChannels() const noexcept { return m_Spec.channels; }
-    [[nodiscard]] uint64_t GetTotalFrames() const noexcept { return m_TotalFrames; }
-    [[nodiscard]] uint64_t GetCurrentFrame() const noexcept { return m_CurrentFrame; }
-    [[nodiscard]] uint64_t GetLoopCount() const noexcept { return m_LoopCount; }
+    [[nodiscard]] bool IsOpen() const noexcept;
+    [[nodiscard]] bool IsPlaying() const noexcept;
+    [[nodiscard]] bool IsEndOfStream() const noexcept;
+    [[nodiscard]] SDL_AudioSpec GetSpec() const noexcept;
+    [[nodiscard]] int GetSampleRate() const noexcept;
+    [[nodiscard]] int GetChannels() const noexcept;
+    [[nodiscard]] uint64_t GetTotalFrames() const noexcept;
+    [[nodiscard]] uint64_t GetCurrentFrame() const noexcept;
+    [[nodiscard]] uint64_t GetLoopCount() const noexcept;
     [[nodiscard]] uint32_t GetQueuedFrames() const noexcept;
     [[nodiscard]] size_t GetEstimatedMemoryBytes() const noexcept;
-    [[nodiscard]] const std::string& GetFilepath() const noexcept { return m_Filepath; }
+    [[nodiscard]] std::string GetFilepath() const noexcept;
 
 private:
     bool FinalizeOpen(bool loop);
@@ -116,6 +119,7 @@ private:
     bool m_IsPlaying = false;
     bool m_EndOfStream = false;
     bool m_AutoUpdate = true;
+    bool m_BusPaused = false;
     mutable std::recursive_mutex m_TrackMutex;
 };
 

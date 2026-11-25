@@ -596,5 +596,45 @@ TEST(JobSystemTest, JobFunctionCapturesReleasedOnCompletion) {
     Engine::JobSystem::Shutdown();
 }
 
+TEST(JobSystemTest, DispatchAfterWaitsForDependencyDuringShutdown) {
+    Engine::JobSystem::Init(1);
+
+    std::atomic<bool> depStarted{ false };
+    std::atomic<bool> allowDepFinish{ false };
+    std::atomic<bool> depFinished{ false };
+    std::atomic<bool> continuationSawDepFinished{ false };
+
+    auto dep = Engine::JobSystem::Dispatch([&]() {
+        depStarted.store(true, std::memory_order_release);
+        while (!allowDepFinish.load(std::memory_order_acquire)) {
+            std::this_thread::yield();
+        }
+        depFinished.store(true, std::memory_order_release);
+    });
+
+    while (!depStarted.load(std::memory_order_acquire)) {
+        std::this_thread::yield();
+    }
+
+    Engine::JobHandle nextHandle;
+    std::thread shutdownThread([&]() {
+        std::this_thread::sleep_for(std::chrono::milliseconds(10));
+        allowDepFinish.store(true, std::memory_order_release);
+        Engine::JobSystem::Shutdown();
+    });
+
+    // Wait briefly so Shutdown() can flip m_Initialized=false while dep is still running
+    std::this_thread::sleep_for(std::chrono::milliseconds(5));
+    nextHandle = Engine::JobSystem::DispatchAfter(dep, [&]() {
+        continuationSawDepFinished.store(depFinished.load(std::memory_order_acquire), std::memory_order_release);
+    });
+
+    nextHandle.Wait();
+    shutdownThread.join();
+
+    EXPECT_TRUE(depFinished.load(std::memory_order_acquire));
+    EXPECT_TRUE(continuationSawDepFinished.load(std::memory_order_acquire));
+}
+
 } // namespace
 

@@ -143,25 +143,39 @@ std::string ResolvePathWithRoot(const std::string& filepath, const std::filesyst
     std::error_code ec;
     if (!assetRoot.empty()) {
         std::filesystem::path normalRoot = assetRoot.lexically_normal();
-        std::filesystem::path candidate = (assetRoot / inputPath).lexically_normal();
+        while (normalRoot.has_relative_path() &&
+               (normalRoot.filename().empty() || normalRoot.filename() == "."))
+        {
+            normalRoot = normalRoot.parent_path();
+        }
+
+        std::filesystem::path candidate = (normalRoot / inputPath).lexically_normal();
 
         // Ensure normalized relative candidate does not escape assetRoot via ../ traversal
         auto [rootEnd, _] = std::mismatch(normalRoot.begin(), normalRoot.end(), candidate.begin(), candidate.end());
-        if (rootEnd == normalRoot.end()) {
-            if (std::filesystem::exists(candidate, ec)) {
-                return candidate.generic_string();
-            }
-            std::filesystem::path assetSubCandidate = (assetRoot / "assets" / inputPath).lexically_normal();
-            if (std::filesystem::exists(assetSubCandidate, ec)) {
-                return assetSubCandidate.generic_string();
-            }
-            if (!std::filesystem::exists(inputPath, ec)) {
-                return candidate.generic_string();
-            }
+        if (rootEnd != normalRoot.end()) {
+            ENGINE_CORE_WARN("ResourceManager::ResolvePath: Rejected path escaping asset root: '{}'", filepath);
+            return {};
+        }
+
+        if (std::filesystem::exists(candidate, ec)) {
+            return candidate.generic_string();
+        }
+        std::filesystem::path assetSubCandidate = (normalRoot / "assets" / inputPath).lexically_normal();
+        if (std::filesystem::exists(assetSubCandidate, ec)) {
+            return assetSubCandidate.generic_string();
+        }
+        if (!std::filesystem::exists(inputPath, ec)) {
+            return candidate.generic_string();
         }
     }
 
-    return inputPath.lexically_normal().generic_string();
+    const std::filesystem::path normalizedInput = inputPath.lexically_normal();
+    if (!normalizedInput.empty() && *normalizedInput.begin() == "..") {
+        ENGINE_CORE_WARN("ResourceManager::ResolvePath: Rejected relative path with leading '..': '{}'", filepath);
+        return {};
+    }
+    return normalizedInput.generic_string();
 }
 
 std::string ToRelativePathWithRoot(const std::string& filepath, const std::filesystem::path& assetRoot) {

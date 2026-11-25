@@ -24,7 +24,7 @@ AudioStreamTrack::~AudioStreamTrack() {
 
 AudioStreamTrack::AudioStreamTrack(AudioStreamTrack&& other) noexcept {
     {
-        std::lock_guard lock(other.m_TrackMutex);
+        std::scoped_lock lock(m_TrackMutex, other.m_TrackMutex);
         MoveFrom(std::move(other));
     }
     AudioManager::RegisterStreamTrack(this);
@@ -33,7 +33,7 @@ AudioStreamTrack::AudioStreamTrack(AudioStreamTrack&& other) noexcept {
 AudioStreamTrack& AudioStreamTrack::operator=(AudioStreamTrack&& other) noexcept {
     if (this != &other) {
         std::scoped_lock lock(m_TrackMutex, other.m_TrackMutex);
-        Close();
+        CloseInternal();
         MoveFrom(std::move(other));
     }
     return *this;
@@ -53,10 +53,11 @@ void AudioStreamTrack::MoveFrom(AudioStreamTrack&& other) noexcept {
     m_CurrentFrame = std::exchange(other.m_CurrentFrame, 0);
     m_LoopCount = std::exchange(other.m_LoopCount, 0);
     m_SetupMemoryBytes = std::exchange(other.m_SetupMemoryBytes, 0);
-    m_TargetBufferedFrames = other.m_TargetBufferedFrames;
-    m_Gain = other.m_Gain;
-    m_Looping = other.m_Looping;
-    m_AutoUpdate = other.m_AutoUpdate;
+    m_TargetBufferedFrames = std::exchange(other.m_TargetBufferedFrames, kDefaultTargetBufferedFrames);
+    m_Gain = std::exchange(other.m_Gain, 1.0f);
+    m_Looping = std::exchange(other.m_Looping, true);
+    m_AutoUpdate = std::exchange(other.m_AutoUpdate, true);
+    m_BusPaused = std::exchange(other.m_BusPaused, false);
     m_IsPlaying = std::exchange(other.m_IsPlaying, false);
     m_EndOfStream = std::exchange(other.m_EndOfStream, false);
 }
@@ -255,17 +256,17 @@ void AudioStreamTrack::Play() {
     }
 
     m_IsPlaying = true;
-    if (m_AttachedDevice != 0 && m_Stream) {
+    if (!m_BusPaused && m_AttachedDevice != 0 && m_Stream) {
         if (SDL_GetAudioStreamDevice(m_Stream) == 0) {
             SDL_BindAudioStream(m_AttachedDevice, m_Stream);
         }
     }
 
     if (EnsureAudioStream()) {
-        if (m_AutoUpdate) {
+        if (m_AutoUpdate && !m_BusPaused) {
             Update();
         }
-        if (m_OwnsDeviceStream) {
+        if (m_OwnsDeviceStream && !m_BusPaused) {
             SDL_ResumeAudioStreamDevice(m_Stream);
         }
     }
@@ -377,7 +378,7 @@ uint32_t AudioStreamTrack::PumpFrames(uint32_t exactFrames) {
 
 uint32_t AudioStreamTrack::Update() {
     std::lock_guard lock(m_TrackMutex);
-    if (!m_Vorbis || !m_IsPlaying) {
+    if (!m_Vorbis || !m_IsPlaying || m_BusPaused) {
         return 0u;
     }
 
@@ -446,6 +447,55 @@ bool AudioStreamTrack::SeekToFrame(uint64_t frameIndex) noexcept {
     return ok;
 }
 
+void AudioStreamTrack::SetLooping(bool loop) noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    m_Looping = loop;
+}
+
+bool AudioStreamTrack::IsLooping() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_Looping;
+}
+
+void AudioStreamTrack::SetAutoUpdate(bool enabled) noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    m_AutoUpdate = enabled;
+}
+
+bool AudioStreamTrack::IsAutoUpdateEnabled() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_AutoUpdate;
+}
+
+void AudioStreamTrack::SetBusPaused(bool paused) noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    if (m_BusPaused == paused) {
+        return;
+    }
+    m_BusPaused = paused;
+    if (!m_Stream) {
+        return;
+    }
+    if (paused) {
+        if (m_OwnsDeviceStream) {
+            SDL_PauseAudioStreamDevice(m_Stream);
+        } else if (m_AttachedDevice != 0) {
+            SDL_UnbindAudioStream(m_Stream);
+        }
+    } else if (m_IsPlaying) {
+        if (m_OwnsDeviceStream) {
+            SDL_ResumeAudioStreamDevice(m_Stream);
+        } else if (m_AttachedDevice != 0 && SDL_GetAudioStreamDevice(m_Stream) == 0) {
+            SDL_BindAudioStream(m_AttachedDevice, m_Stream);
+        }
+    }
+}
+
+bool AudioStreamTrack::IsBusPaused() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_BusPaused;
+}
+
 void AudioStreamTrack::SetGain(float gain) noexcept {
     std::lock_guard lock(m_TrackMutex);
     m_Gain = std::max(0.0f, gain);
@@ -454,9 +504,69 @@ void AudioStreamTrack::SetGain(float gain) noexcept {
     }
 }
 
+float AudioStreamTrack::GetGain() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_Gain;
+}
+
 void AudioStreamTrack::SetTargetBufferedFrames(uint32_t targetFrames) noexcept {
     std::lock_guard lock(m_TrackMutex);
     m_TargetBufferedFrames = std::max(kChunkFrames, targetFrames);
+}
+
+uint32_t AudioStreamTrack::GetTargetBufferedFrames() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_TargetBufferedFrames;
+}
+
+bool AudioStreamTrack::IsOpen() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_Vorbis != nullptr;
+}
+
+bool AudioStreamTrack::IsPlaying() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_IsPlaying;
+}
+
+bool AudioStreamTrack::IsEndOfStream() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_EndOfStream;
+}
+
+SDL_AudioSpec AudioStreamTrack::GetSpec() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_Spec;
+}
+
+int AudioStreamTrack::GetSampleRate() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_Spec.freq;
+}
+
+int AudioStreamTrack::GetChannels() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_Spec.channels;
+}
+
+uint64_t AudioStreamTrack::GetTotalFrames() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_TotalFrames;
+}
+
+uint64_t AudioStreamTrack::GetCurrentFrame() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_CurrentFrame;
+}
+
+uint64_t AudioStreamTrack::GetLoopCount() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_LoopCount;
+}
+
+std::string AudioStreamTrack::GetFilepath() const noexcept {
+    std::lock_guard lock(m_TrackMutex);
+    return m_Filepath;
 }
 
 uint32_t AudioStreamTrack::GetQueuedFrames() const noexcept {

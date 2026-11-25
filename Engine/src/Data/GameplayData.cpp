@@ -1,4 +1,5 @@
 #include "Engine/Data/GameplayData.h"
+#include "Engine/Core/ResourceManager.h"
 #include "Engine/Utils/Logger.h"
 
 #include <filesystem>
@@ -25,13 +26,25 @@ bool GameplayData::Init(const std::string& dataDirectory) {
     std::filesystem::path dir(dataDirectory);
     std::error_code ec;
     if (!std::filesystem::exists(dir, ec)) {
+        const std::string resolvedDir = ResourceManager::ResolvePath(dataDirectory);
+        if (!resolvedDir.empty()) {
+            std::filesystem::path candidate(resolvedDir);
+            if (std::filesystem::exists(candidate, ec)) {
+                dir = std::move(candidate);
+            }
+        }
+    }
+
+    if (!std::filesystem::exists(dir, ec)) {
+        s_Storage.Initialized = false;
         ENGINE_CORE_ERROR("GameplayData::Init: Data directory does not exist: '{}'", dataDirectory);
         return false;
     }
 
-    ENGINE_CORE_INFO("GameplayData::Init: Loading tables from '{}'...", dataDirectory);
+    ENGINE_CORE_INFO("GameplayData::Init: Loading tables from '{}'...", dir.generic_string());
 
     bool allOk = true;
+    size_t loadedTables = 0;
 
     auto loadTable = [&](auto& registry, const std::string& filename, auto parser) {
         std::string fullPath = (dir / filename).string();
@@ -39,6 +52,8 @@ bool GameplayData::Init(const std::string& dataDirectory) {
             if (!registry.LoadDirectoryOrFile(fullPath, parser)) {
                 ENGINE_CORE_WARN("GameplayData::Init: Failed to load table '{}'", fullPath);
                 allOk = false;
+            } else {
+                ++loadedTables;
             }
         } else {
             ENGINE_CORE_WARN("GameplayData::Init: File not found: '{}'", fullPath);
@@ -53,8 +68,10 @@ bool GameplayData::Init(const std::string& dataDirectory) {
     loadTable(s_Storage.Drops, "drops.json", ParseDropDefinition);
     loadTable(s_Storage.Enemies, "enemies.json", ParseEnemyDefinition);
 
-    s_Storage.Initialized = true;
-    ENGINE_CORE_INFO("GameplayData: Initialized. Roots={}, Branches={}, Runes={}, Weapons={}, Drops={}, Enemies={}",
+    s_Storage.Initialized = (loadedTables > 0);
+    ENGINE_CORE_INFO("GameplayData: Initialized={} (loadedTables={}). Roots={}, Branches={}, Runes={}, Weapons={}, Drops={}, Enemies={}",
+                     s_Storage.Initialized,
+                     loadedTables,
                      s_Storage.Roots.Count(),
                      s_Storage.Branches.Count(),
                      s_Storage.Runes.Count(),

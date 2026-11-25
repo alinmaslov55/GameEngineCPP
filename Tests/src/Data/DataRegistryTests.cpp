@@ -428,3 +428,9 @@ TEST(DataRegistryTests, DropPrefabPathsResolveAndLoad) {
 
     GameplayData::Shutdown();
 }
+
+TEST(DataRegistryTests, GameplayDataInitMissingDirectoryLeavesInitializedFalse) {
+    GameplayData::Shutdown();
+    EXPECT_FALSE(GameplayData::Init("non_existent_gameplay_data_dir_xyz"));
+    EXPECT_FALSE(GameplayData::IsInitialized());
+}

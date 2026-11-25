@@ -195,12 +195,6 @@ JobHandle JobSystem::DispatchAfter(const std::vector<JobHandle>& dependencies, s
     auto jobState = std::make_shared<JobState>();
     jobState->jobFunction = std::move(job);
 
-    if (!IsInitialized()) {
-        ENGINE_CORE_DEBUG("JobSystem::DispatchAfter executing job inline (JobSystem uninitialized)");
-        ExecuteJobState(jobState);
-        return JobHandle{ jobState };
-    }
-
     std::vector<std::shared_ptr<JobState>> pendingDeps;
     pendingDeps.reserve(dependencies.size());
 

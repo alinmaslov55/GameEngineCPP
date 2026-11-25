@@ -116,6 +116,7 @@ public:
     static void StopVoice(VoiceHandle handle);
     static void PauseVoice(VoiceHandle handle);
     static void ResumeVoice(VoiceHandle handle);
+    static void SetVoiceWorldPosition(VoiceHandle handle, const glm::vec3& worldPos);
     [[nodiscard]] static bool IsVoicePlaying(VoiceHandle handle) noexcept;
     [[nodiscard]] static float GetVoiceEffectiveGain(VoiceHandle handle) noexcept;
     [[nodiscard]] static float GetVoiceFrequencyRatio(VoiceHandle handle) noexcept;
