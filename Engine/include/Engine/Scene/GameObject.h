@@ -476,19 +476,23 @@ public:
                 return false;
             }
 
-            // 1. Mark pending removal immediately so queries/reentrancy immediately recognize removed state
+            // 1. Keep comp alive across OnDisable() and mask/physics/registry cleanup;
+            //    guard exit flushes OnDestroy() + deletion once when depth returns to 0.
+            ScopedComponentIterationGuard guard(*this);
+
+            // Snapshot component metadata before OnDisable() runs
+            const uint16_t removedExactID = comp->GetTypeID();
+            const uint16_t removedBaseID = comp->GetBaseTypeID();
+            const bool hasOverriddenFixedUpdate = comp->HasOverriddenFixedUpdate();
+
+            // 2. Mark pending removal immediately so queries/reentrancy immediately recognize removed state
             comp->m_PendingRemoval = true;
             const bool wasEnabledAndActive = comp->IsEnabled() && IsActiveInHierarchy();
             comp->m_Enabled = false;
 
-            // 2. Wrap OnDisable in ScopedComponentIterationGuard to prevent vector mutation
             if (wasEnabledAndActive) {
-                ScopedComponentIterationGuard guard(*this);
                 comp->OnDisable();
             }
-
-            const uint16_t removedExactID = comp->GetTypeID();
-            const uint16_t removedBaseID = comp->GetBaseTypeID();
 
             bool hasMoreOfTarget = false;
             bool hasMoreOfExact = false;
@@ -527,7 +531,7 @@ public:
                     comp);
             }
 
-            if (comp->HasOverriddenFixedUpdate()) {
+            if (hasOverriddenFixedUpdate) {
                 if (m_FixedUpdateComponentCount > 0) {
                     --m_FixedUpdateComponentCount;
                     if (m_FixedUpdateComponentCount == 0) {
@@ -546,9 +550,6 @@ public:
                 }
             }
 
-            if (m_ComponentIterationDepth == 0) {
-                FlushPendingComponentRemovals();
-            }
             ENGINE_CORE_DEBUG("GameObject '{}': Removed component", GetName());
             return true;
         }

@@ -3,6 +3,7 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Component.h"
+#include "Engine/Scene/Components/PointLightComponent.h"
 #include "Engine/Physics/Collision2DInfo.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Renderer/SpriteRenderer.h"
@@ -558,6 +559,64 @@ TEST(GameObjectTest, ReentrantSelfRemovalInAwakeOnDisableOnDestroyZeroUAF) {
     // Destroying the component directly invokes OnDestroy, which reentrantly calls RemoveComponent
     EXPECT_TRUE(entity.RemoveComponent<SelfRemoverInOnDestroy>());
     EXPECT_FALSE(entity.HasComponent<SelfRemoverInOnDestroy>());
+}
+
+TEST(GameObjectTest, RemoveActiveComponentPreservesLifetimeOrderAndFixedUpdateCount) {
+    struct FixedTicker final : public Engine::Component {
+        int ticks = 0;
+        void FixedUpdate(float) override { ++ticks; }
+    };
+
+    struct OrderTracker final : public Engine::Component {
+        std::vector<std::string>* log = nullptr;
+        bool hadComponentOnDestroy = true;
+        void OnDisable() override {
+            if (log) log->push_back("OnDisable");
+        }
+        void OnDestroy() override {
+            if (log) log->push_back("OnDestroy");
+            if (GetGameObject()) {
+                hadComponentOnDestroy = GetGameObject()->HasComponent<OrderTracker>();
+            }
+        }
+    };
+
+    Engine::Scene scene("Crit01RemoveOrderScene");
+    auto* go = scene.CreateGameObject("Hero");
+    go->AddComponent<FixedTicker>();
+    go->AddComponent<Engine::PointLightComponent>();
+    auto* tracker = go->AddComponent<OrderTracker>();
+    std::vector<std::string> log;
+    tracker->log = &log;
+
+    ASSERT_TRUE(go->HasFixedUpdate());
+    ASSERT_EQ(scene.GetFixedUpdateEntities().size(), 1u);
+    ASSERT_EQ(scene.GetPointLightEntities().size(), 1u);
+
+    // Removing active enabled non-FixedUpdate components outside iteration must NOT
+    // prematurely delete comp before cleanup or corrupt m_FixedUpdateComponentCount.
+    EXPECT_TRUE(go->RemoveComponent<OrderTracker>());
+    ASSERT_EQ(log.size(), 2u);
+    EXPECT_EQ(log[0], "OnDisable");
+    EXPECT_EQ(log[1], "OnDestroy");
+    EXPECT_FALSE(go->HasComponent<OrderTracker>());
+    EXPECT_TRUE(go->HasFixedUpdate());
+    EXPECT_EQ(scene.GetFixedUpdateEntities().size(), 1u);
+
+    EXPECT_TRUE(go->RemoveComponent<Engine::PointLightComponent>());
+    EXPECT_FALSE(go->HasComponent<Engine::PointLightComponent>());
+    EXPECT_TRUE(scene.GetPointLightEntities().empty());
+    EXPECT_TRUE(go->HasFixedUpdate());
+    EXPECT_EQ(scene.GetFixedUpdateEntities().size(), 1u);
+
+    // Verify runtime physics component removal also completes cleanly without UAF
+    go->AddComponent<Engine::Rigidbody2D>();
+    go->AddComponent<Engine::BoxCollider2D>();
+    scene.OnRuntimeStart();
+    EXPECT_TRUE(go->RemoveComponent<Engine::BoxCollider2D>());
+    EXPECT_TRUE(go->RemoveComponent<Engine::Rigidbody2D>());
+    EXPECT_TRUE(go->HasFixedUpdate());
+    scene.OnRuntimeStop();
 }
 
 } // namespace
