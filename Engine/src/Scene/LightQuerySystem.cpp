@@ -129,11 +129,8 @@ IlluminationSample LightQuerySystem::EvaluateIlluminationDetailedXZ(
         }
     };
 
-    for (const auto& go : scene.GetGameObjects()) {
-        evaluateEntity(go.get());
-    }
-    for (const auto& go : scene.GetPendingSpawnGameObjects()) {
-        evaluateEntity(go.get());
+    for (GameObject* go : scene.GetPointLightEntities()) {
+        evaluateEntity(go);
     }
 
     return result;

@@ -11,6 +11,7 @@
 #include "Engine/Renderer/RHI/Renderer.h"
 #include "Engine/Renderer/ShadowMap.h"
 #include "Engine/Renderer/TorchShadowMap.h"
+#include <chrono>
 #include <cmath>
 #include <string>
 
@@ -581,6 +582,42 @@ TEST(PointLightUploadTest, PointLightBlockUploadsDeduplicated) {
     EXPECT_EQ(Engine::Renderer::GetPointLightUploadCount(), 2u);
 
     Engine::Renderer::Shutdown();
+}
+
+TEST(LightingTests, LightQuerySystemScalesWithLightCountNotEntityCount) {
+    Engine::Scene scene("LightBenchScene");
+    for (int i = 0; i < 1000; ++i) {
+        auto* prop = scene.CreateGameObject("Prop_" + std::to_string(i));
+        prop->GetTransform()->position = { static_cast<float>(i % 50), 0.0f, static_cast<float>(i / 50) };
+    }
+    for (int i = 0; i < 8; ++i) {
+        auto* lightGo = scene.CreateGameObject("Light_" + std::to_string(i));
+        lightGo->GetTransform()->position = { static_cast<float>(i) * 2.0f, 0.0f, 0.0f };
+        auto* pl = lightGo->AddComponent<Engine::PointLightComponent>();
+        pl->Radius = 6.0f;
+        pl->Intensity = 1.5f;
+        pl->Semantic = Engine::LightSemantic::SafeLifeline;
+    }
+    ASSERT_EQ(scene.GetPointLightEntities().size(), 8u);
+
+    // Warmup query
+    volatile float sink = 0.0f;
+    sink += scene.EvaluateIlluminationAtXZ({ 1.0f, 0.0f }).SafeIntensity;
+
+    const auto start = std::chrono::steady_clock::now();
+    for (int q = 0; q < 100; ++q) {
+        const float x = static_cast<float>(q % 16);
+        sink += scene.EvaluateIlluminationAtXZ({ x, 0.5f }).SafeIntensity;
+    }
+    const auto elapsedNs = std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - start).count();
+    const double elapsedMs = static_cast<double>(elapsedNs) * 1e-6;
+    EXPECT_GT(sink, 0.0f);
+#ifdef NDEBUG
+    EXPECT_LT(elapsedMs, 0.02);
+#else
+    EXPECT_LT(elapsedMs, 2.0);
+#endif
 }
 
 } // namespace

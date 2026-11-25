@@ -28,6 +28,7 @@ namespace Engine {
 class Scene;
 class Rigidbody2D;
 class Collider2D;
+class PointLightComponent;
 class BoxCollider2D;
 class CircleCollider2D;
 class CapsuleCollider2D;
@@ -64,6 +65,8 @@ public:
     [[nodiscard]] bool HasFixedUpdate() const noexcept { return m_FixedUpdateComponentCount > 0; }
     void RegisterFixedUpdate();
     void UnregisterFixedUpdate();
+    void RegisterPointLight();
+    void UnregisterPointLight();
     void InvalidateSceneTerrainCache();
 
     [[nodiscard]] ComponentMask128 GetComponentMask() const noexcept { return m_ComponentMask; }
@@ -134,6 +137,10 @@ public:
 
         if constexpr (std::is_same_v<CleanT, TerrainChunkManager> || std::is_same_v<CleanT, TerrainComponent>) {
             InvalidateSceneTerrainCache();
+        }
+
+        if constexpr (std::is_same_v<CleanT, PointLightComponent>) {
+            RegisterPointLight();
         }
 
         return rawPtr;
@@ -531,6 +538,12 @@ public:
 
             if constexpr (std::is_same_v<CleanT, TerrainChunkManager> || std::is_same_v<CleanT, TerrainComponent>) {
                 InvalidateSceneTerrainCache();
+            }
+
+            if constexpr (std::is_same_v<CleanT, PointLightComponent>) {
+                if (!hasMoreOfTarget) {
+                    UnregisterPointLight();
+                }
             }
 
             if (m_ComponentIterationDepth == 0) {

@@ -43,6 +43,7 @@ uniform sampler2D u_ShadowMap;
 uniform sampler2D u_TorchShadowMap;
 
 uniform float u_LayerTilingScales[8];
+uniform float u_LayerGlossiness[8];
 uniform float u_BlendSharpness;
 uniform float u_EdgeDarkening;
 uniform vec3 u_CameraPos;
@@ -297,7 +298,7 @@ void main() {
         vec3 tn = nr.rgb * 2.0 - 1.0;
         // Map ground plane tangent space to world (X = +U, Z = +V, Y = +Up)
         layerNormals[i] = normalize(vec3(tn.x, max(tn.z, 0.05), -tn.y));
-        layerGlosses[i] = nr.a;
+        layerGlosses[i] = nr.a * u_LayerGlossiness[i];
     }
 
     // Height-modulated contrast blend

@@ -236,7 +236,7 @@ bool SpriteAtlas::ParseJSON(const std::string& jsonString,
 }
 
 const AtlasFrame* SpriteAtlas::GetFrame(std::string_view frameName) const noexcept {
-    const auto it = m_Frames.find(std::string(frameName));
+    const auto it = m_Frames.find(frameName);
     if (it != m_Frames.end()) {
         return &it->second;
     }

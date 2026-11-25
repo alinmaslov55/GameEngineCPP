@@ -338,10 +338,12 @@ TEST(TerrainRendererTest, MultiTerrainDistinctLayerSetsDoNotThrashCache) {
     Engine::TerrainRenderer::Init();
 
     std::array<Engine::TerrainLayer, Engine::TerrainComponent::MaxLayers> layersA{};
+    layersA[0].HeightMapPath = "virtual_layer_a_h.png";
     layersA[0].Glossiness = 0.25f;
     layersA[1].Glossiness = 0.50f;
 
     std::array<Engine::TerrainLayer, Engine::TerrainComponent::MaxLayers> layersB{};
+    layersB[0].HeightMapPath = "virtual_layer_b_h.png";
     layersB[0].Glossiness = 0.85f;
     layersB[1].Glossiness = 0.10f;
 
@@ -368,10 +370,17 @@ TEST(TerrainRendererTest, MultiTerrainDistinctLayerSetsDoNotThrashCache) {
     EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 2u);
     EXPECT_EQ(Engine::TerrainRenderer::GetActiveLayerSetHash(), hashB);
 
+    // Tweaking scalar Glossiness alone must NOT invalidate cache or rebuild texture arrays
+    auto layersAGlossTweaked = layersA;
+    layersAGlossTweaked[0].Glossiness = 0.99f;
+    Engine::TerrainRenderer::SyncLayerTextures(layersAGlossTweaked);
+    EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 2u);
+    EXPECT_EQ(Engine::TerrainRenderer::GetActiveLayerSetHash(), hashA);
+
     // Capacity bound check: add sets C, D, E (cache capped at 4)
-    auto layersC = layersA; layersC[2].Glossiness = 0.33f;
-    auto layersD = layersA; layersD[2].Glossiness = 0.66f;
-    auto layersE = layersA; layersE[2].Glossiness = 0.99f;
+    auto layersC = layersA; layersC[2].HeightMapPath = "virtual_layer_c_h.png";
+    auto layersD = layersA; layersD[2].HeightMapPath = "virtual_layer_d_h.png";
+    auto layersE = layersA; layersE[2].HeightMapPath = "virtual_layer_e_h.png";
     Engine::TerrainRenderer::SyncLayerTextures(layersC);
     EXPECT_EQ(Engine::TerrainRenderer::GetCachedLayerSetCount(), 3u);
     Engine::TerrainRenderer::SyncLayerTextures(layersD);

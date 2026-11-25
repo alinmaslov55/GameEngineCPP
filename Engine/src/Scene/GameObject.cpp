@@ -1,5 +1,6 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
+#include "Engine/Scene/Components/PointLightComponent.h"
 #include "Engine/Terrain/Tilemap.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Physics/PhysicsWorld2D.h"
@@ -190,12 +191,23 @@ void GameObject::OnPoolRelease() {
 
 void GameObject::SetScene(Scene* scene) noexcept {
     if (m_Scene == scene) return;
-    if (m_Scene && HasFixedUpdate()) {
-        m_Scene->UnregisterFixedUpdateEntity(this);
+    const bool hasPointLight = (m_ComponentMask & Detail::GetComponentTypeMask<PointLightComponent>()) != 0;
+    if (m_Scene) {
+        if (HasFixedUpdate()) {
+            m_Scene->UnregisterFixedUpdateEntity(this);
+        }
+        if (hasPointLight) {
+            m_Scene->UnregisterPointLightEntity(this);
+        }
     }
     m_Scene = scene;
-    if (m_Scene && HasFixedUpdate()) {
-        m_Scene->RegisterFixedUpdateEntity(this);
+    if (m_Scene) {
+        if (HasFixedUpdate()) {
+            m_Scene->RegisterFixedUpdateEntity(this);
+        }
+        if (hasPointLight) {
+            m_Scene->RegisterPointLightEntity(this);
+        }
     }
 }
 
@@ -208,6 +220,18 @@ void GameObject::RegisterFixedUpdate() {
 void GameObject::UnregisterFixedUpdate() {
     if (m_Scene) {
         m_Scene->UnregisterFixedUpdateEntity(this);
+    }
+}
+
+void GameObject::RegisterPointLight() {
+    if (m_Scene) {
+        m_Scene->RegisterPointLightEntity(this);
+    }
+}
+
+void GameObject::UnregisterPointLight() {
+    if (m_Scene) {
+        m_Scene->UnregisterPointLightEntity(this);
     }
 }
 

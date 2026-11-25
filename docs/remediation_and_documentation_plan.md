@@ -226,7 +226,7 @@ flowchart TD
 | **`FIX-EDT-03`** | `ContentBrowserPanel` Child Drop Target/Sanitizer & `DrawAnimator` Inspector | `DONE` | **P1** | W2 | `FIX-EDT-01`, `FIX-ANI-01` | Sandbox `#56`, `#57`, Med `ContentBrowser` | `DOC-08` |
 | **`FIX-SBX-01`** | `RuntimeLayer` `GameplayData::Init`, `SceneManager` Transitions & `PlayerController` | `DONE` | **P0** | W2 | `FIX-SAV-01`, `FIX-SAV-02`, `FIX-PHY-03` | Sandbox `#50`, `#52`, `#54`, Med `CameraController` | `DOC-08` |
 | **`FIX-SBX-02`** | `DemoScene` Layer 4 Cobble Plaza, Anchored HUD & `drops.json` Prefab Alignment | `DONE` | **P1** | W2 | `FIX-TER-03`, `FIX-UIX-04` | Sandbox `#58`, `#59`, Med `DemoScene overwrite` | `DOC-08` |
-| **`OPT-01`** | Hot-Path Optimizations: Terrain Array Slice Update, Light/Steering/Minimap LUT | `TODO` | **P2** | W2 | `FIX-RND-04`, `FIX-AIX-01`, `FIX-LGT-01` | Section 5 Improvements `#1–#12` | `DOC-05`, `DOC-06` |
+| **`OPT-01`** | Hot-Path Optimizations: Terrain Array Slice Update, Light/Steering/Minimap LUT | `DONE` | **P2** | W2 | `FIX-RND-04`, `FIX-AIX-01`, `FIX-LGT-01` | Section 5 Improvements `#1–#12` | `DOC-05`, `DOC-06` |
 | **`DOC-01`** | Master Engine Architecture & *"Life of a Frame"* Execution Guide | `TODO` | **P1** | W3 | `FIX-CORE-02`, `FIX-ECS-02` | Architecture Overview & Frame Pipeline | Onboarding & System Map |
 | **`DOC-02`** | Core, JobSystem Concurrency, Time, Input & ResourceManager Reference | `TODO` | **P1** | W3 | `FIX-CORE-02`, `FIX-CORE-03` | `Core/`, `Utils/`, `ImGui/` Docs | Engine Core Reference |
 | **`DOC-03`** | ECS Lifecycle, Transform Sockets, Prefabs, Object Pooling & Serialization Guide | `TODO` | **P1** | W3 | `FIX-ECS-03`, `FIX-SER-01` | `Scene/`, `Serialization/` Docs | Entity & Prefab Authoring |
@@ -685,7 +685,7 @@ flowchart TD
 ---
 
 #### `OPT-01` — Hot-Path Optimizations: Terrain Array Slice Update, Light/Steering/Minimap LUT
-- **Status:** `TODO` | **Priority:** `P2` | **Wave:** `W2`
+- **Status:** `DONE` | **Priority:** `P2` | **Wave:** `W2`
 - **Dependencies:** Hard: `FIX-RND-04`, `FIX-AIX-01`, `FIX-LGT-01` | Unlocks: `DOC-05`, `DOC-06`
 - **Optimizations Included (from [repo_audit_report.md](file:///C:/Users/Alin/.gemini/antigravity/brain/2ed1eb1e-e5f2-4e70-b83d-9865645bf61d/repo_audit_report.md) Section 5):**
   1. `TerrainRenderer`: Move scalar `Glossiness` to `uniform float u_LayerGlossiness[8]` so tweaking glossiness updates a uniform instead of rebuilding two `1024×1024×8` texture arrays (`~42 MB` each); use `ResizeR8Bilinear` in `PackNormalGlossRGBA8`.

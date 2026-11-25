@@ -177,6 +177,11 @@ public:
     void RegisterFixedUpdateEntity(GameObject* go);
     void UnregisterFixedUpdateEntity(GameObject* go);
 
+    // PointLight entity registry for O(N_lights) illumination queries
+    [[nodiscard]] const std::vector<GameObject*>& GetPointLightEntities() const noexcept { return m_PointLightEntities; }
+    void RegisterPointLightEntity(GameObject* go);
+    void UnregisterPointLightEntity(GameObject* go) noexcept;
+
     // Facade: Camera & Viewport (delegates to SceneRenderer)
     [[nodiscard]] PerspectiveCamera& GetCamera() noexcept;
     [[nodiscard]] const PerspectiveCamera& GetCamera() const noexcept;
@@ -252,6 +257,9 @@ private:
     // Active physics & scripted entity registry for FixedUpdate
     std::vector<GameObject*> m_FixedUpdateEntities;
     std::vector<GameObject*> m_PendingFixedUpdateAdditions;
+
+    // Active PointLight entity registry for O(N_lights) queries
+    std::vector<GameObject*> m_PointLightEntities;
 };
 
 } // namespace Engine

@@ -142,6 +142,7 @@ Scene::~Scene() {
     m_EntityUUIDMap.clear();
     m_FixedUpdateEntities.clear();
     m_PendingFixedUpdateAdditions.clear();
+    m_PointLightEntities.clear();
     m_CachedChunkManager = nullptr;
     m_CachedTerrain = nullptr;
     m_CachedTerrainTransform = nullptr;
@@ -224,6 +225,7 @@ void Scene::DestroyGameObject(GameObject* gameObject) {
     if (m_IterationDepth == 0) {
         std::erase(m_FixedUpdateEntities, gameObject);
         std::erase(m_PendingFixedUpdateAdditions, gameObject);
+        std::erase(m_PointLightEntities, gameObject);
     }
     m_TerrainCacheDirty = true;
 
@@ -290,6 +292,7 @@ void Scene::FlushEntityLifecycleQueues() {
                     pending->m_LifecycleState = EntityLifecycle::Destroyed;
                     std::erase(m_FixedUpdateEntities, pending.get());
                     std::erase(m_PendingFixedUpdateAdditions, pending.get());
+                    std::erase(m_PointLightEntities, pending.get());
 
                     if (m_PhysicsWorld && m_PhysicsWorld->IsRuntimeRunning()) {
                         m_PhysicsWorld->UnregisterRuntimeBody(pending.get());
@@ -340,6 +343,7 @@ void Scene::FlushEntityLifecycleQueues() {
 
                 std::erase(m_FixedUpdateEntities, go);
                 std::erase(m_PendingFixedUpdateAdditions, go);
+                std::erase(m_PointLightEntities, go);
 
                 go->m_LifecycleState = EntityLifecycle::Destroyed;
 
@@ -851,6 +855,18 @@ void Scene::UnregisterFixedUpdateEntity(GameObject* go) {
     } else {
         std::erase(m_FixedUpdateEntities, go);
     }
+}
+
+void Scene::RegisterPointLightEntity(GameObject* go) {
+    if (!go) return;
+    if (std::find(m_PointLightEntities.begin(), m_PointLightEntities.end(), go) == m_PointLightEntities.end()) {
+        m_PointLightEntities.push_back(go);
+    }
+}
+
+void Scene::UnregisterPointLightEntity(GameObject* go) noexcept {
+    if (!go) return;
+    std::erase(m_PointLightEntities, go);
 }
 
 void Scene::RefreshTerrainCache() const noexcept {

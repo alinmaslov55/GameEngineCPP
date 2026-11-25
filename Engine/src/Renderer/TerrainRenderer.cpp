@@ -90,14 +90,12 @@ uint64_t ComputeLayerSignatureHash(const TerrainLayer& layer, uint32_t layerInde
     const std::string& diffusePath = layer.LayerTexture ? layer.LayerTexture->GetFilepath() : "";
     const uint32_t texId = layer.LayerTexture ? layer.LayerTexture->GetRendererID() : 0u;
     const uint8_t loaded = (layer.LayerTexture && layer.LayerTexture->IsLoaded()) ? 1u : 0u;
-    const int32_t glossQ = static_cast<int32_t>(std::lround(std::clamp(layer.Glossiness, 0.0f, 1.0f) * 1000.0f));
 
     hash = Fnv1a64(&texId, sizeof(texId), hash);
     hash = Fnv1a64(&loaded, sizeof(loaded), hash);
     hash = Fnv1a64Str(diffusePath, hash);
     hash = Fnv1a64Str(layer.HeightMapPath, hash);
     hash = Fnv1a64Str(layer.NormalMapPath, hash);
-    hash = Fnv1a64(&glossQ, sizeof(glossQ), hash);
 
     return hash;
 }
@@ -198,7 +196,7 @@ void SyncLayerTextureArrays(const std::array<TerrainLayer, TerrainComponent::Max
 
         if (Texture2DArray::BuildNormalGlossSliceFromFiles(
                 resolved.NormalPath,
-                layer.Glossiness,
+                1.0f,
                 arrayW,
                 arrayH,
                 normalGlossScratch)) {
@@ -263,14 +261,17 @@ void BindSplatShaderAndState(const std::array<TerrainLayer, TerrainComponent::Ma
     }
 
     std::array<float, TerrainComponent::MaxLayers> layerTiling{};
+    std::array<float, TerrainComponent::MaxLayers> layerGlossiness{};
     for (uint32_t i = 0; i < TerrainComponent::MaxLayers; ++i) {
         layerTiling[i] = layers[i].TilingScale;
+        layerGlossiness[i] = std::clamp(layers[i].Glossiness, 0.0f, 1.0f);
     }
 
     auto& shader = *s_TerrainData->SplatShader;
     shader.Bind();
     shader.SetMat4("u_ViewProjection", camera.GetViewProjectionMatrix());
     shader.SetFloatArray("u_LayerTilingScales", layerTiling.data(), TerrainComponent::MaxLayers);
+    shader.SetFloatArray("u_LayerGlossiness", layerGlossiness.data(), TerrainComponent::MaxLayers);
     shader.SetFloat("u_BlendSharpness", blendSharpness);
     shader.SetFloat("u_EdgeDarkening", edgeDarkening);
     shader.SetFloat3("u_CameraPos", camera.GetPosition());

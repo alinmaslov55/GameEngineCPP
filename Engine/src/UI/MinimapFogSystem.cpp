@@ -150,12 +150,9 @@ void MinimapFogSystem::Update(const glm::vec2& viewerWorldXZ,
 
     m_CurrentViewerWorldXZ = viewerWorldXZ;
 
-    // 2. Clear live illumination across the active window
-    for (int rz = -128; rz < 128; ++rz) {
-        for (int rx = -128; rx < 128; ++rx) {
-            const glm::ivec2 tCoord = GridToToroidalTexel({ m_CurrentGridCenter.x + rx, m_CurrentGridCenter.y + rz });
-            m_ToroidalGrid[tCoord.y * TextureSize + tCoord.x].LiveLit = 0;
-        }
+    // 2. Clear live illumination linearly across the 256x256 toroidal grid
+    for (auto& cell : m_ToroidalGrid) {
+        cell.LiveLit = 0;
     }
 
     // 3. Stamp Hero Torch live light and permanent discovery
@@ -286,32 +283,43 @@ void MinimapFogSystem::AddPin(const MinimapPOIPin& pin) {
 }
 
 void MinimapFogSystem::RebuildDisplayBuffer() {
-    constexpr float kInnerRadius = 120.0f;
-    constexpr float kOuterRadius = 126.0f;
+    static const std::array<uint8_t, TextureSize * TextureSize> kVignetteAlphaLUT = []() {
+        std::array<uint8_t, TextureSize * TextureSize> lut{};
+        constexpr float kInnerRadius = 120.0f;
+        constexpr float kOuterRadius = 126.0f;
+        for (uint32_t vy = 0; vy < TextureSize; ++vy) {
+            const int dz = 128 - static_cast<int>(vy);
+            for (uint32_t vx = 0; vx < TextureSize; ++vx) {
+                const int dx = static_cast<int>(vx) - 128;
+                const float r = std::sqrt(static_cast<float>(dx * dx + dz * dz));
+                float alpha = 0.0f;
+                if (r <= kInnerRadius) {
+                    alpha = 1.0f;
+                } else if (r < kOuterRadius) {
+                    alpha = 1.0f - (r - kInnerRadius) / (kOuterRadius - kInnerRadius);
+                }
+                lut[static_cast<size_t>(vy) * TextureSize + vx] = static_cast<uint8_t>(alpha * 255.0f);
+            }
+        }
+        return lut;
+    }();
 
     for (uint32_t vy = 0; vy < TextureSize; ++vy) {
         // OpenGL texture V=0 is bottom (South, +Z); V=1 is top (North, -Z)
         const int dz = 128 - static_cast<int>(vy);
         for (uint32_t vx = 0; vx < TextureSize; ++vx) {
             const int dx = static_cast<int>(vx) - 128;
-            const float r = std::sqrt(static_cast<float>(dx * dx + dz * dz));
-
-            float alpha = 0.0f;
-            if (r <= kInnerRadius) {
-                alpha = 1.0f;
-            } else if (r < kOuterRadius) {
-                alpha = 1.0f - (r - kInnerRadius) / (kOuterRadius - kInnerRadius);
-            }
 
             const glm::ivec2 gCoord(m_CurrentGridCenter.x + dx, m_CurrentGridCenter.y + dz);
             const glm::ivec2 tCoord = GridToToroidalTexel(gCoord);
             const auto& cell = m_ToroidalGrid[tCoord.y * TextureSize + tCoord.x];
 
-            const size_t outIdx = (static_cast<size_t>(vy) * TextureSize + vx) * 4;
+            const size_t texIdx = static_cast<size_t>(vy) * TextureSize + vx;
+            const size_t outIdx = texIdx * 4;
             m_DisplayBuffer[outIdx + 0] = cell.BiomeColorID;
             m_DisplayBuffer[outIdx + 1] = cell.Discovered;
             m_DisplayBuffer[outIdx + 2] = cell.LiveLit;
-            m_DisplayBuffer[outIdx + 3] = static_cast<uint8_t>(alpha * 255.0f);
+            m_DisplayBuffer[outIdx + 3] = kVignetteAlphaLUT[texIdx];
         }
     }
 }

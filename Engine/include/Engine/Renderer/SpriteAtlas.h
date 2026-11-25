@@ -3,6 +3,7 @@
 
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/SubTexture2D.h"
+#include <functional>
 #include <glm/vec2.hpp>
 #include <memory>
 #include <string>
@@ -26,6 +27,14 @@ struct AtlasFrame {
 
 class SpriteAtlas {
 public:
+    struct TransparentStringHash {
+        using is_transparent = void;
+        [[nodiscard]] size_t operator()(std::string_view sv) const noexcept {
+            return std::hash<std::string_view>{}(sv);
+        }
+    };
+    using FrameMap = std::unordered_map<std::string, AtlasFrame, TransparentStringHash, std::equal_to<>>;
+
     SpriteAtlas() = default;
     explicit SpriteAtlas(const std::string& jsonPath);
     ~SpriteAtlas() = default;
@@ -42,14 +51,14 @@ public:
     [[nodiscard]] const std::string& GetFilepath() const noexcept { return m_Filepath; }
     [[nodiscard]] size_t GetFrameCount() const noexcept { return m_Frames.size(); }
     [[nodiscard]] const std::vector<std::string>& GetFrameNames() const noexcept { return m_FrameNames; }
-    [[nodiscard]] const std::unordered_map<std::string, AtlasFrame>& GetAllFrames() const noexcept { return m_Frames; }
+    [[nodiscard]] const FrameMap& GetAllFrames() const noexcept { return m_Frames; }
 
 private:
     bool ParseJSON(const std::string& jsonString, const std::string& basePath, const std::shared_ptr<Texture>& customTexture);
 
     std::string m_Filepath;
     std::shared_ptr<Texture> m_AtlasTexture;
-    std::unordered_map<std::string, AtlasFrame> m_Frames;
+    FrameMap m_Frames;
     std::vector<std::string> m_FrameNames;
 };
 

@@ -331,18 +331,15 @@ bool TerrainTexturePacker::PackNormalGlossRGBA8(const uint8_t* normalPixels,
 
     if (glossPixels && glossW > 0 && glossH > 0) {
         const int safeGCh = std::clamp(glossChannels, 1, 4);
-        std::vector<uint8_t> glossRgba(static_cast<size_t>(glossW) * static_cast<size_t>(glossH) * 4u);
-        for (size_t i = 0; i < static_cast<size_t>(glossW) * static_cast<size_t>(glossH); ++i) {
-            const uint8_t gByte = ExtractLuminance(&glossPixels[i * static_cast<size_t>(safeGCh)], safeGCh);
-            glossRgba[i * 4u + 0] = gByte;
-            glossRgba[i * 4u + 1] = gByte;
-            glossRgba[i * 4u + 2] = gByte;
-            glossRgba[i * 4u + 3] = gByte;
+        const size_t srcPixels = static_cast<size_t>(glossW) * static_cast<size_t>(glossH);
+        std::vector<uint8_t> glossR8(srcPixels);
+        for (size_t i = 0; i < srcPixels; ++i) {
+            glossR8[i] = ExtractLuminance(&glossPixels[i * static_cast<size_t>(safeGCh)], safeGCh);
         }
         std::vector<uint8_t> resizedGloss;
-        ResizeRGBA8Bilinear(glossRgba.data(), glossW, glossH, targetW, targetH, resizedGloss);
+        ResizeR8Bilinear(glossR8.data(), glossW, glossH, targetW, targetH, resizedGloss);
         for (size_t i = 0; i < targetPixels; ++i) {
-            outRgba8[i * 4u + 3] = resizedGloss[i * 4u + 0];
+            outRgba8[i * 4u + 3] = resizedGloss[i];
         }
     }
 
