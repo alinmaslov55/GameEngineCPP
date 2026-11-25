@@ -219,8 +219,8 @@ flowchart TD
 | **`FIX-TER-03`** | `TerrainFireGrid` Reset/Corner Fix, Finite Terrain Fire & Firewall VFX/Decals | `DONE` | **P1** | W2 | `FIX-TER-02`, `FIX-VFX-01` | ECS `#22`, Terrain `#47`, Med `FireGrid`, `TER-04 VFX` | `FIX-SBX-02`, `DOC-05` |
 | **`FIX-UIX-01`** | Per-Quad `UIQuad` Texture Binding, Minimap Z-Axis Flip & Active-Window Guard | `DONE` | **P0** | W1 | `FIX-RND-01` | `C-21`, UI `#45` | `DOC-07` |
 | **`FIX-UIX-02`** | `UIButtonComponent` Single-Frame Focus Step, Dangling Pointer Guard & Z-Order | `DONE` | **P0** | W1 | `FIX-CORE-03` | `C-22` (Part 1), UI `#42`, Med `UIButton`/`UICanvas` | `DOC-07` |
-| **`FIX-UIX-03`** | `Font` UTF-8 Decoder, `.fnt` Input Validation, Wrap Space Trim & Baseline | `TODO` | **P0** | W0 | *None (Root)* | `C-22` (Part 2), UI `#46` | `DOC-07` |
-| **`FIX-UIX-04`** | `UIRadialWheel` TimeScale Teardown, Viewport Coords & `UIPanel` 9-Slice/Winding | `TODO` | **P1** | W1 | `FIX-CORE-03` | UI `#43`, `#44` | `FIX-SBX-02`, `DOC-07` |
+| **`FIX-UIX-03`** | `Font` UTF-8 Decoder, `.fnt` Input Validation, Wrap Space Trim & Baseline | `DONE` | **P0** | W0 | *None (Root)* | `C-22` (Part 2), UI `#46` | `DOC-07` |
+| **`FIX-UIX-04`** | `UIRadialWheel` TimeScale Teardown, Viewport Coords & `UIPanel` 9-Slice/Winding | `DONE` | **P1** | W1 | `FIX-CORE-03` | UI `#43`, `#44` | `FIX-SBX-02`, `DOC-07` |
 | **`FIX-EDT-01`** | UUID-Backed `EditorLayer` Selection & `"HIERARCHY_ENTITY"` Drag-Drop Payload | `TODO` | **P0** | W1 | `FIX-ECS-01` | `C-11`, Sandbox `#53`, `#55`, Med `EditMode active` | `FIX-EDT-02`, `FIX-EDT-03` |
 | **`FIX-EDT-02`** | `SceneViewportPanel` Play-Mode Paint Guard, Scrollbar/Hotkeys & Inspector Sync | `TODO` | **P1** | W2 | `FIX-EDT-01` | Sandbox `#51`, Med `Viewport`, `Inspector` | `DOC-08` |
 | **`FIX-EDT-03`** | `ContentBrowserPanel` Child Drop Target/Sanitizer & `DrawAnimator` Inspector | `TODO` | **P1** | W2 | `FIX-EDT-01`, `FIX-ANI-01` | Sandbox `#56`, `#57`, Med `ContentBrowser` | `DOC-08` |
@@ -621,7 +621,7 @@ flowchart TD
 ---
 
 #### `FIX-UIX-03` — `Font` UTF-8 Decoder, `.fnt` Input Validation, Wrap Space Trim & Baseline
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W0`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W0`
 - **Dependencies:** Hard: `None` | Unlocks: `DOC-07`
 - **Current Defects (`C-22` Part 2):** [Font.cpp](file://Engine/src/UI/Font.cpp#L80-L316), [SceneRenderer.cpp](file://Engine/src/Renderer/SceneRenderer.cpp#L894-L904): `ComputeLayout` and `MeasureText` cast raw `char` bytes instead of decoding UTF-8 codepoints (leaving `m_ExtendedCharacters` unreachable); `.fnt` parser ignores failed/negative `FindKeyInt` values; wrapped lines retain trailing space width (shifting centered/right-aligned lines left); `UILabel` starts baseline at rect bottom-left instead of top-left (`pos.y + size.y - base`).
 - **Verification (`EngineTests`):** Register codepoint `U+2014` (`—`) in a `Font`, call `ComputeLayout("Ash — Bone")`, and assert the single `U+2014` glyph is emitted instead of 3 mojibake bytes.
@@ -629,7 +629,7 @@ flowchart TD
 ---
 
 #### `FIX-UIX-04` — `UIRadialWheel` TimeScale Teardown, Viewport Coords & `UIPanel` 9-Slice/Winding
-- **Status:** `TODO` | **Priority:** `P1` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P1` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-CORE-03` | Unlocks: `FIX-SBX-02`, `DOC-07`
 - **Current Defects:** [UIRadialWheelComponent.cpp](file://Engine/src/UI/UIRadialWheelComponent.cpp#L23-L162), [UIPanel.cpp](file://Engine/src/UI/UIPanel.cpp#L25-L69), [lines 235-250](file://Engine/src/UI/UIPanel.cpp#L235-L250): Destroying an open `UIRadialWheelComponent` permanently leaks `TimeScale = 0.15f`; mouse wedge selection omits `Input::GetViewportTopLeft()`, uses unscaled `35px` deadzone, and overrides gamepad D-pad/stick when the mouse is parked >35px from center; `ResolveWedgeFromAngle(±Inf)` loops forever; `UIPanel` 9-slice inverts center UVs when borders exceed texture dimensions and emits CW-wound triangles in partial `RadialSweepCW` sectors.
 - **Verification (`EngineTests`):** Open a `UIRadialWheelComponent` (`Time::GetTimeScale() == 0.15f`), destroy its `GameObject`, flush lifecycle queues, and assert `Time::GetTimeScale() == 1.0f`. Assert all triangles in `UIPanel` `RadialSweepCW` at `fillAmount = 0.12f` have positive 2D cross product (CCW winding).

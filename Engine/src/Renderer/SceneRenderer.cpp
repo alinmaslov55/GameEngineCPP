@@ -918,8 +918,11 @@ void SceneRenderer::RenderPassScreenUI() {
         if (uiLabel->useRectTransform) {
             glm::vec2 resolvedPos, resolvedSize;
             UICanvas::ResolveScreenRect(uiLabel->rectTransform, m_ViewportWidth, m_ViewportHeight, resolvedPos, resolvedSize);
-            startPos = resolvedPos;
             effectiveScale = uiLabel->scale * dpiScale;
+            startPos = {
+                resolvedPos.x,
+                resolvedPos.y + resolvedSize.y - (uiLabel->font->GetBase() * effectiveScale)
+            };
             if (maxWrap > 0.0f) {
                 maxWrap *= dpiScale;
             } else if (resolvedSize.x > 0.0f && uiLabel->alignment != TextAlignH::Left) {

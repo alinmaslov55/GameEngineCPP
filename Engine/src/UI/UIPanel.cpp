@@ -55,16 +55,31 @@ std::vector<UIQuad> UIPanel::GenerateQuads(const glm::vec2& resolvedPos, const g
             resolvedPos.y + resolvedSize.y
         };
 
+        float uLeft = std::max(0.0f, BorderLeft()) / texW;
+        float uRight = std::max(0.0f, BorderRight()) / texW;
+        if (uLeft + uRight > 1.0f && (uLeft + uRight) > 0.0f) {
+            const float s = 1.0f / (uLeft + uRight);
+            uLeft *= s;
+            uRight *= s;
+        }
+        float vBottom = std::max(0.0f, BorderBottom()) / texH;
+        float vTop = std::max(0.0f, BorderTop()) / texH;
+        if (vBottom + vTop > 1.0f && (vBottom + vTop) > 0.0f) {
+            const float s = 1.0f / (vBottom + vTop);
+            vBottom *= s;
+            vTop *= s;
+        }
+
         const float u[4] = {
             0.0f,
-            std::clamp(BorderLeft() / texW, 0.0f, 1.0f),
-            std::clamp(1.0f - (BorderRight() / texW), 0.0f, 1.0f),
+            uLeft,
+            1.0f - uRight,
             1.0f
         };
         const float v[4] = {
             0.0f,
-            std::clamp(BorderBottom() / texH, 0.0f, 1.0f),
-            std::clamp(1.0f - (BorderTop() / texH), 0.0f, 1.0f),
+            vBottom,
+            1.0f - vTop,
             1.0f
         };
 
@@ -235,17 +250,17 @@ std::vector<UIQuad> UIPanel::GenerateQuads(const glm::vec2& resolvedPos, const g
                 UIQuad q;
                 q.Color = color;
                 if (!pastCorner) {
-                    // Triangle (C, qDef.Start, P) represented as quad with duplicate vertex P
+                    // Triangle (C, P, qDef.Start) in CCW order, padded with duplicate qDef.Start
                     q.Vertices[0] = { C, toUV(C) };
-                    q.Vertices[1] = { qDef.Start, toUV(qDef.Start) };
-                    q.Vertices[2] = { P, toUV(P) };
-                    q.Vertices[3] = { P, toUV(P) };
+                    q.Vertices[1] = { P, toUV(P) };
+                    q.Vertices[2] = { qDef.Start, toUV(qDef.Start) };
+                    q.Vertices[3] = { qDef.Start, toUV(qDef.Start) };
                 } else {
-                    // Convex polygon (C, qDef.Start, qDef.Corner, P)
+                    // Convex polygon (C, P, qDef.Corner, qDef.Start) in CCW order
                     q.Vertices[0] = { C, toUV(C) };
-                    q.Vertices[1] = { qDef.Start, toUV(qDef.Start) };
+                    q.Vertices[1] = { P, toUV(P) };
                     q.Vertices[2] = { qDef.Corner, toUV(qDef.Corner) };
-                    q.Vertices[3] = { P, toUV(P) };
+                    q.Vertices[3] = { qDef.Start, toUV(qDef.Start) };
                 }
                 quads.push_back(q);
                 break;

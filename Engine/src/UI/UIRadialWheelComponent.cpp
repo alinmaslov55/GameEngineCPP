@@ -20,10 +20,28 @@ UIRadialWheelComponent::UIRadialWheelComponent() {
     rectTransform.ZOrder = 100; // Render above HUD
 }
 
+UIRadialWheelComponent::~UIRadialWheelComponent() {
+    Close();
+}
+
+void UIRadialWheelComponent::OnDisable() {
+    Close();
+}
+
+void UIRadialWheelComponent::OnPoolRelease() {
+    Close();
+}
+
+void UIRadialWheelComponent::OnDestroy() {
+    Close();
+}
+
 int UIRadialWheelComponent::ResolveWedgeFromAngle(float angleRad) noexcept {
-    // Normalize to [-PI, PI]
-    while (angleRad > kPi) angleRad -= 2.0f * kPi;
-    while (angleRad < -kPi) angleRad += 2.0f * kPi;
+    if (!std::isfinite(angleRad)) {
+        return -1;
+    }
+    // Normalize to [-PI, PI] in O(1)
+    angleRad = std::remainder(angleRad, 2.0f * kPi);
 
     // Wedge 0: Top [45 deg .. 135 deg]
     if (angleRad >= kQuarterPi && angleRad <= kThreeQuarterPi) {
@@ -140,15 +158,19 @@ void UIRadialWheelComponent::Update(float deltaTime) {
         WasStickDeflected = false;
     }
 
-    // Mouse delta resolution
-    const glm::vec2 mousePos = Input::GetMousePosition();
-    const glm::vec2 vpSize = Input::GetViewportSize();
-    if (vpSize.x > 0.0f && vpSize.y > 0.0f) {
-        const glm::vec2 mouseBottomUp(mousePos.x, vpSize.y - mousePos.y);
-        const glm::vec2 screenCenter = vpSize * 0.5f;
-        const glm::vec2 mouseDelta = mouseBottomUp - screenCenter;
-        if (glm::length(mouseDelta) > 35.0f && !WasStickDeflected) {
-            ActiveWedge = ResolveWedgeFromVector(mouseDelta, 0.0f);
+    // Mouse delta resolution (only when KeyboardMouse is active so parked mouse does not override gamepad)
+    if (Input::GetActiveDeviceMode() == InputDeviceMode::KeyboardMouse && !WasStickDeflected) {
+        const glm::vec2 mousePos = Input::GetMousePosition() - Input::GetViewportTopLeft();
+        const glm::vec2 vpSize = Input::GetViewportSize();
+        if (vpSize.x > 0.0f && vpSize.y > 0.0f) {
+            const float uiScale = UICanvas::ComputeScaleFactor(static_cast<uint32_t>(vpSize.x), static_cast<uint32_t>(vpSize.y));
+            const float scaledDeadzone = 35.0f * uiScale;
+            const glm::vec2 mouseBottomUp(mousePos.x, vpSize.y - mousePos.y);
+            const glm::vec2 screenCenter = vpSize * 0.5f;
+            const glm::vec2 mouseDelta = mouseBottomUp - screenCenter;
+            if (glm::length(mouseDelta) > scaledDeadzone) {
+                ActiveWedge = ResolveWedgeFromVector(mouseDelta, 0.0f);
+            }
         }
     }
 

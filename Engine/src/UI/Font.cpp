@@ -2,6 +2,7 @@
 #include "Engine/Core/ResourceManager.h"
 #include <algorithm>
 #include <cctype>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <sstream>
@@ -57,10 +58,67 @@ inline bool FindKeyFloat(std::string_view line, std::string_view key, float& out
     if (FindKeyValue(line, key, valStr)) {
         try {
             outValue = std::stof(valStr);
-            return true;
+            return std::isfinite(outValue);
         } catch (...) {}
     }
     return false;
+}
+
+inline uint32_t DecodeNextUTF8(std::string_view text, size_t& index) noexcept {
+    if (index >= text.size()) {
+        return 0;
+    }
+    const uint8_t b0 = static_cast<uint8_t>(text[index]);
+    if (b0 < 0x80u) {
+        ++index;
+        return b0;
+    }
+    if ((b0 & 0xE0u) == 0xC0u) {
+        if (b0 >= 0xC2u && index + 1 < text.size()) {
+            const uint8_t b1 = static_cast<uint8_t>(text[index + 1]);
+            if ((b1 & 0xC0u) == 0x80u) {
+                index += 2;
+                return (static_cast<uint32_t>(b0 & 0x1Fu) << 6) |
+                       static_cast<uint32_t>(b1 & 0x3Fu);
+            }
+        }
+    } else if ((b0 & 0xF0u) == 0xE0u) {
+        if (index + 2 < text.size()) {
+            const uint8_t b1 = static_cast<uint8_t>(text[index + 1]);
+            const uint8_t b2 = static_cast<uint8_t>(text[index + 2]);
+            if ((b1 & 0xC0u) == 0x80u && (b2 & 0xC0u) == 0x80u) {
+                const uint32_t cp = (static_cast<uint32_t>(b0 & 0x0Fu) << 12) |
+                                    (static_cast<uint32_t>(b1 & 0x3Fu) << 6) |
+                                    static_cast<uint32_t>(b2 & 0x3Fu);
+                if (cp >= 0x800u && !(cp >= 0xD800u && cp <= 0xDFFFu)) {
+                    index += 3;
+                    return cp;
+                }
+            }
+        }
+    } else if ((b0 & 0xF8u) == 0xF0u) {
+        if (b0 <= 0xF4u && index + 3 < text.size()) {
+            const uint8_t b1 = static_cast<uint8_t>(text[index + 1]);
+            const uint8_t b2 = static_cast<uint8_t>(text[index + 2]);
+            const uint8_t b3 = static_cast<uint8_t>(text[index + 3]);
+            if ((b1 & 0xC0u) == 0x80u && (b2 & 0xC0u) == 0x80u && (b3 & 0xC0u) == 0x80u) {
+                const uint32_t cp = (static_cast<uint32_t>(b0 & 0x07u) << 18) |
+                                    (static_cast<uint32_t>(b1 & 0x3Fu) << 12) |
+                                    (static_cast<uint32_t>(b2 & 0x3Fu) << 6) |
+                                    static_cast<uint32_t>(b3 & 0x3Fu);
+                if (cp >= 0x10000u && cp <= 0x10FFFFu) {
+                    index += 4;
+                    return cp;
+                }
+            }
+        }
+    }
+    ++index;
+    return 0xFFFDu;
+}
+
+inline bool IsAsciiSpaceOrTab(char c) noexcept {
+    return c == ' ' || c == '\t';
 }
 
 } // namespace
@@ -116,20 +174,27 @@ std::shared_ptr<Font> Font::LoadBMFontFromMemory(std::string_view fntContent,
 
         if (sv.starts_with("common")) {
             int lineHeight = 32, base = 26, scaleW = 512, scaleH = 512;
-            if (FindKeyInt(sv, "lineHeight=", lineHeight)) font->m_LineHeight = static_cast<float>(lineHeight);
-            if (FindKeyInt(sv, "base=", base))             font->m_Base = static_cast<float>(base);
-            if (FindKeyInt(sv, "scaleW=", scaleW))         font->m_ScaleW = static_cast<float>(scaleW);
-            if (FindKeyInt(sv, "scaleH=", scaleH))         font->m_ScaleH = static_cast<float>(scaleH);
+            if (FindKeyInt(sv, "lineHeight=", lineHeight) && lineHeight > 0) font->m_LineHeight = static_cast<float>(lineHeight);
+            if (FindKeyInt(sv, "base=", base) && base >= 0)                  font->m_Base = static_cast<float>(base);
+            if (FindKeyInt(sv, "scaleW=", scaleW) && scaleW > 0)             font->m_ScaleW = static_cast<float>(scaleW);
+            if (FindKeyInt(sv, "scaleH=", scaleH) && scaleH > 0)             font->m_ScaleH = static_cast<float>(scaleH);
         } else if (sv.starts_with("char ")) {
             int id = 0, x = 0, y = 0, width = 0, height = 0, xoffset = 0, yoffset = 0, xadvance = 0;
-            FindKeyInt(sv, "id=", id);
-            FindKeyInt(sv, "x=", x);
-            FindKeyInt(sv, "y=", y);
-            FindKeyInt(sv, "width=", width);
-            FindKeyInt(sv, "height=", height);
+            if (!FindKeyInt(sv, "id=", id) || id < 0) continue;
+            if (!FindKeyInt(sv, "x=", x) || x < 0) continue;
+            if (!FindKeyInt(sv, "y=", y) || y < 0) continue;
+            if (!FindKeyInt(sv, "width=", width) || width < 0) continue;
+            if (!FindKeyInt(sv, "height=", height) || height < 0) continue;
             FindKeyInt(sv, "xoffset=", xoffset);
             FindKeyInt(sv, "yoffset=", yoffset);
-            FindKeyInt(sv, "xadvance=", xadvance);
+            if (!FindKeyInt(sv, "xadvance=", xadvance) || xadvance < 0) continue;
+
+            if (font->m_ScaleW > 0.0f && font->m_ScaleH > 0.0f) {
+                if (static_cast<float>(x + width) > font->m_ScaleW ||
+                    static_cast<float>(y + height) > font->m_ScaleH) {
+                    continue;
+                }
+            }
 
             Character ch;
             ch.size = { static_cast<float>(width), static_cast<float>(height) };
@@ -150,9 +215,9 @@ std::shared_ptr<Font> Font::LoadBMFontFromMemory(std::string_view fntContent,
         } else if (sv.starts_with("kerning ")) {
             int first = 0, second = 0;
             float amount = 0.0f;
-            FindKeyInt(sv, "first=", first);
-            FindKeyInt(sv, "second=", second);
-            FindKeyFloat(sv, "amount=", amount);
+            if (!FindKeyInt(sv, "first=", first) || first < 0) continue;
+            if (!FindKeyInt(sv, "second=", second) || second < 0) continue;
+            if (!FindKeyFloat(sv, "amount=", amount)) continue;
             font->AddKerning(static_cast<uint32_t>(first), static_cast<uint32_t>(second), amount);
         }
     }
@@ -184,23 +249,26 @@ TextLayoutResult Font::ComputeLayout(std::string_view utf8Text,
     std::vector<Line> lines;
     Line currentLine;
     float currentCursorX = 0.0f;
+    float lastVisibleEndX = 0.0f;
     uint32_t prevCodepoint = 0;
 
-    // Helper to finish current line
+    // Helper to finish current line (trimming trailing whitespace from line width)
     auto finishLine = [&]() {
-        currentLine.width = currentCursorX;
+        currentLine.width = currentLine.glyphs.empty() ? 0.0f : lastVisibleEndX;
         lines.push_back(std::move(currentLine));
         currentLine = Line{};
         currentCursorX = 0.0f;
+        lastVisibleEndX = 0.0f;
         prevCodepoint = 0;
     };
 
-    // Helper to measure token width (with kerning)
+    // Helper to measure token width (with UTF-8 decoding and kerning)
     auto measureWord = [&](std::string_view word, uint32_t startPrevCode) -> float {
         float w = 0.0f;
         uint32_t pCode = startPrevCode;
-        for (char c : word) {
-            uint32_t code = static_cast<uint32_t>(static_cast<uint8_t>(c));
+        size_t wi = 0;
+        while (wi < word.size()) {
+            const uint32_t code = DecodeNextUTF8(word, wi);
             if (pCode != 0) {
                 w += GetKerning(pCode, code) * scale;
             }
@@ -212,7 +280,7 @@ TextLayoutResult Font::ComputeLayout(std::string_view utf8Text,
 
     size_t i = 0;
     while (i < utf8Text.size()) {
-        char c = utf8Text[i];
+        const char c = utf8Text[i];
         if (c == '\r') {
             i++;
             continue;
@@ -224,8 +292,8 @@ TextLayoutResult Font::ComputeLayout(std::string_view utf8Text,
             continue;
         }
 
-        if (std::isspace(static_cast<unsigned char>(c))) {
-            uint32_t code = static_cast<uint32_t>(static_cast<uint8_t>(c));
+        if (IsAsciiSpaceOrTab(c)) {
+            const uint32_t code = static_cast<uint32_t>(static_cast<uint8_t>(c));
             if (prevCodepoint != 0) {
                 currentCursorX += GetKerning(prevCodepoint, code) * scale;
             }
@@ -236,22 +304,23 @@ TextLayoutResult Font::ComputeLayout(std::string_view utf8Text,
             continue;
         }
 
-        // Extract word
-        size_t wordStart = i;
-        while (i < utf8Text.size() && !std::isspace(static_cast<unsigned char>(utf8Text[i])) && utf8Text[i] != '\n' && utf8Text[i] != '\r') {
+        // Extract word (up to next ASCII space/tab/newline)
+        const size_t wordStart = i;
+        while (i < utf8Text.size() && !IsAsciiSpaceOrTab(utf8Text[i]) && utf8Text[i] != '\n' && utf8Text[i] != '\r') {
             i++;
         }
-        std::string_view word = utf8Text.substr(wordStart, i - wordStart);
-        float wordWidth = measureWord(word, prevCodepoint);
+        const std::string_view word = utf8Text.substr(wordStart, i - wordStart);
+        const float wordWidth = measureWord(word, prevCodepoint);
 
         // Word-wrap check: if adding word exceeds maxWrapWidth, and currentLine has characters
         if (maxWrapWidth > 0.0f && !currentLine.glyphs.empty() && (currentCursorX + wordWidth > maxWrapWidth)) {
             finishLine();
         }
 
-        // Append word glyphs to currentLine
-        for (char wc : word) {
-            uint32_t code = static_cast<uint32_t>(static_cast<uint8_t>(wc));
+        // Append decoded UTF-8 word glyphs to currentLine
+        size_t wi = 0;
+        while (wi < word.size()) {
+            const uint32_t code = DecodeNextUTF8(word, wi);
             if (prevCodepoint != 0) {
                 currentCursorX += GetKerning(prevCodepoint, code) * scale;
             }
@@ -264,13 +333,14 @@ TextLayoutResult Font::ComputeLayout(std::string_view utf8Text,
             currentLine.glyphs.push_back(item);
 
             currentCursorX += ch.advance * scale;
+            lastVisibleEndX = currentCursorX;
             prevCodepoint = code;
         }
     }
 
-    // Commit any trailing line
+    // Commit any trailing line (trimming trailing whitespace)
     if (!currentLine.glyphs.empty() || lines.empty()) {
-        currentLine.width = currentCursorX;
+        currentLine.width = currentLine.glyphs.empty() ? 0.0f : lastVisibleEndX;
         lines.push_back(std::move(currentLine));
     }
 

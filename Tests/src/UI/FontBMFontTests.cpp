@@ -225,4 +225,71 @@ TEST(UILabelTest, StyledTextSceneSerializerRoundTrip) {
     EXPECT_FLOAT_EQ(dstLabel->shadowColor.a, 0.9f);
 }
 
+TEST(FontBMFontTest, Utf8MultiByteEmDashDecoding) {
+    Engine::Font font;
+    font.SetLineHeight(30.0f);
+    font.SetBase(24.0f);
+
+    Engine::Character ch{};
+    ch.size = { 12.0f, 20.0f };
+    ch.advance = 14.0f;
+    for (char c : std::string_view("AshBone")) {
+        font.AddCharacter(c, ch);
+    }
+
+    Engine::Character emDash{};
+    emDash.size = { 24.0f, 4.0f };
+    emDash.advance = 26.0f;
+    font.AddCharacter(0x2014u, emDash); // U+2014 (—)
+
+    // "Ash — Bone": 3 ('Ash') + 1 (emDash) + 4 ('Bone') = 8 visible glyphs (NOT 10 with 3 mojibake bytes)
+    const auto layout = font.ComputeLayout("Ash \xE2\x80\x94 Bone", glm::vec2(0.0f), 1.0f);
+    ASSERT_EQ(layout.glyphs.size(), 8u);
+    EXPECT_EQ(layout.glyphs[3].codepoint, 0x2014u);
+    EXPECT_FLOAT_EQ(layout.glyphs[3].size.x, 24.0f);
+}
+
+TEST(FontBMFontTest, MalformedFntLinesRejectedCleanly) {
+    const std::string malformedFnt =
+        "common lineHeight=-10 base=-5 scaleW=512 scaleH=512\n"
+        "char x=0 y=0 width=10 height=10 xadvance=10\n"                    // missing id=
+        "char id=-1 x=0 y=0 width=10 height=10 xadvance=10\n"             // negative id
+        "char id=66 x=-5 y=0 width=10 height=10 xadvance=10\n"            // negative x
+        "char id=67 x=500 y=0 width=32 height=10 xadvance=10\n"           // out-of-atlas bounds
+        "char id=65 x=10 y=10 width=20 height=20 xoffset=0 yoffset=0 xadvance=22\n"; // valid 'A'
+
+    auto font = Engine::Font::LoadBMFontFromMemory(malformedFnt, nullptr);
+    ASSERT_NE(font, nullptr);
+    EXPECT_FLOAT_EQ(font->GetLineHeight(), 32.0f); // Default preserved when lineHeight <= 0
+    EXPECT_FLOAT_EQ(font->GetCharacter('A').advance, 22.0f);
+    EXPECT_FLOAT_EQ(font->GetCharacter('B').advance, 0.0f);
+    EXPECT_FLOAT_EQ(font->GetCharacter('C').advance, 0.0f);
+}
+
+TEST(FontBMFontTest, WrappedLinesTrimTrailingSpaceForCenterAndRightAlignment) {
+    const std::string sampleFnt =
+        "common lineHeight=30 base=24 scaleW=512 scaleH=512\n"
+        "chars count=2\n"
+        "char id=65 x=0 y=0 width=20 height=24 xoffset=0 yoffset=0 xadvance=20\n" // 'A'
+        "char id=32 x=0 y=0 width=0 height=0 xoffset=0 yoffset=0 xadvance=10\n";  // ' '
+
+    auto font = Engine::Font::LoadBMFontFromMemory(sampleFnt, nullptr);
+    ASSERT_NE(font, nullptr);
+
+    // "AA AA" with maxWrapWidth = 60px:
+    // Line 0 = "AA" (40px, trailing space 10px must be trimmed!)
+    // Line 1 = "AA" (40px)
+    const auto rightLayout = font->ComputeLayout("AA AA", glm::vec2(0.0f), 1.0f, 60.0f, Engine::TextAlignH::Right);
+    ASSERT_EQ(rightLayout.lineCount, 2u);
+    ASSERT_EQ(rightLayout.glyphs.size(), 4u);
+    // Right aligned in 60px container -> 60 - 40 = 20px offset for BOTH lines
+    EXPECT_FLOAT_EQ(rightLayout.glyphs[0].position.x, 20.0f);
+    EXPECT_FLOAT_EQ(rightLayout.glyphs[2].position.x, 20.0f);
+
+    const auto centerLayout = font->ComputeLayout("AA AA", glm::vec2(0.0f), 1.0f, 60.0f, Engine::TextAlignH::Center);
+    ASSERT_EQ(centerLayout.lineCount, 2u);
+    EXPECT_FLOAT_EQ(centerLayout.glyphs[0].position.x, 10.0f);
+    EXPECT_FLOAT_EQ(centerLayout.glyphs[2].position.x, 10.0f);
+}
+
 } // namespace

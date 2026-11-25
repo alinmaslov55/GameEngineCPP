@@ -14,6 +14,7 @@
 #include "Engine/Core/Input.h"
 #include "Engine/Core/Time.h"
 #include <algorithm>
+#include <limits>
 #include <vector>
 
 namespace {
@@ -434,6 +435,65 @@ TEST(UIButtonComponentTest, OverlappingButtonsRespectZOrder) {
 
     Engine::UIButtonComponent::ClearFocus();
     Engine::Time::Reset();
+}
+
+TEST(UIRadialWheelTest, TeardownRestoresTimeScaleAndRejectsNonFiniteAngles) {
+    Engine::Time::Reset();
+    ASSERT_FLOAT_EQ(Engine::Time::GetTimeScale(), 1.0f);
+
+    // Non-finite angles must return -1 immediately without hanging
+    const float posInf = std::numeric_limits<float>::infinity();
+    const float negInf = -std::numeric_limits<float>::infinity();
+    const float nanVal = std::numeric_limits<float>::quiet_NaN();
+    EXPECT_EQ(Engine::UIRadialWheelComponent::ResolveWedgeFromAngle(posInf), -1);
+    EXPECT_EQ(Engine::UIRadialWheelComponent::ResolveWedgeFromAngle(negInf), -1);
+    EXPECT_EQ(Engine::UIRadialWheelComponent::ResolveWedgeFromAngle(nanVal), -1);
+
+    Engine::Scene scene("RadialWheelTeardownScene");
+    auto* go = scene.CreateGameObject("WheelEntity");
+    auto* wheel = go->AddComponent<Engine::UIRadialWheelComponent>();
+    wheel->Open();
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.15f);
+
+    // Destroy GameObject and flush lifecycle queues: TimeScale must restore to 1.0f
+    scene.DestroyGameObject(go);
+    scene.Update(0.0f);
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 1.0f);
+
+    Engine::Time::Reset();
+}
+
+TEST(UIPanelGeometryTest, RadialSweepCWPartialSectorHasCCWWindingAndOversizedNineSliceClampsUVs) {
+    Engine::UIPanel panel;
+    panel.renderMode = Engine::UIRenderMode::RadialSweepCW;
+    panel.fillAmount = 0.12f;
+    auto quads = panel.GenerateQuads({ 100.0f, 100.0f }, { 200.0f, 200.0f });
+    ASSERT_EQ(quads.size(), 1u);
+
+    auto cross2D = [](const glm::vec2& a, const glm::vec2& b, const glm::vec2& c) {
+        const glm::vec2 ab = b - a;
+        const glm::vec2 ac = c - a;
+        return ab.x * ac.y - ab.y * ac.x;
+    };
+
+    // Triangle (0, 1, 2) must be CCW (positive 2D cross product)
+    const float c012 = cross2D(quads[0].Vertices[0].Position, quads[0].Vertices[1].Position, quads[0].Vertices[2].Position);
+    EXPECT_GT(c012, 0.0f);
+
+    // Also test pastCorner (fillAmount = 0.20f) where both triangles (0,1,2) and (2,3,0) are non-degenerate CCW
+    panel.fillAmount = 0.20f;
+    quads = panel.GenerateQuads({ 100.0f, 100.0f }, { 200.0f, 200.0f });
+    ASSERT_EQ(quads.size(), 1u);
+    EXPECT_GT(cross2D(quads[0].Vertices[0].Position, quads[0].Vertices[1].Position, quads[0].Vertices[2].Position), 0.0f);
+    EXPECT_GT(cross2D(quads[0].Vertices[2].Position, quads[0].Vertices[3].Position, quads[0].Vertices[0].Position), 0.0f);
+
+    // Oversized 9-slice borders on 512x512 fallback texture must not invert center UVs
+    panel.renderMode = Engine::UIRenderMode::NineSlice;
+    panel.nineSliceBordersPx = { 300.0f, 300.0f, 300.0f, 300.0f };
+    auto nineQuads = panel.GenerateQuads({ 0.0f, 0.0f }, { 800.0f, 800.0f }, 1.0f);
+    ASSERT_EQ(nineQuads.size(), 9u);
+    EXPECT_LE(nineQuads[4].Vertices[0].TexCoord.x, nineQuads[4].Vertices[1].TexCoord.x);
+    EXPECT_LE(nineQuads[4].Vertices[0].TexCoord.y, nineQuads[4].Vertices[3].TexCoord.y);
 }
 
 } // namespace

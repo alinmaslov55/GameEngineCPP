@@ -58,6 +58,7 @@ public:
     std::function<void(int wedgeIndex, RadialWheelItem item)> OnConfirmDrop;
 
     UIRadialWheelComponent();
+    ~UIRadialWheelComponent() override;
 
     // Resolves quadrant wedge 0..3 from angle in radians [-PI, PI]
     [[nodiscard]] static int ResolveWedgeFromAngle(float angleRad) noexcept;
@@ -73,6 +74,9 @@ public:
     bool ConfirmSelection(int wedgeIndex);
 
     void Update(float deltaTime) override;
+    void OnDisable() override;
+    void OnPoolRelease() override;
+    void OnDestroy() override;
 
     // Generates UI render quads (background, 4 sectors with affordability tinting, and icons)
     [[nodiscard]] std::vector<UIQuad> GenerateQuads(const glm::vec2& resolvedPos, const glm::vec2& resolvedSize, float borderScale = 1.0f) const;
