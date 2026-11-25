@@ -20,7 +20,7 @@
 class PlayerController final : public Engine::Component {
 public:
     float moveSpeed = 3.8f;
-    float jumpForce = 5.0f;
+    float jumpForce = 7.0f;
     Engine::ParticleProps m_DustProps;
 
     void Awake() override {
@@ -74,8 +74,6 @@ public:
                     }
                 }
                 rb->SetVelocityXZ(movement.x * effectiveSpeed, movement.z * effectiveSpeed);
-            } else {
-                rb->SetVelocityXZ(0.0f, 0.0f);
             }
         }
     }
@@ -127,14 +125,13 @@ public:
         }
 
         const bool isMoving = (movement.x * movement.x + movement.z * movement.z) > 1e-5f;
+        const bool hasDynamicBody = (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid());
 
         if (isMoving) {
             ENGINE_DEBUG("PlayerController moving: ({:.2f}, {:.2f}, {:.2f})", movement.x, movement.y, movement.z);
             m_LastFacingXZ = { movement.x, movement.z };
 
-            if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid()) {
-                rb->SetVelocityXZ(movement.x * moveSpeed, movement.z * moveSpeed);
-            } else {
+            if (!hasDynamicBody) {
                 transform->Translate(movement * moveSpeed * deltaTime);
             }
 
@@ -146,9 +143,6 @@ public:
                 particleSystem->Emit(m_DustProps);
             }
         } else {
-            if (rb && rb->Type == Engine::Rigidbody2D::BodyType::Dynamic && rb->RuntimeBody.IsValid()) {
-                rb->SetVelocityXZ(0.0f, 0.0f);
-            }
             if (animator) animator->PlayState("Idle", m_LastFacingXZ);
         }
     }

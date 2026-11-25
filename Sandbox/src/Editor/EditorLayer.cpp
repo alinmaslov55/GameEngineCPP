@@ -89,7 +89,8 @@ void EditorLayer::OnUpdate(float deltaTime) {
         Engine::GameplayData::ReloadAll();
     }
     if (m_SceneState == SceneState::Play && m_ActiveScene) {
-        m_ActiveScene->UpdateRuntime(deltaTime);
+        Engine::SceneManager::UpdateRuntime(deltaTime);
+        m_ActiveScene = Engine::SceneManager::GetActiveScene();
     } else if (m_SceneState == SceneState::Edit && m_ActiveScene) {
         for (const auto& go : m_ActiveScene->GetGameObjects()) {
             if (!go || !go->IsActiveInHierarchy()) {
@@ -198,6 +199,7 @@ void EditorLayer::OnSceneStop() {
         return;
     }
 
+    Engine::SceneManager::CancelTransition();
     if (m_RuntimeScene && m_RuntimeScene->IsRuntimeRunning()) {
         m_RuntimeScene->OnRuntimeStop();
     }

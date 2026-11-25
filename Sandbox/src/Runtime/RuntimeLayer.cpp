@@ -5,11 +5,13 @@
 #include <Engine/Core/Application.h>
 #include <Engine/Core/Input.h>
 #include <Engine/Core/ResourceManager.h>
+#include <Engine/Data/GameplayData.h>
 #include <Engine/Renderer/Renderer2D.h>
 #include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/SceneSerializer.h>
 #include <Engine/Utils/Logger.h>
 
+#include <filesystem>
 #include <utility>
 
 namespace Sandbox {
@@ -21,6 +23,12 @@ RuntimeLayer::RuntimeLayer(std::string startupScenePath)
 void RuntimeLayer::OnAttach() {
     ENGINE_INFO("Attaching RuntimeLayer (Standalone Distribution Mode)...");
     Engine::ResourceManager::DiscoverAssetRoot("Sandbox");
+
+    std::filesystem::path dataDir = Engine::ResourceManager::GetAssetRoot() / "assets" / "data";
+    if (!std::filesystem::exists(dataDir)) {
+        dataDir = "Sandbox/assets/data";
+    }
+    Engine::GameplayData::Init(dataDir.string());
 
     m_ActiveScene = std::make_shared<Engine::Scene>("Runtime Level");
     Engine::SceneSerializer deserializer(m_ActiveScene);
@@ -57,6 +65,7 @@ void RuntimeLayer::OnDetach() {
         m_ActiveScene->OnRuntimeStop();
     }
     m_ActiveScene.reset();
+    Engine::GameplayData::Shutdown();
 }
 
 void RuntimeLayer::OnUpdate(float deltaTime) {
@@ -80,9 +89,10 @@ void RuntimeLayer::OnUpdate(float deltaTime) {
         );
     }
 
-    // 2. Poll Input & Step Runtime Physics/Scripts
+    // 2. Poll Input & Step Runtime Physics/Scripts (via SceneManager to drive SAV-02 fade transitions)
     Engine::Input::Update();
-    m_ActiveScene->UpdateRuntime(deltaTime);
+    Engine::SceneManager::UpdateRuntime(deltaTime);
+    m_ActiveScene = Engine::SceneManager::GetActiveScene();
 
     // 3. Render Directly to the OS Window Backbuffer (No Offscreen Framebuffer)
     Engine::Renderer2D::ResetStats();
