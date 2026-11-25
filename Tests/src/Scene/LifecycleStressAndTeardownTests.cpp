@@ -2,6 +2,8 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Prefab.h"
+#include "Engine/Scene/Components/PointLightComponent.h"
+#include "Engine/Terrain/TerrainComponent.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Core/Time.h"
 #include "LifecycleTestHelpers.h"
@@ -324,6 +326,47 @@ TEST(DeferredLifecycleTest, SceneDestructorInvokesOnDestroyOnSurvivingAndQueuedE
     EXPECT_EQ(survivingDestroyed, 1);
     EXPECT_EQ(queuedDestroyed, 1);
     EXPECT_TRUE(subsystemAliveDuringOnDestroy);
+}
+
+TEST(DeferredLifecycleTest, PointLightAndTerrainCacheSafeDuringOnDestroyAndMultiPassTeardown) {
+    // 1. Adding PointLightComponent inside OnDestroy() must not leave a dangling GameObject* in m_PointLightEntities
+    {
+        Engine::Scene scene("FlushPointLightOnDestroyScene");
+        auto* victim = scene.CreateGameObject("DyingEntity");
+        auto* tracker = victim->AddComponent<CallbackLifecycleComponent>();
+        tracker->onDestroy = [&](Engine::GameObject* self) {
+            self->AddComponent<Engine::PointLightComponent>();
+            (void)scene.EvaluateIlluminationAtXZ({ 0.0f, 0.0f });
+        };
+
+        scene.DestroyGameObject(victim);
+        EXPECT_TRUE(scene.GetPointLightEntities().empty());
+        const auto sample = scene.EvaluateIlluminationAtXZ({ 0.0f, 0.0f });
+        EXPECT_FLOAT_EQ(sample.SafeIntensity, 0.0f);
+    }
+
+    // 2. Multi-pass ~Scene() teardown must not expose freed PointLight or Terrain pointers to pass-2 OnDestroy()
+    int pass2Count = 0;
+    {
+        Engine::Scene scene("MultiPassTeardownLightAndTerrainScene");
+        auto* terrainGo = scene.CreateGameObject("Terrain");
+        terrainGo->AddComponent<Engine::TerrainComponent>(8.0f, 8.0f, 8u, 8u);
+        (void)scene.SampleSurfaceAtXZ(1.0f, 1.0f);
+
+        auto* lightGo = scene.CreateGameObject("LightSpawner");
+        lightGo->AddComponent<Engine::PointLightComponent>();
+        auto* spawner = lightGo->AddComponent<CallbackLifecycleComponent>();
+        spawner->onDestroy = [&](Engine::GameObject*) {
+            auto* helper = scene.CreateGameObject("Pass2Helper");
+            auto* helperCb = helper->AddComponent<CallbackLifecycleComponent>();
+            helperCb->onDestroy = [&](Engine::GameObject*) {
+                ++pass2Count;
+                (void)scene.EvaluateIlluminationAtXZ({ 0.0f, 0.0f });
+                (void)scene.SampleSurfaceAtXZ(1.0f, 1.0f);
+            };
+        };
+    }
+    EXPECT_EQ(pass2Count, 1);
 }
 
 } // namespace

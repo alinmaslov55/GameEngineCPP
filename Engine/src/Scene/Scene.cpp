@@ -108,11 +108,24 @@ Scene::~Scene() {
         }
     };
 
+    auto clearTransientSceneCaches = [&]() noexcept {
+        m_FixedUpdateEntities.clear();
+        m_PendingFixedUpdateAdditions.clear();
+        m_PointLightEntities.clear();
+        m_CachedChunkManager = nullptr;
+        m_CachedTerrain = nullptr;
+        m_CachedTerrainTransform = nullptr;
+        m_TerrainCacheDirty = false;
+    };
+
+    clearTransientSceneCaches();
+
     while (!m_PendingDestroyQueue.empty() || !m_GameObjects.empty() || !m_PendingSpawnQueue.empty()) {
         if (!m_PendingDestroyQueue.empty()) {
             auto queuedDestroys = std::move(m_PendingDestroyQueue);
             m_PendingDestroyQueue.clear();
             destroyBatch(queuedDestroys);
+            clearTransientSceneCaches();
         }
 
         auto surviving = std::move(m_GameObjects);
@@ -137,15 +150,10 @@ Scene::~Scene() {
         for (GameObject* go : rawSurviving) {
             m_EntityUUIDMap.erase(go->GetUUID());
         }
+        clearTransientSceneCaches();
     }
 
     m_EntityUUIDMap.clear();
-    m_FixedUpdateEntities.clear();
-    m_PendingFixedUpdateAdditions.clear();
-    m_PointLightEntities.clear();
-    m_CachedChunkManager = nullptr;
-    m_CachedTerrain = nullptr;
-    m_CachedTerrainTransform = nullptr;
     ENGINE_CORE_INFO("Scene destroyed: '{}'", m_Name);
 }
 
@@ -376,6 +384,10 @@ void Scene::FlushEntityLifecycleQueues() {
                 return !go || go->IsPendingDestroy() || go->IsDestroyed() || !go->HasFixedUpdate();
             });
 
+            std::erase_if(m_PointLightEntities, [](GameObject* go) {
+                return !go || go->IsPendingDestroy() || go->IsDestroyed();
+            });
+
             std::erase_if(m_GameObjects, [](const std::unique_ptr<GameObject>& ptr) {
                 return ptr->IsDestroyed();
             });
@@ -401,6 +413,10 @@ void Scene::FlushEntityLifecycleQueues() {
 
     std::erase_if(m_FixedUpdateEntities, [](GameObject* go) {
         return !go || go->IsPendingDestroy() || go->IsDestroyed() || !go->HasFixedUpdate();
+    });
+
+    std::erase_if(m_PointLightEntities, [](GameObject* go) {
+        return !go || go->IsPendingDestroy() || go->IsDestroyed();
     });
 
     m_TerrainCacheDirty = true;
@@ -858,7 +874,9 @@ void Scene::UnregisterFixedUpdateEntity(GameObject* go) {
 }
 
 void Scene::RegisterPointLightEntity(GameObject* go) {
-    if (!go) return;
+    if (!go || go->GetScene() != this || go->IsPendingDestroy() || go->IsDestroyed()) {
+        return;
+    }
     if (std::find(m_PointLightEntities.begin(), m_PointLightEntities.end(), go) == m_PointLightEntities.end()) {
         m_PointLightEntities.push_back(go);
     }
