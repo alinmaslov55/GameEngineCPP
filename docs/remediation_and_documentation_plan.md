@@ -203,7 +203,7 @@ flowchart TD
 | **`FIX-ECS-03`** | `EntityPoolManager` Key/Parent Safety & Pooled Component State Reset | `DONE` | **P0** | W2 | `FIX-ECS-02`, `FIX-ANI-01` | `C-08`, Med `EntityPoolManager`, Physics `#28` | `DOC-03` |
 | **`FIX-SER-01`** | `SceneSerializer` & `Prefab` Full Component/Active Fidelity & Safe JSON | `DONE` | **P0** | W1 | `FIX-ECS-02`, `FIX-ANI-01` | ECS `#23`, `#25` (`SceneManager` unscaled dt) | `FIX-PHY-01`, `DOC-03` |
 | **`FIX-ANI-01`** | `Animator` PlayGeneration Reentrancy Guard, `FlipX` Retention & Finite `dt` | `DONE` | **P0** | W0 | *None (Root)* | `C-09`, ECS `#21`, Med `PlayOneShot` | `FIX-ECS-03`, `FIX-SER-01`, `FIX-EDT-03` |
-| **`FIX-AIX-01`** | `StateMachine` Iterative Transition Queue, `SteeringSystem` & `Ballistics` Guards | `TODO` | **P0** | W1 | `FIX-PHY-04` | `C-10`, ECS `#26`, Med `Ballistics`, `StateMachine` | `OPT-01`, `DOC-06` |
+| **`FIX-AIX-01`** | `StateMachine` Iterative Transition Queue, `SteeringSystem` & `Ballistics` Guards | `DONE` | **P0** | W1 | `FIX-PHY-04` | `C-10`, ECS `#26`, Med `Ballistics`, `StateMachine` | `OPT-01`, `DOC-06` |
 | **`FIX-LGT-01`** | `LightQuerySystem` Enabled/Occlusion Order & `CameraComponent` Pause Hold | `TODO` | **P1** | W1 | `FIX-PHY-04` | ECS `#20`, `#24` (`CameraComponent`) | `OPT-01`, `DOC-05` |
 | **`FIX-PHY-01`** | Deferred Prefab Body Registration, Static Transform Sync & Shape Filter/Mass | `DONE` | **P0** | W1 | `FIX-ECS-01`, `FIX-SER-01` | `C-12` (Static `(0,0)`, filters, density, velocity) | `FIX-PHY-03`, `FIX-PHY-04` |
 | **`FIX-PHY-02`** | `Box2D` 64-Worker Lease Bitmask, `Box2DTask` Lifetime & Event Buffer Copy | `DONE` | **P0** | W0 | `FIX-CORE-01` | `C-04`, `C-05`, `C-06`, Physics `#31` | `FIX-PHY-03`, `DOC-04` |
@@ -423,7 +423,7 @@ flowchart TD
 ---
 
 #### `FIX-AIX-01` — `StateMachine` Iterative Transition Queue, `SteeringSystem` & `Ballistics` Guards
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-PHY-04` | Unlocks: `OPT-01`, `DOC-06`
 - **Current Defects:**
   1. [StateMachine.h](file://Engine/include/Engine/AI/StateMachine.h#L33-L56): `OnExit` runs before `m_CurrentState` updates, causing infinite recursion if `OnExit` calls `TransitionTo` (`C-10`); unregistered state IDs strand the FSM.

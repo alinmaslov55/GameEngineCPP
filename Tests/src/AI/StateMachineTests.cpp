@@ -103,4 +103,47 @@ TEST(StateMachineTest, ReentrantTransitionInUpdate) {
     EXPECT_EQ(ctx.TraceLog[1], "Leap:Launch");
 }
 
+TEST(StateMachineTest, IterativeTransitionQueue_OnExitTransitionsWithoutRecursionAndIgnoresUnregistered) {
+    enum class TriState { A = 0, B = 1, C = 2 };
+    Engine::StateMachine<MonsterAIContext> fsm;
+    MonsterAIContext ctx;
+
+    fsm.RegisterState(TriState::A, {
+        .OnEnter = [](MonsterAIContext& c) { c.TraceLog.emplace_back("A.OnEnter"); },
+        .OnUpdate = nullptr,
+        .OnExit = [&fsm](MonsterAIContext& c) {
+            c.TraceLog.emplace_back("A.OnExit");
+            fsm.TransitionTo(TriState::C, c);
+        }
+    });
+    fsm.RegisterState(TriState::B, {
+        .OnEnter = [](MonsterAIContext& c) { c.TraceLog.emplace_back("B.OnEnter"); },
+        .OnUpdate = nullptr,
+        .OnExit = [](MonsterAIContext& c) { c.TraceLog.emplace_back("B.OnExit"); }
+    });
+    fsm.RegisterState(TriState::C, {
+        .OnEnter = [](MonsterAIContext& c) { c.TraceLog.emplace_back("C.OnEnter"); },
+        .OnUpdate = nullptr,
+        .OnExit = [](MonsterAIContext& c) { c.TraceLog.emplace_back("C.OnExit"); }
+    });
+
+    fsm.SetInitialState(TriState::A, ctx);
+    ctx.TraceLog.clear();
+
+    // A.OnExit calls TransitionTo(C) while transitioning to B -> iterative A.OnExit -> B.OnEnter -> B.OnExit -> C.OnEnter
+    fsm.TransitionTo(TriState::B, ctx);
+    EXPECT_TRUE(fsm.IsInState(TriState::C));
+    ASSERT_EQ(ctx.TraceLog.size(), 4u);
+    EXPECT_EQ(ctx.TraceLog[0], "A.OnExit");
+    EXPECT_EQ(ctx.TraceLog[1], "B.OnEnter");
+    EXPECT_EQ(ctx.TraceLog[2], "B.OnExit");
+    EXPECT_EQ(ctx.TraceLog[3], "C.OnEnter");
+
+    // Transition to unregistered state ID must not strand the FSM or call OnExit
+    ctx.TraceLog.clear();
+    fsm.TransitionTo(999, ctx);
+    EXPECT_TRUE(fsm.IsInState(TriState::C));
+    EXPECT_TRUE(ctx.TraceLog.empty());
+}
+
 } // namespace

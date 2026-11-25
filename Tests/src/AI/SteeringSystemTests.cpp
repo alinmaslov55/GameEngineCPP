@@ -269,4 +269,57 @@ TEST(SteeringSystemTest, HordeTreeSplitAndReachTarget) {
     }
 }
 
+TEST(SteeringSystemTest, ZeroDistanceToTargetStopsCleanlyWithoutEastBlast) {
+    Engine::Scene scene("ZeroDistSteeringScene");
+    Engine::SteeringParams params;
+    params.MaxSpeed = 5.0f;
+    params.ArrivalRadius = 1.0f;
+
+    const glm::vec2 pos{ 3.0f, -4.0f };
+    const glm::vec2 vel = Engine::SteeringSystem::ComputeContextSteeringXZ(
+        scene, pos, 0.35f, pos, {}, params);
+    EXPECT_FLOAT_EQ(vel.x, 0.0f);
+    EXPECT_FLOAT_EQ(vel.y, 0.0f);
+}
+
+TEST(SteeringSystemTest, WhiskerDetectsObstacleOutsideAgentCollider) {
+    Engine::Scene scene("WhiskerSelfColliderScene");
+    auto* agent = scene.CreateGameObject("Agent");
+    agent->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    agent->SetLayer(Engine::EntityLayer::Enemy);
+    auto* agentCol = agent->AddComponent<Engine::CircleCollider2D>();
+    agentCol->Radius = 0.5f;
+    agentCol->CategoryBits = Engine::PhysicsLayer::Enemy;
+
+    auto* wall = scene.CreateGameObject("Wall");
+    wall->GetTransform()->position = { 1.5f, 0.0f, 0.0f };
+    wall->SetLayer(Engine::EntityLayer::Environment);
+    auto* wallCol = wall->AddComponent<Engine::BoxCollider2D>();
+    wallCol->size = { 0.5f, 4.0f };
+    wallCol->CategoryBits = Engine::PhysicsLayer::Environment;
+
+    scene.OnRuntimeStart();
+
+    Engine::SteeringParams params;
+    params.MaxSpeed = 4.0f;
+    params.ObstacleWhiskerLength = 2.5f;
+    params.AvoidanceWeight = 3.0f;
+    params.ObstacleCollisionMask = Engine::PhysicsLayer::Environment | Engine::PhysicsLayer::Enemy;
+
+    std::array<float, Engine::SteeringSystem::SlotCount> interest{};
+    std::array<float, Engine::SteeringSystem::SlotCount> danger{};
+    std::array<float, Engine::SteeringSystem::SlotCount> context{};
+
+    const glm::vec2 steerVel = Engine::SteeringSystem::EvaluateContextMap(
+        scene, { 0.0f, 0.0f }, 0.5f, { 5.0f, 0.0f }, {}, params, agent,
+        &interest, &danger, &context);
+
+    // Slot 0 (+X) must register danger from the wall instead of being shadowed by agent's own collider
+    EXPECT_GT(danger[0], 0.5f);
+    // Agent should steer around the wall (significant Z deflection)
+    EXPECT_GT(std::abs(steerVel.y), 0.5f);
+
+    scene.OnRuntimeStop();
+}
+
 } // namespace

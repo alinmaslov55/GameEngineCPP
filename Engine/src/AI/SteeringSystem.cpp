@@ -44,7 +44,7 @@ glm::vec2 SteeringSystem::ComputeContextSteeringXZ(
         const glm::vec3 wp = agent->GetTransform()->GetWorldPosition();
         agentPosXZ = { wp.x, wp.z };
         if (const auto* cc = agent->GetComponent<CircleCollider2D>()) {
-            const glm::vec3 scale = agent->GetTransform()->scale;
+            const glm::vec3 scale = agent->GetTransform()->GetWorldScale();
             agentRadius = cc->Radius * std::max(std::abs(scale.x), std::abs(scale.z));
         }
     }
@@ -139,9 +139,10 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
         : (PhysicsLayer::Environment | PhysicsLayer::LowObstacle);
 
     // 2a. Static colliders & obstacles (PHY-05 raycasts)
+    const float startOffset = std::max(0.0f, agentRadius) + 0.05f;
     for (size_t i = 0; i < SlotCount; ++i) {
-        const glm::vec2 startPos = agentPositionXZ + dirs[i] * (agentRadius * 0.25f);
-        const glm::vec2 endPos = agentPositionXZ + dirs[i] * (whiskerLen + agentRadius);
+        const glm::vec2 startPos = agentPositionXZ + dirs[i] * startOffset;
+        const glm::vec2 endPos = agentPositionXZ + dirs[i] * (startOffset + whiskerLen);
 
         RaycastHitXZ hit;
         if (PhysicsQueries::RaycastClosestXZ(scene, startPos, endPos, mask, hit)) {
@@ -161,12 +162,21 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
         }
     }
 
-    // 2b. Burning Tar Cells (TER-04)
+    // 2b. Burning Tar Cells - sample every <= 0.45m so 0.5m cells are never skipped
     if (params.FireAvoidanceWeight > 0.0f) {
+        constexpr float kFireProbeStep = 0.45f;
+        const float probeStart = std::max(0.0f, agentRadius);
+        const float probeEnd = probeStart + whiskerLen;
         for (size_t i = 0; i < SlotCount; ++i) {
-            const glm::vec2 testP1 = agentPositionXZ + dirs[i] * (whiskerLen * 0.5f);
-            const glm::vec2 testP2 = agentPositionXZ + dirs[i] * whiskerLen;
-            if (scene.IsBurningAtXZ(testP1.x, testP1.y) || scene.IsBurningAtXZ(testP2.x, testP2.y)) {
+            bool hitsFire = false;
+            for (float d = probeStart; d <= probeEnd + 1e-4f; d += kFireProbeStep) {
+                const glm::vec2 probe = agentPositionXZ + dirs[i] * std::min(d, probeEnd);
+                if (scene.IsBurningAtXZ(probe.x, probe.y)) {
+                    hitsFire = true;
+                    break;
+                }
+            }
+            if (hitsFire) {
                 const float fireDanger = params.FireAvoidanceWeight;
                 danger[i] += fireDanger;
                 const size_t prevIdx = (i + SlotCount - 1) % SlotCount;
@@ -218,6 +228,18 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
     glm::vec2 steerDir{ 0.0f };
 
     if (maxContext <= 1e-4f) {
+        if (params.TargetOrbitRadius <= 0.0f && distToTarget <= 1e-4f) {
+            bool hasDanger = false;
+            for (float d : danger) {
+                if (d > 1e-4f) {
+                    hasDanger = true;
+                    break;
+                }
+            }
+            if (!hasDanger) {
+                return glm::vec2(0.0f);
+            }
+        }
         // Fallback: All interest slots are blocked by danger.
         // Pick the slot with minimum danger to escape or hold.
         size_t minDangerSlot = 0;

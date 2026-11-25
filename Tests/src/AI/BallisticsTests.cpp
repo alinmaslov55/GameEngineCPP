@@ -139,3 +139,29 @@ TEST(BallisticsTest, RoadmapVerification_KinematicIntegration42Steps)
     // Height after exactly 42 steps (0.70s) should return to ground (0.0m) within kinematic Euler margin
     EXPECT_NEAR(posY, 0.0f, 0.15f);
 }
+
+TEST(BallisticsTest, NonPositiveRangeOrFlightDurationReturnsZeroVelocityAtJumper)
+{
+    const glm::vec2 jumper(4.0f, -7.0f);
+    const glm::vec2 target(20.0f, 10.0f);
+
+    JumpArcSolution solZeroBoth = SolveInterceptHopArc(jumper, target, { 2.0f, 0.0f }, 0.0f, 0.0f, -22.0f);
+    EXPECT_FLOAT_EQ(solZeroBoth.VelocityXZ.x, 0.0f);
+    EXPECT_FLOAT_EQ(solZeroBoth.VelocityXZ.y, 0.0f);
+    EXPECT_FLOAT_EQ(solZeroBoth.InitialVelocityY, 0.0f);
+    EXPECT_FLOAT_EQ(solZeroBoth.FlightDuration, 0.0f);
+    EXPECT_FLOAT_EQ(solZeroBoth.LandingSpotXZ.x, jumper.x);
+    EXPECT_FLOAT_EQ(solZeroBoth.LandingSpotXZ.y, jumper.y);
+
+    JumpArcSolution solNegRange = SolveInterceptHopArc(jumper, target, { 0.0f, 0.0f }, -5.0f, 0.5f, -22.0f);
+    EXPECT_FLOAT_EQ(solNegRange.VelocityXZ.x, 0.0f);
+    EXPECT_FLOAT_EQ(solNegRange.VelocityXZ.y, 0.0f);
+    EXPECT_FLOAT_EQ(solNegRange.LandingSpotXZ.x, jumper.x);
+    EXPECT_FLOAT_EQ(solNegRange.LandingSpotXZ.y, jumper.y);
+
+    JumpArcSolution solZeroDuration = SolveInterceptHopArc(jumper, target, { 0.0f, 0.0f }, 10.0f, 0.0f, -22.0f);
+    EXPECT_FLOAT_EQ(solZeroDuration.VelocityXZ.x, 0.0f);
+    EXPECT_FLOAT_EQ(solZeroDuration.VelocityXZ.y, 0.0f);
+    EXPECT_FLOAT_EQ(solZeroDuration.LandingSpotXZ.x, jumper.x);
+    EXPECT_FLOAT_EQ(solZeroDuration.LandingSpotXZ.y, jumper.y);
+}

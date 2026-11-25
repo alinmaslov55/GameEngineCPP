@@ -10,8 +10,18 @@ JumpArcSolution SolveInterceptHopArc(
     float maxHopRange, float flightDuration, float gravityY, float leadFactor) noexcept {
     JumpArcSolution solution{};
 
+    if (!std::isfinite(flightDuration) || flightDuration <= 0.0f ||
+        !std::isfinite(maxHopRange) || maxHopRange <= 0.0f) {
+        solution.VelocityXZ = glm::vec2(0.0f);
+        solution.LandingSpotXZ = jumperXZ;
+        solution.InitialVelocityY = 0.0f;
+        solution.FlightDuration = 0.0f;
+        solution.PeakHeight = 0.0f;
+        return solution;
+    }
+
     // Enforce valid positive flight time and downward gravity
-    const float T = std::max(1e-4f, flightDuration);
+    const float T = flightDuration;
     const float g_y = (gravityY < 0.0f) ? gravityY : -22.0f;
 
     // 1. Predict target position at intercept time: p_pred = p_target + lambda * v_target * T

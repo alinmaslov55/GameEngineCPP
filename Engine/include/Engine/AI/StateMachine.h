@@ -1,6 +1,8 @@
 #ifndef AI_STATEMACHINE_H
 #define AI_STATEMACHINE_H
 
+#include <cmath>
+#include <deque>
 #include <functional>
 #include <unordered_map>
 #include <type_traits>
@@ -31,27 +33,57 @@ public:
     }
 
     void TransitionTo(int nextStateID, TContext& ctx) {
-        if (m_CurrentState == nextStateID && m_HasInitialState) {
+        if (!m_States.contains(nextStateID)) {
             return;
         }
 
-        // Call OnExit on current state if active
-        if (m_HasInitialState) {
-            auto it = m_States.find(m_CurrentState);
-            if (it != m_States.end() && it->second.OnExit) {
-                it->second.OnExit(ctx);
-            }
+        m_PendingTransitions.push_back(nextStateID);
+        if (m_IsTransitioning) {
+            return;
         }
 
-        m_PreviousState = m_CurrentState;
-        m_CurrentState = nextStateID;
-        m_ElapsedInState = 0.0f;
-        m_HasInitialState = true;
+        struct ScopedTransitionGuard {
+            bool& flag;
+            std::deque<int>& queue;
+            ~ScopedTransitionGuard() noexcept {
+                flag = false;
+                queue.clear();
+            }
+        };
 
-        // Call OnEnter on new state
-        auto nextIt = m_States.find(nextStateID);
-        if (nextIt != m_States.end() && nextIt->second.OnEnter) {
-            nextIt->second.OnEnter(ctx);
+        m_IsTransitioning = true;
+        ScopedTransitionGuard guard{ m_IsTransitioning, m_PendingTransitions };
+
+        constexpr int kMaxChainedTransitions = 64;
+        int steps = 0;
+        while (!m_PendingTransitions.empty() && steps < kMaxChainedTransitions) {
+            const int targetStateID = m_PendingTransitions.front();
+            m_PendingTransitions.pop_front();
+            ++steps;
+
+            if (m_HasInitialState && m_CurrentState == targetStateID) {
+                continue;
+            }
+            auto nextIt = m_States.find(targetStateID);
+            if (nextIt == m_States.end()) {
+                continue;
+            }
+
+            if (m_HasInitialState) {
+                auto curIt = m_States.find(m_CurrentState);
+                if (curIt != m_States.end() && curIt->second.OnExit) {
+                    curIt->second.OnExit(ctx);
+                }
+            }
+
+            m_PreviousState = m_CurrentState;
+            m_CurrentState = targetStateID;
+            m_ElapsedInState = 0.0f;
+            m_HasInitialState = true;
+
+            if (nextIt->second.OnEnter) {
+                nextIt->second.OnEnter(ctx);
+            }
         }
     }
 
@@ -75,12 +107,12 @@ public:
         if (!m_HasInitialState) {
             return;
         }
-
-        m_ElapsedInState += dt;
+        const float safeDt = (std::isfinite(dt) && dt >= 0.0f) ? dt : 0.0f;
+        m_ElapsedInState += safeDt;
 
         auto it = m_States.find(m_CurrentState);
         if (it != m_States.end() && it->second.OnUpdate) {
-            it->second.OnUpdate(ctx, dt);
+            it->second.OnUpdate(ctx, safeDt);
         }
     }
 
@@ -99,10 +131,12 @@ public:
 
 private:
     std::unordered_map<int, State> m_States;
+    std::deque<int> m_PendingTransitions;
     int m_CurrentState = -1;
     int m_PreviousState = -1;
     float m_ElapsedInState = 0.0f;
     bool m_HasInitialState = false;
+    bool m_IsTransitioning = false;
 };
 
 } // namespace Engine
