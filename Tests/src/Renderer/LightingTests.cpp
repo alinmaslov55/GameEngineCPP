@@ -491,8 +491,58 @@ TEST(IlluminationQueryTest, DominantSourcePriorityPrecedenceOcclusionAndHierarch
 
     const Engine::IlluminationSample occludedSide = scene.EvaluateIlluminationDetailedXZ({ 13.5f, 0.0f }, lineOfLightOpts);
     EXPECT_FALSE(occludedSide.IsInSafeLight());
+    EXPECT_FALSE(occludedSide.IsInSearingRim());
     EXPECT_FLOAT_EQ(occludedSide.SafeIntensity, 0.0f);
     EXPECT_EQ(occludedSide.DominantSafeSource, nullptr);
+}
+
+TEST(IlluminationQueryTest, DisabledLightOccludedSearingRimAndParentColliderNoSelfOcclusion) {
+    Engine::Scene scene("LightOcclusionAndHierarchyTest");
+
+    // Parent Hero with Environment collider and child TorchFlame light
+    auto* hero = scene.CreateGameObject("Hero");
+    hero->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* heroCol = hero->AddComponent<Engine::CircleCollider2D>();
+    heroCol->Radius = 0.5f;
+    heroCol->CategoryBits = Engine::PhysicsLayer::Environment;
+
+    auto* torch = scene.CreateGameObject("TorchFlame");
+    torch->GetTransform()->SetParent(hero->GetTransform(), false);
+    auto* torchPl = torch->AddComponent<Engine::PointLightComponent>();
+    torchPl->Semantic = Engine::LightSemantic::SafeLifeline;
+    torchPl->Priority = Engine::LightPriority::Critical_HeroTorch;
+    torchPl->Radius = 5.0f;
+    torchPl->Intensity = 2.0f;
+
+    Engine::IlluminationQueryOptions opts;
+    opts.CheckLineOfLight = true;
+
+    // Unblocked point on searing rim (normDist = 4.5 / 5.0 = 0.90) and inner safe point (2.0 / 5.0 = 0.40) must not be self-occluded by parent Hero collider
+    const Engine::IlluminationSample unoccludedSafe = scene.EvaluateIlluminationDetailedXZ({ 2.0f, 0.0f }, opts);
+    EXPECT_TRUE(unoccludedSafe.IsInSafeLight());
+    const Engine::IlluminationSample unoccludedRim = scene.EvaluateIlluminationDetailedXZ({ 4.5f, 0.0f }, opts);
+    EXPECT_TRUE(unoccludedRim.IsInSearingRim());
+    EXPECT_GT(unoccludedRim.SafeIntensity, 0.0f);
+
+    // Place a solid wall between torch (0,0) and searing rim query point (-4.5, 0)
+    auto* wall = scene.CreateGameObject("Wall");
+    wall->GetTransform()->position = { -2.0f, 0.0f, 0.0f };
+    auto* wallCol = wall->AddComponent<Engine::BoxCollider2D>();
+    wallCol->size = { 0.5f, 4.0f };
+    wallCol->CategoryBits = Engine::PhysicsLayer::Environment;
+
+    const Engine::IlluminationSample occludedRim = scene.EvaluateIlluminationDetailedXZ({ -4.5f, 0.0f }, opts);
+    EXPECT_FALSE(occludedRim.IsInSafeLight());
+    EXPECT_FALSE(occludedRim.IsInSearingRim());
+    EXPECT_FLOAT_EQ(occludedRim.PrimaryTorchNormalizedDist, 999.0f);
+
+    // Disabling PointLightComponent must exclude light even on unoccluded side
+    torchPl->SetEnabled(false);
+    const Engine::IlluminationSample disabledSample = scene.EvaluateIlluminationDetailedXZ({ 2.0f, 0.0f }, opts);
+    EXPECT_FALSE(disabledSample.IsInSafeLight());
+    EXPECT_FALSE(disabledSample.IsInSearingRim());
+    EXPECT_FLOAT_EQ(disabledSample.SafeIntensity, 0.0f);
+    EXPECT_FLOAT_EQ(disabledSample.PrimaryTorchNormalizedDist, 999.0f);
 }
 
 TEST(PointLightUploadTest, PointLightBlockUploadsDeduplicated) {

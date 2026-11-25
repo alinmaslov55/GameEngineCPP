@@ -12,6 +12,23 @@
 
 namespace Engine {
 
+namespace {
+
+[[nodiscard]] bool IsSelfOrAncestor(const GameObject* lightGo, const GameObject* hitGo) noexcept {
+    if (!lightGo || !hitGo) return false;
+    if (lightGo == hitGo) return true;
+    const Transform* cur = lightGo->GetTransform();
+    while (cur) {
+        if (cur->GetGameObject() == hitGo) {
+            return true;
+        }
+        cur = cur->GetParent();
+    }
+    return false;
+}
+
+} // namespace
+
 IlluminationSample LightQuerySystem::EvaluateIlluminationAtXZ(const Scene& scene,
                                                               glm::vec2 worldXZ) noexcept {
     return EvaluateIlluminationDetailedXZ(scene, worldXZ, IlluminationQueryOptions{});
@@ -38,7 +55,7 @@ IlluminationSample LightQuerySystem::EvaluateIlluminationDetailedXZ(
             return;
         }
         const auto* pl = go->GetComponent<PointLightComponent>();
-        if (!pl || pl->Radius <= 0.0f) {
+        if (!pl || !pl->IsEnabled() || pl->Radius <= 0.0f) {
             return;
         }
 
@@ -57,6 +74,20 @@ IlluminationSample LightQuerySystem::EvaluateIlluminationDetailedXZ(
         const float distXZ = std::sqrt(distSqXZ);
         const float safeRadius = std::max(0.05f, pl->Radius);
         const float normDist = distXZ / safeRadius;
+
+        const float atten = PointLightComponent::EvaluateSmoothstepAttenuation(distXZ, pl->Radius, pl->Falloff);
+        if (atten <= 0.0f) {
+            return;
+        }
+
+        if (options.CheckLineOfLight && distXZ > 1e-4f) {
+            RaycastHitXZ hit{};
+            // Cast from query point toward light origin so intervening walls block before hitting the light owner or its ancestors
+            if (PhysicsQueries::RaycastClosestXZ(scene, worldXZ, lightXZ, options.OccluderMaskBits, hit) &&
+                hit.Entity && !IsSelfOrAncestor(go, hit.Entity)) {
+                return;
+            }
+        }
 
         if (pl->Semantic == LightSemantic::SafeLifeline) {
             const bool isHeroTorch = (pl->Priority == LightPriority::Critical_HeroTorch);
@@ -77,20 +108,6 @@ IlluminationSample LightQuerySystem::EvaluateIlluminationDetailedXZ(
                 bestPrimaryNormDist = normDist;
                 bestPrimaryDistSq = distSqXZ;
                 result.PrimaryTorchNormalizedDist = normDist;
-            }
-        }
-
-        const float atten = PointLightComponent::EvaluateSmoothstepAttenuation(distXZ, pl->Radius, pl->Falloff);
-        if (atten <= 0.0f) {
-            return;
-        }
-
-        if (options.CheckLineOfLight && distXZ > 1e-4f) {
-            RaycastHitXZ hit{};
-            // Cast from query point toward light origin so intervening walls block before hitting the light owner
-            if (PhysicsQueries::RaycastClosestXZ(scene, worldXZ, lightXZ, options.OccluderMaskBits, hit) &&
-                hit.Entity && hit.Entity != go) {
-                return;
             }
         }
 

@@ -91,8 +91,18 @@ void CameraComponent::ResetToTarget(const glm::vec3& targetPosition) noexcept {
 
 void CameraComponent::UpdateRig(float scaledDt, float unscaledDt, const glm::vec3& targetPosition) {
     if (m_FirstSync) {
-        ResetToTarget(targetPosition);
-        return;
+        m_SmoothedFocalPoint = targetPosition;
+        m_LogicalTargetPoint = targetPosition;
+        m_FocalVelocity = glm::vec3(0.0f);
+        m_SmoothedAimOffset = glm::vec2(0.0f);
+        m_AimOffsetVelocity = glm::vec2(0.0f);
+        m_TargetAimDirection = glm::vec2(0.0f);
+        m_CurrentDistance = Distance;
+        m_DistanceVelocity = 0.0f;
+        m_TargetZoomFactor = 0.0f;
+        m_FirstSync = false;
+        Camera.SetFocalPoint(targetPosition);
+        Camera.SetDistance(Distance);
     }
 
     scaledDt = std::clamp(scaledDt, 0.0f, 0.10f);
@@ -100,31 +110,31 @@ void CameraComponent::UpdateRig(float scaledDt, float unscaledDt, const glm::vec
 
     // 1. Aim Look-Ahead Offset (XZ)
     const glm::vec2 targetAimOffset = m_TargetAimDirection * AimLookAheadDistance;
-    if (AimLookAheadSmoothTime > 1e-4f && scaledDt > 1e-5f) {
-        m_SmoothedAimOffset = SmoothDamp(m_SmoothedAimOffset, targetAimOffset, m_AimOffsetVelocity, AimLookAheadSmoothTime, scaledDt);
-    } else {
+    if (AimLookAheadSmoothTime <= 1e-4f) {
         m_SmoothedAimOffset = targetAimOffset;
         m_AimOffsetVelocity = glm::vec2(0.0f);
+    } else if (scaledDt > 1e-5f) {
+        m_SmoothedAimOffset = SmoothDamp(m_SmoothedAimOffset, targetAimOffset, m_AimOffsetVelocity, AimLookAheadSmoothTime, scaledDt);
     }
 
     // 2. Logical Target Focal Point
     m_LogicalTargetPoint = targetPosition + glm::vec3(m_SmoothedAimOffset.x, 0.0f, m_SmoothedAimOffset.y);
 
-    // 3. Focal Point Tracking (Smooth Follow)
-    if (SmoothFollow && FollowSmoothTime > 1e-4f && scaledDt > 1e-5f) {
-        m_SmoothedFocalPoint = SmoothDamp(m_SmoothedFocalPoint, m_LogicalTargetPoint, m_FocalVelocity, FollowSmoothTime, scaledDt);
-    } else {
+    // 3. Focal Point Tracking (Smooth Follow) - hold steady when paused (scaledDt <= 1e-5f)
+    if (!SmoothFollow || FollowSmoothTime <= 1e-4f) {
         m_SmoothedFocalPoint = m_LogicalTargetPoint;
         m_FocalVelocity = glm::vec3(0.0f);
+    } else if (scaledDt > 1e-5f) {
+        m_SmoothedFocalPoint = SmoothDamp(m_SmoothedFocalPoint, m_LogicalTargetPoint, m_FocalVelocity, FollowSmoothTime, scaledDt);
     }
 
-    // 4. Dynamic Zoom Expansion
+    // 4. Dynamic Zoom Expansion - hold steady when paused (scaledDt <= 1e-5f)
     const float targetDist = Distance + glm::clamp(m_TargetZoomFactor, 0.0f, 1.0f) * DynamicZoomOutMax;
-    if (DynamicZoomSmoothTime > 1e-4f && scaledDt > 1e-5f) {
-        m_CurrentDistance = SmoothDamp(m_CurrentDistance, targetDist, m_DistanceVelocity, DynamicZoomSmoothTime, scaledDt);
-    } else {
+    if (DynamicZoomSmoothTime <= 1e-4f) {
         m_CurrentDistance = targetDist;
         m_DistanceVelocity = 0.0f;
+    } else if (scaledDt > 1e-5f) {
+        m_CurrentDistance = SmoothDamp(m_CurrentDistance, targetDist, m_DistanceVelocity, DynamicZoomSmoothTime, scaledDt);
     }
     Camera.SetDistance(m_CurrentDistance);
 
@@ -173,11 +183,7 @@ void CameraComponent::SyncFromTransform(const Transform* transform) {
     const float dt = Time::GetDeltaTime();
     const float unscaledDt = Time::GetUnscaledDeltaTime();
 
-    if (m_FirstSync) {
-        ResetToTarget(targetPos);
-    } else {
-        UpdateRig(dt, unscaledDt, targetPos);
-    }
+    UpdateRig(dt, unscaledDt, targetPos);
     m_LastSyncedFrame = currentFrame;
 }
 

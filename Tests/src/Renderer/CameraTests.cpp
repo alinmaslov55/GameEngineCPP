@@ -561,5 +561,45 @@ TEST(CameraComponentTest, HitStopWithSmoothFollowDisabledPreservesTrauma) {
     Engine::Time::Reset();
 }
 
+TEST(CameraComponentTest, PauseHoldWithSmoothFollowAndPreFirstSyncTrauma) {
+    Engine::Time::Reset();
+    Engine::Time::SetMockDeltaTime(0.016f);
+    Engine::Time::Update();
+
+    Engine::Transform transform;
+    transform.position = { 0.0f, 0.0f, 0.0f };
+
+    Engine::CameraComponent camComp;
+    camComp.SmoothFollow = true;
+    camComp.FollowSmoothTime = 0.25f;
+    camComp.TraumaDecay = 0.0f;
+
+    // Pre-first-sync AddTrauma must not be wiped on the first SyncFromTransform
+    camComp.AddTrauma(0.75f, glm::vec2(0.4f, 0.0f));
+    camComp.SyncFromTransform(&transform);
+    EXPECT_NEAR(camComp.GetTrauma(), 0.75f, 1e-4f);
+
+    // Begin panning toward target (10, 0, 0)
+    transform.position = { 10.0f, 0.0f, 0.0f };
+    for (int i = 0; i < 5; ++i) {
+        Engine::Time::Update();
+        camComp.SyncFromTransform(&transform);
+    }
+    const glm::vec3 midPanFocal = camComp.GetSmoothedFocalPoint();
+    EXPECT_GT(midPanFocal.x, 0.1f);
+    EXPECT_LT(midPanFocal.x, 9.9f);
+
+    // Pause time (TimeScale = 0.0f): camera must hold steady instead of snapping to target (10, 0, 0)
+    Engine::Time::SetTimeScale(0.0f);
+    transform.position = { 50.0f, 0.0f, 0.0f };
+    Engine::Time::Update();
+    camComp.SyncFromTransform(&transform);
+
+    EXPECT_FLOAT_EQ(camComp.GetSmoothedFocalPoint().x, midPanFocal.x);
+    EXPECT_FLOAT_EQ(camComp.GetSmoothedFocalPoint().z, midPanFocal.z);
+
+    Engine::Time::Reset();
+}
+
 } // namespace
 
