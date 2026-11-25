@@ -218,7 +218,7 @@ flowchart TD
 | **`FIX-TER-02`** | Cross-Chunk Poisson True Biome Lookup & `SampleSurfaceAtXZ` Hardening | `DONE` | **P1** | W1 | `FIX-TER-01` | Terrain `#48`, Med `SampleSurfaceAtXZ`, `ToSplatRGBA8` | `FIX-TER-03` |
 | **`FIX-TER-03`** | `TerrainFireGrid` Reset/Corner Fix, Finite Terrain Fire & Firewall VFX/Decals | `DONE` | **P1** | W2 | `FIX-TER-02`, `FIX-VFX-01` | ECS `#22`, Terrain `#47`, Med `FireGrid`, `TER-04 VFX` | `FIX-SBX-02`, `DOC-05` |
 | **`FIX-UIX-01`** | Per-Quad `UIQuad` Texture Binding, Minimap Z-Axis Flip & Active-Window Guard | `DONE` | **P0** | W1 | `FIX-RND-01` | `C-21`, UI `#45` | `DOC-07` |
-| **`FIX-UIX-02`** | `UIButtonComponent` Single-Frame Focus Step, Dangling Pointer Guard & Z-Order | `TODO` | **P0** | W1 | `FIX-CORE-03` | `C-22` (Part 1), UI `#42`, Med `UIButton`/`UICanvas` | `DOC-07` |
+| **`FIX-UIX-02`** | `UIButtonComponent` Single-Frame Focus Step, Dangling Pointer Guard & Z-Order | `DONE` | **P0** | W1 | `FIX-CORE-03` | `C-22` (Part 1), UI `#42`, Med `UIButton`/`UICanvas` | `DOC-07` |
 | **`FIX-UIX-03`** | `Font` UTF-8 Decoder, `.fnt` Input Validation, Wrap Space Trim & Baseline | `TODO` | **P0** | W0 | *None (Root)* | `C-22` (Part 2), UI `#46` | `DOC-07` |
 | **`FIX-UIX-04`** | `UIRadialWheel` TimeScale Teardown, Viewport Coords & `UIPanel` 9-Slice/Winding | `TODO` | **P1** | W1 | `FIX-CORE-03` | UI `#43`, `#44` | `FIX-SBX-02`, `DOC-07` |
 | **`FIX-EDT-01`** | UUID-Backed `EditorLayer` Selection & `"HIERARCHY_ENTITY"` Drag-Drop Payload | `TODO` | **P0** | W1 | `FIX-ECS-01` | `C-11`, Sandbox `#53`, `#55`, Med `EditMode active` | `FIX-EDT-02`, `FIX-EDT-03` |
@@ -613,7 +613,7 @@ flowchart TD
 ---
 
 #### `FIX-UIX-02` — `UIButtonComponent` Single-Frame Focus Step, Dangling Pointer Guard & Z-Order
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-CORE-03` | Unlocks: `DOC-07`
 - **Current Defects (`C-22` Part 1):** [UIButtonComponent.cpp](file://Engine/src/UI/UIButtonComponent.cpp#L21-L193), [UICanvas.cpp](file://Engine/src/UI/UICanvas.cpp#L7-L13): Pressing Down/Right once cascades focus across every subsequent button in `m_GameObjects` on the same frame; `s_FocusedButton` dangles if destroyed without `OnDestroy()` and fires `Click()` when deactivated/pooled; overlapping buttons lack Z-order hit arbitration; `UICanvas::ComputeScaleFactor` divides only by height (overflowing 4:3 and 9:20 viewports horizontally).
 - **Verification (`EngineTests`):** Create 3 vertically linked buttons (`Btn0 -> Btn1 -> Btn2`), focus `Btn0`, simulate a single `DOWN` key press for 1 frame, run `scene.Update(1/60.f)`, and assert `GetFocusedButton() == Btn1` (not `Btn2`).

@@ -6,6 +6,7 @@
 #include <glm/glm.hpp>
 #include <cstdint>
 #include <functional>
+#include <limits>
 
 namespace Engine {
 
@@ -45,6 +46,7 @@ public:
     std::function<void()> OnClick = nullptr;
 
     UIButtonComponent() = default;
+    ~UIButtonComponent() override;
 
     void SetNeighbors(uint64_t up, uint64_t down, uint64_t left, uint64_t right) noexcept {
         UpNeighborUUID = up;
@@ -72,17 +74,30 @@ public:
     // Point test against this button's resolved screen rect (using sibling UIPanel's rectTransform)
     [[nodiscard]] bool ContainsScreenPoint(const glm::vec2& screenPt, uint32_t viewportW, uint32_t viewportH) const;
 
+    [[nodiscard]] bool CanInteract() const noexcept;
+
     // Component lifecycle
     void Update(float deltaTime) override;
+    void OnDisable() override;
+    void OnPoolRelease() override;
     void OnDestroy() override;
 
 private:
+    void ClearFocusIfSelf() noexcept;
     void UpdateVisualTint();
+    [[nodiscard]] static UIButtonComponent* ResolveTopmostHoveredButton(
+        const Scene& scene, const glm::vec2& mousePos, uint32_t vpW, uint32_t vpH);
 
     ButtonState m_State = ButtonState::Normal;
     bool m_IsFocused = false;
 
     inline static UIButtonComponent* s_FocusedButton = nullptr;
+    inline static uint64_t s_LastFocusStepFrame = std::numeric_limits<uint64_t>::max();
+    inline static uint64_t s_TopmostEvalFrame = std::numeric_limits<uint64_t>::max();
+    inline static UIButtonComponent* s_TopmostHoveredButton = nullptr;
+    inline static glm::vec2 s_TopmostEvalMousePos{ -1.0f, -1.0f };
+    inline static uint32_t s_TopmostEvalVpW = 0;
+    inline static uint32_t s_TopmostEvalVpH = 0;
 };
 
 } // namespace Engine

@@ -11,6 +11,8 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Core/Input.h"
+#include "Engine/Core/Time.h"
 #include <algorithm>
 #include <vector>
 
@@ -332,6 +334,106 @@ TEST(UIButtonComponentTest, SceneSerializerRoundTrip) {
     EXPECT_EQ(dstBtn->DownNeighborUUID, 2222ull);
     EXPECT_EQ(dstBtn->LeftNeighborUUID, 3333ull);
     EXPECT_EQ(dstBtn->RightNeighborUUID, 4444ull);
+}
+
+TEST(UIButtonComponentTest, SingleFrameFocusStepNoCascade) {
+    Engine::Time::Reset();
+    Engine::Input::Init();
+    Engine::Input::BeginFrame();
+    Engine::Time::SetMockDeltaTime(1.0f / 60.0f);
+    Engine::Time::Update();
+
+    Engine::Scene scene("SingleFrameFocusStepScene");
+    auto* go0 = scene.CreateGameObject("Btn0");
+    auto* go1 = scene.CreateGameObject("Btn1");
+    auto* go2 = scene.CreateGameObject("Btn2");
+
+    auto* btn0 = go0->AddComponent<Engine::UIButtonComponent>();
+    auto* btn1 = go1->AddComponent<Engine::UIButtonComponent>();
+    auto* btn2 = go2->AddComponent<Engine::UIButtonComponent>();
+
+    btn0->SetNeighbors(0, go1->GetUUID(), 0, 0);
+    btn1->SetNeighbors(go0->GetUUID(), go2->GetUUID(), 0, 0);
+    btn2->SetNeighbors(go1->GetUUID(), 0, 0, 0);
+
+    Engine::UIButtonComponent::SetFocusedButton(btn0);
+    ASSERT_EQ(Engine::UIButtonComponent::GetFocusedButton(), btn0);
+
+    // Simulate a single DOWN key press for 1 frame
+    Engine::Input::SetKeyStateForTesting(SDL_SCANCODE_DOWN, true);
+    scene.Update(1.0f / 60.0f);
+
+    // Must advance exactly one step to Btn1, NOT cascade to Btn2 on the same frame
+    EXPECT_EQ(Engine::UIButtonComponent::GetFocusedButton(), btn1);
+
+    Engine::Input::SetKeyStateForTesting(SDL_SCANCODE_DOWN, false);
+    Engine::Input::BeginFrame();
+    Engine::UIButtonComponent::ClearFocus();
+    Engine::Time::Reset();
+}
+
+TEST(UIButtonComponentTest, DeactivatedButtonClearsFocusAndBlocksClick) {
+    Engine::Scene scene("DeactivatedButtonFocusScene");
+    auto* go = scene.CreateGameObject("Btn");
+    auto* btn = go->AddComponent<Engine::UIButtonComponent>();
+    int clickCount = 0;
+    btn->OnClick = [&]() { ++clickCount; };
+
+    Engine::UIButtonComponent::SetFocusedButton(btn);
+    ASSERT_EQ(Engine::UIButtonComponent::GetFocusedButton(), btn);
+
+    // Deactivating the GameObject must clear focus and prevent SubmitActiveFocus/Click
+    go->SetActive(false);
+    EXPECT_EQ(Engine::UIButtonComponent::GetFocusedButton(), nullptr);
+    EXPECT_FALSE(Engine::UIButtonComponent::SubmitActiveFocus());
+    btn->Click();
+    EXPECT_EQ(clickCount, 0);
+}
+
+TEST(UIButtonComponentTest, OverlappingButtonsRespectZOrder) {
+    Engine::Time::Reset();
+    Engine::Input::Init();
+    Engine::Input::BeginFrame();
+    Engine::Input::SetViewportRect({ 0.0f, 0.0f }, { 1920.0f, 1080.0f });
+    Engine::Time::SetMockDeltaTime(1.0f / 60.0f);
+    Engine::Time::Update();
+
+    Engine::Scene scene("ZOrderButtonsScene");
+    auto* goLow = scene.CreateGameObject("LowButton");
+    auto* panelLow = goLow->AddComponent<Engine::UIPanel>();
+    panelLow->useRectTransform = false;
+    panelLow->position = { 100.0f, 100.0f };
+    panelLow->size = { 200.0f, 80.0f };
+    panelLow->rectTransform.ZOrder = 5;
+    auto* btnLow = goLow->AddComponent<Engine::UIButtonComponent>();
+    int lowClicks = 0;
+    btnLow->OnClick = [&]() { ++lowClicks; };
+
+    auto* goHigh = scene.CreateGameObject("HighButton");
+    auto* panelHigh = goHigh->AddComponent<Engine::UIPanel>();
+    panelHigh->useRectTransform = false;
+    panelHigh->position = { 100.0f, 100.0f };
+    panelHigh->size = { 200.0f, 80.0f };
+    panelHigh->rectTransform.ZOrder = 10;
+    auto* btnHigh = goHigh->AddComponent<Engine::UIButtonComponent>();
+    int highClicks = 0;
+    btnHigh->OnClick = [&]() { ++highClicks; };
+
+    // Mouse at center of overlap (screen bottom-up (200, 140) -> top-down (200, 1080 - 140 = 940))
+    Engine::Input::SetMousePositionForTesting({ 200.0f, 940.0f });
+    Engine::Input::SetMouseButtonStateForTesting(SDL_BUTTON_LEFT, true);
+    scene.Update(1.0f / 60.0f);
+
+    Engine::Input::BeginFrame();
+    Engine::Time::Update();
+    Engine::Input::SetMouseButtonStateForTesting(SDL_BUTTON_LEFT, false);
+    scene.Update(1.0f / 60.0f);
+
+    EXPECT_EQ(highClicks, 1);
+    EXPECT_EQ(lowClicks, 0);
+
+    Engine::UIButtonComponent::ClearFocus();
+    Engine::Time::Reset();
 }
 
 } // namespace

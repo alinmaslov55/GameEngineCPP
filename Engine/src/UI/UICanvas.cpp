@@ -5,11 +5,14 @@
 namespace Engine {
 
 float UICanvas::ComputeScaleFactor(uint32_t viewportW, uint32_t viewportH) noexcept {
-    if (viewportH == 0) {
+    if (viewportW == 0 || viewportH == 0) {
         return 1.0f;
     }
-    const float refH = (viewportW < viewportH) ? ReferencePortrait.y : ReferenceLandscape.y;
-    return static_cast<float>(viewportH) / refH;
+    const bool isPortrait = (viewportW < viewportH);
+    const float refW = isPortrait ? ReferencePortrait.x : ReferenceLandscape.x;
+    const float refH = isPortrait ? ReferencePortrait.y : ReferenceLandscape.y;
+    return std::min(static_cast<float>(viewportW) / refW,
+                    static_cast<float>(viewportH) / refH);
 }
 
 void UICanvas::ResolveScreenRect(const UIRectTransform& rect, uint32_t viewportW, uint32_t viewportH,

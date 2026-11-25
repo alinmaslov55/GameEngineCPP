@@ -47,6 +47,18 @@ TEST(UICanvasTest, ComputeScaleFactorPortrait) {
     EXPECT_NEAR(Engine::UICanvas::ComputeScaleFactor(720, 1280), 0.6666667f, 1e-4f);
 }
 
+TEST(UICanvasTest, ComputeScaleFactor4x3And9x20NoHorizontalOverflow) {
+    // 4:3 Landscape (1024x768): min(1024/1920, 768/1080) = 1024/1920
+    const float scale4x3 = Engine::UICanvas::ComputeScaleFactor(1024, 768);
+    EXPECT_NEAR(scale4x3, 1024.0f / 1920.0f, 1e-5f);
+    EXPECT_LE(1920.0f * scale4x3, 1024.0f + 1e-4f);
+
+    // 9:20 Portrait (1080x2400): min(1080/1080, 2400/1920) = 1.0f
+    const float scale9x20 = Engine::UICanvas::ComputeScaleFactor(1080, 2400);
+    EXPECT_FLOAT_EQ(scale9x20, 1.0f);
+    EXPECT_LE(1080.0f * scale9x20, 1080.0f + 1e-4f);
+}
+
 TEST(UICanvasTest, HealthFrameResolutionAcrossStandards) {
     // Exact verification requirement:
     // Assert ResolveScreenRect for ui_hud_health_frame (240x32 @ 1080p) produces 480x64 at 4K,
