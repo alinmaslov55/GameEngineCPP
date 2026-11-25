@@ -176,7 +176,13 @@ std::vector<UIQuad> UIRadialWheelComponent::GenerateQuads(const glm::vec2& resol
     bgQuad.Vertices[1] = { { resolvedPos.x + resolvedSize.x,     resolvedPos.y },                     { 1.0f, 0.0f } };
     bgQuad.Vertices[2] = { { resolvedPos.x + resolvedSize.x,     resolvedPos.y + resolvedSize.y },     { 1.0f, 1.0f } };
     bgQuad.Vertices[3] = { { resolvedPos.x,                     resolvedPos.y + resolvedSize.y },     { 0.0f, 1.0f } };
-    bgQuad.Color = { 0.08f, 0.08f, 0.12f, 0.90f };
+    if (WheelTexture && WheelTexture->GetRendererID() != 0) {
+        bgQuad.Color = glm::vec4(1.0f);
+        bgQuad.QuadTexture = WheelTexture;
+    } else {
+        bgQuad.Color = { 0.08f, 0.08f, 0.12f, 0.90f };
+        bgQuad.QuadTexture = nullptr;
+    }
     quads.push_back(bgQuad);
 
     // 2. 4 Quadrant Wedge highlights & item icons
@@ -213,6 +219,7 @@ std::vector<UIQuad> UIRadialWheelComponent::GenerateQuads(const glm::vec2& resol
         sectorQuad.Vertices[2] = { { sectorCenter.x + sectorRadius, sectorCenter.y + sectorRadius }, { 1.0f, 1.0f } };
         sectorQuad.Vertices[3] = { { sectorCenter.x - sectorRadius, sectorCenter.y + sectorRadius }, { 0.0f, 1.0f } };
         sectorQuad.Color = sectorColor;
+        sectorQuad.QuadTexture = (HighlightTexture && HighlightTexture->GetRendererID() != 0) ? HighlightTexture : nullptr;
         quads.push_back(sectorQuad);
 
         // Item icon quad
@@ -221,6 +228,7 @@ std::vector<UIQuad> UIRadialWheelComponent::GenerateQuads(const glm::vec2& resol
         iconQuad.Vertices[1] = { { sectorCenter.x + halfItem, sectorCenter.y - halfItem }, { 1.0f, 0.0f } };
         iconQuad.Vertices[2] = { { sectorCenter.x + halfItem, sectorCenter.y + halfItem }, { 1.0f, 1.0f } };
         iconQuad.Vertices[3] = { { sectorCenter.x - halfItem, sectorCenter.y + halfItem }, { 0.0f, 1.0f } };
+        iconQuad.QuadTexture = Slots[i].Icon;
 
         if (affordable) {
             iconQuad.Color = isActive ? glm::vec4(1.30f, 1.20f, 0.80f, 1.0f) : glm::vec4(1.0f, 1.0f, 1.0f, 0.95f);

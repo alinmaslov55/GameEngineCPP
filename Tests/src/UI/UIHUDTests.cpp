@@ -11,6 +11,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/SceneSerializer.h"
+#include "Engine/Scene/Components/LightComponents.h"
 #include <algorithm>
 #include <vector>
 
@@ -166,11 +167,11 @@ TEST(MinimapFogTest, POIPinClampingToCircularRim) {
     EXPECT_FLOAT_EQ(pin.x, 1.0f);
     EXPECT_FLOAT_EQ(pin.y, 0.0f);
 
-    // Outside radius: POI at (0m, -500m) -> clamped to rim (0.0, -1.0)
+    // Outside radius: POI North at (0m, -500m) -> clamped to upper rim (0.0, +1.0)
     pin = Engine::MinimapFogSystem::ProjectAndClampPOIPin(glm::vec2(0.0f, -500.0f), viewer, kMaxRadius, isClamped);
     EXPECT_TRUE(isClamped);
     EXPECT_FLOAT_EQ(pin.x, 0.0f);
-    EXPECT_FLOAT_EQ(pin.y, -1.0f);
+    EXPECT_FLOAT_EQ(pin.y, 1.0f);
     EXPECT_NEAR(glm::length(pin), 1.0f, 1e-5f);
 }
 
@@ -238,6 +239,82 @@ TEST(UIMinimapTest, SceneSerializerRoundTrip) {
     EXPECT_FLOAT_EQ(dstMinimap->pinSize, 11.5f);
     EXPECT_FLOAT_EQ(dstMinimap->frameColor.r, 0.8f);
     EXPECT_FLOAT_EQ(dstMinimap->playerPinColor.g, 0.9f);
+}
+
+TEST(MinimapFogTest, NorthZAxisMappingDiscoveredBrazierVsUndiscoveredShrineAndPinQuadTexture) {
+    Engine::Scene scene("MinimapNorthAndPOIScene");
+    auto fog = std::make_shared<Engine::MinimapFogSystem>();
+
+    // Stamp exploration North of viewer (viewer = (0,0), torch moved to (0, -30))
+    fog->Update(glm::vec2(0.0f, 0.0f), 10.0f);
+    fog->StampExploration(glm::vec2(0.0f, -30.0f), 8.0f, true);
+    fog->Update(glm::vec2(0.0f, 0.0f), 10.0f); // RebuildDisplayBuffer around (0,0)
+
+    // North exploration (-Z = -30 -> dz = -20 -> vy = 128 - (-20) = 148 > 128) must lie in upper half of display buffer
+    const auto& buf = fog->GetPixelBuffer();
+    const size_t northIdx = (148u * Engine::MinimapFogSystem::TextureSize + 128u) * 4u;
+    const size_t southIdx = (108u * Engine::MinimapFogSystem::TextureSize + 128u) * 4u;
+    EXPECT_EQ(buf[northIdx + 1], Engine::MinimapFogSystem::kDiscoveredAlphaByte);
+    EXPECT_EQ(buf[southIdx + 1], 0u);
+
+    // Place a discovered (ignited) Brazier at (0, -40) and an undiscovered Shrine at (0, -100)
+    auto* brazier = scene.CreateGameObject("IgnitedBrazier");
+    brazier->GetTransform()->position = { 0.0f, 0.0f, -40.0f };
+    auto* brazierLight = brazier->AddComponent<Engine::PointLightComponent>();
+    brazierLight->Semantic = Engine::LightSemantic::SafeLifeline;
+    brazierLight->Radius = 6.0f;
+    brazierLight->Intensity = 2.0f;
+
+    auto* shrine = scene.CreateGameObject("UndiscoveredShrine");
+    shrine->GetTransform()->position = { 0.0f, 0.0f, -100.0f };
+
+    fog->UpdateFromScene(scene, glm::vec2(0.0f, 0.0f));
+
+    // Only the discovered Brazier pin should be emitted; undiscovered Shrine must be excluded
+    const auto& pins = fog->GetActivePins();
+    ASSERT_EQ(pins.size(), 1u);
+    EXPECT_EQ(pins[0].Label, "IgnitedBrazier");
+    EXPECT_GT(pins[0].MinimapLocalPos.y, 0.0f);
+
+    // Generate UIQuads and verify Brazier pin projects to upper half (Y > center.y) and carries QuadTexture == nullptr
+    Engine::UIMinimapComponent minimap;
+    minimap.fogSystem = fog;
+    const glm::vec2 resolvedPos{ 100.0f, 100.0f };
+    const glm::vec2 resolvedSize{ 200.0f, 200.0f };
+    const glm::vec2 center = resolvedPos + resolvedSize * 0.5f;
+    const auto quads = minimap.GenerateQuads(resolvedPos, resolvedSize, 1.0f);
+
+    // Quad 0: fog/bg, Quad 1: rim, Quad 2: player pin, Quad 3: Brazier pin
+    ASSERT_EQ(quads.size(), 4u);
+    const auto& brazierQuad = quads[3];
+    const float quadCenterY = 0.5f * (brazierQuad.Vertices[0].Position.y + brazierQuad.Vertices[2].Position.y);
+    EXPECT_GT(quadCenterY, center.y);
+    EXPECT_EQ(brazierQuad.QuadTexture, nullptr);
+    EXPECT_EQ(quads[2].QuadTexture, nullptr); // Player pin also has nullptr
+}
+
+TEST(MinimapFogTest, ToroidalOutOfWindowQueriesDoNotAlias) {
+    Engine::MinimapFogSystem fog;
+    fog.Update(glm::vec2(0.0f, 0.0f), 10.0f);
+    EXPECT_TRUE(fog.IsDiscovered(glm::vec2(0.0f, 0.0f)));
+    EXPECT_GT(fog.GetLiveIllumination(glm::vec2(0.0f, 0.0f)), 0.5f);
+
+    // 384m away aliases to toroidal texel (0,0), but is outside active [center-128, center+127] window
+    EXPECT_FALSE(fog.IsDiscovered(glm::vec2(384.0f, 0.0f)));
+    EXPECT_FALSE(fog.IsDiscovered(glm::vec2(0.0f, -384.0f)));
+    EXPECT_FLOAT_EQ(fog.GetLiveIllumination(glm::vec2(384.0f, 0.0f)), 0.0f);
+    EXPECT_FLOAT_EQ(fog.GetLiveIllumination(glm::vec2(0.0f, -384.0f)), 0.0f);
+}
+
+TEST(RadialWheelTest, QuadTextureIsolationPerQuad) {
+    Engine::UIRadialWheelComponent wheel;
+    wheel.IsOpen = true;
+    wheel.ActiveWedge = 0;
+    const auto quads = wheel.GenerateQuads({ 0.0f, 0.0f }, { 360.0f, 360.0f }, 1.0f);
+    ASSERT_EQ(quads.size(), 9u); // 1 bg + 4*(sector + icon)
+    for (const auto& q : quads) {
+        EXPECT_EQ(q.QuadTexture, nullptr);
+    }
 }
 
 } // namespace

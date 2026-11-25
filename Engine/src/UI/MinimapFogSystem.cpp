@@ -2,6 +2,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Components/LightComponents.h"
 #include "Engine/Scene/GameObject.h"
+#include "Engine/Terrain/TerrainChunkManager.h"
 #include <algorithm>
 #include <cmath>
 
@@ -212,8 +213,15 @@ void MinimapFogSystem::StampExploration(const glm::vec2& worldXZ, float radiusMe
     }
 }
 
+bool MinimapFogSystem::IsInActiveWindow(const glm::ivec2& gridCoord) const noexcept {
+    const int dx = gridCoord.x - m_CurrentGridCenter.x;
+    const int dz = gridCoord.y - m_CurrentGridCenter.y;
+    return dx >= -128 && dx < 128 && dz >= -128 && dz < 128;
+}
+
 void MinimapFogSystem::SetBiomeAtWorld(const glm::vec2& worldXZ, BiomeType biome) {
     const glm::ivec2 gCoord = WorldToGridCoord(worldXZ);
+    if (!IsInActiveWindow(gCoord)) return;
     const glm::ivec2 tCoord = GridToToroidalTexel(gCoord);
     m_ToroidalGrid[tCoord.y * TextureSize + tCoord.x].BiomeColorID = BiomeToColorID(biome);
     m_TextureDirty = true;
@@ -225,6 +233,9 @@ glm::u8vec4 MinimapFogSystem::GetTexelAtWorld(const glm::vec2& worldXZ) const no
 }
 
 glm::u8vec4 MinimapFogSystem::GetTexelAtGrid(int gx, int gz) const noexcept {
+    if (!IsInActiveWindow({ gx, gz })) {
+        return { 0, 0, 0, 255 };
+    }
     const glm::ivec2 tCoord = GridToToroidalTexel({ gx, gz });
     const auto& cell = m_ToroidalGrid[tCoord.y * TextureSize + tCoord.x];
     return { cell.BiomeColorID, cell.Discovered, cell.LiveLit, 255 };
@@ -232,12 +243,18 @@ glm::u8vec4 MinimapFogSystem::GetTexelAtGrid(int gx, int gz) const noexcept {
 
 bool MinimapFogSystem::IsDiscovered(const glm::vec2& worldXZ) const noexcept {
     const glm::ivec2 gCoord = WorldToGridCoord(worldXZ);
+    if (!IsInActiveWindow(gCoord)) {
+        return false;
+    }
     const glm::ivec2 tCoord = GridToToroidalTexel(gCoord);
     return m_ToroidalGrid[tCoord.y * TextureSize + tCoord.x].Discovered >= kDiscoveredAlphaByte;
 }
 
 float MinimapFogSystem::GetLiveIllumination(const glm::vec2& worldXZ) const noexcept {
     const glm::ivec2 gCoord = WorldToGridCoord(worldXZ);
+    if (!IsInActiveWindow(gCoord)) {
+        return 0.0f;
+    }
     const glm::ivec2 tCoord = GridToToroidalTexel(gCoord);
     return static_cast<float>(m_ToroidalGrid[tCoord.y * TextureSize + tCoord.x].LiveLit) / 255.0f;
 }
@@ -246,7 +263,8 @@ glm::vec2 MinimapFogSystem::ProjectAndClampPOIPin(const glm::vec2& poiWorldXZ,
                                                   const glm::vec2& viewerWorldXZ,
                                                   float maxWorldRadius,
                                                   bool& outIsClamped) noexcept {
-    const glm::vec2 delta = poiWorldXZ - viewerWorldXZ;
+    // -Z in 3D world (North) maps to +Y (upper half) on the minimap
+    const glm::vec2 delta(poiWorldXZ.x - viewerWorldXZ.x, viewerWorldXZ.y - poiWorldXZ.y);
     const float dist = glm::length(delta);
 
     if (dist <= 1e-4f) {
@@ -272,7 +290,8 @@ void MinimapFogSystem::RebuildDisplayBuffer() {
     constexpr float kOuterRadius = 126.0f;
 
     for (uint32_t vy = 0; vy < TextureSize; ++vy) {
-        const int dz = static_cast<int>(vy) - 128;
+        // OpenGL texture V=0 is bottom (South, +Z); V=1 is top (North, -Z)
+        const int dz = 128 - static_cast<int>(vy);
         for (uint32_t vx = 0; vx < TextureSize; ++vx) {
             const int dx = static_cast<int>(vx) - 128;
             const float r = std::sqrt(static_cast<float>(dx * dx + dz * dz));
@@ -306,19 +325,27 @@ void MinimapFogSystem::SyncGpuTexture() {
 
 void MinimapFogSystem::UpdateFromScene(const Scene& scene, const glm::vec2& viewerWorldXZ) {
     std::vector<glm::vec3> lights;
+    std::vector<MinimapPOIPin> candidatePins;
     m_ActivePins.clear();
 
-    // 1. Gather live lights and POIs from scene entities
+    // 1. Gather live lights, biome generator, and candidate POIs from scene entities
     float heroTorchRadius = 0.0f;
+    const WorldBiomeGenerator* biomeGen = nullptr;
 
     for (const auto& go : scene.GetGameObjects()) {
-        if (!go || !go->IsActive()) continue;
+        if (!go || !go->IsActiveInHierarchy()) continue;
+
+        if (!biomeGen) {
+            if (const auto* tcm = go->GetComponent<TerrainChunkManager>()) {
+                biomeGen = tcm->GetBiomeGenerator();
+            }
+        }
 
         const auto* pointLight = go->GetComponent<PointLightComponent>();
         const glm::vec3 worldPos = go->GetTransform() ? go->GetTransform()->GetWorldPosition() : glm::vec3(0.0f);
         const glm::vec2 worldXZ(worldPos.x, worldPos.z);
 
-        if (pointLight && pointLight->Intensity > 0.0f) {
+        if (pointLight && pointLight->IsEnabled() && pointLight->Intensity > 0.0f) {
             if (pointLight->Priority == LightPriority::Critical_HeroTorch) {
                 heroTorchRadius = pointLight->Radius;
             } else if (pointLight->Semantic == LightSemantic::SafeLifeline) {
@@ -326,9 +353,9 @@ void MinimapFogSystem::UpdateFromScene(const Scene& scene, const glm::vec2& view
             }
         }
 
-        // Register POI pins
+        // Collect candidate POI pins
         const std::string& name = go->GetName();
-        bool isIgnited = (pointLight && pointLight->Intensity > 0.1f && pointLight->Semantic == LightSemantic::SafeLifeline);
+        const bool isIgnited = (pointLight && pointLight->IsEnabled() && pointLight->Intensity > 0.1f && pointLight->Semantic == LightSemantic::SafeLifeline);
 
         if (name.find("Brazier") != std::string::npos || name.find("brazier") != std::string::npos) {
             MinimapPOIPin pin{};
@@ -338,7 +365,7 @@ void MinimapFogSystem::UpdateFromScene(const Scene& scene, const glm::vec2& view
             pin.Label = name;
             pin.IconColor = isIgnited ? glm::vec4(1.0f, 0.75f, 0.2f, 1.0f) : glm::vec4(0.45f, 0.45f, 0.5f, 0.8f);
             pin.MinimapLocalPos = ProjectAndClampPOIPin(worldXZ, viewerWorldXZ, WorldRadius, pin.IsClampedToRim);
-            AddPin(pin);
+            candidatePins.push_back(std::move(pin));
         } else if (name.find("Shrine") != std::string::npos || name.find("shrine") != std::string::npos) {
             MinimapPOIPin pin{};
             pin.EntityUUID = go->GetUUID();
@@ -347,11 +374,21 @@ void MinimapFogSystem::UpdateFromScene(const Scene& scene, const glm::vec2& view
             pin.Label = name;
             pin.IconColor = glm::vec4(0.3f, 0.85f, 0.95f, 1.0f);
             pin.MinimapLocalPos = ProjectAndClampPOIPin(worldXZ, viewerWorldXZ, WorldRadius, pin.IsClampedToRim);
+            candidatePins.push_back(std::move(pin));
+        }
+    }
+
+    // 2. Stamp exploration & illumination first so discovery state is up to date
+    Update(viewerWorldXZ, heroTorchRadius, lights, biomeGen);
+
+    // 3. Emit only discovered POI pins (excluding undiscovered shrines/braziers)
+    for (auto& pin : candidatePins) {
+        if (IsDiscovered(pin.WorldXZ)) {
+            pin.Discovered = true;
             AddPin(pin);
         }
     }
 
-    Update(viewerWorldXZ, heroTorchRadius, lights, nullptr);
     SyncGpuTexture();
 }
 

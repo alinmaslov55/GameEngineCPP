@@ -28,15 +28,21 @@ std::vector<UIQuad> UIMinimapComponent::GenerateQuads(const glm::vec2& resolvedP
 
     if (fogSystem && fogSystem->GetFogTexture() && fogSystem->GetFogTexture()->GetRendererID() != 0) {
         fogQuad.Color = glm::vec4(1.0f);
+        fogQuad.QuadTexture = fogSystem->GetFogTexture();
     } else {
         fogQuad.Color = glm::vec4(0.08f, 0.08f, 0.12f, 0.90f);
+        fogQuad.QuadTexture = nullptr;
     }
     quads.push_back(fogQuad);
 
     // 2. Ornate Circular Minimap Frame Overlay
     if (frameTexture && frameTexture->GetRendererID() != 0) {
-        UIQuad frameQuad = fogQuad;
+        UIQuad frameQuad{};
+        for (size_t i = 0; i < 4; ++i) {
+            frameQuad.Vertices[i] = fogQuad.Vertices[i];
+        }
         frameQuad.Color = frameColor;
+        frameQuad.QuadTexture = frameTexture;
         quads.push_back(frameQuad);
     } else {
         // Fallback outer rim accent ring

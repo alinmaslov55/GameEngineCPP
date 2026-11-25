@@ -217,7 +217,7 @@ flowchart TD
 | **`FIX-TER-01`** | Thread-Local `stbi` Flip, Delete Orphan `Scene/TerrainChunkManager.h` & Bounds | `DONE` | **P0** | W0 | *None (Root)* | Terrain `#49`, Med `Duplicate Header`, `Bounds` | `FIX-TER-02` |
 | **`FIX-TER-02`** | Cross-Chunk Poisson True Biome Lookup & `SampleSurfaceAtXZ` Hardening | `DONE` | **P1** | W1 | `FIX-TER-01` | Terrain `#48`, Med `SampleSurfaceAtXZ`, `ToSplatRGBA8` | `FIX-TER-03` |
 | **`FIX-TER-03`** | `TerrainFireGrid` Reset/Corner Fix, Finite Terrain Fire & Firewall VFX/Decals | `DONE` | **P1** | W2 | `FIX-TER-02`, `FIX-VFX-01` | ECS `#22`, Terrain `#47`, Med `FireGrid`, `TER-04 VFX` | `FIX-SBX-02`, `DOC-05` |
-| **`FIX-UIX-01`** | Per-Quad `UIQuad` Texture Binding, Minimap Z-Axis Flip & Active-Window Guard | `TODO` | **P0** | W1 | `FIX-RND-01` | `C-21`, UI `#45` | `DOC-07` |
+| **`FIX-UIX-01`** | Per-Quad `UIQuad` Texture Binding, Minimap Z-Axis Flip & Active-Window Guard | `DONE` | **P0** | W1 | `FIX-RND-01` | `C-21`, UI `#45` | `DOC-07` |
 | **`FIX-UIX-02`** | `UIButtonComponent` Single-Frame Focus Step, Dangling Pointer Guard & Z-Order | `TODO` | **P0** | W1 | `FIX-CORE-03` | `C-22` (Part 1), UI `#42`, Med `UIButton`/`UICanvas` | `DOC-07` |
 | **`FIX-UIX-03`** | `Font` UTF-8 Decoder, `.fnt` Input Validation, Wrap Space Trim & Baseline | `TODO` | **P0** | W0 | *None (Root)* | `C-22` (Part 2), UI `#46` | `DOC-07` |
 | **`FIX-UIX-04`** | `UIRadialWheel` TimeScale Teardown, Viewport Coords & `UIPanel` 9-Slice/Winding | `TODO` | **P1** | W1 | `FIX-CORE-03` | UI `#43`, `#44` | `FIX-SBX-02`, `DOC-07` |
@@ -592,7 +592,7 @@ flowchart TD
 ---
 
 #### `FIX-UIX-01` — Per-Quad `UIQuad` Texture Binding, Minimap Z-Axis Flip & Active-Window Guard
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-RND-01` | Unlocks: `DOC-07`
 - **Current Defects (`C-21`):**
   1. [UIMinimapComponent.cpp](file://Engine/src/UI/UIMinimapComponent.cpp#L14-L80), [UIRadialWheelComponent.cpp](file://Engine/src/UI/UIRadialWheelComponent.cpp#L164-L234), [SceneRenderer.cpp](file://Engine/src/Renderer/SceneRenderer.cpp#L973-L1025): `UIQuad` lacks a per-quad texture pointer, so `SceneRenderer` binds `GetFogTexture()` to the minimap frame and all pins, and binds `WheelTexture` to all wheel highlights and item icons (while tinting `WheelTexture` by `0.08`).

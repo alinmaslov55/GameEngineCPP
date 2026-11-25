@@ -75,6 +75,7 @@ public:
     // Coordinate conversions
     [[nodiscard]] static glm::ivec2 WorldToGridCoord(const glm::vec2& worldXZ) noexcept;
     [[nodiscard]] static glm::ivec2 GridToToroidalTexel(const glm::ivec2& gridCoord) noexcept;
+    [[nodiscard]] bool IsInActiveWindow(const glm::ivec2& gridCoord) const noexcept;
 
     // POI Pin Clamping to circular rim
     [[nodiscard]] static glm::vec2 ProjectAndClampPOIPin(const glm::vec2& poiWorldXZ,

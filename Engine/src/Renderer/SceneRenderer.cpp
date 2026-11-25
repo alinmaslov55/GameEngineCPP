@@ -1009,8 +1009,8 @@ void SceneRenderer::RenderPassScreenUI() {
                 quad.Vertices[3].TexCoord
             };
 
-            if (minimap->fogSystem && minimap->fogSystem->GetFogTexture() && minimap->fogSystem->GetFogTexture()->GetRendererID() != 0) {
-                Renderer2D::DrawQuad(positions, texCoords, minimap->fogSystem->GetFogTexture(), quad.Color);
+            if (quad.QuadTexture && quad.QuadTexture->GetRendererID() != 0) {
+                Renderer2D::DrawQuad(positions, texCoords, quad.QuadTexture, quad.Color);
             } else {
                 Renderer2D::DrawQuad(positions, texCoords, quad.Color);
             }
@@ -1041,8 +1041,8 @@ void SceneRenderer::RenderPassScreenUI() {
                 quad.Vertices[3].TexCoord
             };
 
-            if (wheel->WheelTexture && wheel->WheelTexture->GetRendererID() != 0) {
-                Renderer2D::DrawQuad(positions, texCoords, wheel->WheelTexture, quad.Color);
+            if (quad.QuadTexture && quad.QuadTexture->GetRendererID() != 0) {
+                Renderer2D::DrawQuad(positions, texCoords, quad.QuadTexture, quad.Color);
             } else {
                 Renderer2D::DrawQuad(positions, texCoords, quad.Color);
             }

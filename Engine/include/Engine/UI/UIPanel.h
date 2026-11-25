@@ -27,6 +27,7 @@ struct UIQuadVertex {
 struct UIQuad {
     UIQuadVertex Vertices[4];   // 0: Bottom-Left, 1: Bottom-Right, 2: Top-Right, 3: Top-Left
     glm::vec4 Color{ 1.0f };
+    std::shared_ptr<Texture> QuadTexture = nullptr; // Per-quad texture override (nullptr = solid color or widget default)
 };
 
 class UIPanel final : public Component {
