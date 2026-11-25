@@ -10,7 +10,8 @@ namespace Sandbox {
 
 namespace {
 
-void DrawEntityNode(Engine::GameObject* go,
+void DrawEntityNode(const std::shared_ptr<Engine::Scene>& activeScene,
+                    Engine::GameObject* go,
                     Engine::GameObject*& selectedEntity,
                     Engine::GameObject*& entityToDelete) {
     if (!go) return;
@@ -42,7 +43,8 @@ void DrawEntityNode(Engine::GameObject* go,
 
     // Drag-and-drop source (drag this entity to reparent)
     if (ImGui::BeginDragDropSource()) {
-        ImGui::SetDragDropPayload("HIERARCHY_ENTITY", &go, sizeof(Engine::GameObject*));
+        const uint64_t entityUUID = go->GetUUID();
+        ImGui::SetDragDropPayload("HIERARCHY_ENTITY", &entityUUID, sizeof(uint64_t));
         ImGui::Text("%s", go->GetName().c_str());
         ImGui::EndDragDropSource();
     }
@@ -50,10 +52,13 @@ void DrawEntityNode(Engine::GameObject* go,
     // Drag-and-drop target (drop entity onto this entity to make it a child)
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY")) {
-            auto* droppedGo = *static_cast<Engine::GameObject**>(payload->Data);
-            if (droppedGo && droppedGo != go) {
-                if (auto* droppedTransform = droppedGo->GetTransform()) {
-                    droppedTransform->SetParent(go->GetTransform(), /*keepWorldTransform=*/true);
+            if (activeScene && payload->DataSize == sizeof(uint64_t)) {
+                const uint64_t droppedUUID = *static_cast<const uint64_t*>(payload->Data);
+                Engine::GameObject* droppedGo = activeScene->FindGameObjectByUUID(droppedUUID);
+                if (droppedGo && droppedGo != go) {
+                    if (auto* droppedTransform = droppedGo->GetTransform()) {
+                        droppedTransform->SetParent(go->GetTransform(), /*keepWorldTransform=*/true);
+                    }
                 }
             }
         }
@@ -66,7 +71,7 @@ void DrawEntityNode(Engine::GameObject* go,
             const auto childrenCopy = transform->GetChildren();
             for (auto* childTransform : childrenCopy) {
                 if (childTransform && childTransform->GetGameObject()) {
-                    DrawEntityNode(childTransform->GetGameObject(), selectedEntity, entityToDelete);
+                    DrawEntityNode(activeScene, childTransform->GetGameObject(), selectedEntity, entityToDelete);
                 }
             }
         }
@@ -94,7 +99,7 @@ void SceneHierarchyPanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& ac
             if (const auto* tr = go->GetTransform(); tr && tr->GetParent() != nullptr) {
                 continue;
             }
-            DrawEntityNode(go, selectedEntity, entityToDelete);
+            DrawEntityNode(activeScene, go, selectedEntity, entityToDelete);
         }
 
         // Dropping into remaining space unparents dropped entity to root
@@ -103,9 +108,12 @@ void SceneHierarchyPanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& ac
             ImGui::Dummy(avail);
             if (ImGui::BeginDragDropTarget()) {
                 if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY")) {
-                    auto* droppedGo = *static_cast<Engine::GameObject**>(payload->Data);
-                    if (droppedGo && droppedGo->GetTransform()) {
-                        droppedGo->GetTransform()->SetParent(nullptr, /*keepWorldTransform=*/true);
+                    if (payload->DataSize == sizeof(uint64_t)) {
+                        const uint64_t droppedUUID = *static_cast<const uint64_t*>(payload->Data);
+                        Engine::GameObject* droppedGo = activeScene->FindGameObjectByUUID(droppedUUID);
+                        if (droppedGo && droppedGo->GetTransform()) {
+                            droppedGo->GetTransform()->SetParent(nullptr, /*keepWorldTransform=*/true);
+                        }
                     }
                 }
                 ImGui::EndDragDropTarget();

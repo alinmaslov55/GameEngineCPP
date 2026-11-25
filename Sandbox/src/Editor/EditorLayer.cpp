@@ -3,14 +3,18 @@
 #include "Scene/DemoScene.h"
 
 #include <Engine/Animation/Animator.h>
+#include <Engine/Audio/AudioManager.h>
+#include <Engine/Audio/MusicDirector.h>
 #include <Engine/Core/Application.h>
 #include <Engine/Core/Input.h>
 #include <Engine/Core/ResourceManager.h>
+#include <Engine/Core/Time.h>
 #include <Engine/Data/GameplayData.h>
 #include <Engine/ImGui/ImGuiLayer.h>
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/Renderer/RHI/Renderer.h>
 #include <Engine/Renderer/Renderer2D.h>
+#include <Engine/Renderer/SceneRenderer.h>
 #include <Engine/Renderer/TerrainRenderer.h>
 #include <Engine/Scene/Components/FoliageWindComponents.h>
 #include <Engine/Scene/SceneManager.h>
@@ -51,12 +55,12 @@ void EditorLayer::OnAttach() {
 
 void EditorLayer::OnDetach() {
     ENGINE_INFO("Detaching EditorLayer...");
-    Engine::GameplayData::Shutdown();
     if (m_SceneState == SceneState::Play) {
         OnSceneStop();
     }
+    Engine::GameplayData::Shutdown();
 
-    m_SelectedEntity = nullptr;
+    m_SelectedEntityUUID = 0;
     m_RuntimeScene.reset();
     m_ActiveScene.reset();
     m_EditorScene.reset();
@@ -81,13 +85,16 @@ void EditorLayer::OnUpdate(float deltaTime) {
 
     // 2. Poll Input & Step Runtime Simulation (when in Play Mode) or Ambient Particles (in Edit Mode)
     Engine::Input::Update();
-    if (ImGui::IsKeyPressed(ImGuiKey_F5, false) || Engine::Input::IsKeyJustPressed(SDL_SCANCODE_F5)) {
+    if (Engine::Input::IsKeyJustPressed(SDL_SCANCODE_F5)) {
         Engine::GameplayData::ReloadAll();
     }
     if (m_SceneState == SceneState::Play && m_ActiveScene) {
         m_ActiveScene->UpdateRuntime(deltaTime);
     } else if (m_SceneState == SceneState::Edit && m_ActiveScene) {
         for (const auto& go : m_ActiveScene->GetGameObjects()) {
+            if (!go || !go->IsActiveInHierarchy()) {
+                continue;
+            }
             if (auto* ps = go->GetComponent<Engine::ParticleSystem>()) {
                 ps->Update(deltaTime);
             }
@@ -124,20 +131,30 @@ void EditorLayer::OnImGuiRender() {
     RenderSaveLoadModals();
     RenderToolbar();
 
+    Engine::GameObject* selectedEntity = m_ActiveScene
+        ? m_ActiveScene->FindGameObjectByUUID(m_SelectedEntityUUID)
+        : nullptr;
+    if (!selectedEntity) {
+        m_SelectedEntityUUID = 0;
+    }
+
     m_ViewportPanel.OnImGuiRender(
         m_Framebuffer,
         m_ActiveScene,
         m_EditorCamera,
         m_SceneState == SceneState::Edit,
-        m_SelectedEntity,
+        selectedEntity,
         m_TilePalettePanel,
         m_ContentBrowserPanel
     );
 
-    m_HierarchyPanel.OnImGuiRender(m_ActiveScene, m_SelectedEntity, &m_ShowHierarchy);
-    m_InspectorPanel.OnImGuiRender(m_SelectedEntity, &m_ShowInspector);
-    m_TilePalettePanel.OnImGuiRender(m_ActiveScene, m_SelectedEntity, &m_ShowTilePalette);
-    m_ContentBrowserPanel.OnImGuiRender(&m_ShowAssetBrowser);
+    m_HierarchyPanel.OnImGuiRender(m_ActiveScene, selectedEntity, &m_ShowHierarchy);
+    m_SelectedEntityUUID = selectedEntity ? selectedEntity->GetUUID() : 0;
+    selectedEntity = m_ActiveScene ? m_ActiveScene->FindGameObjectByUUID(m_SelectedEntityUUID) : nullptr;
+
+    m_InspectorPanel.OnImGuiRender(selectedEntity, &m_ShowInspector);
+    m_TilePalettePanel.OnImGuiRender(m_ActiveScene, selectedEntity, &m_ShowTilePalette);
+    m_ContentBrowserPanel.OnImGuiRender(m_ActiveScene, &m_ShowAssetBrowser);
     m_ProfilerPanel.OnImGuiRender(&m_ShowProfiler);
     m_ConsolePanel.OnImGuiRender(&m_ShowConsole);
 }
@@ -148,8 +165,6 @@ void EditorLayer::OnScenePlay() {
     }
 
     Engine::TerrainRenderer::ClearBrushPreview();
-
-    const uint64_t selectedUUID = m_SelectedEntity ? m_SelectedEntity->GetUUID() : 0;
 
     // Snapshot editorScene in memory and clone into runtimeScene
     const std::string snapshot = Engine::SceneSerializer(m_EditorScene).SerializeToString();
@@ -171,7 +186,9 @@ void EditorLayer::OnScenePlay() {
     m_ActiveScene = m_RuntimeScene;
     Engine::SceneManager::LoadScene(m_ActiveScene);
     m_ActiveScene->OnRuntimeStart();
-    m_SelectedEntity = FindEntityByUUID(m_ActiveScene, selectedUUID);
+    if (m_SelectedEntityUUID != 0 && !m_ActiveScene->FindGameObjectByUUID(m_SelectedEntityUUID)) {
+        m_SelectedEntityUUID = 0;
+    }
     m_SceneState = SceneState::Play;
     ENGINE_INFO("Entered PLAY mode");
 }
@@ -181,11 +198,14 @@ void EditorLayer::OnSceneStop() {
         return;
     }
 
-    const uint64_t selectedUUID = m_SelectedEntity ? m_SelectedEntity->GetUUID() : 0;
-
     if (m_RuntimeScene && m_RuntimeScene->IsRuntimeRunning()) {
         m_RuntimeScene->OnRuntimeStop();
     }
+
+    Engine::Time::Reset();
+    Engine::MusicDirector::Shutdown();
+    Engine::AudioManager::StopBus(Engine::AudioBus::Master);
+    Engine::SceneRenderer::ClearDebugHitboxes();
 
     m_ActiveScene = m_EditorScene;
     const glm::vec2 viewportSize = m_ViewportPanel.GetViewportSize();
@@ -197,7 +217,9 @@ void EditorLayer::OnSceneStop() {
     Engine::SceneManager::LoadScene(m_ActiveScene);
     m_RuntimeScene.reset();
 
-    m_SelectedEntity = FindEntityByUUID(m_ActiveScene, selectedUUID);
+    if (m_SelectedEntityUUID != 0 && (!m_ActiveScene || !m_ActiveScene->FindGameObjectByUUID(m_SelectedEntityUUID))) {
+        m_SelectedEntityUUID = 0;
+    }
     m_SceneState = SceneState::Edit;
     ENGINE_INFO("Stopped PLAY mode and restored pre-play Editor scene");
 }
@@ -301,7 +323,7 @@ void EditorLayer::RenderSaveLoadModals() {
                                                     static_cast<uint32_t>(viewportSize.y));
                 }
                 Engine::SceneManager::LoadScene(m_ActiveScene);
-                m_SelectedEntity = nullptr;
+                m_SelectedEntityUUID = 0;
                 ENGINE_INFO("Loaded scene from: '{}'", m_FilepathBuffer);
             } else {
                 ENGINE_ERROR("Failed to load scene from: '{}'", m_FilepathBuffer);
@@ -354,18 +376,6 @@ void EditorLayer::RenderToolbar() {
     }
     ImGui::End();
     ImGui::PopStyleVar();
-}
-
-Engine::GameObject* EditorLayer::FindEntityByUUID(const std::shared_ptr<Engine::Scene>& scene, uint64_t uuid) {
-    if (!scene || uuid == 0) {
-        return nullptr;
-    }
-    for (const auto& go : scene->GetGameObjects()) {
-        if (go->GetUUID() == uuid) {
-            return go.get();
-        }
-    }
-    return nullptr;
 }
 
 } // namespace Sandbox

@@ -43,8 +43,6 @@ private:
     void RenderSaveLoadModals();
     void RenderToolbar();
 
-    static Engine::GameObject* FindEntityByUUID(const std::shared_ptr<Engine::Scene>& scene, uint64_t uuid);
-
 private:
     std::shared_ptr<Engine::Scene> m_EditorScene;
     std::shared_ptr<Engine::Scene> m_RuntimeScene;
@@ -53,7 +51,7 @@ private:
 
     Engine::EditorCamera m_EditorCamera{1280.0f / 720.0f, 15.0f};
     std::shared_ptr<Engine::Framebuffer> m_Framebuffer;
-    Engine::GameObject* m_SelectedEntity = nullptr;
+    uint64_t m_SelectedEntityUUID = 0;
 
     // Save / Load modal state
     bool m_OpenSavePopup = false;

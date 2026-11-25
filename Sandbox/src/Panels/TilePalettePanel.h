@@ -40,7 +40,7 @@ public:
 
 private:
     GroundPaintMode m_PaintMode = GroundPaintMode::TerrainSplat;
-    Engine::GameObject* m_LastObservedSelection = nullptr;
+    uint64_t m_LastObservedSelectionUUID = 0;
 
     uint32_t m_SelectedSplatLayer = 1; // Default to Dirt Path so first stroke is immediately visible on Grass
     float m_BrushRadius = 1.25f;

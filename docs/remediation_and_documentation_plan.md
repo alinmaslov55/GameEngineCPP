@@ -221,7 +221,7 @@ flowchart TD
 | **`FIX-UIX-02`** | `UIButtonComponent` Single-Frame Focus Step, Dangling Pointer Guard & Z-Order | `DONE` | **P0** | W1 | `FIX-CORE-03` | `C-22` (Part 1), UI `#42`, Med `UIButton`/`UICanvas` | `DOC-07` |
 | **`FIX-UIX-03`** | `Font` UTF-8 Decoder, `.fnt` Input Validation, Wrap Space Trim & Baseline | `DONE` | **P0** | W0 | *None (Root)* | `C-22` (Part 2), UI `#46` | `DOC-07` |
 | **`FIX-UIX-04`** | `UIRadialWheel` TimeScale Teardown, Viewport Coords & `UIPanel` 9-Slice/Winding | `DONE` | **P1** | W1 | `FIX-CORE-03` | UI `#43`, `#44` | `FIX-SBX-02`, `DOC-07` |
-| **`FIX-EDT-01`** | UUID-Backed `EditorLayer` Selection & `"HIERARCHY_ENTITY"` Drag-Drop Payload | `TODO` | **P0** | W1 | `FIX-ECS-01` | `C-11`, Sandbox `#53`, `#55`, Med `EditMode active` | `FIX-EDT-02`, `FIX-EDT-03` |
+| **`FIX-EDT-01`** | UUID-Backed `EditorLayer` Selection & `"HIERARCHY_ENTITY"` Drag-Drop Payload | `DONE` | **P0** | W1 | `FIX-ECS-01` | `C-11`, Sandbox `#53`, `#55`, Med `EditMode active` | `FIX-EDT-02`, `FIX-EDT-03` |
 | **`FIX-EDT-02`** | `SceneViewportPanel` Play-Mode Paint Guard, Scrollbar/Hotkeys & Inspector Sync | `TODO` | **P1** | W2 | `FIX-EDT-01` | Sandbox `#51`, Med `Viewport`, `Inspector` | `DOC-08` |
 | **`FIX-EDT-03`** | `ContentBrowserPanel` Child Drop Target/Sanitizer & `DrawAnimator` Inspector | `TODO` | **P1** | W2 | `FIX-EDT-01`, `FIX-ANI-01` | Sandbox `#56`, `#57`, Med `ContentBrowser` | `DOC-08` |
 | **`FIX-SBX-01`** | `RuntimeLayer` `GameplayData::Init`, `SceneManager` Transitions & `PlayerController` | `TODO` | **P0** | W2 | `FIX-SAV-01`, `FIX-SAV-02`, `FIX-PHY-03` | Sandbox `#50`, `#52`, `#54`, Med `CameraController` | `DOC-08` |
@@ -641,7 +641,7 @@ flowchart TD
 ---
 
 #### `FIX-EDT-01` — UUID-Backed `EditorLayer` Selection & `"HIERARCHY_ENTITY"` Drag-Drop Payload
-- **Status:** `TODO` | **Priority:** `P0` | **Wave:** `W1`
+- **Status:** `DONE` | **Priority:** `P0` | **Wave:** `W1`
 - **Dependencies:** Hard: `FIX-ECS-01` | Unlocks: `FIX-EDT-02`, `FIX-EDT-03`
 - **Current Defects (`C-11`):** [EditorLayer.h](file://Sandbox/src/Editor/EditorLayer.h#L56), [EditorLayer.cpp](file://Sandbox/src/Editor/EditorLayer.cpp#L52-L203), [SceneHierarchyPanel.cpp](file://Sandbox/src/Panels/SceneHierarchyPanel.cpp#L44-L146), [ContentBrowserPanel.cpp](file://Sandbox/src/Panels/ContentBrowserPanel.cpp#L341-L362): `EditorLayer::m_SelectedEntity` and ImGui `"HIERARCHY_ENTITY"` payloads store raw `GameObject*` pointers without liveness validation (UAF if deleted during drag or killed in Play Mode); `EditorLayer::OnDetach()` shuts down `GameplayData` *before* `OnSceneStop()`; `OnSceneStop()` leaks `TimeScale`, active audio/music, and debug hitboxes; `OnUpdate()` queries `ImGui::IsKeyPressed(ImGuiKey_F5)` outside `ImGui::NewFrame()` (double-reloading data) and updates inactive entities in Edit Mode.
 - **Verification:** Resolve selection and drag-drop payloads exclusively by `uint64_t` UUID via `m_ActiveScene->FindGameObjectByUUID(uuid)`.

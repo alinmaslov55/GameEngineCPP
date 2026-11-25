@@ -7,6 +7,7 @@
 #include <vector>
 
 namespace Engine {
+class Scene;
 class Texture;
 }
 
@@ -24,7 +25,7 @@ enum class DioramaDropArchetype {
 class ContentBrowserPanel {
 public:
     void SetRootDirectory(const std::filesystem::path& rootDirectory);
-    void OnImGuiRender(bool* pOpen);
+    void OnImGuiRender(const std::shared_ptr<Engine::Scene>& activeScene, bool* pOpen);
     void Refresh();
 
     DioramaDropArchetype GetDropArchetype() const { return m_DropArchetype; }

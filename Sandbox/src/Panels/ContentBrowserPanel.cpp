@@ -4,6 +4,7 @@
 #include <Engine/Renderer/Texture.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Prefab.h>
+#include <Engine/Scene/Scene.h>
 #include <Engine/Utils/CutoutProcessor.h>
 #include <Engine/Utils/Logger.h>
 
@@ -100,7 +101,7 @@ void ContentBrowserPanel::RefreshEntries() {
     });
 }
 
-void ContentBrowserPanel::OnImGuiRender(bool* pOpen) {
+void ContentBrowserPanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activeScene, bool* pOpen) {
     if (pOpen && !*pOpen) {
         return;
     }
@@ -340,20 +341,23 @@ void ContentBrowserPanel::OnImGuiRender(bool* pOpen) {
     }
     if (ImGui::BeginDragDropTarget()) {
         if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY")) {
-            auto* go = *static_cast<Engine::GameObject**>(payload->Data);
-            if (go) {
-                auto prefab = Engine::Prefab::CreateFromGameObject(go, /*zeroRootPosition=*/true);
-                if (prefab && prefab->IsValid()) {
-                    const std::string filename = SanitizeFilename(go->GetName()) + ".prefab";
-                    const std::filesystem::path targetPath = m_CurrentDirectory / filename;
-                    if (prefab->SaveToFile(targetPath.string())) {
-                        m_NeedsRefresh = true;
-                        m_LastStatusMessage = "Exported prefab: " + filename;
-                        ENGINE_INFO("Asset Browser: Exported prefab '{}' for GameObject '{}'",
-                                    targetPath.string(), go->GetName());
-                    } else {
-                        m_LastStatusMessage = "Failed to save prefab: " + filename;
-                        ENGINE_ERROR("Asset Browser: Failed to save prefab to '{}'", targetPath.string());
+            if (activeScene && payload->DataSize == sizeof(uint64_t)) {
+                const uint64_t droppedUUID = *static_cast<const uint64_t*>(payload->Data);
+                Engine::GameObject* go = activeScene->FindGameObjectByUUID(droppedUUID);
+                if (go) {
+                    auto prefab = Engine::Prefab::CreateFromGameObject(go, /*zeroRootPosition=*/true);
+                    if (prefab && prefab->IsValid()) {
+                        const std::string filename = SanitizeFilename(go->GetName()) + ".prefab";
+                        const std::filesystem::path targetPath = m_CurrentDirectory / filename;
+                        if (prefab->SaveToFile(targetPath.string())) {
+                            m_NeedsRefresh = true;
+                            m_LastStatusMessage = "Exported prefab: " + filename;
+                            ENGINE_INFO("Asset Browser: Exported prefab '{}' for GameObject '{}'",
+                                        targetPath.string(), go->GetName());
+                        } else {
+                            m_LastStatusMessage = "Failed to save prefab: " + filename;
+                            ENGINE_ERROR("Asset Browser: Failed to save prefab to '{}'", targetPath.string());
+                        }
                     }
                 }
             }

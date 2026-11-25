@@ -40,8 +40,9 @@ void TilePalettePanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& activ
     }
 
     // Automatically switch mode when the user explicitly selects a Terrain vs Tilemap entity
-    if (selectedEntity != m_LastObservedSelection) {
-        m_LastObservedSelection = selectedEntity;
+    const uint64_t selectedUUID = selectedEntity ? selectedEntity->GetUUID() : 0;
+    if (selectedUUID != m_LastObservedSelectionUUID) {
+        m_LastObservedSelectionUUID = selectedUUID;
         if (selectedEntity) {
             if (selectedEntity->GetComponent<Engine::TerrainComponent>() ||
                 selectedEntity->GetComponent<Engine::TerrainChunkManager>()) {
