@@ -105,8 +105,12 @@ struct VoiceSlot {
 }
 
 std::vector<VoiceSlot> s_VoicePool;
+std::atomic<uint64_t (*)() noexcept> s_TestClockMs{ nullptr };
 
 uint64_t GetCurrentTimeMs() {
+    if (auto* testClock = s_TestClockMs.load(std::memory_order_acquire)) {
+        return testClock();
+    }
     return static_cast<uint64_t>(
         std::chrono::duration_cast<std::chrono::milliseconds>(
             std::chrono::steady_clock::now().time_since_epoch()
@@ -269,6 +273,10 @@ void PutVoiceData(VoiceSlot& slot,
 
 } // namespace
 
+void AudioManager::SetClockForTesting(uint64_t (*clockFn)() noexcept) noexcept {
+    s_TestClockMs.store(clockFn, std::memory_order_release);
+}
+
 void AudioManager::Init(uint32_t maxVoices) {
     std::lock_guard lifecycleLock(s_AudioLifecycleMutex);
     if (s_AudioInitialized.load(std::memory_order_acquire)) {
@@ -405,7 +413,9 @@ void UpdateInternal(const glm::vec3& listenerWorldPos, const glm::vec3& listener
 
             bool voiceFinished = false;
             if (slot.Stream) {
-                if (s_PlaybackDevice != 0) {
+                const bool useElapsedDuration =
+                    (s_PlaybackDevice == 0) || (s_TestClockMs.load(std::memory_order_acquire) != nullptr);
+                if (!useElapsedDuration) {
                     if (slot.Params.SpatializedXZ && slot.Clip && slot.Clip->IsValid() &&
                         slot.Clip->GetSpec().format == SDL_AUDIO_S16 &&
                         slot.Clip->GetSpec().channels > 0 && slot.Clip->GetSpec().channels <= 2)

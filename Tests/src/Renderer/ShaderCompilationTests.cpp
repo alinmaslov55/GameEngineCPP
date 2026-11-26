@@ -82,6 +82,7 @@ TEST(ShaderCompilationTest, TerrainSplatmapCompilesAndLinksCleanlyWithValidUnifo
     EXPECT_NE(shader.GetUniformLocation("u_ShadowsEnabled"), -1);
     EXPECT_NE(shader.GetUniformLocation("u_TorchShadowsEnabled"), -1);
     EXPECT_NE(shader.GetUniformLocation("u_BrushEnabled"), -1);
+    EXPECT_NE(shader.GetUniformLocation("u_LayerGlossiness"), -1);
 }
 
 TEST(ShaderCompilationTest, Batch2DCompilesAndLinksCleanly) {
@@ -97,6 +98,49 @@ TEST(ShaderCompilationTest, Batch2DCompilesAndLinksCleanly) {
     ASSERT_NE(shader.GetRendererID(), 0u) << "Batch2D.glsl failed to compile or link!";
     EXPECT_NE(shader.GetUniformLocation("u_ViewProjection"), -1);
     EXPECT_NE(shader.GetUniformLocation("u_Textures"), -1);
+}
+
+TEST(ShaderCompilationTest, PostProcessShadersCompileAndLinkCleanly) {
+    ScopedGLContext gl;
+    if (!gl.valid) {
+        GTEST_SKIP() << "No OpenGL context available for live shader compilation test.";
+    }
+
+    {
+        const std::filesystem::path path = "Sandbox/assets/shaders/PostProcess_BloomDownsample.glsl";
+        ASSERT_TRUE(std::filesystem::exists(path));
+        Engine::Shader shader(path.string());
+        ASSERT_NE(shader.GetRendererID(), 0u) << "PostProcess_BloomDownsample.glsl failed to compile or link!";
+        EXPECT_NE(shader.GetUniformLocation("u_SrcTexture"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_SrcTexelSize"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_MipLevel"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_Threshold"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_Knee"), -1);
+    }
+
+    {
+        const std::filesystem::path path = "Sandbox/assets/shaders/PostProcess_BloomUpsample.glsl";
+        ASSERT_TRUE(std::filesystem::exists(path));
+        Engine::Shader shader(path.string());
+        ASSERT_NE(shader.GetRendererID(), 0u) << "PostProcess_BloomUpsample.glsl failed to compile or link!";
+        EXPECT_NE(shader.GetUniformLocation("u_SrcTexture"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_TexelRadius"), -1);
+    }
+
+    {
+        const std::filesystem::path path = "Sandbox/assets/shaders/PostProcess_Composite.glsl";
+        ASSERT_TRUE(std::filesystem::exists(path));
+        Engine::Shader shader(path.string());
+        ASSERT_NE(shader.GetRendererID(), 0u) << "PostProcess_Composite.glsl failed to compile or link!";
+        EXPECT_NE(shader.GetUniformLocation("u_SceneHDR"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_BloomTexture"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_BloomEnabled"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_BloomIntensity"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_ToneMapMode"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_Exposure"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_VignetteEnabled"), -1);
+        EXPECT_NE(shader.GetUniformLocation("u_AspectRatio"), -1);
+    }
 }
 
 } // namespace

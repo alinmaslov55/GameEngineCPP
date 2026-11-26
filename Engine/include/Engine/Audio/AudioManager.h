@@ -131,6 +131,9 @@ public:
     static void RegisterStreamTrack(AudioStreamTrack* track);
     static void UnregisterStreamTrack(AudioStreamTrack* track);
     [[nodiscard]] static SDL_AudioDeviceID GetPlaybackDevice() noexcept;
+
+    // Deterministic clock override for unit testing (pass nullptr to restore steady_clock)
+    static void SetClockForTesting(uint64_t (*clockFn)() noexcept) noexcept;
 };
 
 } // namespace Engine

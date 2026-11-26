@@ -434,3 +434,23 @@ TEST(DataRegistryTests, GameplayDataInitMissingDirectoryLeavesInitializedFalse) 
     EXPECT_FALSE(GameplayData::Init("non_existent_gameplay_data_dir_xyz"));
     EXPECT_FALSE(GameplayData::IsInitialized());
 }
+
+TEST(DataRegistryTests, AllSandboxPrefabsLoadAndInstantiateCleanly) {
+    const std::filesystem::path prefabsDir("Sandbox/assets/prefabs");
+    ASSERT_TRUE(std::filesystem::exists(prefabsDir));
+
+    Engine::Scene testScene("AllPrefabsVerifyScene");
+    size_t prefabCount = 0;
+    for (const auto& entry : std::filesystem::directory_iterator(prefabsDir)) {
+        if (!entry.is_regular_file() || entry.path().extension() != ".prefab") {
+            continue;
+        }
+        ++prefabCount;
+        auto prefab = Prefab::LoadFromFile(entry.path().string());
+        ASSERT_NE(prefab, nullptr) << "Failed to load prefab: " << entry.path().string();
+        EXPECT_TRUE(prefab->IsValid()) << "Invalid prefab: " << entry.path().string();
+        auto* go = testScene.InstantiatePrefab(*prefab, { 0.0f, 0.0f, 0.0f });
+        ASSERT_NE(go, nullptr) << "Failed to instantiate prefab: " << entry.path().string();
+    }
+    EXPECT_GT(prefabCount, 0u);
+}

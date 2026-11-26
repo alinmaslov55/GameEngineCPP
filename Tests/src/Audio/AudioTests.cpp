@@ -957,10 +957,34 @@ TEST(AudioManagerTest, VoiceHandle12BitIndexAndGenerationalWrapSafety) {
 }
 
 TEST(AudioManagerTest, HeadlessVoiceExpirationByElapsedDuration) {
-    Engine::AudioManager::Init();
+    static uint64_t s_NowMs = 1000;
+    s_NowMs = 1000;
+    struct ScopedHeadlessAudioAndClock {
+        static uint64_t NowMs() noexcept { return s_NowMs; }
+        const char* prevDriver = SDL_GetHint(SDL_HINT_AUDIO_DRIVER);
+        std::string savedDriver = prevDriver ? prevDriver : "";
+        bool hadPrevDriver = (prevDriver != nullptr);
 
-    // 44100 Hz, 441 frames -> 10ms
-    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 441u);
+        ScopedHeadlessAudioAndClock() {
+            SDL_SetHint(SDL_HINT_AUDIO_DRIVER, "dummy");
+            Engine::AudioManager::SetClockForTesting(&NowMs);
+        }
+        ~ScopedHeadlessAudioAndClock() {
+            Engine::AudioManager::Shutdown();
+            Engine::AudioManager::SetClockForTesting(nullptr);
+            if (hadPrevDriver) {
+                SDL_SetHint(SDL_HINT_AUDIO_DRIVER, savedDriver.c_str());
+            } else {
+                SDL_ResetHint(SDL_HINT_AUDIO_DRIVER);
+            }
+        }
+    } guard;
+
+    Engine::AudioManager::Init();
+    ASSERT_TRUE(Engine::AudioManager::IsInitialized());
+
+    // 44100 Hz, 11025 frames -> 250ms
+    const auto wavBytes = BuildSyntheticWavPCM16(44100u, 1u, 11025u);
     auto clip = Engine::AudioClip::CreateFromMemory(wavBytes, "short_test.wav");
     ASSERT_NE(clip, nullptr);
 
@@ -972,18 +996,15 @@ TEST(AudioManagerTest, HeadlessVoiceExpirationByElapsedDuration) {
     EXPECT_NE(h, Engine::kInvalidVoiceHandle);
     EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(h));
 
-    // Call update immediately -> clip hasn't expired yet (<10ms)
+    // Advance 50ms -> clip hasn't expired yet (<250ms)
+    s_NowMs += 50;
     Engine::AudioManager::Update();
     EXPECT_TRUE(Engine::AudioManager::IsVoicePlaying(h));
 
-    // Sleep for 30ms so elapsed wall clock exceeds clip duration (10ms)
-    std::this_thread::sleep_for(std::chrono::milliseconds(30));
-
-    // Next update should reap the expired voice in headless mode
+    // Advance another 250ms (total 300ms > 250ms) -> next update reaps the expired voice
+    s_NowMs += 250;
     Engine::AudioManager::Update();
     EXPECT_FALSE(Engine::AudioManager::IsVoicePlaying(h));
-
-    Engine::AudioManager::Shutdown();
 }
 
 TEST(MusicDirectorTest, ConcurrentAudioStreamTrackUpdateAndMusicDirectorMutationSafety) {

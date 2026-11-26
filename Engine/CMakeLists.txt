@@ -49,6 +49,7 @@ target_precompile_headers(Engine PUBLIC
 
 # Expose the include/ directory to anything that links to this library
 target_include_directories(Engine PUBLIC include)
+target_include_directories(Engine PRIVATE ${Stb_INCLUDE_DIR})
 
 # Propagate Editor vs Distribution mode to Engine and all downstream targets
 if(ENGINE_BUILD_EDITOR)

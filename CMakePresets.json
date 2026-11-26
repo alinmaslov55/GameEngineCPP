@@ -12,7 +12,7 @@
             "description": "Default development build with Dear ImGui Editor UI",
             "binaryDir": "${sourceDir}/build",
             "cacheVariables": {
-                "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
                 "ENGINE_BUILD_EDITOR": "ON",
                 "ENGINE_BUILD_TESTS": "ON"
             }
@@ -23,7 +23,7 @@
             "description": "Standalone game executable with Dear ImGui and Editor stripped",
             "binaryDir": "${sourceDir}/build-dist",
             "cacheVariables": {
-                "CMAKE_TOOLCHAIN_FILE": "C:/vcpkg/scripts/buildsystems/vcpkg.cmake",
+                "CMAKE_TOOLCHAIN_FILE": "$env{VCPKG_ROOT}/scripts/buildsystems/vcpkg.cmake",
                 "ENGINE_BUILD_EDITOR": "OFF",
                 "ENGINE_BUILD_TESTS": "ON"
             }
