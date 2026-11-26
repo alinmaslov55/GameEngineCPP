@@ -1,6 +1,5 @@
 #include "Scene/DemoScene.h"
 
-#include "Scripts/CameraController.h"
 #include "Scripts/PlayerController.h"
 
 #include <Engine/Audio/AudioClip.h>
@@ -11,6 +10,7 @@
 #include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Renderer/SubTexture2D.h>
 #include <Engine/Renderer/Texture.h>
+#include <Engine/Scene/Components/CameraComponent.h>
 #include <Engine/Scene/Components/FoliageWindComponents.h>
 #include <Engine/Scene/Components/LightComponents.h>
 #include <Engine/Scene/Components/PostProcessComponent.h>
@@ -424,15 +424,32 @@ void DemoScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Scene>&
 
     for (const auto& goPtr : runtimeScene->GetGameObjects()) {
         if (goPtr->GetName() == "Player") {
+            if (auto* rb = goPtr->GetComponent<Engine::Rigidbody2D>()) {
+                rb->UseTerrainFriction = true;
+            }
             if (!goPtr->GetComponent<PlayerController>()) {
                 goPtr->AddComponent<PlayerController>();
             }
-            if (!goPtr->GetComponent<CameraController>()) {
-                auto* camCtrl = goPtr->AddComponent<CameraController>();
-                camCtrl->camera = &runtimeScene->GetCamera();
-                const auto& pos = goPtr->GetTransform()->position;
-                runtimeScene->GetCamera().SetFocalPoint({ pos.x, 0.0f, pos.z });
+            if (!goPtr->GetComponent<Engine::CameraComponent>()) {
+                auto* camComp = goPtr->AddComponent<Engine::CameraComponent>();
+                camComp->FOV = 32.0f;
+                camComp->Distance = 15.0f;
+                camComp->Pitch = 40.0f;
+                camComp->SmoothFollow = true;
+                camComp->ResetToTarget(goPtr->GetTransform()->GetWorldPosition());
             }
+
+            auto ensureChildSocket = [&](const char* socketName) {
+                for (Engine::Transform* child : goPtr->GetTransform()->GetChildren()) {
+                    if (child && child->GetGameObject() && child->GetGameObject()->GetName() == socketName) {
+                        return;
+                    }
+                }
+                Engine::GameObject* socketGo = runtimeScene->CreateGameObject(socketName);
+                socketGo->GetTransform()->SetParent(goPtr->GetTransform(), false);
+            };
+            ensureChildSocket("TorchSocket");
+            ensureChildSocket("WeaponSocket");
         }
     }
 }

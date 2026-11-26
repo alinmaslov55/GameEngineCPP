@@ -2,8 +2,12 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
+#include "Engine/Renderer/SpriteRenderer.h"
+#include "Engine/Scene/Components/CameraComponent.h"
+#include "Engine/Terrain/TerrainComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/CameraController.h"
 #include "Utils/FilenameUtils.h"
@@ -58,6 +62,108 @@ TEST(SandboxUnitTest, CameraControllerDeadzoneAndSmoothFollow) {
     EXPECT_GT(focalAfter.x, 0.0f);
     EXPECT_LT(focalAfter.z, 0.0f);
     EXPECT_FLOAT_EQ(focalAfter.y, 0.0f);
+}
+
+TEST(SandboxUnitTest, PlayerControllerDodgeRollCooldownInvulnAndVaulting) {
+    Engine::Scene scene("PlayerDodgeTestScene");
+    auto* player = scene.CreateGameObject("Player");
+    auto* rb = player->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->UseGravityY = true;
+    player->AddComponent<Engine::CircleCollider2D>()->Radius = 0.4f;
+    auto* ps = player->AddComponent<Engine::ParticleSystem>(64);
+    auto* controller = player->AddComponent<PlayerController>();
+
+    scene.OnRuntimeStart();
+    EXPECT_FALSE(controller->IsDodging());
+    EXPECT_FALSE(controller->IsInvulnerable());
+
+    EXPECT_TRUE(controller->TriggerDodgeRoll({ 1.0f, 0.0f }));
+    EXPECT_TRUE(controller->IsDodging());
+    EXPECT_TRUE(controller->IsInvulnerable());
+    EXPECT_GT(controller->GetDodgeCooldownRemaining(), 0.5f);
+    EXPECT_GT(rb->GetVelocityXZ().x, 10.0f);
+    EXPECT_TRUE(rb->IsAirborne());
+    EXPECT_EQ(ps->GetActiveParticleCount(), 6u);
+
+    // Immediate re-dodge blocked by 0.65s cooldown
+    EXPECT_FALSE(controller->TriggerDodgeRoll({ -1.0f, 0.0f }));
+
+    // Advance past 0.22s dodge duration (still inside 0.65s cooldown)
+    for (int i = 0; i < 16; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FALSE(controller->IsDodging());
+    EXPECT_FALSE(controller->IsInvulnerable());
+    EXPECT_GT(controller->GetDodgeCooldownRemaining(), 0.0f);
+    EXPECT_FALSE(controller->TriggerDodgeRoll({ 0.0f, 1.0f }));
+
+    // Advance past remaining 0.65s cooldown
+    for (int i = 0; i < 30; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FLOAT_EQ(controller->GetDodgeCooldownRemaining(), 0.0f);
+    EXPECT_TRUE(controller->TriggerDodgeRoll({ 0.0f, 1.0f }));
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, PlayerControllerSurfaceFootworkModulatesSpeedAndDamping) {
+    Engine::Scene scene("PlayerSurfaceTestScene");
+    auto* terrainGo = scene.CreateGameObject("ArenaTerrain");
+    auto* terrain = terrainGo->AddComponent<Engine::TerrainComponent>(16.0f, 16.0f, 32u, 32u);
+    // Layer 2 = Tar (slows movement & increases damping), Layer 4 = Cobble (fast)
+    terrain->FillLayer(2u);
+
+    auto* player = scene.CreateGameObject("Player");
+    player->GetTransform()->position = { 8.0f, 0.0f, 8.0f };
+    auto* rb = player->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    player->AddComponent<Engine::CircleCollider2D>()->Radius = 0.4f;
+    auto* controller = player->AddComponent<PlayerController>();
+
+    scene.OnRuntimeStart();
+    scene.UpdateRuntime(1.0f / 60.0f);
+    const float tarSpeed = controller->GetEffectiveMoveSpeed();
+    const float tarDamping = rb->GetLinearDamping();
+
+    terrain->FillLayer(4u);
+    scene.UpdateRuntime(1.0f / 60.0f);
+    const float cobbleSpeed = controller->GetEffectiveMoveSpeed();
+    const float cobbleDamping = rb->GetLinearDamping();
+
+    EXPECT_GT(cobbleSpeed, tarSpeed);
+    EXPECT_GT(tarDamping, cobbleDamping);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, PlayerControllerAimSocketsAndCameraIntegration) {
+    Engine::Scene scene("PlayerSocketsCameraTestScene");
+    auto* player = scene.CreateGameObject("Player");
+    auto* sr = player->AddComponent<Engine::SpriteRenderer>();
+    auto* camComp = player->AddComponent<Engine::CameraComponent>();
+    auto* controller = player->AddComponent<PlayerController>();
+
+    auto* torchSocket = scene.CreateGameObject("TorchSocket");
+    torchSocket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* weaponSocket = scene.CreateGameObject("WeaponSocket");
+    weaponSocket->GetTransform()->SetParent(player->GetTransform(), false);
+
+    // Facing left via dodge roll updates m_LastFacingXZ -> FlipX = true and negative X socket offset
+    scene.OnRuntimeStart();
+    EXPECT_TRUE(controller->TriggerDodgeRoll({ -1.0f, 0.0f }));
+    scene.UpdateRuntime(1.0f / 60.0f);
+
+    EXPECT_TRUE(sr->GetFlipX());
+    EXPECT_LT(torchSocket->GetTransform()->position.x, -0.4f);
+    EXPECT_LT(weaponSocket->GetTransform()->position.x, -0.5f);
+    EXPECT_LT(camComp->GetTargetAimDirection().x, -0.5f);
+
+    controller->TriggerImpactFeedback(0.45f, { 0.5f, -0.25f });
+    EXPECT_GT(camComp->GetTrauma(), 0.4f);
+
+    scene.OnRuntimeStop();
 }
 
 } // namespace
