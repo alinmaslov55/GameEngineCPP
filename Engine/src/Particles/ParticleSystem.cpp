@@ -42,6 +42,11 @@ void ParticleSystem::Emit(const ParticleProps& particleProps) {
         ENGINE_CORE_WARN("ParticleSystem::Emit called on an empty particle pool");
         return;
     }
+    if (!std::isfinite(particleProps.position.x) ||
+        !std::isfinite(particleProps.position.y) ||
+        !std::isfinite(particleProps.position.z)) {
+        return;
+    }
 
     uint32_t targetIndex = 0;
     if (m_ActiveParticleCount < m_ParticlePool.size()) {
@@ -52,26 +57,39 @@ void ParticleSystem::Emit(const ParticleProps& particleProps) {
         m_PoolIndex = (m_PoolIndex + 1) % static_cast<uint32_t>(m_ParticlePool.size());
     }
 
+    auto sanitize = [](float v, float fallback = 0.0f) noexcept {
+        return std::isfinite(v) ? v : fallback;
+    };
+
     Particle& particle = m_ParticlePool[targetIndex];
     particle.active = true;
     particle.position = particleProps.position;
     particle.rotation = particleProps.randomRotation
         ? (FastRandomFloat(m_RngState) * 2.0f * glm::pi<float>())
-        : particleProps.rotation;
+        : sanitize(particleProps.rotation);
 
     // Add randomness to velocity
-    particle.velocity = particleProps.velocity;
-    particle.velocity.x += particleProps.velocityVariation.x * FastRandomFloat(m_RngState);
-    particle.velocity.y += particleProps.velocityVariation.y * FastRandomFloat(m_RngState);
-    particle.velocity.z += particleProps.velocityVariation.z * FastRandomFloat(m_RngState);
+    particle.velocity = glm::vec3(
+        sanitize(particleProps.velocity.x),
+        sanitize(particleProps.velocity.y),
+        sanitize(particleProps.velocity.z)
+    );
+    particle.velocity.x += sanitize(particleProps.velocityVariation.x) * FastRandomFloat(m_RngState);
+    particle.velocity.y += sanitize(particleProps.velocityVariation.y) * FastRandomFloat(m_RngState);
+    particle.velocity.z += sanitize(particleProps.velocityVariation.z) * FastRandomFloat(m_RngState);
 
     particle.colorBegin = particleProps.colorBegin;
     particle.colorEnd = particleProps.colorEnd;
 
-    particle.sizeBegin = std::max(0.01f, particleProps.sizeBegin + particleProps.sizeVariation * FastRandomFloat(m_RngState));
-    particle.sizeEnd = std::max(0.0f, particleProps.sizeEnd);
+    const float safeSizeBegin = sanitize(particleProps.sizeBegin, 0.1f);
+    const float safeSizeVar = sanitize(particleProps.sizeVariation, 0.0f);
+    const float safeSizeEnd = sanitize(particleProps.sizeEnd, 0.0f);
+    const float safeLifeTime = sanitize(particleProps.lifeTime, 0.05f);
 
-    particle.lifeTime = std::max(0.05f, particleProps.lifeTime);
+    particle.sizeBegin = std::max(0.01f, safeSizeBegin + safeSizeVar * FastRandomFloat(m_RngState));
+    particle.sizeEnd = std::max(0.0f, safeSizeEnd);
+
+    particle.lifeTime = std::max(0.05f, safeLifeTime);
     particle.lifeRemaining = particle.lifeTime;
 
     if (Flipbook.Enabled && Flipbook.RandomStartFrame) {
@@ -97,11 +115,11 @@ void ParticleSystem::EmitBurst(const ParticleProps& props, uint32_t count) {
 }
 
 void ParticleSystem::Update(float deltaTime) {
-    if (deltaTime <= 0.0f) {
+    if (!std::isfinite(deltaTime) || deltaTime <= 0.0f) {
         return;
     }
 
-    if (AutoEmit && EmitRate > 0.0f) {
+    if (AutoEmit && std::isfinite(EmitRate) && EmitRate > 0.0f) {
         m_EmitAccumulator = std::min(m_EmitAccumulator + deltaTime * EmitRate, 32.0f);
         glm::vec3 basePos{ 0.0f };
         if (auto* owner = GetGameObject()) {

@@ -35,10 +35,23 @@ JobSystem::JobSystem(uint32_t workerCount)
     }
 
     m_Workers.reserve(workerCount);
-    for (uint32_t i = 0; i < workerCount; ++i) {
-        m_Workers.emplace_back([this, i](std::stop_token stopToken) {
-            WorkerLoop(stopToken, i);
-        });
+    try {
+        for (uint32_t i = 0; i < workerCount; ++i) {
+            m_Workers.emplace_back([this, i](std::stop_token stopToken) {
+                WorkerLoop(stopToken, i);
+            });
+        }
+    } catch (...) {
+        m_Initialized.store(false, std::memory_order_seq_cst);
+        for (auto& worker : m_Workers) {
+            worker.request_stop();
+        }
+        {
+            std::lock_guard lock(m_WakeMutex);
+            m_WakeCV.notify_all();
+        }
+        m_Workers.clear();
+        throw;
     }
 
     m_Initialized.store(true, std::memory_order_release);

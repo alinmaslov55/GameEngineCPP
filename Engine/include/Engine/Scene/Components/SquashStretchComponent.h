@@ -32,6 +32,9 @@ public:
     float LandingSquashImpact = 0.85f;
 
     void TriggerImpulse(float verticalScaleVelocity, float tiltImpulseDegrees = 0.0f) {
+        if (!std::isfinite(verticalScaleVelocity) || !std::isfinite(tiltImpulseDegrees)) {
+            return;
+        }
         ENGINE_CORE_TRACE("SquashStretchComponent: TriggerImpulse(vertical={:.2f}, tilt={:.2f})",
                           verticalScaleVelocity, tiltImpulseDegrees);
         m_VerticalDeformVelocity += verticalScaleVelocity;
@@ -55,7 +58,7 @@ public:
     void OnPoolRelease() override { Reset(); }
 
     void Update(float deltaTime) override {
-        if (!Enabled || deltaTime <= 0.0f) {
+        if (!Enabled || !std::isfinite(deltaTime) || deltaTime <= 0.0f) {
             return;
         }
 

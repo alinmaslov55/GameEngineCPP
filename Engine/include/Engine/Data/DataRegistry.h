@@ -45,9 +45,6 @@ public:
             return false;
         }
 
-        m_SourcePath = virtualAssetPath;
-        m_Parser = parser;
-
         std::vector<TDef> newDefs;
         LookupMap newLookup;
 
@@ -87,6 +84,8 @@ public:
             return false;
         }
 
+        m_SourcePath = virtualAssetPath;
+        m_Parser = parser;
         m_OrderedDefs = std::move(newDefs);
         m_Lookup = std::move(newLookup);
         ENGINE_CORE_INFO("DataRegistry: Successfully loaded {} entries from '{}'", m_OrderedDefs.size(), virtualAssetPath);

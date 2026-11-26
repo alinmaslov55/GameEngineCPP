@@ -55,9 +55,14 @@ void ImGuiLayer::Init(SDL_Window* window, SDL_GLContext glContext) {
     // Setup Platform/Renderer backends
     if (!ImGui_ImplSDL3_InitForOpenGL(window, glContext)) {
         ENGINE_CORE_ERROR("Failed to initialize ImGui SDL3 backend for OpenGL");
+        ImGui::DestroyContext();
+        return;
     }
     if (!ImGui_ImplOpenGL3_Init("#version 410 core")) {
         ENGINE_CORE_ERROR("Failed to initialize ImGui OpenGL3 backend");
+        ImGui_ImplSDL3_Shutdown();
+        ImGui::DestroyContext();
+        return;
     }
 
     s_Initialized = true;

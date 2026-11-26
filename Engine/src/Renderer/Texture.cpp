@@ -138,7 +138,9 @@ float Texture::GetMaxSupportedAnisotropy() noexcept {
     static bool s_Queried = false;
     if (!s_Queried && HasActiveGLContext()) {
         float maxAniso = 1.0f;
-        if (glad_glGetFloatv != nullptr) {
+        const bool hasAnisoExt = SDL_GL_ExtensionSupported("GL_EXT_texture_filter_anisotropic") ||
+                                 SDL_GL_ExtensionSupported("GL_ARB_texture_filter_anisotropic");
+        if (hasAnisoExt && glad_glGetFloatv != nullptr) {
             glGetFloatv(GL_MAX_TEXTURE_MAX_ANISOTROPY, &maxAniso);
         }
         s_MaxAnisotropy = std::max(1.0f, maxAniso);

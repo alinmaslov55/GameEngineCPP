@@ -498,12 +498,16 @@ bool TerrainComponent::SaveSplatmapToPNG(const std::string& resolvedFilepath) {
         (mainPath.stem().string() + "_layers4to7" + mainPath.extension().string());
     const bool hasSecondaryWeights = std::any_of(m_SplatData1.begin(), m_SplatData1.end(), [](uint8_t b) { return b != 0u; });
     if (hasSecondaryWeights && m_SplatData1.size() == m_SplatData.size()) {
-        stbi_write_png(secondaryPath.string().c_str(),
-                       static_cast<int>(m_SplatWidth),
-                       static_cast<int>(m_SplatHeight),
-                       4,
-                       m_SplatData1.data(),
-                       strideBytes);
+        const int secondaryWriteOk = stbi_write_png(secondaryPath.string().c_str(),
+                                                    static_cast<int>(m_SplatWidth),
+                                                    static_cast<int>(m_SplatHeight),
+                                                    4,
+                                                    m_SplatData1.data(),
+                                                    strideBytes);
+        if (secondaryWriteOk == 0) {
+            ENGINE_CORE_ERROR("TerrainComponent::SaveSplatmapToPNG: Failed to write secondary splatmap '{}'", secondaryPath.string());
+            return false;
+        }
     } else if (std::filesystem::exists(secondaryPath, ec)) {
         std::filesystem::remove(secondaryPath, ec);
     }

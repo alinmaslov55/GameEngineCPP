@@ -102,22 +102,22 @@ void SceneHierarchyPanel::OnImGuiRender(const std::shared_ptr<Engine::Scene>& ac
             DrawEntityNode(activeScene, go, selectedEntity, entityToDelete);
         }
 
-        // Dropping into remaining space unparents dropped entity to root
+        // Dropping into remaining space (or bottom drop strip when scrolled) unparents dropped entity to root
         const ImVec2 avail = ImGui::GetContentRegionAvail();
-        if (avail.y > 0.0f) {
-            ImGui::Dummy(avail);
-            if (ImGui::BeginDragDropTarget()) {
-                if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY")) {
-                    if (payload->DataSize == sizeof(uint64_t)) {
-                        const uint64_t droppedUUID = *static_cast<const uint64_t*>(payload->Data);
-                        Engine::GameObject* droppedGo = activeScene->FindGameObjectByUUID(droppedUUID);
-                        if (droppedGo && droppedGo->GetTransform()) {
-                            droppedGo->GetTransform()->SetParent(nullptr, /*keepWorldTransform=*/true);
-                        }
+        const float dropWidth = std::max(avail.x, 1.0f);
+        const float dropHeight = std::max(avail.y, 24.0f);
+        ImGui::Dummy(ImVec2(dropWidth, dropHeight));
+        if (ImGui::BeginDragDropTarget()) {
+            if (const ImGuiPayload* payload = ImGui::AcceptDragDropPayload("HIERARCHY_ENTITY")) {
+                if (payload->DataSize == sizeof(uint64_t)) {
+                    const uint64_t droppedUUID = *static_cast<const uint64_t*>(payload->Data);
+                    Engine::GameObject* droppedGo = activeScene->FindGameObjectByUUID(droppedUUID);
+                    if (droppedGo && droppedGo->GetTransform()) {
+                        droppedGo->GetTransform()->SetParent(nullptr, /*keepWorldTransform=*/true);
                     }
                 }
-                ImGui::EndDragDropTarget();
             }
+            ImGui::EndDragDropTarget();
         }
 
         // Support Delete key when Hierarchy window is focused

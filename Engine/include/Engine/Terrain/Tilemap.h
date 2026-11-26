@@ -7,6 +7,7 @@
 #include <vector>
 #include <unordered_map>
 #include <memory>
+#include <limits>
 
 namespace Engine {
 struct Tile {
@@ -38,15 +39,25 @@ private:
 class Tilemap final : public Component {
 public:
     Tilemap(uint32_t width, uint32_t height) : m_Width(width), m_Height(height) {
-        ENGINE_CORE_INFO("Tilemap created with dimensions: {}x{} ({} total tiles)", width, height, width * height);
-        m_Grid.resize(width * height);
+        const uint64_t totalTiles = static_cast<uint64_t>(width) * static_cast<uint64_t>(height);
+        if (totalTiles > static_cast<uint64_t>(m_Grid.max_size())) {
+            ENGINE_CORE_ERROR("Tilemap dimensions {}x{} exceed maximum grid capacity", width, height);
+            m_Width = 0;
+            m_Height = 0;
+            return;
+        }
+        ENGINE_CORE_INFO("Tilemap created with dimensions: {}x{} ({} total tiles)", width, height, totalTiles);
+        m_Grid.resize(static_cast<size_t>(totalTiles));
     }
 
     void SetTile(uint32_t x, uint32_t y, uint32_t tileId, bool walkable = true) {
         if (x < m_Width && y < m_Height) {
-            auto& tile = m_Grid[y * m_Width + x];
-            tile.id = tileId;
-            tile.walkable = walkable;
+            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(m_Width) + static_cast<size_t>(x);
+            if (idx < m_Grid.size()) {
+                auto& tile = m_Grid[idx];
+                tile.id = tileId;
+                tile.walkable = walkable;
+            }
         } else {
             ENGINE_CORE_WARN("Tilemap::SetTile: Coordinates ({}, {}) out of bounds ({}x{})", x, y, m_Width, m_Height);
         }
@@ -54,7 +65,10 @@ public:
 
     const Tile& GetTile(uint32_t x, uint32_t y) const {
         if (x < m_Width && y < m_Height && !m_Grid.empty()) {
-            return m_Grid[y * m_Width + x];
+            const size_t idx = static_cast<size_t>(y) * static_cast<size_t>(m_Width) + static_cast<size_t>(x);
+            if (idx < m_Grid.size()) {
+                return m_Grid[idx];
+            }
         }
         static const Tile s_InvalidTile{ 0, false };
         return s_InvalidTile;

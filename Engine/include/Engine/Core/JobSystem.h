@@ -204,12 +204,7 @@ private:
             return;
         }
 
-        size_t totalItems = 0;
-        if constexpr (std::is_signed_v<IndexType>) {
-            totalItems = static_cast<size_t>(static_cast<int64_t>(end) - static_cast<int64_t>(start));
-        } else {
-            totalItems = static_cast<size_t>(static_cast<uint64_t>(end) - static_cast<uint64_t>(start));
-        }
+        const size_t totalItems = static_cast<size_t>(static_cast<uint64_t>(end) - static_cast<uint64_t>(start));
         const uint32_t workers = GetWorkerCount();
 
         if (!IsInitialized() || workers == 0 || (!IsBatched && totalItems <= 1)) {

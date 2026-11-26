@@ -46,7 +46,7 @@ public:
     bool WasStickDeflected = false;
 
     std::array<RadialWheelSlot, 4> Slots = {
-        RadialWheelSlot{ RadialWheelItem::SplinterBarricade, "Splinter Barricade", 5,  nullptr, nullptr, "1" },
+        RadialWheelSlot{ RadialWheelItem::SplinterBarricade, "Splinter Barricade", 4,  nullptr, nullptr, "1" },
         RadialWheelSlot{ RadialWheelItem::FlarePeg,          "Flare Peg",          10, nullptr, nullptr, "2" },
         RadialWheelSlot{ RadialWheelItem::Thumper,           "Thumper",            15, nullptr, nullptr, "3" },
         RadialWheelSlot{ RadialWheelItem::TarSiphon,         "Tar Siphon",         20, nullptr, nullptr, "4" }

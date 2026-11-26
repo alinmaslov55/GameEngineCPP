@@ -127,20 +127,32 @@ public:
             const auto g = static_cast<uint32_t>(std::clamp(rgb.g, 0.0f, 1.0f) * 255.0f);
             const auto b = static_cast<uint32_t>(std::clamp(rgb.b, 0.0f, 1.0f) * 255.0f);
             const uint32_t packed = ((r << 16) | (g << 8) | b) & 0x00FFFFFFu;
-            m_FlashColorMode = static_cast<float>(packed);
+            m_FlashColorMode = static_cast<float>(packed < 4u ? 4u : packed);
         }
     }
 
     [[nodiscard]] glm::vec3 GetFlashColor() const {
+        if (!std::isfinite(m_FlashColorMode)) {
+            return glm::vec3(1.0f, 1.0f, 1.0f);
+        }
         // Negative presets (-1: Pure White, -2: Crimson, -3: Spectral Blue, -4: Divine Gold)
-        // Also support legacy non-negative indices 0, 1, 2, 3 for backwards compatibility
-        if (m_FlashColorMode == -1.0f || m_FlashColorMode == 0.0f) return glm::vec3(1.0f, 1.0f, 1.0f);
-        if (m_FlashColorMode == -2.0f || m_FlashColorMode == 1.0f) return glm::vec3(1.0f, 0.15f, 0.15f);
-        if (m_FlashColorMode == -3.0f || m_FlashColorMode == 2.0f) return glm::vec3(0.35f, 0.75f, 1.5f);
-        if (m_FlashColorMode == -4.0f || m_FlashColorMode == 3.0f) return glm::vec3(1.5f, 1.2f, 0.25f);
-        
+        if (m_FlashColorMode <= -0.5f) {
+            const int32_t preset = static_cast<int32_t>(std::round(-m_FlashColorMode));
+            if (preset == 1) return glm::vec3(1.0f, 1.0f, 1.0f);
+            if (preset == 2) return glm::vec3(1.0f, 0.15f, 0.15f);
+            if (preset == 3) return glm::vec3(0.35f, 0.75f, 1.5f);
+            if (preset == 4) return glm::vec3(1.5f, 1.2f, 0.25f);
+            return glm::vec3(1.0f, 1.0f, 1.0f);
+        }
+        // Legacy non-negative preset modes (0.0 .. 3.0), matching Batch2D.glsl getFlashTargetRGB
+        if (m_FlashColorMode < 0.5f) return glm::vec3(1.0f, 1.0f, 1.0f);
+        if (m_FlashColorMode < 1.5f) return glm::vec3(1.0f, 0.15f, 0.15f);
+        if (m_FlashColorMode < 2.5f) return glm::vec3(0.35f, 0.75f, 1.5f);
+        if (m_FlashColorMode < 3.5f) return glm::vec3(1.5f, 1.2f, 0.25f);
+
         // Exact 24-bit packed RGB [0, 16777215]
-        const auto packed = static_cast<uint32_t>(std::round(m_FlashColorMode));
+        const float clamped = std::clamp(m_FlashColorMode, 0.0f, 16777215.0f);
+        const auto packed = static_cast<uint32_t>(std::round(clamped));
         const float r = static_cast<float>((packed >> 16) & 0xFF) / 255.0f;
         const float g = static_cast<float>((packed >> 8) & 0xFF) / 255.0f;
         const float b = static_cast<float>(packed & 0xFF) / 255.0f;

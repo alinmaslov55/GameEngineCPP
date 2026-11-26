@@ -319,6 +319,7 @@ void Renderer2D::ApplyLightingUniforms(const SceneLightingData* lighting) {
         glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
         glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::TorchShadowMapTextureSlot);
         glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
+        glActiveTexture(GL_TEXTURE0);
 
         shader.SetInt("u_LightingEnabled", 0);
         shader.SetInt("u_ShadowsEnabled", 0);
@@ -471,6 +472,7 @@ void Renderer2D::FlushQuads() {
     glBindTexture(GL_TEXTURE_2D, s_Data->BoundTorchShadowTextureID);
     glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::DissolveNoiseTextureSlot);
     glBindTexture(GL_TEXTURE_2D, s_Data->DissolveNoiseTexture);
+    glActiveTexture(GL_TEXTURE0);
 
     s_Data->TextureShader->Bind();
     s_Data->QuadVertexArray->Bind();

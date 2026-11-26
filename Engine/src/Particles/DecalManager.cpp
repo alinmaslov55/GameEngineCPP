@@ -19,8 +19,15 @@ void DecalManager::SpawnDecal(const GroundDecal& decal) {
     if (m_Capacity == 0u) {
         return;
     }
+    if (!std::isfinite(decal.Position.x) || !std::isfinite(decal.Position.y) || !std::isfinite(decal.Position.z) ||
+        !std::isfinite(decal.SizeXZ.x) || !std::isfinite(decal.SizeXZ.y)) {
+        return;
+    }
 
     GroundDecal entry = decal;
+    if (!std::isfinite(entry.RotationYRadians)) entry.RotationYRadians = 0.0f;
+    if (!std::isfinite(entry.MaxLifetime)) entry.MaxLifetime = 0.0f;
+    if (!std::isfinite(entry.FadeOutDuration)) entry.FadeOutDuration = 0.0f;
     entry.Position.y += kBaseLiftY + static_cast<float>(m_SpawnSequence & 0xFFu) * kMicroOffsetStepY;
     ++m_SpawnSequence;
 
@@ -38,7 +45,7 @@ void DecalManager::SpawnDecal(const GroundDecal& decal) {
 }
 
 void DecalManager::Update(float deltaTime) {
-    if (deltaTime <= 0.0f || m_Count == 0u || m_Capacity == 0u) {
+    if (!std::isfinite(deltaTime) || deltaTime <= 0.0f || m_Count == 0u || m_Capacity == 0u) {
         return;
     }
 

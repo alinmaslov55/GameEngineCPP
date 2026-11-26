@@ -89,10 +89,14 @@ void RuntimeLayer::OnUpdate(float deltaTime) {
         );
     }
 
-    // 2. Poll Input & Step Runtime Physics/Scripts (via SceneManager to drive SAV-02 fade transitions)
-    Engine::Input::Update();
+    // 2. Step Runtime Physics/Scripts (via SceneManager to drive SAV-02 fade transitions)
+    // Note: Engine::Input::Update() is already called once per frame inside Window::PollEvents().
+    auto prevScene = m_ActiveScene;
     Engine::SceneManager::UpdateRuntime(deltaTime);
     m_ActiveScene = Engine::SceneManager::GetActiveScene();
+    if (m_ActiveScene && m_ActiveScene != prevScene && m_ViewportWidth > 0 && m_ViewportHeight > 0) {
+        m_ActiveScene->OnViewportResize(m_ViewportWidth, m_ViewportHeight);
+    }
 
     // 3. Render Directly to the OS Window Backbuffer (No Offscreen Framebuffer)
     Engine::Renderer2D::ResetStats();

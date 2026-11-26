@@ -787,9 +787,12 @@ void SceneRenderer::RenderPassGroundPlane(SceneRenderContext& ctx) {
 }
 
 void SceneRenderer::RenderPassCutoutStandees(SceneRenderContext& ctx) {
-    // Schwartzian transform sort: back-to-front by precalculated viewDepth
+    // Schwartzian transform sort: back-to-front by precalculated viewDepth (NaN-safe strict weak ordering)
     std::sort(m_StandeeCommands.begin(), m_StandeeCommands.end(), [](const auto& a, const auto& b) noexcept {
-        return a.viewDepth > b.viewDepth;
+        const bool aFin = std::isfinite(a.viewDepth);
+        const bool bFin = std::isfinite(b.viewDepth);
+        if (aFin != bFin) return aFin;
+        return aFin ? (a.viewDepth > b.viewDepth) : false;
     });
 
     const glm::vec3 camRightXZ = ctx.activeCam->GetRightXZ();
@@ -806,7 +809,10 @@ void SceneRenderer::RenderPassCutoutStandees(SceneRenderContext& ctx) {
     // Second lightweight draw state for entities flagged RenderSilhouette == true occluded by foreground geometry.
     if (!m_SilhouetteCommands.empty()) {
         std::sort(m_SilhouetteCommands.begin(), m_SilhouetteCommands.end(), [](const auto& a, const auto& b) noexcept {
-            return a.viewDepth > b.viewDepth;
+            const bool aFin = std::isfinite(a.viewDepth);
+            const bool bFin = std::isfinite(b.viewDepth);
+            if (aFin != bFin) return aFin;
+            return aFin ? (a.viewDepth > b.viewDepth) : false;
         });
 
         if (glad_glDepthFunc) glDepthFunc(GL_GREATER);
@@ -864,89 +870,128 @@ void SceneRenderer::RenderPassScreenUI() {
 
     Renderer2D::BeginScene(uiProjection, /*depthTest=*/false, /*defaultAlphaCutoff=*/0.0f);
 
-    std::stable_sort(m_UIPanelScratch.begin(), m_UIPanelScratch.end(),
-        [](const UIPanel* a, const UIPanel* b) {
-            return (a && b) ? (a->rectTransform.ZOrder < b->rectTransform.ZOrder) : (a != nullptr);
-        });
-
-    std::stable_sort(m_UILabelScratch.begin(), m_UILabelScratch.end(),
-        [](const UILabel* a, const UILabel* b) {
-            return (a && b) ? (a->rectTransform.ZOrder < b->rectTransform.ZOrder) : (a != nullptr);
-        });
+    struct ScreenUIItem {
+        enum class Kind : uint8_t { Panel, Label, Minimap, RadialWheel };
+        Kind kind;
+        int32_t zOrder = 0;
+        size_t order = 0;
+        void* ptr = nullptr;
+    };
+    std::vector<ScreenUIItem> uiItems;
+    uiItems.reserve(m_UIPanelScratch.size() + m_UILabelScratch.size() +
+                    m_UIMinimapScratch.size() + m_UIRadialWheelScratch.size());
+    size_t seq = 0;
+    for (UIPanel* p : m_UIPanelScratch) {
+        if (p) uiItems.push_back({ ScreenUIItem::Kind::Panel, p->rectTransform.ZOrder, seq++, p });
+    }
+    for (UILabel* l : m_UILabelScratch) {
+        if (l && l->font && !l->text.empty()) uiItems.push_back({ ScreenUIItem::Kind::Label, l->rectTransform.ZOrder, seq++, l });
+    }
+    for (UIMinimapComponent* m : m_UIMinimapScratch) {
+        if (m) uiItems.push_back({ ScreenUIItem::Kind::Minimap, m->rectTransform.ZOrder, seq++, m });
+    }
+    for (UIRadialWheelComponent* w : m_UIRadialWheelScratch) {
+        if (w && w->IsOpen) uiItems.push_back({ ScreenUIItem::Kind::RadialWheel, w->rectTransform.ZOrder, seq++, w });
+    }
+    std::stable_sort(uiItems.begin(), uiItems.end(), [](const ScreenUIItem& a, const ScreenUIItem& b) noexcept {
+        if (a.zOrder != b.zOrder) return a.zOrder < b.zOrder;
+        return a.order < b.order;
+    });
 
     const float dpiScale = UICanvas::ComputeScaleFactor(m_ViewportWidth, m_ViewportHeight);
 
-    for (UIPanel* uiPanel : m_UIPanelScratch) {
-        if (!uiPanel) continue;
-
-        glm::vec2 pos = uiPanel->position;
-        glm::vec2 sz  = uiPanel->size;
-        if (uiPanel->useRectTransform) {
-            UICanvas::ResolveScreenRect(uiPanel->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
-        }
-
-        const auto quads = uiPanel->GenerateQuads(pos, sz, dpiScale);
-        for (const auto& quad : quads) {
-            const glm::vec3 positions[4] = {
-                { quad.Vertices[0].Position.x, quad.Vertices[0].Position.y, 0.0f },
-                { quad.Vertices[1].Position.x, quad.Vertices[1].Position.y, 0.0f },
-                { quad.Vertices[2].Position.x, quad.Vertices[2].Position.y, 0.0f },
-                { quad.Vertices[3].Position.x, quad.Vertices[3].Position.y, 0.0f }
-            };
-            const glm::vec2 texCoords[4] = {
-                quad.Vertices[0].TexCoord,
-                quad.Vertices[1].TexCoord,
-                quad.Vertices[2].TexCoord,
-                quad.Vertices[3].TexCoord
-            };
-
-            if (uiPanel->texture) {
-                Renderer2D::DrawQuad(positions, texCoords, uiPanel->texture, quad.Color);
-            } else {
-                Renderer2D::DrawQuad(positions, texCoords, quad.Color);
+    for (const ScreenUIItem& item : uiItems) {
+        if (item.kind == ScreenUIItem::Kind::Panel) {
+            auto* uiPanel = static_cast<UIPanel*>(item.ptr);
+            glm::vec2 pos = uiPanel->position;
+            glm::vec2 sz  = uiPanel->size;
+            if (uiPanel->useRectTransform) {
+                UICanvas::ResolveScreenRect(uiPanel->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
             }
-        }
-    }
 
-    for (UILabel* uiLabel : m_UILabelScratch) {
-        if (!uiLabel || !uiLabel->font || uiLabel->text.empty()) continue;
+            const auto quads = uiPanel->GenerateQuads(pos, sz, dpiScale);
+            for (const auto& quad : quads) {
+                const glm::vec3 positions[4] = {
+                    { quad.Vertices[0].Position.x, quad.Vertices[0].Position.y, 0.0f },
+                    { quad.Vertices[1].Position.x, quad.Vertices[1].Position.y, 0.0f },
+                    { quad.Vertices[2].Position.x, quad.Vertices[2].Position.y, 0.0f },
+                    { quad.Vertices[3].Position.x, quad.Vertices[3].Position.y, 0.0f }
+                };
+                const glm::vec2 texCoords[4] = {
+                    quad.Vertices[0].TexCoord,
+                    quad.Vertices[1].TexCoord,
+                    quad.Vertices[2].TexCoord,
+                    quad.Vertices[3].TexCoord
+                };
 
-        glm::vec2 startPos = uiLabel->position;
-        float effectiveScale = uiLabel->scale;
-        float maxWrap = uiLabel->maxWrapWidth;
-
-        if (uiLabel->useRectTransform) {
-            glm::vec2 resolvedPos, resolvedSize;
-            UICanvas::ResolveScreenRect(uiLabel->rectTransform, m_ViewportWidth, m_ViewportHeight, resolvedPos, resolvedSize);
-            effectiveScale = uiLabel->scale * dpiScale;
-            startPos = {
-                resolvedPos.x,
-                resolvedPos.y + resolvedSize.y - (uiLabel->font->GetBase() * effectiveScale)
-            };
-            if (maxWrap > 0.0f) {
-                maxWrap *= dpiScale;
-            } else if (resolvedSize.x > 0.0f && uiLabel->alignment != TextAlignH::Left) {
-                maxWrap = resolvedSize.x;
+                if (uiPanel->texture) {
+                    Renderer2D::DrawQuad(positions, texCoords, uiPanel->texture, quad.Color);
+                } else {
+                    Renderer2D::DrawQuad(positions, texCoords, quad.Color);
+                }
             }
-        }
+        } else if (item.kind == ScreenUIItem::Kind::Label) {
+            auto* uiLabel = static_cast<UILabel*>(item.ptr);
+            glm::vec2 startPos = uiLabel->position;
+            float effectiveScale = uiLabel->scale;
+            float maxWrap = uiLabel->maxWrapWidth;
 
-        const TextLayoutResult layout = uiLabel->font->ComputeLayout(
-            uiLabel->text,
-            startPos,
-            effectiveScale,
-            maxWrap,
-            uiLabel->alignment
-        );
+            if (uiLabel->useRectTransform) {
+                glm::vec2 resolvedPos, resolvedSize;
+                UICanvas::ResolveScreenRect(uiLabel->rectTransform, m_ViewportWidth, m_ViewportHeight, resolvedPos, resolvedSize);
+                effectiveScale = uiLabel->scale * dpiScale;
+                startPos = {
+                    resolvedPos.x,
+                    resolvedPos.y + resolvedSize.y - (uiLabel->font->GetBase() * effectiveScale)
+                };
+                if (maxWrap > 0.0f) {
+                    maxWrap *= dpiScale;
+                } else if (resolvedSize.x > 0.0f && uiLabel->alignment != TextAlignH::Left) {
+                    maxWrap = resolvedSize.x;
+                }
+            }
 
-        // Pass 1: Drop Shadow
-        if (uiLabel->dropShadow && uiLabel->shadowColor.a > 0.0f) {
-            const glm::vec2 sOffset = uiLabel->shadowOffset * dpiScale;
+            const TextLayoutResult layout = uiLabel->font->ComputeLayout(
+                uiLabel->text,
+                startPos,
+                effectiveScale,
+                maxWrap,
+                uiLabel->alignment
+            );
+
+            // Pass 1: Drop Shadow
+            if (uiLabel->dropShadow && uiLabel->shadowColor.a > 0.0f) {
+                const glm::vec2 sOffset = uiLabel->shadowOffset * dpiScale;
+                for (const auto& glyph : layout.glyphs) {
+                    const glm::vec3 positions[4] = {
+                        { glyph.position.x + sOffset.x,                glyph.position.y + sOffset.y,                0.0f },
+                        { glyph.position.x + glyph.size.x + sOffset.x, glyph.position.y + sOffset.y,                0.0f },
+                        { glyph.position.x + glyph.size.x + sOffset.x, glyph.position.y + glyph.size.y + sOffset.y, 0.0f },
+                        { glyph.position.x + sOffset.x,                glyph.position.y + glyph.size.y + sOffset.y, 0.0f }
+                    };
+
+                    if (glyph.subTexture && glyph.subTexture->GetTexture()) {
+                        const glm::vec2 texCoords[4] = {
+                            { glyph.subTexture->GetMin().x, glyph.subTexture->GetMin().y },
+                            { glyph.subTexture->GetMax().x, glyph.subTexture->GetMin().y },
+                            { glyph.subTexture->GetMax().x, glyph.subTexture->GetMax().y },
+                            { glyph.subTexture->GetMin().x, glyph.subTexture->GetMax().y }
+                        };
+                        Renderer2D::DrawQuad(positions, texCoords, glyph.subTexture->GetTexture(), uiLabel->shadowColor);
+                    } else {
+                        static const glm::vec2 kDefaultUV[4] = { {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} };
+                        Renderer2D::DrawQuad(positions, kDefaultUV, uiLabel->shadowColor);
+                    }
+                }
+            }
+
+            // Pass 2: Main Text
             for (const auto& glyph : layout.glyphs) {
                 const glm::vec3 positions[4] = {
-                    { glyph.position.x + sOffset.x,                glyph.position.y + sOffset.y,                0.0f },
-                    { glyph.position.x + glyph.size.x + sOffset.x, glyph.position.y + sOffset.y,                0.0f },
-                    { glyph.position.x + glyph.size.x + sOffset.x, glyph.position.y + glyph.size.y + sOffset.y, 0.0f },
-                    { glyph.position.x + sOffset.x,                glyph.position.y + glyph.size.y + sOffset.y, 0.0f }
+                    { glyph.position.x,                glyph.position.y,                0.0f },
+                    { glyph.position.x + glyph.size.x, glyph.position.y,                0.0f },
+                    { glyph.position.x + glyph.size.x, glyph.position.y + glyph.size.y, 0.0f },
+                    { glyph.position.x,                glyph.position.y + glyph.size.y, 0.0f }
                 };
 
                 if (glyph.subTexture && glyph.subTexture->GetTexture()) {
@@ -956,98 +1001,69 @@ void SceneRenderer::RenderPassScreenUI() {
                         { glyph.subTexture->GetMax().x, glyph.subTexture->GetMax().y },
                         { glyph.subTexture->GetMin().x, glyph.subTexture->GetMax().y }
                     };
-                    Renderer2D::DrawQuad(positions, texCoords, glyph.subTexture->GetTexture(), uiLabel->shadowColor);
+                    Renderer2D::DrawQuad(positions, texCoords, glyph.subTexture->GetTexture(), uiLabel->color);
                 } else {
                     static const glm::vec2 kDefaultUV[4] = { {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} };
-                    Renderer2D::DrawQuad(positions, kDefaultUV, uiLabel->shadowColor);
+                    Renderer2D::DrawQuad(positions, kDefaultUV, uiLabel->color);
                 }
             }
-        }
+        } else if (item.kind == ScreenUIItem::Kind::Minimap) {
+            auto* minimap = static_cast<UIMinimapComponent*>(item.ptr);
+            glm::vec2 pos = { 0.0f, 0.0f };
+            glm::vec2 sz  = { 220.0f, 220.0f };
+            if (minimap->useRectTransform) {
+                UICanvas::ResolveScreenRect(minimap->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
+            }
 
-        // Pass 2: Main Text
-        for (const auto& glyph : layout.glyphs) {
-            const glm::vec3 positions[4] = {
-                { glyph.position.x,                glyph.position.y,                0.0f },
-                { glyph.position.x + glyph.size.x, glyph.position.y,                0.0f },
-                { glyph.position.x + glyph.size.x, glyph.position.y + glyph.size.y, 0.0f },
-                { glyph.position.x,                glyph.position.y + glyph.size.y, 0.0f }
-            };
-
-            if (glyph.subTexture && glyph.subTexture->GetTexture()) {
-                const glm::vec2 texCoords[4] = {
-                    { glyph.subTexture->GetMin().x, glyph.subTexture->GetMin().y },
-                    { glyph.subTexture->GetMax().x, glyph.subTexture->GetMin().y },
-                    { glyph.subTexture->GetMax().x, glyph.subTexture->GetMax().y },
-                    { glyph.subTexture->GetMin().x, glyph.subTexture->GetMax().y }
+            const auto quads = minimap->GenerateQuads(pos, sz, dpiScale);
+            for (const auto& quad : quads) {
+                const glm::vec3 positions[4] = {
+                    { quad.Vertices[0].Position.x, quad.Vertices[0].Position.y, 0.0f },
+                    { quad.Vertices[1].Position.x, quad.Vertices[1].Position.y, 0.0f },
+                    { quad.Vertices[2].Position.x, quad.Vertices[2].Position.y, 0.0f },
+                    { quad.Vertices[3].Position.x, quad.Vertices[3].Position.y, 0.0f }
                 };
-                Renderer2D::DrawQuad(positions, texCoords, glyph.subTexture->GetTexture(), uiLabel->color);
-            } else {
-                static const glm::vec2 kDefaultUV[4] = { {0.0f, 0.0f}, {1.0f, 0.0f}, {1.0f, 1.0f}, {0.0f, 1.0f} };
-                Renderer2D::DrawQuad(positions, kDefaultUV, uiLabel->color);
+                const glm::vec2 texCoords[4] = {
+                    quad.Vertices[0].TexCoord,
+                    quad.Vertices[1].TexCoord,
+                    quad.Vertices[2].TexCoord,
+                    quad.Vertices[3].TexCoord
+                };
+
+                if (quad.QuadTexture && quad.QuadTexture->GetRendererID() != 0) {
+                    Renderer2D::DrawQuad(positions, texCoords, quad.QuadTexture, quad.Color);
+                } else {
+                    Renderer2D::DrawQuad(positions, texCoords, quad.Color);
+                }
             }
-        }
-    }
-
-    // Pass: Minimap HUD widgets
-    for (UIMinimapComponent* minimap : m_UIMinimapScratch) {
-        if (!minimap) continue;
-        glm::vec2 pos = { 0.0f, 0.0f };
-        glm::vec2 sz  = { 220.0f, 220.0f };
-        if (minimap->useRectTransform) {
-            UICanvas::ResolveScreenRect(minimap->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
-        }
-
-        const auto quads = minimap->GenerateQuads(pos, sz, dpiScale);
-        for (const auto& quad : quads) {
-            const glm::vec3 positions[4] = {
-                { quad.Vertices[0].Position.x, quad.Vertices[0].Position.y, 0.0f },
-                { quad.Vertices[1].Position.x, quad.Vertices[1].Position.y, 0.0f },
-                { quad.Vertices[2].Position.x, quad.Vertices[2].Position.y, 0.0f },
-                { quad.Vertices[3].Position.x, quad.Vertices[3].Position.y, 0.0f }
-            };
-            const glm::vec2 texCoords[4] = {
-                quad.Vertices[0].TexCoord,
-                quad.Vertices[1].TexCoord,
-                quad.Vertices[2].TexCoord,
-                quad.Vertices[3].TexCoord
-            };
-
-            if (quad.QuadTexture && quad.QuadTexture->GetRendererID() != 0) {
-                Renderer2D::DrawQuad(positions, texCoords, quad.QuadTexture, quad.Color);
-            } else {
-                Renderer2D::DrawQuad(positions, texCoords, quad.Color);
+        } else if (item.kind == ScreenUIItem::Kind::RadialWheel) {
+            auto* wheel = static_cast<UIRadialWheelComponent*>(item.ptr);
+            glm::vec2 pos = { 0.0f, 0.0f };
+            glm::vec2 sz  = { 360.0f, 360.0f };
+            if (wheel->useRectTransform) {
+                UICanvas::ResolveScreenRect(wheel->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
             }
-        }
-    }
 
-    // Pass: Tactical Radial Drop Wheels (when open)
-    for (UIRadialWheelComponent* wheel : m_UIRadialWheelScratch) {
-        if (!wheel || !wheel->IsOpen) continue;
-        glm::vec2 pos = { 0.0f, 0.0f };
-        glm::vec2 sz  = { 360.0f, 360.0f };
-        if (wheel->useRectTransform) {
-            UICanvas::ResolveScreenRect(wheel->rectTransform, m_ViewportWidth, m_ViewportHeight, pos, sz);
-        }
+            const auto quads = wheel->GenerateQuads(pos, sz, dpiScale);
+            for (const auto& quad : quads) {
+                const glm::vec3 positions[4] = {
+                    { quad.Vertices[0].Position.x, quad.Vertices[0].Position.y, 0.0f },
+                    { quad.Vertices[1].Position.x, quad.Vertices[1].Position.y, 0.0f },
+                    { quad.Vertices[2].Position.x, quad.Vertices[2].Position.y, 0.0f },
+                    { quad.Vertices[3].Position.x, quad.Vertices[3].Position.y, 0.0f }
+                };
+                const glm::vec2 texCoords[4] = {
+                    quad.Vertices[0].TexCoord,
+                    quad.Vertices[1].TexCoord,
+                    quad.Vertices[2].TexCoord,
+                    quad.Vertices[3].TexCoord
+                };
 
-        const auto quads = wheel->GenerateQuads(pos, sz, dpiScale);
-        for (const auto& quad : quads) {
-            const glm::vec3 positions[4] = {
-                { quad.Vertices[0].Position.x, quad.Vertices[0].Position.y, 0.0f },
-                { quad.Vertices[1].Position.x, quad.Vertices[1].Position.y, 0.0f },
-                { quad.Vertices[2].Position.x, quad.Vertices[2].Position.y, 0.0f },
-                { quad.Vertices[3].Position.x, quad.Vertices[3].Position.y, 0.0f }
-            };
-            const glm::vec2 texCoords[4] = {
-                quad.Vertices[0].TexCoord,
-                quad.Vertices[1].TexCoord,
-                quad.Vertices[2].TexCoord,
-                quad.Vertices[3].TexCoord
-            };
-
-            if (quad.QuadTexture && quad.QuadTexture->GetRendererID() != 0) {
-                Renderer2D::DrawQuad(positions, texCoords, quad.QuadTexture, quad.Color);
-            } else {
-                Renderer2D::DrawQuad(positions, texCoords, quad.Color);
+                if (quad.QuadTexture && quad.QuadTexture->GetRendererID() != 0) {
+                    Renderer2D::DrawQuad(positions, texCoords, quad.QuadTexture, quad.Color);
+                } else {
+                    Renderer2D::DrawQuad(positions, texCoords, quad.Color);
+                }
             }
         }
     }

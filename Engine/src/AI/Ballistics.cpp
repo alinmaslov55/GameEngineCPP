@@ -10,10 +10,14 @@ JumpArcSolution SolveInterceptHopArc(
     float maxHopRange, float flightDuration, float gravityY, float leadFactor) noexcept {
     JumpArcSolution solution{};
 
-    if (!std::isfinite(flightDuration) || flightDuration <= 0.0f ||
-        !std::isfinite(maxHopRange) || maxHopRange <= 0.0f) {
+    if (!std::isfinite(jumperXZ.x) || !std::isfinite(jumperXZ.y) ||
+        !std::isfinite(targetXZ.x) || !std::isfinite(targetXZ.y) ||
+        !std::isfinite(targetVelXZ.x) || !std::isfinite(targetVelXZ.y) ||
+        !std::isfinite(flightDuration) || flightDuration <= 0.0f ||
+        !std::isfinite(maxHopRange) || maxHopRange <= 0.0f ||
+        !std::isfinite(gravityY) || !std::isfinite(leadFactor)) {
         solution.VelocityXZ = glm::vec2(0.0f);
-        solution.LandingSpotXZ = jumperXZ;
+        solution.LandingSpotXZ = (std::isfinite(jumperXZ.x) && std::isfinite(jumperXZ.y)) ? jumperXZ : glm::vec2(0.0f);
         solution.InitialVelocityY = 0.0f;
         solution.FlightDuration = 0.0f;
         solution.PeakHeight = 0.0f;

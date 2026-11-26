@@ -101,11 +101,14 @@ bool UIRadialWheelComponent::ConfirmSelection(int wedgeIndex) {
         return false;
     }
 
-    if (OnConfirmDrop) {
-        OnConfirmDrop(wedgeIndex, Slots[wedgeIndex].Item);
-    }
-
+    const RadialWheelItem item = Slots[wedgeIndex].Item;
+    auto confirmCb = OnConfirmDrop;
+    // Close BEFORE invoking callback so TimeScale restore / wheel destruction cannot clobber or UAF
     Close();
+
+    if (confirmCb) {
+        confirmCb(wedgeIndex, item);
+    }
     return true;
 }
 
@@ -166,10 +169,21 @@ void UIRadialWheelComponent::Update(float deltaTime) {
             const float uiScale = UICanvas::ComputeScaleFactor(static_cast<uint32_t>(vpSize.x), static_cast<uint32_t>(vpSize.y));
             const float scaledDeadzone = 35.0f * uiScale;
             const glm::vec2 mouseBottomUp(mousePos.x, vpSize.y - mousePos.y);
-            const glm::vec2 screenCenter = vpSize * 0.5f;
+            glm::vec2 screenCenter = vpSize * 0.5f;
+            if (useRectTransform) {
+                glm::vec2 resolvedPos{ 0.0f }, resolvedSize{ 360.0f, 360.0f };
+                UICanvas::ResolveScreenRect(rectTransform,
+                                            static_cast<uint32_t>(vpSize.x),
+                                            static_cast<uint32_t>(vpSize.y),
+                                            resolvedPos,
+                                            resolvedSize);
+                screenCenter = resolvedPos + resolvedSize * 0.5f;
+            }
             const glm::vec2 mouseDelta = mouseBottomUp - screenCenter;
             if (glm::length(mouseDelta) > scaledDeadzone) {
                 ActiveWedge = ResolveWedgeFromVector(mouseDelta, 0.0f);
+            } else {
+                ActiveWedge = -1;
             }
         }
     }
@@ -244,13 +258,21 @@ std::vector<UIQuad> UIRadialWheelComponent::GenerateQuads(const glm::vec2& resol
         sectorQuad.QuadTexture = (HighlightTexture && HighlightTexture->GetRendererID() != 0) ? HighlightTexture : nullptr;
         quads.push_back(sectorQuad);
 
-        // Item icon quad
+        // Item icon quad (prefer IconSubTex when provided)
         UIQuad iconQuad{};
-        iconQuad.Vertices[0] = { { sectorCenter.x - halfItem, sectorCenter.y - halfItem }, { 0.0f, 0.0f } };
-        iconQuad.Vertices[1] = { { sectorCenter.x + halfItem, sectorCenter.y - halfItem }, { 1.0f, 0.0f } };
-        iconQuad.Vertices[2] = { { sectorCenter.x + halfItem, sectorCenter.y + halfItem }, { 1.0f, 1.0f } };
-        iconQuad.Vertices[3] = { { sectorCenter.x - halfItem, sectorCenter.y + halfItem }, { 0.0f, 1.0f } };
-        iconQuad.QuadTexture = Slots[i].Icon;
+        glm::vec2 uvMin{ 0.0f, 0.0f };
+        glm::vec2 uvMax{ 1.0f, 1.0f };
+        if (Slots[i].IconSubTex && Slots[i].IconSubTex->GetTexture()) {
+            uvMin = Slots[i].IconSubTex->GetMin();
+            uvMax = Slots[i].IconSubTex->GetMax();
+            iconQuad.QuadTexture = Slots[i].IconSubTex->GetTexture();
+        } else {
+            iconQuad.QuadTexture = Slots[i].Icon;
+        }
+        iconQuad.Vertices[0] = { { sectorCenter.x - halfItem, sectorCenter.y - halfItem }, { uvMin.x, uvMin.y } };
+        iconQuad.Vertices[1] = { { sectorCenter.x + halfItem, sectorCenter.y - halfItem }, { uvMax.x, uvMin.y } };
+        iconQuad.Vertices[2] = { { sectorCenter.x + halfItem, sectorCenter.y + halfItem }, { uvMax.x, uvMax.y } };
+        iconQuad.Vertices[3] = { { sectorCenter.x - halfItem, sectorCenter.y + halfItem }, { uvMin.x, uvMax.y } };
 
         if (affordable) {
             iconQuad.Color = isActive ? glm::vec4(1.30f, 1.20f, 0.80f, 1.0f) : glm::vec4(1.0f, 1.0f, 1.0f, 0.95f);

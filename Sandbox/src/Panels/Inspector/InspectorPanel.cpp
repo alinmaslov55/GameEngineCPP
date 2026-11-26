@@ -54,6 +54,56 @@ void DrawComponent(const char* label, Engine::GameObject* entity, UIFunction uiF
     }
 }
 
+template<typename T, typename UIFunction>
+void DrawComponents(const char* label, Engine::GameObject* entity, UIFunction uiFunction) {
+    const auto components = entity->GetComponents<T>();
+    for (size_t i = 0; i < components.size(); ++i) {
+        T* component = components[i];
+        if (!component) continue;
+
+        bool removeComp = false;
+        ImGui::PushID(component);
+        const std::string headerLabel = (components.size() > 1)
+            ? (std::string(label) + " #" + std::to_string(i + 1))
+            : std::string(label);
+        const bool open = ImGui::CollapsingHeader(headerLabel.c_str(), ImGuiTreeNodeFlags_DefaultOpen | ImGuiTreeNodeFlags_AllowOverlap);
+        if (ImGui::BeginPopupContextItem("ComponentSettings")) {
+            if (ImGui::MenuItem("Remove Component")) {
+                removeComp = true;
+            }
+            ImGui::EndPopup();
+        }
+        ImGui::SameLine(ImGui::GetWindowContentRegionMax().x - 24.0f);
+        if (ImGui::SmallButton("X")) {
+            removeComp = true;
+        }
+
+        if (open && !removeComp) {
+            uiFunction(*component);
+        }
+
+        if (removeComp) {
+            entity->RemoveComponent<T>();
+            ENGINE_INFO("Inspector: Removed {} from '{}'", headerLabel, entity->GetName());
+            ImGui::PopID();
+            break;
+        }
+        ImGui::PopID();
+    }
+}
+
+void MarkHierarchyPhysicsDirty(Engine::Scene* scene, Engine::GameObject* go) {
+    if (!scene || !go) return;
+    scene->MarkPhysicsDirty(go);
+    if (auto* t = go->GetTransform()) {
+        for (Engine::Transform* child : t->GetChildren()) {
+            if (child) {
+                MarkHierarchyPhysicsDirty(scene, child->GetGameObject());
+            }
+        }
+    }
+}
+
 template<typename T>
 void DrawAddComponentEntry(const char* label, Engine::GameObject* entity) {
     if (ImGui::MenuItem(label)) {
@@ -107,13 +157,13 @@ void InspectorPanel::OnImGuiRender(Engine::GameObject* selectedEntity, bool* pOp
         DrawComponent<Engine::Rigidbody2D>("Rigidbody 2D", selectedEntity, [&](Engine::Rigidbody2D& c) {
             DrawRigidbody2D(c, selectedEntity);
         });
-        DrawComponent<Engine::BoxCollider2D>("Box Collider 2D", selectedEntity, [&](Engine::BoxCollider2D& c) {
+        DrawComponents<Engine::BoxCollider2D>("Box Collider 2D", selectedEntity, [&](Engine::BoxCollider2D& c) {
             DrawBoxCollider2D(c, selectedEntity);
         });
-        DrawComponent<Engine::CircleCollider2D>("Circle Collider 2D", selectedEntity, [&](Engine::CircleCollider2D& c) {
+        DrawComponents<Engine::CircleCollider2D>("Circle Collider 2D", selectedEntity, [&](Engine::CircleCollider2D& c) {
             DrawCircleCollider2D(c, selectedEntity);
         });
-        DrawComponent<Engine::CapsuleCollider2D>("Capsule Collider 2D", selectedEntity, [&](Engine::CapsuleCollider2D& c) {
+        DrawComponents<Engine::CapsuleCollider2D>("Capsule Collider 2D", selectedEntity, [&](Engine::CapsuleCollider2D& c) {
             DrawCapsuleCollider2D(c, selectedEntity);
         });
         DrawComponent<Engine::CameraComponent>("Camera", selectedEntity, [&](Engine::CameraComponent& c) {
@@ -201,7 +251,7 @@ void InspectorPanel::DrawTransform(Engine::Transform* transform) {
             transform->SetDirty();
             if (auto* go = transform->GetGameObject()) {
                 if (auto* scene = go->GetScene()) {
-                    scene->MarkPhysicsDirty(go);
+                    MarkHierarchyPhysicsDirty(scene, go);
                 }
             }
         }

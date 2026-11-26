@@ -630,10 +630,18 @@ CutoutProcessResult CutoutProcessor::ProcessAnimationStrip(
     const size_t numFrames = frames.size();
     const uint32_t outCols = (settings.Columns > 0u) ? settings.Columns : static_cast<uint32_t>(numFrames);
     const uint32_t outRows = (static_cast<uint32_t>(numFrames) + outCols - 1u) / outCols;
-    const uint32_t sheetW = outCols * cellW;
-    const uint32_t sheetH = outRows * cellH;
+    const uint64_t sheetW64 = static_cast<uint64_t>(outCols) * static_cast<uint64_t>(cellW);
+    const uint64_t sheetH64 = static_cast<uint64_t>(outRows) * static_cast<uint64_t>(cellH);
+    if (sheetW64 == 0 || sheetH64 == 0 ||
+        sheetW64 > 16384ull || sheetH64 > 16384ull ||
+        sheetW64 * sheetH64 * 4ull > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+        result.ErrorMessage = "CutoutProcessor: Sheet dimensions exceed safe texture/buffer bounds";
+        return result;
+    }
+    const uint32_t sheetW = static_cast<uint32_t>(sheetW64);
+    const uint32_t sheetH = static_cast<uint32_t>(sheetH64);
 
-    std::vector<uint8_t> sheetRGBA(static_cast<size_t>(sheetW) * sheetH * 4u, 0u);
+    std::vector<uint8_t> sheetRGBA(static_cast<size_t>(sheetW) * static_cast<size_t>(sheetH) * 4u, 0u);
 
     for (size_t i = 0; i < numFrames; ++i) {
         const auto& fr = frames[i];

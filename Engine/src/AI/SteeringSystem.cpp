@@ -77,6 +77,15 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
     std::array<float, SlotCount>* outInterest,
     std::array<float, SlotCount>* outDanger,
     std::array<float, SlotCount>* outContext) {
+    if (!std::isfinite(agentPositionXZ.x) || !std::isfinite(agentPositionXZ.y) ||
+        !std::isfinite(targetXZ.x) || !std::isfinite(targetXZ.y) ||
+        !std::isfinite(params.MaxSpeed) || params.MaxSpeed <= 0.0f) {
+        return glm::vec2(0.0f);
+    }
+    if (!std::isfinite(agentRadius) || agentRadius < 0.0f) {
+        agentRadius = 0.35f;
+    }
+
     const auto& dirs = GetSlotDirections();
 
     std::array<float, SlotCount> interest{};
@@ -226,8 +235,9 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
 
     // 4. Resolve Steering Direction
     glm::vec2 steerDir{ 0.0f };
+    const bool escapingDanger = (maxContext <= 1e-4f);
 
-    if (maxContext <= 1e-4f) {
+    if (escapingDanger) {
         if (params.TargetOrbitRadius <= 0.0f && distToTarget <= 1e-4f) {
             bool hasDanger = false;
             for (float d : danger) {
@@ -276,9 +286,9 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
         }
     }
 
-    // 5. Speed & Arrival Damping
+    // 5. Speed & Arrival Damping (skip arrival damping when escaping danger so cornered agents move at full speed)
     float speed = params.MaxSpeed;
-    if (params.TargetOrbitRadius <= 0.0f && params.ArrivalRadius > 0.0f) {
+    if (!escapingDanger && params.TargetOrbitRadius <= 0.0f && params.ArrivalRadius > 0.0f) {
         if (distToTarget < params.ArrivalRadius) {
             const float t = std::clamp(distToTarget / params.ArrivalRadius, 0.0f, 1.0f);
             speed *= t;

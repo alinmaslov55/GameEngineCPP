@@ -46,9 +46,12 @@ static bool ProfileFromJson(const nlohmann::json& j, PlayerProfileData& out) {
         return false;
     }
     out.SchemaVersion = JsonHelper::Get(j, "SchemaVersion", 1u);
-    out.BankedAshes = JsonHelper::Get(j, "BankedAshes", 0ULL);
-    out.TotalRuns = JsonHelper::Get(j, "TotalRuns", 0u);
-    out.BestSurvivalSeconds = JsonHelper::Get(j, "BestSurvivalSeconds", 0u);
+    if (j.contains("SchemaVersion") && j["SchemaVersion"].is_number_integer() && !j["SchemaVersion"].is_number_unsigned() && j["SchemaVersion"].get<int64_t>() < 0) {
+        out.SchemaVersion = 1u;
+    }
+    out.BankedAshes = (j.contains("BankedAshes") && j["BankedAshes"].is_number_unsigned()) ? j["BankedAshes"].get<uint64_t>() : 0ULL;
+    out.TotalRuns = (j.contains("TotalRuns") && j["TotalRuns"].is_number_unsigned()) ? j["TotalRuns"].get<uint32_t>() : 0u;
+    out.BestSurvivalSeconds = (j.contains("BestSurvivalSeconds") && j["BestSurvivalSeconds"].is_number_unsigned()) ? j["BestSurvivalSeconds"].get<uint32_t>() : 0u;
 
     out.UnlockedRootRanks.clear();
     if (j.contains("UnlockedRootRanks") && j["UnlockedRootRanks"].is_object()) {
@@ -177,12 +180,36 @@ static bool WriteAndReplacePrimaryAtomic(uint32_t slotIndex, const PlayerProfile
         }
     }
 
-    // 2. If requested and primary exists, copy primary to backup before atomic replacement
+    // 2. If requested and primary exists, atomically write/replace backup before replacing primary
     if (backupCurrentPrimary && fs::exists(primaryPath, ec)) {
-        fs::copy_file(primaryPath, backupPath, fs::copy_options::overwrite_existing, ec);
-        if (ec) {
-            ENGINE_CORE_WARN("SaveManager: Failed to create backup file '{}': {}", backupPath.string(), ec.message());
-            ec.clear();
+        const fs::path bakTempPath = saveDir / (baseName + ".json.bak.tmp");
+        std::ifstream src(primaryPath, std::ios::in | std::ios::binary);
+        std::ofstream dst(bakTempPath, std::ios::out | std::ios::trunc | std::ios::binary);
+        bool bakOk = false;
+        if (src.is_open() && dst.is_open()) {
+            dst << src.rdbuf();
+            dst.flush();
+            bakOk = dst.good();
+        }
+        src.close();
+        dst.close();
+        if (bakOk) {
+#ifdef _WIN32
+            if (!MoveFileExW(bakTempPath.wstring().c_str(), backupPath.wstring().c_str(),
+                             MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
+                ENGINE_CORE_WARN("SaveManager: MoveFileExW failed for backup '{}' (error: {})",
+                                 backupPath.string(), GetLastError());
+            }
+#else
+            fs::rename(bakTempPath, backupPath, ec);
+            if (ec) {
+                ENGINE_CORE_WARN("SaveManager: Failed to rename backup '{}': {}", backupPath.string(), ec.message());
+                ec.clear();
+            }
+#endif
+        } else {
+            ENGINE_CORE_WARN("SaveManager: Failed to stage atomic backup file '{}'", bakTempPath.string());
+            fs::remove(bakTempPath, ec);
         }
     }
 

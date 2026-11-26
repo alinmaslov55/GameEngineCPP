@@ -48,7 +48,7 @@ public:
             return;
         }
 
-        if (m_ActiveVoice != kInvalidVoiceHandle && AudioManager::IsVoicePlaying(m_ActiveVoice)) {
+        if (m_ActiveVoice != kInvalidVoiceHandle) {
             AudioManager::StopVoice(m_ActiveVoice);
             m_ActiveVoice = kInvalidVoiceHandle;
         }

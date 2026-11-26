@@ -402,7 +402,11 @@ uint32_t AudioStreamTrack::Update() {
             break;
         }
         totalRefilled += decoded;
-        queued = GetQueuedFrames();
+        const uint32_t newQueued = GetQueuedFrames();
+        if (newQueued <= queued) {
+            break;
+        }
+        queued = newQueued;
     }
 
     return totalRefilled;

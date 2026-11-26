@@ -27,10 +27,12 @@ namespace Engine {
 namespace {
 
 void ClearBackbuffer(const Window& window, const glm::vec4& color = {0.1f, 0.1f, 0.1f, 1.0f}) {
+    const int fbW = window.GetFramebufferWidth() > 0 ? window.GetFramebufferWidth() : window.GetWidth();
+    const int fbH = window.GetFramebufferHeight() > 0 ? window.GetFramebufferHeight() : window.GetHeight();
     Renderer::SetViewport(
         0, 0,
-        static_cast<uint32_t>(window.GetWidth()),
-        static_cast<uint32_t>(window.GetHeight())
+        static_cast<uint32_t>(fbW),
+        static_cast<uint32_t>(fbH)
     );
     Renderer::SetClearColor(color);
     Renderer::Clear();

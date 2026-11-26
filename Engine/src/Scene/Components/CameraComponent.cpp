@@ -49,6 +49,9 @@ void CameraComponent::SetViewportSize(uint32_t width, uint32_t height) {
 }
 
 void CameraComponent::AddTrauma(float amount01, glm::vec2 directionalKickXZ) noexcept {
+    if (!std::isfinite(amount01) || !std::isfinite(directionalKickXZ.x) || !std::isfinite(directionalKickXZ.y)) {
+        return;
+    }
     m_Trauma = glm::clamp(m_Trauma + std::max(0.0f, amount01), 0.0f, 1.0f);
     m_DirectionalKick += directionalKickXZ;
     ENGINE_CORE_TRACE("CameraComponent::AddTrauma: +{:.2f} -> {:.2f}, Kick=({:.2f}, {:.2f})",
@@ -56,6 +59,9 @@ void CameraComponent::AddTrauma(float amount01, glm::vec2 directionalKickXZ) noe
 }
 
 void CameraComponent::SetAimDirectionXZ(const glm::vec2& directionXZ) noexcept {
+    if (!std::isfinite(directionXZ.x) || !std::isfinite(directionXZ.y)) {
+        return;
+    }
     const float len = glm::length(directionXZ);
     if (len > 1.0f) {
         m_TargetAimDirection = directionXZ / len;
@@ -65,6 +71,9 @@ void CameraComponent::SetAimDirectionXZ(const glm::vec2& directionXZ) noexcept {
 }
 
 void CameraComponent::SetDynamicZoomFactor(float factor01) noexcept {
+    if (!std::isfinite(factor01)) {
+        return;
+    }
     m_TargetZoomFactor = glm::clamp(factor01, 0.0f, 1.0f);
 }
 
@@ -90,6 +99,12 @@ void CameraComponent::ResetToTarget(const glm::vec3& targetPosition) noexcept {
 }
 
 void CameraComponent::UpdateRig(float scaledDt, float unscaledDt, const glm::vec3& targetPosition) {
+    if (!std::isfinite(targetPosition.x) || !std::isfinite(targetPosition.y) || !std::isfinite(targetPosition.z)) {
+        return;
+    }
+    if (!std::isfinite(scaledDt)) scaledDt = 0.0f;
+    if (!std::isfinite(unscaledDt)) unscaledDt = 0.0f;
+
     if (m_FirstSync) {
         m_SmoothedFocalPoint = targetPosition;
         m_LogicalTargetPoint = targetPosition;

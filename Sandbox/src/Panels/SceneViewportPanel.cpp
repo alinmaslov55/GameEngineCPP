@@ -242,8 +242,8 @@ void SceneViewportPanel::OnImGuiRender(const std::shared_ptr<Engine::Framebuffer
                     }
                 }
 
-                auto tex = Engine::ResourceManager::Load<Engine::Texture>(droppedPath.string());
-                const float aspect = (tex && tex->GetWidth() > 0 && tex->GetHeight() > 0)
+                auto tex = Engine::ResourceManager::LoadTexture(droppedPath.string());
+                const float aspect = (tex && tex->IsLoaded() && tex->GetWidth() > 0 && tex->GetHeight() > 0)
                     ? (static_cast<float>(tex->GetWidth()) / static_cast<float>(tex->GetHeight()))
                     : 1.0f;
 

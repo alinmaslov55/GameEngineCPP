@@ -80,6 +80,7 @@ bool SpriteAtlas::ParseJSON(const std::string& jsonString,
         return false;
     }
 
+    try {
     // 1. Resolve atlas texture
     if (customTexture) {
         m_AtlasTexture = customTexture;
@@ -233,6 +234,12 @@ bool SpriteAtlas::ParseJSON(const std::string& jsonString,
     ENGINE_CORE_INFO("SpriteAtlas: Successfully loaded '{}' ({} frames, texture: {}x{})",
                      basePath, m_Frames.size(), static_cast<int>(texWidth), static_cast<int>(texHeight));
     return true;
+    } catch (const std::exception& e) {
+        ENGINE_CORE_ERROR("SpriteAtlas: Invalid JSON schema in '{}': {}", basePath, e.what());
+        m_Frames.clear();
+        m_FrameNames.clear();
+        return false;
+    }
 }
 
 const AtlasFrame* SpriteAtlas::GetFrame(std::string_view frameName) const noexcept {

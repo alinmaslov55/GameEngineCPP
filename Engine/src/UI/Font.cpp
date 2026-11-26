@@ -190,8 +190,10 @@ std::shared_ptr<Font> Font::LoadBMFontFromMemory(std::string_view fntContent,
             if (!FindKeyInt(sv, "xadvance=", xadvance) || xadvance < 0) continue;
 
             if (font->m_ScaleW > 0.0f && font->m_ScaleH > 0.0f) {
-                if (static_cast<float>(x + width) > font->m_ScaleW ||
-                    static_cast<float>(y + height) > font->m_ScaleH) {
+                const uint64_t xEnd = static_cast<uint64_t>(x) + static_cast<uint64_t>(width);
+                const uint64_t yEnd = static_cast<uint64_t>(y) + static_cast<uint64_t>(height);
+                if (static_cast<float>(xEnd) > font->m_ScaleW ||
+                    static_cast<float>(yEnd) > font->m_ScaleH) {
                     continue;
                 }
             }

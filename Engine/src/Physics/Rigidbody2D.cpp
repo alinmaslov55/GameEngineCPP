@@ -78,6 +78,7 @@ void Rigidbody2D::SetVelocityXZ(const glm::vec2& velocityXZ) {
         b2BodyId bodyId = ToB2(RuntimeBody);
         if (b2Body_IsValid(bodyId)) {
             b2Body_SetLinearVelocity(bodyId, b2Vec2{ velocityXZ.x, velocityXZ.y });
+            m_InitialVelocityApplied = true;
             return;
         }
     }
@@ -142,6 +143,7 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
                     RefreshMassFromShapes();
                     b2Body_SetLinearVelocity(bodyId, b2Vec2{ m_StasisCachedVelocityXZ.x, m_StasisCachedVelocityXZ.y });
                     b2Body_SetAngularVelocity(bodyId, m_StasisCachedAngularVelocity);
+                    m_InitialVelocityApplied = true;
 
                     // Release and erupt all accumulated impulses
                     if (glm::length(m_QueuedStasisImpulseXZ) > 0.0f) {

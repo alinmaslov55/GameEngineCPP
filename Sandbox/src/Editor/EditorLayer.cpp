@@ -83,8 +83,8 @@ void EditorLayer::OnUpdate(float deltaTime) {
         }
     }
 
-    // 2. Poll Input & Step Runtime Simulation (when in Play Mode) or Ambient Particles (in Edit Mode)
-    Engine::Input::Update();
+    // 2. Step Runtime Simulation (when in Play Mode) or Ambient Particles (in Edit Mode)
+    // Note: Engine::Input::Update() is already called once per frame inside Window::PollEvents().
     if (Engine::Input::IsKeyJustPressed(SDL_SCANCODE_F5)) {
         Engine::GameplayData::ReloadAll();
     }
