@@ -313,9 +313,12 @@ void Texture::SetFilterLinear(bool linear) {
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, minFilter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, linear ? GL_LINEAR : GL_NEAREST);
     if (m_HasMipmaps) {
-        const float maxSupported = GetMaxSupportedAnisotropy();
+        const bool anisoSupported =
+            SDL_GL_ExtensionSupported("GL_EXT_texture_filter_anisotropic") ||
+            SDL_GL_ExtensionSupported("GL_ARB_texture_filter_anisotropic");
+        const float maxSupported = anisoSupported ? GetMaxSupportedAnisotropy() : 1.0f;
         const float targetAniso = linear ? std::min(8.0f, maxSupported) : 1.0f;
-        if (targetAniso > 1.0f && glad_glTexParameterf != nullptr) {
+        if (anisoSupported && glad_glTexParameterf != nullptr) {
             glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, targetAniso);
         }
         m_Anisotropy = targetAniso;
@@ -328,9 +331,13 @@ void Texture::SetAnisotropy(float aniso) {
         m_Anisotropy = 1.0f;
         return;
     }
-    const float maxSupported = GetMaxSupportedAnisotropy();
-    m_Anisotropy = std::clamp(aniso, 1.0f, maxSupported);
-    if (m_RendererID != 0 && HasActiveGLContext() && glad_glTexParameterf != nullptr) {
+    const bool anisoSupported =
+        HasActiveGLContext() &&
+        (SDL_GL_ExtensionSupported("GL_EXT_texture_filter_anisotropic") ||
+         SDL_GL_ExtensionSupported("GL_ARB_texture_filter_anisotropic"));
+    const float maxSupported = anisoSupported ? GetMaxSupportedAnisotropy() : 1.0f;
+    m_Anisotropy = std::clamp(std::isfinite(aniso) ? aniso : 1.0f, 1.0f, maxSupported);
+    if (m_RendererID != 0 && anisoSupported && glad_glTexParameterf != nullptr) {
         glBindTexture(GL_TEXTURE_2D, m_RendererID);
         glTexParameterf(GL_TEXTURE_2D, GL_TEXTURE_MAX_ANISOTROPY, m_Anisotropy);
         glBindTexture(GL_TEXTURE_2D, 0);

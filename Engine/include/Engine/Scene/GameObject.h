@@ -567,6 +567,97 @@ public:
         }
     }
 
+    bool RemoveComponent(Component* instance) {
+        if (!instance || instance == m_Transform || instance->IsPendingRemoval()) {
+            return false;
+        }
+
+        auto foundIt = std::find_if(m_Components.begin(), m_Components.end(),
+            [instance](const std::unique_ptr<Component>& ptr) { return ptr.get() == instance; });
+        if (foundIt == m_Components.end()) {
+            return false;
+        }
+
+        Component* comp = foundIt->get();
+        ScopedComponentIterationGuard guard(*this);
+
+        const uint16_t removedExactID = comp->GetTypeID();
+        const uint16_t removedBaseID = comp->GetBaseTypeID();
+        const bool hasOverriddenFixedUpdate = comp->HasOverriddenFixedUpdate();
+
+        comp->m_PendingRemoval = true;
+        const bool wasEnabledAndActive = comp->IsEnabled() && IsActiveInHierarchy();
+        comp->m_Enabled = false;
+
+        if (wasEnabledAndActive) {
+            comp->OnDisable();
+        }
+
+        bool hasMoreOfExact = false;
+        bool hasMoreOfBase = false;
+        for (const auto& other : m_Components) {
+            Component* otherPtr = other.get();
+            if (!otherPtr || otherPtr == comp || otherPtr == m_Transform || otherPtr->IsPendingRemoval()) continue;
+            if (otherPtr->GetTypeID() == removedExactID) {
+                hasMoreOfExact = true;
+            }
+            if (removedBaseID != Component::kInvalidTypeID &&
+                (otherPtr->GetTypeID() == removedBaseID || otherPtr->GetBaseTypeID() == removedBaseID)) {
+                hasMoreOfBase = true;
+            }
+        }
+
+        if (!hasMoreOfExact && removedExactID != Component::kInvalidTypeID) {
+            m_ComponentMask &= ~ComponentMask128::FromBit(removedExactID);
+        }
+        if (!hasMoreOfBase && removedBaseID != Component::kInvalidTypeID) {
+            m_ComponentMask &= ~ComponentMask128::FromBit(removedBaseID);
+        }
+
+        const uint16_t rigidbodyID = Detail::GetComponentTypeID<Rigidbody2D>();
+        const uint16_t tilemapID = Detail::GetComponentTypeID<Tilemap>();
+        const uint16_t colliderBaseID = Detail::GetComponentTypeID<Collider2D>();
+        const bool isTilemap = (removedExactID == tilemapID);
+        const bool isRigidbody = (removedExactID == rigidbodyID);
+        const bool isCollider = (removedExactID == colliderBaseID) || (removedBaseID == colliderBaseID);
+        if (isRigidbody || isTilemap || isCollider) {
+            NotifyPhysicsComponentRemoved(isTilemap, isRigidbody, comp);
+        }
+
+        if (hasOverriddenFixedUpdate) {
+            if (m_FixedUpdateComponentCount > 0) {
+                --m_FixedUpdateComponentCount;
+                if (m_FixedUpdateComponentCount == 0) {
+                    UnregisterFixedUpdate();
+                }
+            }
+        }
+
+        if (removedExactID == Detail::GetComponentTypeID<TerrainChunkManager>() ||
+            removedExactID == Detail::GetComponentTypeID<TerrainComponent>()) {
+            InvalidateSceneTerrainCache();
+        }
+
+        const uint16_t pointLightID = Detail::GetComponentTypeID<PointLightComponent>();
+        if (removedExactID == pointLightID) {
+            bool hasMorePointLights = false;
+            for (const auto& other : m_Components) {
+                const Component* otherPtr = other.get();
+                if (otherPtr && otherPtr != comp && otherPtr != m_Transform &&
+                    !otherPtr->IsPendingRemoval() && otherPtr->GetTypeID() == pointLightID) {
+                    hasMorePointLights = true;
+                    break;
+                }
+            }
+            if (!hasMorePointLights) {
+                UnregisterPointLight();
+            }
+        }
+
+        ENGINE_CORE_DEBUG("GameObject '{}': Removed component instance", GetName());
+        return true;
+    }
+
 private:
     friend class Scene;
 

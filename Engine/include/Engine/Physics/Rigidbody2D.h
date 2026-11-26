@@ -50,6 +50,9 @@ public:
     Rigidbody2D() = default;
 
     void LaunchVertical(float upwardImpulseVelocity) noexcept {
+        if (!std::isfinite(upwardImpulseVelocity)) {
+            return;
+        }
         if (m_IsStasisFrozen) {
             m_StasisCachedVerticalVelocity = upwardImpulseVelocity;
         } else {

@@ -243,14 +243,17 @@ void Collider2D::CreateOrUpdateShape(BodyHandle body, const Transform& transform
     if (RuntimeShape.IsValid()) {
         b2ShapeId shapeId = ToB2(RuntimeShape);
         if (b2Shape_IsValid(shapeId)) {
-            if (std::abs(b2Shape_GetDensity(shapeId) - Density) > 1e-4f) {
-                b2Shape_SetDensity(shapeId, Density, true);
+            const float safeDensity = (std::isfinite(Density) && Density >= 0.0f) ? Density : 0.0f;
+            const float safeFriction = (std::isfinite(Friction) && Friction >= 0.0f) ? Friction : 0.0f;
+            const float safeRestitution = (std::isfinite(Restitution) && Restitution >= 0.0f) ? Restitution : 0.0f;
+            if (std::abs(b2Shape_GetDensity(shapeId) - safeDensity) > 1e-4f) {
+                b2Shape_SetDensity(shapeId, safeDensity, true);
             }
-            if (std::abs(b2Shape_GetFriction(shapeId) - Friction) > 1e-4f) {
-                b2Shape_SetFriction(shapeId, Friction);
+            if (std::abs(b2Shape_GetFriction(shapeId) - safeFriction) > 1e-4f) {
+                b2Shape_SetFriction(shapeId, safeFriction);
             }
-            if (std::abs(b2Shape_GetRestitution(shapeId) - Restitution) > 1e-4f) {
-                b2Shape_SetRestitution(shapeId, Restitution);
+            if (std::abs(b2Shape_GetRestitution(shapeId) - safeRestitution) > 1e-4f) {
+                b2Shape_SetRestitution(shapeId, safeRestitution);
             }
             if (b2Shape_AreHitEventsEnabled(shapeId) != EnableHitEvents) {
                 b2Shape_EnableHitEvents(shapeId, EnableHitEvents);

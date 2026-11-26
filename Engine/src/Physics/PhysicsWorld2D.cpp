@@ -957,6 +957,15 @@ void PhysicsWorld2D::SyncMovedBodyTransform(const b2BodyMoveEvent& ev) {
 
 void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
     AssertMainThreadAffinity("PhysicsWorld2D::UpdateRuntime");
+    if (m_UpdatingRuntime) {
+        return;
+    }
+    struct ScopedUpdatingGuard {
+        bool& flag;
+        explicit ScopedUpdatingGuard(bool& f) noexcept : flag(f) { flag = true; }
+        ~ScopedUpdatingGuard() noexcept { flag = false; }
+    } updatingGuard(m_UpdatingRuntime);
+
     if (m_IsRuntimeRunning) {
         if (!m_PendingPhysicsSync.empty()) {
             auto pendingSync = std::move(m_PendingPhysicsSync);

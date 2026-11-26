@@ -14,10 +14,15 @@ using namespace PhysicsDetail;
 void CircleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) {
     b2BodyId bodyId = ToB2(body);
     const glm::vec3 worldScale = transform.GetWorldScale();
-    float scaleFactor = std::max(std::abs(worldScale.x), std::abs(worldScale.z));
-    float effectiveRadius = std::max(0.001f, Radius * scaleFactor);
+    const float scaleX = std::isfinite(worldScale.x) ? std::abs(worldScale.x) : 1.0f;
+    const float scaleZ = std::isfinite(worldScale.z) ? std::abs(worldScale.z) : 1.0f;
+    const float scaleFactor = std::max(scaleX, scaleZ);
+    const float safeRadius = std::isfinite(Radius) ? std::abs(Radius) : 0.5f;
+    const float safeOffX = std::isfinite(OffsetXZ.x) ? OffsetXZ.x : 0.0f;
+    const float safeOffY = std::isfinite(OffsetXZ.y) ? OffsetXZ.y : 0.0f;
+    float effectiveRadius = std::clamp(safeRadius * scaleFactor, 0.001f, 1000.0f);
     b2Circle circle;
-    circle.center = b2Vec2{ OffsetXZ.x * std::abs(worldScale.x), OffsetXZ.y * std::abs(worldScale.z) };
+    circle.center = b2Vec2{ safeOffX * scaleX, safeOffY * scaleZ };
     circle.radius = effectiveRadius;
 
     if (!RuntimeShape.IsValid()) {

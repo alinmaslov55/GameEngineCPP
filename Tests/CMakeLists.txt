@@ -9,6 +9,7 @@ target_compile_options(EngineTests PRIVATE ${ENGINE_COMPILER_WARNINGS})
 
 target_include_directories(EngineTests PRIVATE
     "${CMAKE_SOURCE_DIR}/Sandbox/src"
+    ${Stb_INCLUDE_DIR}
 )
 
 target_link_libraries(EngineTests PRIVATE

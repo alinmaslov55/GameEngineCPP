@@ -4,6 +4,7 @@
 #include <glad/glad.h>
 #include <algorithm>
 #ifdef ENGINE_BUILD_EDITOR
+#include "Engine/ImGui/ImGuiLayer.h"
 #include <imgui_impl_sdl3.h>
 #endif
 
@@ -72,7 +73,9 @@ void Window::PollEvents() {
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
 #ifdef ENGINE_BUILD_EDITOR
-        ImGui_ImplSDL3_ProcessEvent(&event);
+        if (ImGuiLayer::IsInitialized()) {
+            ImGui_ImplSDL3_ProcessEvent(&event);
+        }
 #endif
         switch (event.type) {
             case SDL_EVENT_QUIT:

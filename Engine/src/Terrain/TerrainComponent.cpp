@@ -31,8 +31,8 @@ TerrainComponent::TerrainComponent(float width,
                                    float depth,
                                    uint32_t splatWidth,
                                    uint32_t splatHeight)
-    : m_Width(std::max(width, 0.5f)),
-      m_Depth(std::max(depth, 0.5f)),
+    : m_Width(std::isfinite(width) ? std::max(width, 0.5f) : 20.0f),
+      m_Depth(std::isfinite(depth) ? std::max(depth, 0.5f) : 20.0f),
       m_SplatWidth(std::clamp(splatWidth, 4u, 2048u)),
       m_SplatHeight(std::clamp(splatHeight, 4u, 2048u)) {
     for (uint32_t i = 0; i < MaxLayers; ++i) {
@@ -47,10 +47,12 @@ TerrainComponent::TerrainComponent(float width,
 }
 
 void TerrainComponent::SetWidth(float width) {
+    if (!std::isfinite(width)) return;
     m_Width = std::max(width, 0.5f);
 }
 
 void TerrainComponent::SetDepth(float depth) {
+    if (!std::isfinite(depth)) return;
     m_Depth = std::max(depth, 0.5f);
 }
 
@@ -95,10 +97,12 @@ void TerrainComponent::ResizeSplatmap(uint32_t newWidth, uint32_t newHeight) {
 }
 
 void TerrainComponent::SetBlendSharpness(float sharpness) {
+    if (!std::isfinite(sharpness)) return;
     m_BlendSharpness = std::clamp(sharpness, 0.0f, 1.0f);
 }
 
 void TerrainComponent::SetEdgeDarkening(float darkening) {
+    if (!std::isfinite(darkening)) return;
     m_EdgeDarkening = std::clamp(darkening, 0.0f, 0.5f);
 }
 
@@ -269,7 +273,13 @@ bool TerrainComponent::PaintSplatBufferXZ(std::vector<uint8_t>& splatData0,
                                             uint32_t& outDirtyMaxX,
                                             uint32_t& outDirtyMaxZ) {
     const size_t requiredBytes = static_cast<size_t>(splatWidth) * static_cast<size_t>(splatHeight) * 4u;
-    if (layerIndex >= MaxLayers || radiusWorld <= 0.0f || strength <= 0.0f ||
+    if (layerIndex >= MaxLayers ||
+        !std::isfinite(originX) || !std::isfinite(originZ) ||
+        !std::isfinite(worldWidth) || !std::isfinite(worldDepth) ||
+        !std::isfinite(brushWorldX) || !std::isfinite(brushWorldZ) ||
+        !std::isfinite(radiusWorld) || radiusWorld <= 0.0f ||
+        !std::isfinite(falloff) ||
+        !std::isfinite(strength) || strength <= 0.0f ||
         splatWidth < 2u || splatHeight < 2u ||
         splatData0.size() < requiredBytes) {
         return false;
@@ -424,9 +434,15 @@ void TerrainComponent::PaintWorldSegment(const glm::vec2& startXZ,
                                          float radiusWorld,
                                          float falloff,
                                          float strength) {
+    if (!std::isfinite(startXZ.x) || !std::isfinite(startXZ.y) ||
+        !std::isfinite(endXZ.x) || !std::isfinite(endXZ.y) ||
+        !std::isfinite(radiusWorld) || radiusWorld <= 0.0f ||
+        !std::isfinite(falloff) || !std::isfinite(strength) || strength <= 0.0f) {
+        return;
+    }
     const float segLen = glm::length(endXZ - startXZ);
     const float stepDist = std::max(0.1f, radiusWorld * 0.35f);
-    const int steps = std::max(1, static_cast<int>(std::ceil(segLen / stepDist)));
+    const int steps = std::isfinite(segLen) ? std::clamp(static_cast<int>(std::ceil(segLen / stepDist)), 1, 4096) : 1;
 
     for (int i = 0; i <= steps; ++i) {
         const float t = static_cast<float>(i) / static_cast<float>(steps);
@@ -439,7 +455,10 @@ SurfaceSample TerrainComponent::SampleSurfaceAtXZ(float worldX,
                                                   float worldZ,
                                                   const glm::vec3& terrainOrigin,
                                                   const glm::vec3& terrainScale) const noexcept {
-    if (m_SplatData.empty() || m_SplatWidth < 2u || m_SplatHeight < 2u) {
+    if (m_SplatData.empty() || m_SplatWidth < 2u || m_SplatHeight < 2u ||
+        !std::isfinite(worldX) || !std::isfinite(worldZ) ||
+        !std::isfinite(terrainOrigin.x) || !std::isfinite(terrainOrigin.z) ||
+        !std::isfinite(terrainScale.x) || !std::isfinite(terrainScale.z)) {
         return SurfaceSample{};
     }
 

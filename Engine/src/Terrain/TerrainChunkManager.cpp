@@ -33,7 +33,7 @@ TerrainChunkManager::TerrainChunkManager(float chunkSizeMeters,
                                          uint32_t splatResolution,
                                          int32_t activeRadiusChunks,
                                          int32_t cacheRetentionRadius)
-    : ChunkSizeMeters(std::max(1.0f, chunkSizeMeters)),
+    : ChunkSizeMeters(std::isfinite(chunkSizeMeters) ? std::clamp(chunkSizeMeters, 1.0f, 1024.0f) : 16.0f),
       SplatResolution(std::clamp(splatResolution, 5u, 513u)),
       ActiveRadiusChunks(std::max(0, activeRadiusChunks)),
       CacheRetentionRadius(std::max(ActiveRadiusChunks, cacheRetentionRadius)),
@@ -83,10 +83,16 @@ void TerrainChunkManager::ShutdownAsyncWorkers() noexcept {
 }
 
 ChunkCoord TerrainChunkManager::WorldToChunk(float worldX, float worldZ) const noexcept {
-    const float safeChunkSize = std::isfinite(ChunkSizeMeters) ? std::max(1.0f, ChunkSizeMeters) : 16.0f;
+    if (!std::isfinite(worldX) || !std::isfinite(worldZ)) {
+        return { 0, 0 };
+    }
+    const float safeChunkSize = std::isfinite(ChunkSizeMeters) ? std::clamp(ChunkSizeMeters, 1.0f, 1024.0f) : 16.0f;
+    const double cx = std::floor(static_cast<double>(worldX) / static_cast<double>(safeChunkSize));
+    const double cz = std::floor(static_cast<double>(worldZ) / static_cast<double>(safeChunkSize));
+    constexpr double kMaxCoord = 1000000.0;
     return {
-        static_cast<int32_t>(std::floor(worldX / safeChunkSize)),
-        static_cast<int32_t>(std::floor(worldZ / safeChunkSize))
+        static_cast<int32_t>(std::clamp(cx, -kMaxCoord, kMaxCoord)),
+        static_cast<int32_t>(std::clamp(cz, -kMaxCoord, kMaxCoord))
     };
 }
 
@@ -102,7 +108,7 @@ const TerrainChunk* TerrainChunkManager::GetChunk(ChunkCoord coord) const noexce
 
 void TerrainChunkManager::DispatchChunkGeneration(ChunkCoord coord) {
     const uint32_t res = std::clamp(SplatResolution, 5u, 513u);
-    const float chunkSize = std::max(1.0f, ChunkSizeMeters);
+    const float chunkSize = std::isfinite(ChunkSizeMeters) ? std::clamp(ChunkSizeMeters, 1.0f, 1024.0f) : 16.0f;
 
     ENGINE_CORE_DEBUG("TerrainChunkManager: Dispatching generation for chunk ({}, {}) [res={}x{}, size={:.1f}m, procedural={}]",
                       coord.cx, coord.cz, res, res, chunkSize, m_WorldGenConfig.Enabled && m_BiomeGenerator);
@@ -386,11 +392,14 @@ void TerrainChunkManager::DemoteAndEvictChunks(ChunkCoord centerChunk) {
 }
 
 void TerrainChunkManager::UpdateStreaming(const glm::vec3& viewerWorldPos) {
+    if (!std::isfinite(viewerWorldPos.x) || !std::isfinite(viewerWorldPos.z)) {
+        return;
+    }
     ++m_FrameCounter;
-    ChunkSizeMeters = std::max(1.0f, ChunkSizeMeters);
+    ChunkSizeMeters = std::isfinite(ChunkSizeMeters) ? std::clamp(ChunkSizeMeters, 1.0f, 1024.0f) : 16.0f;
     SplatResolution = std::clamp(SplatResolution, 5u, 513u);
-    ActiveRadiusChunks = std::max(0, ActiveRadiusChunks);
-    CacheRetentionRadius = std::max(ActiveRadiusChunks, CacheRetentionRadius);
+    ActiveRadiusChunks = std::clamp(ActiveRadiusChunks, 0, 32);
+    CacheRetentionRadius = std::clamp(std::max(ActiveRadiusChunks, CacheRetentionRadius), ActiveRadiusChunks, 64);
 
     const ChunkCoord center = WorldToChunk(viewerWorldPos.x, viewerWorldPos.z);
     m_LastViewerChunk = center;
@@ -540,7 +549,11 @@ void TerrainChunkManager::PaintWorldBrush(float worldX,
                                           float radiusWorld,
                                           float falloff,
                                           float strength) {
-    if (layerIndex >= TerrainComponent::MaxLayers || radiusWorld <= 0.0f || strength <= 0.0f) {
+    if (layerIndex >= TerrainComponent::MaxLayers ||
+        !std::isfinite(worldX) || !std::isfinite(worldZ) ||
+        !std::isfinite(radiusWorld) || radiusWorld <= 0.0f ||
+        !std::isfinite(falloff) ||
+        !std::isfinite(strength) || strength <= 0.0f) {
         ENGINE_CORE_WARN("TerrainChunkManager::PaintWorldBrush ignored invalid params (layer={}, radius={:.2f}, strength={:.2f})",
                          layerIndex, radiusWorld, strength);
         return;
@@ -603,14 +616,20 @@ void TerrainChunkManager::PaintWorldSegment(const glm::vec2& startXZ,
                                             float radiusWorld,
                                             float falloff,
                                             float strength) {
+    if (!std::isfinite(startXZ.x) || !std::isfinite(startXZ.y) ||
+        !std::isfinite(endXZ.x) || !std::isfinite(endXZ.y) ||
+        !std::isfinite(radiusWorld) || radiusWorld <= 0.0f ||
+        !std::isfinite(falloff) || !std::isfinite(strength) || strength <= 0.0f) {
+        return;
+    }
     const float segLen = glm::length(endXZ - startXZ);
-    if (segLen < 1e-4f) {
+    if (!std::isfinite(segLen) || segLen < 1e-4f) {
         PaintWorldBrush(startXZ.x, startXZ.y, layerIndex, radiusWorld, falloff, strength);
         return;
     }
 
     const float stepDist = std::max(0.1f, radiusWorld * 0.35f);
-    const int steps = std::max(1, static_cast<int>(std::ceil(segLen / stepDist)));
+    const int steps = std::clamp(static_cast<int>(std::ceil(segLen / stepDist)), 1, 4096);
 
     for (int i = 0; i <= steps; ++i) {
         const float t = static_cast<float>(i) / static_cast<float>(steps);
@@ -871,11 +890,14 @@ void TerrainChunkManager::ReleaseFirewallEntity(uint64_t uuid) {
 }
 
 SurfaceSample TerrainChunkManager::SampleSurfaceAtXZ(float worldX, float worldZ) const noexcept {
+    if (!std::isfinite(worldX) || !std::isfinite(worldZ)) {
+        return SurfaceSample{};
+    }
     const ChunkCoord coord = WorldToChunk(worldX, worldZ);
     const TerrainChunk* chunk = GetChunk(coord);
     const bool isBurning = m_FireGrid.IsBurningAtXZ(worldX, worldZ);
 
-    const float safeChunkSize = std::isfinite(ChunkSizeMeters) ? std::max(1.0f, ChunkSizeMeters) : 16.0f;
+    const float safeChunkSize = std::isfinite(ChunkSizeMeters) ? std::clamp(ChunkSizeMeters, 1.0f, 1024.0f) : 16.0f;
     if (chunk && (chunk->IsResident() || chunk->State == ChunkLoadState::CachedInRam) &&
         !chunk->SplatData.empty() && chunk->SplatResolution >= 2u) {
         const float chunkOriginX = static_cast<float>(coord.cx) * safeChunkSize;

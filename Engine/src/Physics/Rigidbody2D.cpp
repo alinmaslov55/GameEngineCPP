@@ -27,6 +27,9 @@ bool Rigidbody2D::IsAirborne() const noexcept {
 
 void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::ApplyImpulseXZ");
+    if (!std::isfinite(impulseXZ.x) || !std::isfinite(impulseXZ.y)) {
+        return;
+    }
     if (m_IsStasisFrozen) {
         m_QueuedStasisImpulseXZ += impulseXZ;
         ENGINE_CORE_TRACE("Rigidbody2D::ApplyImpulseXZ: Queued stasis impulse ({:.2f}, {:.2f}) on '{}'",
@@ -51,6 +54,9 @@ void Rigidbody2D::ApplyImpulseXZ(const glm::vec2& impulseXZ, bool wake) {
 
 void Rigidbody2D::ApplyForceXZ(const glm::vec2& forceXZ, bool wake) {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::ApplyForceXZ");
+    if (!std::isfinite(forceXZ.x) || !std::isfinite(forceXZ.y)) {
+        return;
+    }
     if (m_IsStasisFrozen) {
         return;
     }
@@ -70,6 +76,9 @@ void Rigidbody2D::ApplyForceXZ(const glm::vec2& forceXZ, bool wake) {
 
 void Rigidbody2D::SetVelocityXZ(const glm::vec2& velocityXZ) {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::SetVelocityXZ");
+    if (!std::isfinite(velocityXZ.x) || !std::isfinite(velocityXZ.y)) {
+        return;
+    }
     if (m_IsStasisFrozen) {
         m_StasisCachedVelocityXZ = velocityXZ;
         return;
@@ -175,6 +184,9 @@ void Rigidbody2D::SetStasisFrozen(bool frozen) {
 
 void Rigidbody2D::SetPositionXZ(const glm::vec2& worldXZ) {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::SetPositionXZ");
+    if (!std::isfinite(worldXZ.x) || !std::isfinite(worldXZ.y)) {
+        return;
+    }
     if (auto* go = GetGameObject()) {
         if (auto* t = go->GetTransform()) {
             if (t->GetParent()) {
@@ -197,6 +209,9 @@ void Rigidbody2D::SetPositionXZ(const glm::vec2& worldXZ) {
 
 void Rigidbody2D::SetLinearDampingRuntime(float damping) {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::SetLinearDampingRuntime");
+    if (!std::isfinite(damping) || damping < 0.0f) {
+        damping = 0.0f;
+    }
     LinearDamping = damping;
     if (std::abs(m_LastAppliedLinearDamping - damping) < 1e-4f) {
         return;
@@ -222,6 +237,9 @@ float Rigidbody2D::GetLinearDamping() const noexcept {
 
 void Rigidbody2D::SetAngularDampingRuntime(float damping) {
     AssertPhysicsOwnerThread(this, "Rigidbody2D::SetAngularDampingRuntime");
+    if (!std::isfinite(damping) || damping < 0.0f) {
+        damping = 0.0f;
+    }
     AngularDamping = damping;
     if (RuntimeBody.IsValid()) {
         b2BodyId bodyId = ToB2(RuntimeBody);
@@ -242,6 +260,9 @@ float Rigidbody2D::GetAngularDamping() const noexcept {
 }
 
 void Rigidbody2D::SetMassMultiplier(float multiplier) {
+    if (!std::isfinite(multiplier) || multiplier <= 0.0001f) {
+        return;
+    }
     MassMultiplier = multiplier;
     ApplyMassMultiplierToBody();
 }
@@ -255,12 +276,15 @@ void Rigidbody2D::ApplyMassMultiplierToBody() {
     if (!b2Body_IsValid(bodyId)) {
         return;
     }
-    if (m_BaseMass <= 0.0001f) {
+    if (m_BaseMass <= 0.0001f || !std::isfinite(m_BaseMass)) {
         const float currentMass = b2Body_GetMass(bodyId);
-        m_BaseMass = (currentMass > 0.0001f) ? currentMass : 1.0f;
+        m_BaseMass = (std::isfinite(currentMass) && currentMass > 0.0001f) ? currentMass : 1.0f;
     }
-    const float effectiveMultiplier = (MassMultiplier > 0.0001f) ? MassMultiplier : 1.0f;
+    const float effectiveMultiplier = (std::isfinite(MassMultiplier) && MassMultiplier > 0.0001f) ? MassMultiplier : 1.0f;
     const float targetMass = m_BaseMass * effectiveMultiplier;
+    if (!std::isfinite(targetMass) || targetMass <= 0.0001f) {
+        return;
+    }
     b2MassData massData = b2Body_GetMassData(bodyId);
     if (std::abs(massData.mass - targetMass) > 1e-5f) {
         if (massData.mass > 0.0001f) {

@@ -163,6 +163,7 @@ private:
 #endif
     Scene* m_Scene{ nullptr };
     bool m_IsRuntimeRunning{ false };
+    bool m_UpdatingRuntime{ false };
     bool m_ProcessingPhysicsEvents{ false };
     uint32_t m_PhysicsWorldId{ 0 };
     uint64_t m_RuntimeGeneration{ 0 };

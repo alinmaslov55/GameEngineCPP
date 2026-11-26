@@ -80,11 +80,27 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
     if (!std::isfinite(agentPositionXZ.x) || !std::isfinite(agentPositionXZ.y) ||
         !std::isfinite(targetXZ.x) || !std::isfinite(targetXZ.y) ||
         !std::isfinite(params.MaxSpeed) || params.MaxSpeed <= 0.0f) {
+        if (outInterest) outInterest->fill(0.0f);
+        if (outDanger) outDanger->fill(0.0f);
+        if (outContext) outContext->fill(0.0f);
         return glm::vec2(0.0f);
     }
     if (!std::isfinite(agentRadius) || agentRadius < 0.0f) {
         agentRadius = 0.35f;
     }
+
+    auto sanitizeNonNeg = [](float v, float fallback = 0.0f) noexcept -> float {
+        return (std::isfinite(v) && v >= 0.0f) ? v : fallback;
+    };
+    const float safeOrbitRadius = sanitizeNonNeg(params.TargetOrbitRadius, 0.0f);
+    const float safeArrivalRadius = sanitizeNonNeg(params.ArrivalRadius, 0.0f);
+    const float safeAvoidanceWeight = sanitizeNonNeg(params.AvoidanceWeight, 0.0f);
+    const float safeFireAvoidanceWeight = sanitizeNonNeg(params.FireAvoidanceWeight, 0.0f);
+    const float safeSeparationRadius = sanitizeNonNeg(params.SeparationRadius, 0.0f);
+    const float safeSeparationWeight = sanitizeNonNeg(params.SeparationWeight, 0.0f);
+    const float whiskerLen = std::isfinite(params.ObstacleWhiskerLength)
+        ? std::clamp(params.ObstacleWhiskerLength, 0.1f, 50.0f)
+        : 2.0f;
 
     const auto& dirs = GetSlotDirections();
 
@@ -96,21 +112,21 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
     const float distToTarget = glm::length(toTarget);
 
     // 1. Populate Interest Map
-    if (params.TargetOrbitRadius <= 0.0f) {
+    if (safeOrbitRadius <= 0.0f) {
         // Direct seek towards target
         glm::vec2 desiredDir{ 0.0f };
         if (distToTarget > 1e-4f) {
             desiredDir = toTarget / distToTarget;
         }
-        const float arrivalFactor = (params.ArrivalRadius > 0.0f)
-            ? std::clamp(distToTarget / params.ArrivalRadius, 0.25f, 1.0f)
+        const float arrivalFactor = (safeArrivalRadius > 0.0f)
+            ? std::clamp(distToTarget / safeArrivalRadius, 0.25f, 1.0f)
             : 1.0f;
         for (size_t i = 0; i < SlotCount; ++i) {
             interest[i] = std::max(0.0f, glm::dot(dirs[i], desiredDir)) * arrivalFactor;
         }
     } else {
         // Wisp Orbiting behavior: tangent to circle with radial correction
-        const float R = params.TargetOrbitRadius;
+        const float R = safeOrbitRadius;
         glm::vec2 fromTarget = agentPositionXZ - targetXZ;
         float distFromTarget = glm::length(fromTarget);
         if (distFromTarget < 1e-4f) {
@@ -142,7 +158,6 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
     }
 
     // 2. Populate Danger Map
-    const float whiskerLen = std::max(0.1f, params.ObstacleWhiskerLength);
     const uint64_t mask = (params.ObstacleCollisionMask != 0)
         ? params.ObstacleCollisionMask
         : (PhysicsLayer::Environment | PhysicsLayer::LowObstacle);
@@ -160,7 +175,7 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
             }
             const float hitDist = hit.Fraction * whiskerLen;
             const float closeness = std::clamp(1.0f - (hitDist / whiskerLen), 0.0f, 1.0f);
-            const float obsDanger = closeness * params.AvoidanceWeight;
+            const float obsDanger = closeness * safeAvoidanceWeight;
 
             danger[i] += obsDanger;
             // Diffuse to adjacent slots so agent avoids grazing boundaries
@@ -172,7 +187,7 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
     }
 
     // 2b. Burning Tar Cells - sample every <= 0.45m so 0.5m cells are never skipped
-    if (params.FireAvoidanceWeight > 0.0f) {
+    if (safeFireAvoidanceWeight > 0.0f) {
         constexpr float kFireProbeStep = 0.45f;
         const float probeStart = std::max(0.0f, agentRadius);
         const float probeEnd = probeStart + whiskerLen;
@@ -186,7 +201,7 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
                 }
             }
             if (hitsFire) {
-                const float fireDanger = params.FireAvoidanceWeight;
+                const float fireDanger = safeFireAvoidanceWeight;
                 danger[i] += fireDanger;
                 const size_t prevIdx = (i + SlotCount - 1) % SlotCount;
                 const size_t nextIdx = (i + 1) % SlotCount;
@@ -197,13 +212,16 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
     }
 
     // 2c. Neighbor Separation
-    if (params.SeparationRadius > 0.0f && params.SeparationWeight > 0.0f) {
+    if (safeSeparationRadius > 0.0f && safeSeparationWeight > 0.0f) {
         for (const auto& nbPos : neighborPositionsXZ) {
+            if (!std::isfinite(nbPos.x) || !std::isfinite(nbPos.y)) {
+                continue;
+            }
             const glm::vec2 toNeighbor = nbPos - agentPositionXZ;
             const float nbDist = glm::length(toNeighbor);
-            if (nbDist > 1e-4f && nbDist < params.SeparationRadius) {
-                const float sepRatio = 1.0f - (nbDist / params.SeparationRadius);
-                const float sepWeight = (sepRatio * 1.5f + sepRatio * sepRatio * 2.5f) * params.SeparationWeight;
+            if (nbDist > 1e-4f && nbDist < safeSeparationRadius) {
+                const float sepRatio = 1.0f - (nbDist / safeSeparationRadius);
+                const float sepWeight = (sepRatio * 1.5f + sepRatio * sepRatio * 2.5f) * safeSeparationWeight;
                 const glm::vec2 dirToNeighbor = toNeighbor / nbDist;
 
                 for (size_t i = 0; i < SlotCount; ++i) {
@@ -288,9 +306,9 @@ glm::vec2 SteeringSystem::EvaluateContextMap(
 
     // 5. Speed & Arrival Damping (skip arrival damping when escaping danger so cornered agents move at full speed)
     float speed = params.MaxSpeed;
-    if (!escapingDanger && params.TargetOrbitRadius <= 0.0f && params.ArrivalRadius > 0.0f) {
-        if (distToTarget < params.ArrivalRadius) {
-            const float t = std::clamp(distToTarget / params.ArrivalRadius, 0.0f, 1.0f);
+    if (!escapingDanger && safeOrbitRadius <= 0.0f && safeArrivalRadius > 0.0f) {
+        if (distToTarget < safeArrivalRadius) {
+            const float t = std::clamp(distToTarget / safeArrivalRadius, 0.0f, 1.0f);
             speed *= t;
         }
     }

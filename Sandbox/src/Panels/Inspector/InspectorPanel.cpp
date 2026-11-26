@@ -83,7 +83,7 @@ void DrawComponents(const char* label, Engine::GameObject* entity, UIFunction ui
         }
 
         if (removeComp) {
-            entity->RemoveComponent<T>();
+            entity->RemoveComponent(component);
             ENGINE_INFO("Inspector: Removed {} from '{}'", headerLabel, entity->GetName());
             ImGui::PopID();
             break;
@@ -277,9 +277,21 @@ void InspectorPanel::DrawAddComponentMenu(Engine::GameObject* entity) {
         DrawAddComponentEntry<Engine::CameraComponent>("Camera", entity);
         DrawAddComponentEntry<Engine::ParticleSystem>("Particle System", entity);
         DrawAddComponentEntry<Engine::Rigidbody2D>("Rigidbody 2D", entity);
-        DrawAddComponentEntry<Engine::BoxCollider2D>("Box Collider 2D", entity);
-        DrawAddComponentEntry<Engine::CircleCollider2D>("Circle Collider 2D", entity);
-        DrawAddComponentEntry<Engine::CapsuleCollider2D>("Capsule Collider 2D", entity);
+        if (ImGui::MenuItem("Box Collider 2D")) {
+            entity->AddComponent<Engine::BoxCollider2D>();
+            ENGINE_INFO("Inspector: Added Box Collider 2D to '{}'", entity->GetName());
+            ImGui::CloseCurrentPopup();
+        }
+        if (ImGui::MenuItem("Circle Collider 2D")) {
+            entity->AddComponent<Engine::CircleCollider2D>();
+            ENGINE_INFO("Inspector: Added Circle Collider 2D to '{}'", entity->GetName());
+            ImGui::CloseCurrentPopup();
+        }
+        if (ImGui::MenuItem("Capsule Collider 2D")) {
+            entity->AddComponent<Engine::CapsuleCollider2D>();
+            ENGINE_INFO("Inspector: Added Capsule Collider 2D to '{}'", entity->GetName());
+            ImGui::CloseCurrentPopup();
+        }
         ImGui::EndPopup();
     }
 }

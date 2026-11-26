@@ -14,18 +14,23 @@ using namespace PhysicsDetail;
 void CapsuleCollider2D::BuildShapeDefAndCreate(BodyHandle body, const Transform& transform, GameObject* go) {
     b2BodyId bodyId = ToB2(body);
     const glm::vec3 worldScale = transform.GetWorldScale();
-    float scaleX = std::abs(worldScale.x);
-    float scaleZ = std::abs(worldScale.z);
-    float scaleFactor = std::max(scaleX, scaleZ);
+    const float scaleX = std::isfinite(worldScale.x) ? std::abs(worldScale.x) : 1.0f;
+    const float scaleZ = std::isfinite(worldScale.z) ? std::abs(worldScale.z) : 1.0f;
+    const float scaleFactor = std::max(scaleX, scaleZ);
+    const float safeC1X = std::isfinite(Center1.x) ? Center1.x : 0.0f;
+    const float safeC1Y = std::isfinite(Center1.y) ? Center1.y : 0.0f;
+    const float safeC2X = std::isfinite(Center2.x) ? Center2.x : 0.0f;
+    const float safeC2Y = std::isfinite(Center2.y) ? Center2.y : 0.0f;
+    const float safeRadius = std::isfinite(Radius) ? std::abs(Radius) : 0.5f;
     b2Capsule capsule;
-    capsule.center1 = b2Vec2{ Center1.x * scaleX, Center1.y * scaleZ };
-    capsule.center2 = b2Vec2{ Center2.x * scaleX, Center2.y * scaleZ };
-    capsule.radius = std::max(0.001f, Radius * scaleFactor);
+    capsule.center1 = b2Vec2{ safeC1X * scaleX, safeC1Y * scaleZ };
+    capsule.center2 = b2Vec2{ safeC2X * scaleX, safeC2Y * scaleZ };
+    capsule.radius = std::clamp(safeRadius * scaleFactor, 0.001f, 1000.0f);
 
     const float dx = capsule.center2.x - capsule.center1.x;
     const float dy = capsule.center2.y - capsule.center1.y;
     const float halfLength = 0.5f * std::sqrt(dx * dx + dy * dy);
-    const bool isDegenerate = halfLength <= 1e-5f;
+    const bool isDegenerate = !std::isfinite(halfLength) || halfLength <= 1e-5f;
 
     b2Circle fallbackCircle;
     fallbackCircle.center = b2Vec2{ 0.5f * (capsule.center1.x + capsule.center2.x),

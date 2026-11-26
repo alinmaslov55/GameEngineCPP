@@ -461,6 +461,9 @@ void TerrainRenderer::RenderTerrain(TerrainComponent& terrain,
     s_TerrainData->GroundVAO->Bind();
     Renderer::DrawIndexed(s_TerrainData->GroundVAO, 6);
     shader.Unbind();
+    if (glad_glActiveTexture != nullptr) {
+        glActiveTexture(GL_TEXTURE0);
+    }
 }
 
 void TerrainRenderer::RenderChunkManager(TerrainChunkManager& chunkManager,
@@ -530,6 +533,9 @@ void TerrainRenderer::RenderChunkManager(TerrainChunkManager& chunkManager,
     }
 
     shader.Unbind();
+    if (glad_glActiveTexture != nullptr) {
+        glActiveTexture(GL_TEXTURE0);
+    }
 }
 
 void TerrainRenderer::SyncLayerTextures(const std::array<TerrainLayer, TerrainComponent::MaxLayers>& layers) {

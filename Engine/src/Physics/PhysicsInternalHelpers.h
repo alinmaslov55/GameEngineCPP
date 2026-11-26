@@ -39,9 +39,9 @@ inline uint64_t ResolveEffectiveMaskBits(GameObject* go, uint64_t baseMaskBits) 
 
 inline b2ShapeDef BuildDefaultColliderShapeDef(Collider2D* col, GameObject* go) {
     b2ShapeDef shapeDef = b2DefaultShapeDef();
-    shapeDef.density = col->Density;
-    shapeDef.material.friction = col->Friction;
-    shapeDef.material.restitution = col->Restitution;
+    shapeDef.density = (std::isfinite(col->Density) && col->Density >= 0.0f) ? col->Density : 0.0f;
+    shapeDef.material.friction = (std::isfinite(col->Friction) && col->Friction >= 0.0f) ? col->Friction : 0.0f;
+    shapeDef.material.restitution = (std::isfinite(col->Restitution) && col->Restitution >= 0.0f) ? col->Restitution : 0.0f;
     shapeDef.isSensor = col->IsSensor;
     shapeDef.enableSensorEvents = true;
     shapeDef.enableHitEvents = col->EnableHitEvents;

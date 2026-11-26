@@ -157,9 +157,20 @@ void Animator::DispatchEvent(const AnimationEvent& ev) {
         return;
     }
 
-    // Take a snapshot copy of the listeners for re-entrancy safety
+    // Take a snapshot copy of the listeners for re-entrancy safety, verifying handle membership and clip generation
+    const uint64_t startGen = m_PlayGeneration;
     auto snapshot = m_EventListeners;
     for (const auto& [handle, callback] : snapshot) {
+        if (m_PlayGeneration != startGen) {
+            break;
+        }
+        const bool stillRegistered = std::any_of(
+            m_EventListeners.begin(),
+            m_EventListeners.end(),
+            [handle](const auto& entry) { return entry.first == handle; });
+        if (!stillRegistered) {
+            continue;
+        }
         if (callback) {
             callback(ev.EventID, ev);
         }

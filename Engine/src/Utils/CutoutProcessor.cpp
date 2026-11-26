@@ -10,6 +10,7 @@
 #include <cstdio>
 #include <cstring>
 #include <fstream>
+#include <limits>
 #include <mutex>
 #include <nlohmann/json.hpp>
 #include <glm/glm.hpp>
@@ -255,7 +256,10 @@ CutoutProcessResult CutoutProcessor::ProcessRGBAInPlace(std::vector<uint8_t>& rg
                                                         uint32_t& height,
                                                         const CutoutProcessSettings& settings) {
     CutoutProcessResult result;
-    if (width == 0 || height == 0 || rgba.size() < static_cast<size_t>(width) * height * 4u) {
+    const uint64_t requiredBytes64 = static_cast<uint64_t>(width) * static_cast<uint64_t>(height) * 4ull;
+    if (width == 0 || height == 0 || width > 16384u || height > 16384u ||
+        requiredBytes64 > static_cast<uint64_t>(std::numeric_limits<size_t>::max()) ||
+        rgba.size() < static_cast<size_t>(requiredBytes64)) {
         result.ErrorMessage = "Invalid or empty RGBA image buffer";
         return result;
     }
@@ -300,13 +304,20 @@ CutoutProcessResult CutoutProcessor::ProcessRGBAInPlace(std::vector<uint8_t>& rg
                       minX, minY, maxX, maxY, result.ContentWidth, result.ContentHeight, result.SuggestedAspectRatio);
 
     if (settings.AutoTrimAndBottomFlush) {
-        uint32_t outW = result.ContentWidth + 2u * settings.HorizontalPaddingPx;
-        uint32_t outH = result.ContentHeight + settings.TopPaddingPx;
+        uint64_t outW64 = static_cast<uint64_t>(result.ContentWidth) + 2ull * static_cast<uint64_t>(settings.HorizontalPaddingPx);
+        uint64_t outH64 = static_cast<uint64_t>(result.ContentHeight) + static_cast<uint64_t>(settings.TopPaddingPx);
         if (settings.SquareCanvas) {
-            const uint32_t side = std::max(outW, outH);
-            outW = side;
-            outH = side;
+            const uint64_t side64 = std::max(outW64, outH64);
+            outW64 = side64;
+            outH64 = side64;
         }
+        if (outW64 == 0 || outH64 == 0 || outW64 > 16384ull || outH64 > 16384ull ||
+            outW64 * outH64 * 4ull > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+            result.ErrorMessage = "CutoutProcessor: Output dimensions exceed safe texture/buffer bounds";
+            return result;
+        }
+        const uint32_t outW = static_cast<uint32_t>(outW64);
+        const uint32_t outH = static_cast<uint32_t>(outH64);
 
         const uint32_t dstStartX = (outW - result.ContentWidth) / 2u;
         // Bottom-flush: lowest opaque row (maxY) lands directly on row (outH - 1), which maps to UV.y = 0.0!
@@ -390,6 +401,14 @@ CutoutProcessResult CutoutProcessor::ProcessFile(const std::filesystem::path& in
             ENGINE_CORE_ERROR("CutoutProcessor::ProcessFile failed: {}", result.ErrorMessage);
             return result;
         }
+    }
+
+    if (width == 0 || height == 0 || width > 16384u || height > 16384u ||
+        static_cast<uint64_t>(width) * 4ull > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
+        result.Success = false;
+        result.ErrorMessage = "Output dimensions exceed PNG encoder bounds";
+        ENGINE_CORE_ERROR("CutoutProcessor::ProcessFile failed: {}", result.ErrorMessage);
+        return result;
     }
 
     int writeOk = 0;
@@ -611,33 +630,37 @@ CutoutProcessResult CutoutProcessor::ProcessAnimationStrip(
     result.ContentHeight = unionContentH;
     result.SuggestedAspectRatio = static_cast<float>(unionContentW) / static_cast<float>(std::max(1u, unionContentH));
 
-    // Standardized cell size with padding
-    uint32_t cellW = unionContentW + 2u * settings.BaseSettings.HorizontalPaddingPx;
-    uint32_t cellH = unionContentH + settings.BaseSettings.TopPaddingPx +
-                     (settings.LockBottomFootPivot ? 0u : settings.BaseSettings.HorizontalPaddingPx);
+    // Standardized cell size with padding (64-bit to prevent uint32_t overflow)
+    uint64_t cellW64 = static_cast<uint64_t>(unionContentW) + 2ull * static_cast<uint64_t>(settings.BaseSettings.HorizontalPaddingPx);
+    uint64_t cellH64 = static_cast<uint64_t>(unionContentH) + static_cast<uint64_t>(settings.BaseSettings.TopPaddingPx) +
+                       (settings.LockBottomFootPivot ? 0ull : static_cast<uint64_t>(settings.BaseSettings.HorizontalPaddingPx));
 
     if (settings.BaseSettings.SquareCanvas) {
-        const uint32_t side = std::max(cellW, cellH);
-        cellW = side;
-        cellH = side;
+        const uint64_t side64 = std::max(cellW64, cellH64);
+        cellW64 = side64;
+        cellH64 = side64;
     }
 
-    const uint32_t dstStartX = settings.LockHorizontalCenter ? ((cellW - unionContentW) / 2u)
-                                                             : settings.BaseSettings.HorizontalPaddingPx;
-    const uint32_t dstStartY = settings.LockBottomFootPivot ? (cellH - unionContentH)
-                                                           : settings.BaseSettings.TopPaddingPx;
-
-    const size_t numFrames = frames.size();
-    const uint32_t outCols = (settings.Columns > 0u) ? settings.Columns : static_cast<uint32_t>(numFrames);
-    const uint32_t outRows = (static_cast<uint32_t>(numFrames) + outCols - 1u) / outCols;
-    const uint64_t sheetW64 = static_cast<uint64_t>(outCols) * static_cast<uint64_t>(cellW);
-    const uint64_t sheetH64 = static_cast<uint64_t>(outRows) * static_cast<uint64_t>(cellH);
-    if (sheetW64 == 0 || sheetH64 == 0 ||
+    const uint64_t numFrames64 = static_cast<uint64_t>(frames.size());
+    const uint64_t outCols64 = (settings.Columns > 0u) ? static_cast<uint64_t>(settings.Columns) : numFrames64;
+    const uint64_t outRows64 = (numFrames64 == 0 || outCols64 == 0) ? 0ull : ((numFrames64 - 1ull) / outCols64 + 1ull);
+    const uint64_t sheetW64 = (cellW64 <= 16384ull && outCols64 <= 16384ull) ? (outCols64 * cellW64) : (16384ull + 1ull);
+    const uint64_t sheetH64 = (cellH64 <= 16384ull && outRows64 <= 16384ull) ? (outRows64 * cellH64) : (16384ull + 1ull);
+    if (cellW64 == 0 || cellH64 == 0 || sheetW64 == 0 || sheetH64 == 0 ||
         sheetW64 > 16384ull || sheetH64 > 16384ull ||
         sheetW64 * sheetH64 * 4ull > static_cast<uint64_t>(std::numeric_limits<int>::max())) {
         result.ErrorMessage = "CutoutProcessor: Sheet dimensions exceed safe texture/buffer bounds";
         return result;
     }
+    const uint32_t cellW = static_cast<uint32_t>(cellW64);
+    const uint32_t cellH = static_cast<uint32_t>(cellH64);
+    const uint32_t outCols = static_cast<uint32_t>(outCols64);
+    const size_t numFrames = frames.size();
+
+    const uint32_t dstStartX = settings.LockHorizontalCenter ? ((cellW - unionContentW) / 2u)
+                                                             : settings.BaseSettings.HorizontalPaddingPx;
+    const uint32_t dstStartY = settings.LockBottomFootPivot ? (cellH - unionContentH)
+                                                           : settings.BaseSettings.TopPaddingPx;
     const uint32_t sheetW = static_cast<uint32_t>(sheetW64);
     const uint32_t sheetH = static_cast<uint32_t>(sheetH64);
 

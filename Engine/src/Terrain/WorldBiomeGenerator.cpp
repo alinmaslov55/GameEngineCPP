@@ -223,8 +223,13 @@ POISpawnDesc WorldBiomeGenerator::ComputeSuperCellPOI(int32_t superX,
 BiomeSample WorldBiomeGenerator::EvaluateBiomeAtXZ(float worldX,
                                                   float worldZ,
                                                   float chunkSizeMeters) const noexcept {
+    if (!std::isfinite(worldX) || !std::isfinite(worldZ)) {
+        worldX = 0.0f;
+        worldZ = 0.0f;
+    }
+    const float safeChunkSize = std::isfinite(chunkSizeMeters) ? std::clamp(chunkSizeMeters, 1.0f, 1024.0f) : 16.0f;
     const int32_t superChunks = std::max(1, m_Config.PoiSuperCellChunks);
-    const float superSize = static_cast<float>(superChunks) * std::max(1.0f, chunkSizeMeters);
+    const float superSize = static_cast<float>(superChunks) * safeChunkSize;
     const int32_t sx0 = static_cast<int32_t>(std::floor(worldX / superSize));
     const int32_t sz0 = static_cast<int32_t>(std::floor(worldZ / superSize));
 
@@ -232,10 +237,10 @@ BiomeSample WorldBiomeGenerator::EvaluateBiomeAtXZ(float worldX,
     localPOIs.reserve(9);
     for (int32_t dsz = -1; dsz <= 1; ++dsz) {
         for (int32_t dsx = -1; dsx <= 1; ++dsx) {
-            localPOIs.push_back(ComputeSuperCellPOI(sx0 + dsx, sz0 + dsz, chunkSizeMeters));
+            localPOIs.push_back(ComputeSuperCellPOI(sx0 + dsx, sz0 + dsz, safeChunkSize));
         }
     }
-    return EvaluateBiomeAtXZWithPOIs(worldX, worldZ, chunkSizeMeters, localPOIs);
+    return EvaluateBiomeAtXZWithPOIs(worldX, worldZ, safeChunkSize, localPOIs);
 }
 
 BiomeSample WorldBiomeGenerator::EvaluateBiomeAtXZWithPOIs(float worldX,

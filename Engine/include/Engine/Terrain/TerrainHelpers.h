@@ -161,7 +161,7 @@ inline bool WriteSplatTexel8(std::vector<uint8_t>& splat0,
                                                                  float fx,
                                                                  float fz,
                                                                  bool isBurning) noexcept {
-    if (width < 2u || height < 2u || splat0.empty()) {
+    if (width < 2u || height < 2u || splat0.empty() || !std::isfinite(fx) || !std::isfinite(fz)) {
         return SurfaceSample{};
     }
 

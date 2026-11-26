@@ -148,18 +148,20 @@ void Application::Run() {
 
 #ifdef ENGINE_BUILD_EDITOR
         // 3. Render UI Layer & Dockspace
-        ImGuiLayer::Begin();
-        ImGuiLayer::BeginDockspace();
+        if (ImGuiLayer::IsInitialized()) {
+            ImGuiLayer::Begin();
+            ImGuiLayer::BeginDockspace();
 
-        for (auto& layer : m_Layers) {
-            layer->OnImGuiRender();
-        }
-        if (m_ImGuiRenderCallback) {
-            m_ImGuiRenderCallback();
-        }
+            for (auto& layer : m_Layers) {
+                layer->OnImGuiRender();
+            }
+            if (m_ImGuiRenderCallback) {
+                m_ImGuiRenderCallback();
+            }
 
-        ImGuiLayer::EndDockspace();
-        ImGuiLayer::End();
+            ImGuiLayer::EndDockspace();
+            ImGuiLayer::End();
+        }
 #endif
 
         // 4. Swap Buffers

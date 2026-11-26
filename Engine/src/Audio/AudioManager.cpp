@@ -351,13 +351,8 @@ void AudioManager::Shutdown() {
     if (!s_TrackRegistryDestroyed.load(std::memory_order_acquire)) {
         auto& registry = GetTrackRegistry();
         if (registry.Alive.load(std::memory_order_acquire)) {
-            std::vector<AudioStreamTrack*> tracksToRelease;
-            {
-                std::lock_guard trackLock(registry.Mutex);
-                tracksToRelease = std::move(registry.Tracks);
-                registry.Tracks.clear();
-            }
-            for (AudioStreamTrack* track : tracksToRelease) {
+            std::lock_guard trackLock(registry.Mutex);
+            for (AudioStreamTrack* track : registry.Tracks) {
                 if (track) {
                     track->ReleaseAudioStream();
                 }

@@ -115,7 +115,8 @@ public:
 
         auto it = m_States.find(m_CurrentState);
         if (it != m_States.end() && it->second.OnUpdate) {
-            it->second.OnUpdate(ctx, safeDt);
+            auto onUpdate = it->second.OnUpdate;
+            onUpdate(ctx, safeDt);
         }
     }
 
