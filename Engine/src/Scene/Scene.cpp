@@ -732,8 +732,12 @@ void Scene::Update(float deltaTime) {
     if (m_TerrainCacheDirty) {
         RefreshTerrainCache();
     }
-    if (!m_CachedChunkManager && m_CachedTerrain && m_FiniteFireGrid) {
-        m_FiniteFireGrid->Update(deltaTime);
+    if (m_FiniteFireGrid) {
+        if (!m_CachedChunkManager && m_CachedTerrain) {
+            m_FiniteFireGrid->Update(deltaTime);
+        } else if (m_FiniteFireGrid->GetActiveFireCount() > 0) {
+            m_FiniteFireGrid->Clear();
+        }
     }
 }
 

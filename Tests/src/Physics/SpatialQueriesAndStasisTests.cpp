@@ -777,4 +777,25 @@ TEST(SpatialQueriesAndStasisTest, NonRuntimeFallbackParity_MultiCollidersDisable
     EXPECT_EQ(hits[0], tmGo);
 }
 
+TEST(SpatialQueriesAndStasisTest, NaNAndZeroScaleSafetyInOverlapAndRaycast) {
+    Engine::Scene scene("NaNQueryScene");
+    auto* go = scene.CreateGameObject("ZeroScaleTilemap");
+    go->GetTransform()->scale = { 0.0f, 1.0f, 0.0f };
+    auto* tm = go->AddComponent<Engine::Tilemap>(2, 2);
+    tm->SetTile(0, 0, 1, false);
+
+    const float nanVal = std::numeric_limits<float>::quiet_NaN();
+    std::vector<Engine::GameObject*> hits;
+    scene.OverlapCircleXZ({ nanVal, 0.0f }, 1.0f, Engine::PhysicsLayer::All, hits);
+    EXPECT_TRUE(hits.empty());
+    scene.OverlapCircleXZ({ 0.0f, 0.0f }, nanVal, Engine::PhysicsLayer::All, hits);
+    EXPECT_TRUE(hits.empty());
+    scene.OverlapArcXZ({ 0.0f, 0.0f }, { nanVal, 1.0f }, 5.0f, 45.0f, Engine::PhysicsLayer::All, hits);
+    EXPECT_TRUE(hits.empty());
+
+    Engine::RaycastHitXZ hit{};
+    EXPECT_FALSE(Engine::PhysicsQueries::RaycastClosestXZ(scene, { nanVal, 0.0f }, { 5.0f, 0.0f }, Engine::PhysicsLayer::All, hit));
+    EXPECT_FALSE(Engine::PhysicsQueries::RaycastClosestXZ(scene, { -1.0f, 0.0f }, { 1.0f, 0.0f }, 0u, hit));
+}
+
 } // namespace

@@ -123,7 +123,8 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
                 rb2d->m_InitialVelocityApplied = true;
             }
 
-            if (!go->IsActiveInHierarchy()) {
+            const bool shouldBeEnabled = go->IsActiveInHierarchy() && rb2d->IsEnabled();
+            if (!shouldBeEnabled) {
                 b2Body_Disable(bodyId);
             }
         } else {
@@ -131,6 +132,14 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
             if (b2Body_IsValid(bodyId)) {
                 if (b2Body_GetUserData(bodyId) != go) {
                     b2Body_SetUserData(bodyId, go);
+                }
+                const bool shouldBeEnabled = go->IsActiveInHierarchy() && rb2d->IsEnabled();
+                if (b2Body_IsEnabled(bodyId) != shouldBeEnabled) {
+                    if (shouldBeEnabled) {
+                        b2Body_Enable(bodyId);
+                    } else {
+                        b2Body_Disable(bodyId);
+                    }
                 }
                 if (rb2d->IsStasisFrozen()) {
                     if (rb2d->Type != Rigidbody2D::BodyType::Static) {
@@ -317,8 +326,23 @@ void PhysicsWorld2D::RegisterRuntimeBody(GameObject* go) {
         }
     }
 
-    if (tilemap && !tilemap->RuntimeBody.IsValid()) {
-        CreateRuntimeTilemapBody(go);
+    if (tilemap) {
+        if (!tilemap->RuntimeBody.IsValid()) {
+            CreateRuntimeTilemapBody(go);
+        }
+        if (tilemap->RuntimeBody.IsValid()) {
+            b2BodyId tmBodyId = b2LoadBodyId(tilemap->RuntimeBody.Value);
+            if (b2Body_IsValid(tmBodyId)) {
+                const bool shouldBeEnabled = go->IsActiveInHierarchy() && tilemap->IsEnabled();
+                if (b2Body_IsEnabled(tmBodyId) != shouldBeEnabled) {
+                    if (shouldBeEnabled) {
+                        b2Body_Enable(tmBodyId);
+                    } else {
+                        b2Body_Disable(tmBodyId);
+                    }
+                }
+            }
+        }
     }
 }
 
@@ -588,6 +612,33 @@ void PhysicsWorld2D::CreateRuntimeTilemapBody(GameObject* go) {
                       go->GetName(), width, height, shapeCount);
 }
 
+void Tilemap::OnEnable() {
+    if (auto* go = GetGameObject()) {
+        if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
+            scene->MarkPhysicsDirty(go);
+        }
+    }
+}
+
+void Tilemap::OnDisable() {
+    if (auto* go = GetGameObject()) {
+        if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
+            scene->MarkPhysicsDirty(go);
+        }
+    }
+}
+
+void Tilemap::OnDestroy() {
+    if (RuntimeBody.IsValid()) {
+        if (auto* go = GetGameObject()) {
+            if (auto* scene = go->GetScene(); scene && scene->IsRuntimeRunning()) {
+                scene->GetPhysicsWorld().UnregisterTilemap(RuntimeBody);
+            }
+        }
+        RuntimeBody.Reset();
+    }
+}
+
 namespace {
 
 class ScopedBox2DWorkerSlot {
@@ -790,6 +841,7 @@ void PhysicsWorld2D::OnRuntimeStart() {
 
     b2WorldId worldId = b2CreateWorld(&worldDef);
     m_PhysicsWorldId = b2StoreWorldId(worldId);
+    ++m_RuntimeGeneration;
     m_IsRuntimeRunning = true;
     m_PendingPhysicsSync.clear();
     m_PhysicsBodies.clear();
@@ -826,6 +878,7 @@ void PhysicsWorld2D::OnRuntimeStop() {
         b2DestroyWorld(worldId);
     }
     m_PhysicsWorldId = 0;
+    ++m_RuntimeGeneration;
     m_IsRuntimeRunning = false;
     m_Box2DWorkerCount = 1;
     m_PendingPhysicsSync.clear();
@@ -894,10 +947,14 @@ void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
             auto pendingSync = std::move(m_PendingPhysicsSync);
             m_PendingPhysicsSync.clear();
             for (auto* go : pendingSync) {
-                if (go && !go->IsPendingDestroy() && go->IsActiveInHierarchy()) {
+                if (go && !go->IsPendingDestroy()) {
                     RegisterRuntimeBody(go);
                 }
             }
+        }
+
+        if (!std::isfinite(deltaTime) || deltaTime < 0.0f) {
+            deltaTime = 0.0f;
         }
 
         const float fixedDt = std::max(0.001f, Time::GetFixedDeltaTime());
@@ -909,9 +966,13 @@ void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
             m_PhysicsAccumulator = maxAccumulation;
         }
 
-        b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
+        const uint64_t startGen = m_RuntimeGeneration;
 
         while (m_PhysicsAccumulator >= fixedDt) {
+            if (!m_IsRuntimeRunning || m_RuntimeGeneration != startGen) {
+                return;
+            }
+
             // Pass 1: Snapshot previous transforms across dense registered physics entries only
             for (const auto& entry : m_PhysicsBodies) {
                 if (entry.transform && entry.gameObject && !entry.gameObject->IsPendingDestroy() && entry.gameObject->IsActiveInHierarchy()) {
@@ -927,11 +988,15 @@ void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
                     auto* go = fixedEntities[i];
                     if (go && go->IsActiveInHierarchy() && !go->IsPendingDestroy() && go->HasFixedUpdate()) {
                         go->FixedUpdate(fixedDt);
+                        if (!m_IsRuntimeRunning || m_RuntimeGeneration != startGen) {
+                            return;
+                        }
                     }
                 }
             }
 
             // Step Box2D, sync ONLY moved bodies via b2World_GetBodyEvents, then dispatch contact/sensor events
+            b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
             if (b2World_IsValid(worldId)) {
                 b2World_Step(worldId, fixedDt, 4);
 
@@ -941,10 +1006,16 @@ void PhysicsWorld2D::UpdateRuntime(float deltaTime) {
                 }
 
                 ProcessPhysicsEvents();
+                if (!m_IsRuntimeRunning || m_RuntimeGeneration != startGen) {
+                    return;
+                }
             }
 
             // Pass 3: Dense vertical elevation integration & deduplicated airborne pass-through checks
             IntegrateVerticalElevation(fixedDt);
+            if (!m_IsRuntimeRunning || m_RuntimeGeneration != startGen) {
+                return;
+            }
 
             m_PhysicsAccumulator -= fixedDt;
         }
@@ -970,7 +1041,7 @@ void PhysicsWorld2D::EvaluateVerticalEntry(PhysicsBodyEntry& entry, float fixedD
     GameObject* go = entry.gameObject;
     Transform* transform = entry.transform;
     Rigidbody2D* rb2d = entry.rigidbody;
-    if (!go || !transform || !rb2d || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) {
+    if (!go || !transform || !rb2d || go->IsPendingDestroy() || !go->IsActiveInHierarchy() || !rb2d->IsEnabled()) {
         return;
     }
     if (rb2d->Type != Rigidbody2D::BodyType::Dynamic || rb2d->IsStasisFrozen()) {
@@ -1051,7 +1122,7 @@ void PhysicsWorld2D::IntegrateVerticalElevation(float fixedDt) {
         GameObject* go = entry.gameObject;
         Transform* transform = entry.transform;
         Rigidbody2D* rb2d = entry.rigidbody;
-        if (!go || !transform || !rb2d || go->IsPendingDestroy() || !go->IsActiveInHierarchy()) {
+        if (!go || !transform || !rb2d || go->IsPendingDestroy() || !go->IsActiveInHierarchy() || !rb2d->IsEnabled()) {
             continue;
         }
 
@@ -1099,9 +1170,21 @@ void PhysicsWorld2D::ApplyAirbornePassThroughFilter(GameObject* go, bool airborn
 
 void PhysicsWorld2D::ProcessPhysicsEvents() {
     AssertMainThreadAffinity("PhysicsWorld2D::ProcessPhysicsEvents");
-    if (!m_IsRuntimeRunning || !m_Scene) return;
+    if (!m_IsRuntimeRunning || !m_Scene || m_ProcessingPhysicsEvents) return;
     b2WorldId worldId = b2LoadWorldId(m_PhysicsWorldId);
     if (!b2World_IsValid(worldId)) return;
+
+    struct ProcessingGuard {
+        bool& flag;
+        explicit ProcessingGuard(bool& f) noexcept : flag(f) { flag = true; }
+        ~ProcessingGuard() noexcept { flag = false; }
+    } processingGuard(m_ProcessingPhysicsEvents);
+
+    const uint64_t expectedGen = m_RuntimeGeneration;
+    const uint32_t expectedWorldId = m_PhysicsWorldId;
+    auto isSameWorld = [this, expectedGen, expectedWorldId]() noexcept {
+        return m_IsRuntimeRunning && m_RuntimeGeneration == expectedGen && m_PhysicsWorldId == expectedWorldId;
+    };
 
     b2ContactEvents contacts = b2World_GetContactEvents(worldId);
     b2SensorEvents sensors = b2World_GetSensorEvents(worldId);
@@ -1157,7 +1240,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
 
     // 1. Process Contact Hit Events
     for (const b2ContactHitEvent& hit : m_HitEventsScratch) {
-        if (!m_IsRuntimeRunning) return;
+        if (!isSameWorld()) return;
         if (!b2Shape_IsValid(hit.shapeIdA) || !b2Shape_IsValid(hit.shapeIdB)) continue;
 
         b2BodyId bodyA = b2Shape_GetBody(hit.shapeIdA);
@@ -1204,7 +1287,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         infoB.EffectiveImpulse = effectiveImpulse;
 
         goA->DispatchCollisionEnter2D(infoA);
-        if (!m_IsRuntimeRunning) return;
+        if (!isSameWorld()) return;
         if (!goB->IsPendingDestroy()) {
             goB->DispatchCollisionEnter2D(infoB);
         }
@@ -1219,7 +1302,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
 
     // 2. Process Contact Begin Events (for pairs not already dispatched by hitEvents)
     for (const b2ContactBeginTouchEvent& begin : m_ContactBeginScratch) {
-        if (!m_IsRuntimeRunning) return;
+        if (!isSameWorld()) return;
         if (!b2Shape_IsValid(begin.shapeIdA) || !b2Shape_IsValid(begin.shapeIdB)) continue;
 
         const ShapePairKey pair = makePair(begin.shapeIdA, begin.shapeIdB);
@@ -1285,7 +1368,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         infoB.EffectiveImpulse = effectiveImpulse;
 
         goA->DispatchCollisionEnter2D(infoA);
-        if (!m_IsRuntimeRunning) return;
+        if (!isSameWorld()) return;
         if (!goB->IsPendingDestroy()) {
             goB->DispatchCollisionEnter2D(infoB);
         }
@@ -1293,7 +1376,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
 
     // 3. Process Contact End Events
     for (const b2ContactEndTouchEvent& end : m_ContactEndScratch) {
-        if (!m_IsRuntimeRunning) return;
+        if (!isSameWorld()) return;
         if (!b2Shape_IsValid(end.shapeIdA) || !b2Shape_IsValid(end.shapeIdB)) continue;
 
         b2BodyId bodyA = b2Shape_GetBody(end.shapeIdA);
@@ -1306,7 +1389,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
 
         if (!goA->IsPendingDestroy()) {
             goA->DispatchCollisionExit2D(goB);
-            if (!m_IsRuntimeRunning) return;
+            if (!isSameWorld()) return;
         }
         if (!goB->IsPendingDestroy()) {
             goB->DispatchCollisionExit2D(goA);
@@ -1315,7 +1398,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
 
     // 4. Process Sensor Begin Events
     for (const b2SensorBeginTouchEvent& begin : m_SensorBeginScratch) {
-        if (!m_IsRuntimeRunning) return;
+        if (!isSameWorld()) return;
         if (!b2Shape_IsValid(begin.sensorShapeId) || !b2Shape_IsValid(begin.visitorShapeId)) continue;
 
         b2BodyId sensorBody = b2Shape_GetBody(begin.sensorShapeId);
@@ -1328,7 +1411,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
         if (sensorGo->IsPendingDestroy() || visitorGo->IsPendingDestroy()) continue;
 
         sensorGo->DispatchTriggerEnter2D(visitorGo);
-        if (!m_IsRuntimeRunning) return;
+        if (!isSameWorld()) return;
         if (!visitorGo->IsPendingDestroy() && !sensorGo->IsPendingDestroy()) {
             visitorGo->DispatchTriggerEnter2D(sensorGo);
         }
@@ -1336,7 +1419,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
 
     // 5. Process Sensor End Events
     for (const b2SensorEndTouchEvent& end : m_SensorEndScratch) {
-        if (!m_IsRuntimeRunning) return;
+        if (!isSameWorld()) return;
         if (!b2Shape_IsValid(end.sensorShapeId) || !b2Shape_IsValid(end.visitorShapeId)) continue;
 
         b2BodyId sensorBody = b2Shape_GetBody(end.sensorShapeId);
@@ -1349,7 +1432,7 @@ void PhysicsWorld2D::ProcessPhysicsEvents() {
 
         if (!sensorGo->IsPendingDestroy()) {
             sensorGo->DispatchTriggerExit2D(visitorGo);
-            if (!m_IsRuntimeRunning) return;
+            if (!isSameWorld()) return;
         }
         if (!visitorGo->IsPendingDestroy()) {
             visitorGo->DispatchTriggerExit2D(sensorGo);

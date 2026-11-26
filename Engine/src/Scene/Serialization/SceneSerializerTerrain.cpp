@@ -315,16 +315,20 @@ void DeserializeTerrainChunkManager(GameObject* go, const json& tcmJson, const s
             if (!mcJson.contains("SplatDataBase64") || !mcJson["SplatDataBase64"].is_string()) {
                 continue;
             }
+            std::vector<uint8_t> decodedSplat;
+            if (!TerrainComponent::DecodeRGBABase64(mcJson["SplatDataBase64"].get<std::string>(), cRes, cRes, decodedSplat)) {
+                ENGINE_CORE_WARN("SceneSerializer: Invalid SplatDataBase64 on chunk ({}, {})", cx, cz);
+                continue;
+            }
             TerrainChunk& chunk = mgr->EnsureEditableChunk({ cx, cz });
             chunk.SplatResolution = cRes;
-            if (TerrainComponent::DecodeRGBABase64(mcJson["SplatDataBase64"].get<std::string>(), cRes, cRes, chunk.SplatData)) {
-                if (mcJson.contains("SplatData1Base64") && mcJson["SplatData1Base64"].is_string()) {
-                    if (!TerrainComponent::DecodeRGBABase64(mcJson["SplatData1Base64"].get<std::string>(), cRes, cRes, chunk.SplatData1)) {
-                        ENGINE_CORE_WARN("SceneSerializer: Invalid SplatData1Base64 on chunk ({}, {})", cx, cz);
-                    }
+            chunk.SplatData = std::move(decodedSplat);
+            if (mcJson.contains("SplatData1Base64") && mcJson["SplatData1Base64"].is_string()) {
+                if (!TerrainComponent::DecodeRGBABase64(mcJson["SplatData1Base64"].get<std::string>(), cRes, cRes, chunk.SplatData1)) {
+                    ENGINE_CORE_WARN("SceneSerializer: Invalid SplatData1Base64 on chunk ({}, {})", cx, cz);
                 }
-                chunk.MarkDirtyRect(0u, 0u, cRes - 1u, cRes - 1u, true);
             }
+            chunk.MarkDirtyRect(0u, 0u, cRes - 1u, cRes - 1u, true);
         }
     }
 

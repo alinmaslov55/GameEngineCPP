@@ -280,4 +280,29 @@ TEST(TerrainFireGridTest, FireDecaySpawnsGroundDecal) {
     EXPECT_GT(scene->GetDecalManager().GetActiveCount(), 0u);
 }
 
+TEST(TerrainFireGridTest, CoarseTerrainDoesNotPerpetuallyReigniteAndRejectsNaN) {
+    Engine::TerrainFireGrid grid;
+    // Finite tar puddle with no-op scorch callback (simulating coarse splatmap texels)
+    grid.ConfigureCallbacks(
+        [](float wx, float wz) { return (std::abs(wx) <= 1.0f && std::abs(wz) <= 1.0f) ? 1.0f : 0.0f; },
+        nullptr,
+        nullptr,
+        nullptr
+    );
+
+    const float nanVal = std::numeric_limits<float>::quiet_NaN();
+    grid.IgniteAtXZ({ nanVal, 0.0f }, 1.0f);
+    grid.IgniteAtXZ({ 0.0f, 0.0f }, nanVal);
+    EXPECT_EQ(grid.GetActiveFireCount(), 0u);
+
+    grid.IgniteAtXZ({ 0.25f, 0.25f }, 0.2f);
+    ASSERT_EQ(grid.GetActiveFireCount(), 1u);
+
+    // Step 12 seconds (> 2x MaxBurnDuration): fire must spread once and eventually burn out completely
+    for (int i = 0; i < 120; ++i) {
+        grid.Update(0.1f);
+    }
+    EXPECT_EQ(grid.GetActiveFireCount(), 0u);
+}
+
 } // namespace

@@ -377,10 +377,10 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
     for (int32_t dsz = -1; dsz <= 1; ++dsz) {
         for (int32_t dsx = -1; dsx <= 1; ++dsx) {
             const POISpawnDesc poi = ComputeSuperCellPOI(sxCenter + dsx, szCenter + dsz, safeSize);
-            if (poi.WorldPosition.x + poi.ApronRadius >= chunkMinX - 4.0f &&
-                poi.WorldPosition.x - poi.ApronRadius <= chunkMaxX + 4.0f &&
-                poi.WorldPosition.z + poi.ApronRadius >= chunkMinZ - 4.0f &&
-                poi.WorldPosition.z - poi.ApronRadius <= chunkMaxZ + 4.0f) {
+            if (poi.WorldPosition.x + poi.ApronRadius >= chunkMinX - 5.0f &&
+                poi.WorldPosition.x - poi.ApronRadius <= chunkMaxX + 5.0f &&
+                poi.WorldPosition.z + poi.ApronRadius >= chunkMinZ - 5.0f &&
+                poi.WorldPosition.z - poi.ApronRadius <= chunkMaxZ + 5.0f) {
                 exclusionPOIs.push_back(poi);
             }
             if (poi.WorldPosition.x >= chunkMinX && poi.WorldPosition.x < chunkMaxX &&
@@ -418,14 +418,7 @@ void WorldBiomeGenerator::GenerateChunkData(int32_t cx,
     std::vector<glm::vec2> nearbyTier0Trunks;
 
     auto getDominantBiomeAt = [&](float wx, float wz) noexcept -> BiomeType {
-        if (wx >= chunkMinX && wx <= chunkMaxX && wz >= chunkMinZ && wz <= chunkMaxZ) {
-            const float u = std::clamp((wx - chunkMinX) / safeSize, 0.0f, 1.0f);
-            const float v = std::clamp((wz - chunkMinZ) / safeSize, 0.0f, 1.0f);
-            const uint32_t px = std::min(static_cast<uint32_t>(std::round(u * static_cast<float>(cellSpan))), cellSpan);
-            const uint32_t pz = std::min(static_cast<uint32_t>(std::round(v * static_cast<float>(cellSpan))), cellSpan);
-            return outBiomeMap[pz * res + px];
-        }
-        // For neighbor candidates in adjacent chunks, evaluate true global biome to preserve Poisson MinDist
+        // Always evaluate continuous global biome so cross-chunk Poisson arbitration is symmetric
         return EvaluateBiomeAtXZWithPOIs(wx, wz, safeSize, exclusionPOIs).DominantBiome;
     };
 

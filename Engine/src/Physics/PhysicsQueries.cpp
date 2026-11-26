@@ -122,8 +122,9 @@ bool Box2DRayOriginOverlapCallback(b2ShapeId shapeId, void* context) {
 void PhysicsQueries::OverlapCircleXZ(const Scene& scene, glm::vec2 centerXZ, float radius,
                                     uint64_t maskBits, std::vector<GameObject*>& outHits) {
     outHits.clear();
-    if (radius <= 0.0f) {
-        ENGINE_CORE_WARN("PhysicsQueries::OverlapCircleXZ ignored non-positive radius {}", radius);
+    if (!std::isfinite(centerXZ.x) || !std::isfinite(centerXZ.y) || !std::isfinite(radius) || radius <= 0.0f) {
+        ENGINE_CORE_WARN("PhysicsQueries::OverlapCircleXZ ignored invalid center/radius ({}, {}, r={})",
+                         centerXZ.x, centerXZ.y, radius);
         return;
     }
 
@@ -152,15 +153,21 @@ void PhysicsQueries::OverlapCircleXZ(const Scene& scene, glm::vec2 centerXZ, flo
         if (!t) continue;
         const glm::vec3 worldPos = t->GetWorldPosition();
         const glm::vec3 worldScale = t->GetWorldScale();
+        const float yawDeg = t->GetWorldRotation().y;
+        if (!std::isfinite(worldPos.x) || !std::isfinite(worldPos.z) ||
+            !std::isfinite(worldScale.x) || !std::isfinite(worldScale.z) ||
+            !std::isfinite(yawDeg)) {
+            continue;
+        }
         const glm::vec2 posXZ{ worldPos.x, worldPos.z };
         const glm::vec2 scaleXZ{ std::abs(worldScale.x), std::abs(worldScale.z) };
-        const float yawRad = glm::radians(t->GetWorldRotation().y);
+        const float yawRad = glm::radians(yawDeg);
         const float cosY = std::cos(yawRad);
         const float sinY = std::sin(yawRad);
 
         bool overlaps = false;
         for (const auto* cc : go->GetComponents<CircleCollider2D>()) {
-            if (!cc->IsEnabled() || (cc->CategoryBits & maskBits) == 0) continue;
+            if (!cc->IsEnabled() || (cc->CategoryBits & maskBits) == 0 || (cc->MaskBits & PhysicsLayer::All) == 0) continue;
             const float effectiveRadius = cc->Radius * std::max(scaleXZ.x, scaleXZ.y);
             const glm::vec2 center = posXZ + RotateXZ(cc->OffsetXZ * scaleXZ, cosY, sinY);
             if (glm::distance(centerXZ, center) <= (radius + effectiveRadius)) {
@@ -171,7 +178,7 @@ void PhysicsQueries::OverlapCircleXZ(const Scene& scene, glm::vec2 centerXZ, flo
         if (!overlaps) {
             const glm::vec2 localCenter = InverseRotateXZ(centerXZ - posXZ, cosY, sinY);
             for (const auto* bc : go->GetComponents<BoxCollider2D>()) {
-                if (!bc->IsEnabled() || (bc->CategoryBits & maskBits) == 0) continue;
+                if (!bc->IsEnabled() || (bc->CategoryBits & maskBits) == 0 || (bc->MaskBits & PhysicsLayer::All) == 0) continue;
                 const glm::vec2 bMin = bc->offset * scaleXZ - bc->size * scaleXZ * 0.5f;
                 const glm::vec2 bMax = bc->offset * scaleXZ + bc->size * scaleXZ * 0.5f;
                 const glm::vec2 closest = glm::clamp(localCenter, bMin, bMax);
@@ -183,7 +190,7 @@ void PhysicsQueries::OverlapCircleXZ(const Scene& scene, glm::vec2 centerXZ, flo
         }
         if (!overlaps) {
             for (const auto* cap : go->GetComponents<CapsuleCollider2D>()) {
-                if (!cap->IsEnabled() || (cap->CategoryBits & maskBits) == 0) continue;
+                if (!cap->IsEnabled() || (cap->CategoryBits & maskBits) == 0 || (cap->MaskBits & PhysicsLayer::All) == 0) continue;
                 const glm::vec2 a = posXZ + RotateXZ(cap->Center1 * scaleXZ, cosY, sinY);
                 const glm::vec2 b = posXZ + RotateXZ(cap->Center2 * scaleXZ, cosY, sinY);
                 const float effectiveRadius = cap->Radius * std::max(scaleXZ.x, scaleXZ.y);
@@ -235,8 +242,11 @@ void PhysicsQueries::OverlapArcXZ(const Scene& scene, glm::vec2 originXZ, glm::v
                                  float radius, float halfAngleDegrees, uint64_t maskBits,
                                  std::vector<GameObject*>& outHits) {
     outHits.clear();
-    if (radius <= 0.0f || halfAngleDegrees <= 0.0f) {
-        ENGINE_CORE_WARN("PhysicsQueries::OverlapArcXZ ignored non-positive radius {} or halfAngle {}", radius, halfAngleDegrees);
+    if (!std::isfinite(originXZ.x) || !std::isfinite(originXZ.y) ||
+        !std::isfinite(forwardXZ.x) || !std::isfinite(forwardXZ.y) ||
+        !std::isfinite(radius) || !std::isfinite(halfAngleDegrees) ||
+        radius <= 0.0f || halfAngleDegrees <= 0.0f) {
+        ENGINE_CORE_WARN("PhysicsQueries::OverlapArcXZ ignored invalid parameters (r={}, halfAngle={})", radius, halfAngleDegrees);
         return;
     }
 
@@ -276,9 +286,14 @@ void PhysicsQueries::OverlapArcXZ(const Scene& scene, glm::vec2 originXZ, glm::v
 bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm::vec2 endXZ,
                                       uint64_t maskBits, RaycastHitXZ& outHit) {
     outHit = RaycastHitXZ{};
+    if (!std::isfinite(startXZ.x) || !std::isfinite(startXZ.y) ||
+        !std::isfinite(endXZ.x) || !std::isfinite(endXZ.y)) {
+        ENGINE_CORE_TRACE("PhysicsQueries::RaycastClosestXZ skipped non-finite ray endpoints");
+        return false;
+    }
     glm::vec2 diff = endXZ - startXZ;
     float maxDist = glm::length(diff);
-    if (maxDist < 1e-5f) {
+    if (!std::isfinite(maxDist) || maxDist < 1e-5f) {
         ENGINE_CORE_TRACE("PhysicsQueries::RaycastClosestXZ skipped degenerate zero-length ray");
         return false;
     }
@@ -327,15 +342,21 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
         if (!t) continue;
         const glm::vec3 worldPos = t->GetWorldPosition();
         const glm::vec3 worldScale = t->GetWorldScale();
+        const float yawDeg = t->GetWorldRotation().y;
+        if (!std::isfinite(worldPos.x) || !std::isfinite(worldPos.z) ||
+            !std::isfinite(worldScale.x) || !std::isfinite(worldScale.z) ||
+            !std::isfinite(yawDeg)) {
+            continue;
+        }
         const glm::vec2 posXZ{ worldPos.x, worldPos.z };
         const glm::vec2 scaleXZ{ std::abs(worldScale.x), std::abs(worldScale.z) };
-        const float yawRad = glm::radians(t->GetWorldRotation().y);
+        const float yawRad = glm::radians(yawDeg);
         const float cosY = std::cos(yawRad);
         const float sinY = std::sin(yawRad);
 
         // 1. CircleCollider2D
         for (const auto* cc : go->GetComponents<CircleCollider2D>()) {
-            if (!cc->IsEnabled() || cc->IsSensor || (cc->CategoryBits & maskBits) == 0) continue;
+            if (!cc->IsEnabled() || cc->IsSensor || (cc->CategoryBits & maskBits) == 0 || (cc->MaskBits & PhysicsLayer::All) == 0) continue;
             const float effectiveRadius = cc->Radius * std::max(scaleXZ.x, scaleXZ.y);
             const glm::vec2 center = posXZ + RotateXZ(cc->OffsetXZ * scaleXZ, cosY, sinY);
             const glm::vec2 d = diff;
@@ -373,7 +394,7 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
 
         // 2. BoxCollider2D
         for (const auto* bc : go->GetComponents<BoxCollider2D>()) {
-            if (!bc->IsEnabled() || bc->IsSensor || (bc->CategoryBits & maskBits) == 0) continue;
+            if (!bc->IsEnabled() || bc->IsSensor || (bc->CategoryBits & maskBits) == 0 || (bc->MaskBits & PhysicsLayer::All) == 0) continue;
             // Transform ray into box's local XZ frame (inverse of right-handed +yawRad around Y)
             const glm::vec2 localStart = InverseRotateXZ(startXZ - posXZ, cosY, sinY);
             const glm::vec2 localDiff = InverseRotateXZ(diff, cosY, sinY);
@@ -439,7 +460,7 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
 
         // 3. CapsuleCollider2D
         for (const auto* cap : go->GetComponents<CapsuleCollider2D>()) {
-            if (!cap->IsEnabled() || cap->IsSensor || (cap->CategoryBits & maskBits) == 0) continue;
+            if (!cap->IsEnabled() || cap->IsSensor || (cap->CategoryBits & maskBits) == 0 || (cap->MaskBits & PhysicsLayer::All) == 0) continue;
             const glm::vec2 p1 = posXZ + RotateXZ(cap->Center1 * scaleXZ, cosY, sinY);
             const glm::vec2 p2 = posXZ + RotateXZ(cap->Center2 * scaleXZ, cosY, sinY);
             const float r = cap->Radius * std::max(scaleXZ.x, scaleXZ.y);
@@ -520,6 +541,9 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
                 auto testCapCircle = [&](const glm::vec2& center) {
                     const glm::vec2 f = startXZ - center;
                     const float a = glm::dot(diff, diff);
+                    if (a <= 1e-12f) {
+                        return;
+                    }
                     const float b = 2.0f * glm::dot(f, diff);
                     const float c = glm::dot(f, f) - r * r;
                     float disc = b * b - 4.0f * a * c;
@@ -528,7 +552,9 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
                         const float t1 = (-b - disc) / (2.0f * a);
                         if (t1 >= 0.0f && t1 < bestCapT) {
                             bestCapT = t1;
-                            bestCapNormal = glm::normalize((startXZ + t1 * diff) - center);
+                            const glm::vec2 n = (startXZ + t1 * diff) - center;
+                            const float nLen = glm::length(n);
+                            bestCapNormal = (nLen > 1e-6f) ? (n / nLen) : -glm::normalize(diff);
                             hitCap = true;
                         }
                     }
@@ -554,9 +580,11 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
                 const uint32_t width = tm->GetWidth();
                 const uint32_t height = tm->GetHeight();
                 if (width > 0 && height > 0) {
-                    const glm::vec2 tmMin = posXZ - glm::vec2(0.5f * scaleXZ.x, 0.5f * scaleXZ.y);
-                    const glm::vec2 tmMax = posXZ + glm::vec2((static_cast<float>(width) - 0.5f) * scaleXZ.x,
-                                                              (static_cast<float>(height) - 0.5f) * scaleXZ.y);
+                    const float safeScaleX = std::max(0.001f, scaleXZ.x);
+                    const float safeScaleZ = std::max(0.001f, scaleXZ.y);
+                    const glm::vec2 tmMin = posXZ - glm::vec2(0.5f * safeScaleX, 0.5f * safeScaleZ);
+                    const glm::vec2 tmMax = posXZ + glm::vec2((static_cast<float>(width) - 0.5f) * safeScaleX,
+                                                              (static_cast<float>(height) - 0.5f) * safeScaleZ);
 
                     float tEnter = 0.0f;
                     float tExit = closestFraction;
@@ -586,10 +614,10 @@ bool PhysicsQueries::RaycastClosestXZ(const Scene& scene, glm::vec2 startXZ, glm
                             for (uint32_t gx = 0; gx < width; ++gx) {
                                 if (tm->GetTile(gx, gz).walkable) continue;
 
-                                const float centerX = posXZ.x + static_cast<float>(gx) * scaleXZ.x;
-                                const float centerZ = posXZ.y + static_cast<float>(gz) * scaleXZ.y;
-                                const float halfW = 0.5f * scaleXZ.x;
-                                const float halfD = 0.5f * scaleXZ.y;
+                                const float centerX = posXZ.x + static_cast<float>(gx) * safeScaleX;
+                                const float centerZ = posXZ.y + static_cast<float>(gz) * safeScaleZ;
+                                const float halfW = 0.5f * safeScaleX;
+                                const float halfD = 0.5f * safeScaleZ;
 
                                 const glm::vec2 bMin{ centerX - halfW, centerZ - halfD };
                                 const glm::vec2 bMax{ centerX + halfW, centerZ + halfD };

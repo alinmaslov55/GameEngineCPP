@@ -96,6 +96,7 @@ private:
     void SimulateTick(float tickDt);
 
     std::unordered_map<FireCellCoord, ActiveFireCell, FireCellCoordHash> m_ActiveCells;
+    std::unordered_map<FireCellCoord, float, FireCellCoordHash> m_ScorchedCooldowns;
     float m_TickAccumulator = 0.0f;
 
     FlammabilityQuery m_FlammabilityQuery;

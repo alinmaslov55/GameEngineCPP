@@ -83,7 +83,7 @@ void TerrainChunkManager::ShutdownAsyncWorkers() noexcept {
 }
 
 ChunkCoord TerrainChunkManager::WorldToChunk(float worldX, float worldZ) const noexcept {
-    const float safeChunkSize = std::max(1.0f, ChunkSizeMeters);
+    const float safeChunkSize = std::isfinite(ChunkSizeMeters) ? std::max(1.0f, ChunkSizeMeters) : 16.0f;
     return {
         static_cast<int32_t>(std::floor(worldX / safeChunkSize)),
         static_cast<int32_t>(std::floor(worldZ / safeChunkSize))
@@ -242,6 +242,10 @@ void TerrainChunkManager::SynchronizeSharedBorders(TerrainChunk& chunk) noexcept
     }
 
     const uint32_t R = chunk.SplatResolution;
+    const size_t expectedBytes = static_cast<size_t>(R) * static_cast<size_t>(R) * 4u;
+    if (chunk.SplatData.size() < expectedBytes) {
+        return;
+    }
     const uint32_t last = R - 1u;
 
     for (int32_t dz = -1; dz <= 1; ++dz) {
@@ -250,7 +254,7 @@ void TerrainChunkManager::SynchronizeSharedBorders(TerrainChunk& chunk) noexcept
                 continue;
             }
             const TerrainChunk* neighbor = GetChunk({ chunk.Coord.cx + dx, chunk.Coord.cz + dz });
-            if (!neighbor || neighbor->SplatData.empty() || neighbor->SplatResolution != R ||
+            if (!neighbor || neighbor->SplatData.size() < expectedBytes || neighbor->SplatResolution != R ||
                 neighbor->State == ChunkLoadState::Generating) {
                 continue;
             }
@@ -450,6 +454,11 @@ void TerrainChunkManager::FlushPendingGenerations() {
     }
     m_InFlightJobs.clear();
     DrainReadyPayloads();
+
+    // Prevent orphaned Generating chunks if any job was aborted or dropped
+    std::erase_if(m_Chunks, [](const auto& kv) {
+        return kv.second.State == ChunkLoadState::Generating && kv.second.SplatData.empty();
+    });
 }
 
 uint32_t TerrainChunkManager::ProcessGpuUploadRing() {
@@ -866,12 +875,13 @@ SurfaceSample TerrainChunkManager::SampleSurfaceAtXZ(float worldX, float worldZ)
     const TerrainChunk* chunk = GetChunk(coord);
     const bool isBurning = m_FireGrid.IsBurningAtXZ(worldX, worldZ);
 
+    const float safeChunkSize = std::isfinite(ChunkSizeMeters) ? std::max(1.0f, ChunkSizeMeters) : 16.0f;
     if (chunk && (chunk->IsResident() || chunk->State == ChunkLoadState::CachedInRam) &&
         !chunk->SplatData.empty() && chunk->SplatResolution >= 2u) {
-        const float chunkOriginX = static_cast<float>(coord.cx) * ChunkSizeMeters;
-        const float chunkOriginZ = static_cast<float>(coord.cz) * ChunkSizeMeters;
-        const float u = std::clamp((worldX - chunkOriginX) / ChunkSizeMeters, 0.0f, 1.0f);
-        const float v = std::clamp((worldZ - chunkOriginZ) / ChunkSizeMeters, 0.0f, 1.0f);
+        const float chunkOriginX = static_cast<float>(coord.cx) * safeChunkSize;
+        const float chunkOriginZ = static_cast<float>(coord.cz) * safeChunkSize;
+        const float u = std::clamp((worldX - chunkOriginX) / safeChunkSize, 0.0f, 1.0f);
+        const float v = std::clamp((worldZ - chunkOriginZ) / safeChunkSize, 0.0f, 1.0f);
 
         const float span = static_cast<float>(chunk->SplatResolution - 1u);
         return TerrainHelpers::EvaluateBilinearSurfaceSample(

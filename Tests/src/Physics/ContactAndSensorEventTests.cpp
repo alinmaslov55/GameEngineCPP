@@ -653,3 +653,55 @@ TEST_F(ContactAndSensorEventTest, TriggerEnter_SkipsPendingDestroyEntities) {
     EXPECT_EQ(recv->TriggerEnterCount, 0u);
     scene.OnRuntimeStop();
 }
+
+namespace {
+struct StopAndRestartOnTrigger : public Engine::Component {
+    Engine::Scene* scene = nullptr;
+    int triggerCalls = 0;
+    void OnTriggerEnter2D(Engine::GameObject*) override {
+        ++triggerCalls;
+        if (scene) {
+            scene->OnRuntimeStop();
+            scene->OnRuntimeStart();
+        }
+    }
+};
+} // namespace
+
+TEST_F(ContactAndSensorEventTest, TriggerRestartInCallbackKeepsWorldIdSafeAndAccumulatorNonNegative) {
+    Engine::Scene scene("RestartInTriggerScene");
+
+    auto* sensor = scene.CreateGameObject("Sensor");
+    sensor->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* col = sensor->AddComponent<Engine::CircleCollider2D>();
+    col->Radius = 1.5f;
+    col->IsSensor = true;
+    auto* restarter = sensor->AddComponent<StopAndRestartOnTrigger>();
+    restarter->scene = &scene;
+
+    auto* visitor = scene.CreateGameObject("Visitor");
+    visitor->GetTransform()->position = { 0.2f, 0.0f, 0.0f };
+    auto* rb = visitor->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    visitor->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+
+    scene.OnRuntimeStart();
+    scene.UpdateRuntime(0.05f);
+
+    EXPECT_EQ(restarter->triggerCalls, 1);
+    EXPECT_TRUE(scene.IsRuntimeRunning());
+    EXPECT_GE(scene.GetPhysicsWorld().GetPhysicsAlpha(), 0.0f);
+
+    // Disabling Rigidbody2D or Tilemap disables its Box2D body cleanly
+    rb->SetEnabled(false);
+    scene.UpdateRuntime(0.016f);
+    b2BodyId rbBodyId = b2LoadBodyId(rb->RuntimeBody.Value);
+    ASSERT_TRUE(b2Body_IsValid(rbBodyId));
+    EXPECT_FALSE(b2Body_IsEnabled(rbBodyId));
+
+    rb->SetEnabled(true);
+    scene.UpdateRuntime(0.016f);
+    EXPECT_TRUE(b2Body_IsEnabled(rbBodyId));
+
+    scene.OnRuntimeStop();
+}

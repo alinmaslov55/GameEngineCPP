@@ -491,4 +491,23 @@ TEST(TerrainChunkManagerTest, PaintWorldSegmentZeroLengthSafety) {
     EXPECT_GT(texel[2], 0u);
 }
 
+TEST(TerrainChunkManagerTest, UnclampedChunkSizeMetersAndFlushGeneratingSafety) {
+    Engine::TerrainChunkManager mgr(16.0f, 17u, 1, 2);
+    auto& c0 = mgr.EnsureEditableChunk({ 0, 0 });
+    (void)c0;
+
+    // Even if ChunkSizeMeters is mutated to 0 or NaN, sampling and WorldToChunk must not divide by zero or NaN
+    mgr.ChunkSizeMeters = 0.0f;
+    const auto coordZero = mgr.WorldToChunk(4.0f, 4.0f);
+    EXPECT_EQ(coordZero.cx, 4);
+    const auto sampleZero = mgr.SampleSurfaceAtXZ(4.0f, 4.0f);
+    EXPECT_TRUE(std::isfinite(sampleZero.LinearDamping));
+
+    mgr.ChunkSizeMeters = std::numeric_limits<float>::quiet_NaN();
+    const auto coordNaN = mgr.WorldToChunk(4.0f, 4.0f);
+    EXPECT_EQ(coordNaN.cx, 0);
+    const auto sampleNaN = mgr.SampleSurfaceAtXZ(4.0f, 4.0f);
+    EXPECT_TRUE(std::isfinite(sampleNaN.LinearDamping));
+}
+
 } // namespace

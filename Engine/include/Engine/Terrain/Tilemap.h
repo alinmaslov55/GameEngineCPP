@@ -60,6 +60,10 @@ public:
         return s_InvalidTile;
     }
 
+    void OnEnable() override;
+    void OnDisable() override;
+    void OnDestroy() override;
+
     uint32_t GetWidth() const { return m_Width; }
     uint32_t GetHeight() const { return m_Height; }
 

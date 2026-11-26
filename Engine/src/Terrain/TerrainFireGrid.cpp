@@ -23,6 +23,9 @@ void TerrainFireGrid::ConfigureCallbacks(FlammabilityQuery flammabilityQuery,
 }
 
 void TerrainFireGrid::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
+    if (!std::isfinite(centerXZ.x) || !std::isfinite(centerXZ.y) || !std::isfinite(radius) || radius <= 0.0f) {
+        return;
+    }
     const float safeRadius = std::max(radius, 0.05f);
     const float radSq = safeRadius * safeRadius;
 
@@ -75,6 +78,9 @@ void TerrainFireGrid::IgniteAtXZ(const glm::vec2& centerXZ, float radius) {
 }
 
 void TerrainFireGrid::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
+    if (!std::isfinite(centerXZ.x) || !std::isfinite(centerXZ.y) || !std::isfinite(radius) || radius <= 0.0f) {
+        return;
+    }
     const float safeRadius = std::max(radius, 0.05f);
     const float radSq = safeRadius * safeRadius;
 
@@ -108,7 +114,9 @@ void TerrainFireGrid::ExtinguishAtXZ(const glm::vec2& centerXZ, float radius) {
 }
 
 void TerrainFireGrid::ExtinguishInBoundsXZ(const glm::vec2& minXZ, const glm::vec2& maxXZ) {
-    if (m_ActiveCells.empty()) {
+    if (m_ActiveCells.empty() ||
+        !std::isfinite(minXZ.x) || !std::isfinite(minXZ.y) ||
+        !std::isfinite(maxXZ.x) || !std::isfinite(maxXZ.y)) {
         return;
     }
 
@@ -156,11 +164,12 @@ void TerrainFireGrid::Clear() {
         }
     }
     m_ActiveCells.clear();
+    m_ScorchedCooldowns.clear();
     m_TickAccumulator = 0.0f;
 }
 
 bool TerrainFireGrid::IsBurningAtXZ(float worldX, float worldZ) const noexcept {
-    if (m_ActiveCells.empty()) {
+    if (m_ActiveCells.empty() || !std::isfinite(worldX) || !std::isfinite(worldZ)) {
         return false;
     }
     return m_ActiveCells.contains(WorldToCoord(worldX, worldZ));
@@ -185,6 +194,7 @@ void TerrainFireGrid::Update(float dt) {
         SimulateTick(TickInterval);
         ++ticksExecuted;
         if (m_ActiveCells.empty()) {
+            m_ScorchedCooldowns.clear();
             m_TickAccumulator = 0.0f;
             break;
         }
@@ -213,6 +223,15 @@ void TerrainFireGrid::SimulateTick(float tickDt) {
     pendingIgnitions.reserve(m_ActiveCells.size() * 4);
     pendingDecays.reserve(m_ActiveCells.size());
 
+    for (auto cdIt = m_ScorchedCooldowns.begin(); cdIt != m_ScorchedCooldowns.end();) {
+        cdIt->second -= tickDt;
+        if (cdIt->second <= 0.0f) {
+            cdIt = m_ScorchedCooldowns.erase(cdIt);
+        } else {
+            ++cdIt;
+        }
+    }
+
     for (auto& [coord, cell] : m_ActiveCells) {
         cell.BurnTime += tickDt;
         cell.SpreadTimer += tickDt;
@@ -222,7 +241,7 @@ void TerrainFireGrid::SimulateTick(float tickDt) {
             cell.HasSpread = true;
             for (const auto& [dx, dz] : kNeighbors) {
                 const FireCellCoord nCoord{ coord.x + dx, coord.z + dz };
-                if (m_ActiveCells.contains(nCoord)) {
+                if (m_ActiveCells.contains(nCoord) || m_ScorchedCooldowns.contains(nCoord)) {
                     continue;
                 }
                 const glm::vec2 nCenter = CoordToWorldCenter(nCoord);
@@ -270,6 +289,7 @@ void TerrainFireGrid::SimulateTick(float tickDt) {
             if (m_ReleaseVisual && it->second.VisualEntityUUID != 0) {
                 m_ReleaseVisual(it->second.VisualEntityUUID);
             }
+            m_ScorchedCooldowns[coord] = MaxBurnDuration * 1.5f;
             m_ActiveCells.erase(it);
         }
     }
