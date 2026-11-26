@@ -693,3 +693,75 @@ TEST_F(RigidbodyLifecycleTest, RuntimeExistingShapeSync_DensityFilterAndStaticRe
 
     scene.OnRuntimeStop();
 }
+
+TEST_F(RigidbodyLifecycleTest, OnRuntimeStopResetsPendingSpawnHandlesPreventingAliasing) {
+    Engine::Scene scene("PendingSpawnResetScene");
+    auto* anchorGo = scene.CreateGameObject("Anchor");
+    anchorGo->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* anchorRb = anchorGo->AddComponent<Engine::Rigidbody2D>();
+    anchorRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    anchorGo->AddComponent<Engine::CircleCollider2D>()->Radius = 0.5f;
+
+    Engine::GameObject* spawnedGo = nullptr;
+    Engine::Rigidbody2D* spawnedRb = nullptr;
+    Engine::CircleCollider2D* spawnedCol = nullptr;
+
+    class SpawnAndStopScript final : public Engine::Component {
+    public:
+        Engine::Scene* targetScene = nullptr;
+        Engine::GameObject** outSpawned = nullptr;
+        Engine::Rigidbody2D** outRb = nullptr;
+        Engine::CircleCollider2D** outCol = nullptr;
+        bool triggered = false;
+
+        void FixedUpdate(float) override {
+            if (triggered || !targetScene) return;
+            triggered = true;
+            // Inside FixedUpdate, Scene::ScopedIterationGuard is active, so newly created entities land in m_PendingSpawnQueue
+            auto* spawned = targetScene->CreateGameObject("MidIterSpawned");
+            spawned->GetTransform()->position = { 10.0f, 0.0f, 0.0f };
+            auto* rb = spawned->AddComponent<Engine::Rigidbody2D>();
+            rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+            auto* col = spawned->AddComponent<Engine::CircleCollider2D>();
+            col->Radius = 0.5f;
+
+            *outSpawned = spawned;
+            *outRb = rb;
+            *outCol = col;
+
+            // Stopping runtime before the iteration guard exits must reset pending-spawn handles too
+            targetScene->OnRuntimeStop();
+        }
+    };
+
+    auto* script = anchorGo->AddComponent<SpawnAndStopScript>();
+    script->targetScene = &scene;
+    script->outSpawned = &spawnedGo;
+    script->outRb = &spawnedRb;
+    script->outCol = &spawnedCol;
+
+    scene.OnRuntimeStart();
+    scene.UpdateRuntime(1.0f / 60.0f);
+
+    ASSERT_NE(spawnedGo, nullptr);
+    ASSERT_NE(spawnedRb, nullptr);
+    ASSERT_NE(spawnedCol, nullptr);
+    // Handles on the mid-iteration spawned entity must have been reset by OnRuntimeStop()
+    EXPECT_FALSE(spawnedRb->RuntimeBody.IsValid());
+    EXPECT_FALSE(spawnedCol->RuntimeBody.IsValid());
+    EXPECT_FALSE(spawnedCol->RuntimeShape.IsValid());
+
+    // Restarting runtime must create distinct, non-aliased Box2D bodies/shapes for both entities
+    scene.OnRuntimeStart();
+    ASSERT_TRUE(anchorRb->RuntimeBody.IsValid());
+    ASSERT_TRUE(spawnedRb->RuntimeBody.IsValid());
+    EXPECT_NE(anchorRb->RuntimeBody.Value, spawnedRb->RuntimeBody.Value);
+    ASSERT_TRUE(spawnedCol->RuntimeShape.IsValid());
+
+    b2BodyId anchorBody = b2LoadBodyId(anchorRb->RuntimeBody.Value);
+    b2BodyId spawnedBody = b2LoadBodyId(spawnedRb->RuntimeBody.Value);
+    EXPECT_EQ(b2Body_GetUserData(anchorBody), anchorGo);
+    EXPECT_EQ(b2Body_GetUserData(spawnedBody), spawnedGo);
+
+    scene.OnRuntimeStop();
+}

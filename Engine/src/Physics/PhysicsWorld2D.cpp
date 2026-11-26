@@ -852,7 +852,15 @@ void PhysicsWorld2D::OnRuntimeStart() {
         for (auto& go : m_Scene->GetGameObjects()) {
             RegisterRuntimeBody(go.get());
         }
+        for (auto& go : m_Scene->GetPendingSpawnGameObjects()) {
+            RegisterRuntimeBody(go.get());
+        }
         for (auto& go : m_Scene->GetGameObjects()) {
+            if (auto* transform = go->GetTransform()) {
+                transform->SnapshotPrevious();
+            }
+        }
+        for (auto& go : m_Scene->GetPendingSpawnGameObjects()) {
             if (auto* transform = go->GetTransform()) {
                 transform->SnapshotPrevious();
             }
@@ -893,7 +901,8 @@ void PhysicsWorld2D::OnRuntimeStop() {
     }
 
     if (m_Scene) {
-        for (auto& go : m_Scene->GetGameObjects()) {
+        auto resetEntityRuntimeHandles = [](GameObject* go) {
+            if (!go) return;
             if (auto* rb2d = go->GetComponent<Rigidbody2D>()) {
                 rb2d->ResetRuntimeState();
             }
@@ -904,6 +913,12 @@ void PhysicsWorld2D::OnRuntimeStop() {
             if (auto* tilemap = go->GetComponent<Tilemap>()) {
                 tilemap->RuntimeBody.Reset();
             }
+        };
+        for (auto& go : m_Scene->GetGameObjects()) {
+            resetEntityRuntimeHandles(go.get());
+        }
+        for (auto& go : m_Scene->GetPendingSpawnGameObjects()) {
+            resetEntityRuntimeHandles(go.get());
         }
     }
     m_StaticCollidersDirty = true;

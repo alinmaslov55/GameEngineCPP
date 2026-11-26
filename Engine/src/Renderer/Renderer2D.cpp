@@ -315,11 +315,13 @@ void Renderer2D::ApplyLightingUniforms(const SceneLightingData* lighting) {
         // Bind WhiteTexture to slots 13 & 14 immediately so ShadowMap / TorchShadowMap are never still bound during FBO writes
         s_Data->BoundShadowTextureID = s_Data->WhiteTexture;
         s_Data->BoundTorchShadowTextureID = s_Data->WhiteTexture;
-        glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::ShadowMapTextureSlot);
-        glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
-        glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::TorchShadowMapTextureSlot);
-        glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
-        glActiveTexture(GL_TEXTURE0);
+        if (glad_glActiveTexture != nullptr && glad_glBindTexture != nullptr) {
+            glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::ShadowMapTextureSlot);
+            glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
+            glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::TorchShadowMapTextureSlot);
+            glBindTexture(GL_TEXTURE_2D, s_Data->WhiteTexture);
+            glActiveTexture(GL_TEXTURE0);
+        }
 
         shader.SetInt("u_LightingEnabled", 0);
         shader.SetInt("u_ShadowsEnabled", 0);
@@ -461,18 +463,20 @@ void Renderer2D::FlushQuads() {
     const uint32_t byteOffset = s_Data->CurrentVertexOffset * static_cast<uint32_t>(sizeof(QuadVertex));
     s_Data->QuadVertexBuffer->SetSubData(s_Data->QuadVertexBufferBase.get(), dataSize, byteOffset);
 
-    for (uint32_t i = 0; i < s_Data->TextureSlotIndex; i++) {
-        glActiveTexture(GL_TEXTURE0 + i);
-        glBindTexture(GL_TEXTURE_2D, s_Data->TextureSlots[i]);
-    }
+    if (glad_glActiveTexture != nullptr && glad_glBindTexture != nullptr) {
+        for (uint32_t i = 0; i < s_Data->TextureSlotIndex; i++) {
+            glActiveTexture(GL_TEXTURE0 + i);
+            glBindTexture(GL_TEXTURE_2D, s_Data->TextureSlots[i]);
+        }
 
-    glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::ShadowMapTextureSlot);
-    glBindTexture(GL_TEXTURE_2D, s_Data->BoundShadowTextureID);
-    glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::TorchShadowMapTextureSlot);
-    glBindTexture(GL_TEXTURE_2D, s_Data->BoundTorchShadowTextureID);
-    glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::DissolveNoiseTextureSlot);
-    glBindTexture(GL_TEXTURE_2D, s_Data->DissolveNoiseTexture);
-    glActiveTexture(GL_TEXTURE0);
+        glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::ShadowMapTextureSlot);
+        glBindTexture(GL_TEXTURE_2D, s_Data->BoundShadowTextureID);
+        glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::TorchShadowMapTextureSlot);
+        glBindTexture(GL_TEXTURE_2D, s_Data->BoundTorchShadowTextureID);
+        glActiveTexture(GL_TEXTURE0 + Renderer2DStorage::DissolveNoiseTextureSlot);
+        glBindTexture(GL_TEXTURE_2D, s_Data->DissolveNoiseTexture);
+        glActiveTexture(GL_TEXTURE0);
+    }
 
     s_Data->TextureShader->Bind();
     s_Data->QuadVertexArray->Bind();

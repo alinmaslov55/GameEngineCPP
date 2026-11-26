@@ -3,6 +3,7 @@
 #include "Engine/Renderer/RHI/Framebuffer.h"
 #include "Engine/Renderer/PostProcessor.h"
 #include "Engine/Renderer/Renderer2D.h"
+#include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Renderer/RHI/Shader.h"
 #include "Engine/Renderer/Texture.h"
 #include "Engine/Renderer/Texture2DArray.h"
@@ -188,6 +189,22 @@ TEST(RendererValidationTest, IndexBufferCreationPreservesBoundVAOAndIndexBuffer)
     ibB->Unbind();
     EXPECT_EQ(vaoA->GetIndexBuffer(), ibA);
     vaoA->Unbind();
+}
+
+TEST(RendererValidationTest, HeadlessRenderer2DBeginSceneDrawAndFlushDoesNotCrash) {
+    Engine::Renderer2D::Init();
+    Engine::Renderer2D::ResetStats();
+
+    Engine::PerspectiveCamera cam(32.0f, 16.0f / 9.0f, 0.1f, 250.0f);
+    Engine::Renderer2D::BeginScene(cam, true, 0.1f);
+    Engine::Renderer2D::DrawQuad(glm::mat4(1.0f), { 1.0f, 0.5f, 0.25f, 1.0f });
+    Engine::Renderer2D::EndScene();
+
+    const auto stats = Engine::Renderer2D::GetStats();
+    EXPECT_EQ(stats.QuadCount, 1u);
+    EXPECT_GE(stats.DrawCalls, 1u);
+
+    Engine::Renderer2D::Shutdown();
 }
 
 } // namespace
