@@ -1,5 +1,7 @@
 #include <gtest/gtest.h>
 #include "Engine/Scene/Components/LightComponents.h"
+#include "Engine/Scene/Components/CameraComponent.h"
+#include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
@@ -637,6 +639,20 @@ TEST(LightingTests, SmoothstepAttenuationRejectsNaNAndQueryIgnoresNaNLight) {
     const auto sample = scene.EvaluateIlluminationAtXZ({ 0.0f, 0.0f });
     EXPECT_FLOAT_EQ(sample.SafeIntensity, 0.0f);
     EXPECT_EQ(sample.DominantSafeSource, nullptr);
+}
+
+TEST(LightingTests, HeadlessSceneRendererSilhouettePassDoesNotCrash) {
+    Engine::Scene scene("HeadlessSilhouetteScene");
+    auto* camGo = scene.CreateGameObject("Cam");
+    camGo->AddComponent<Engine::CameraComponent>();
+
+    auto* prop = scene.CreateGameObject("SilhouetteProp");
+    auto* sr = prop->AddComponent<Engine::SpriteRenderer>();
+    sr->SetRenderSilhouette(true);
+
+    Engine::SceneRenderer renderer;
+    renderer.Render(scene);
+    SUCCEED();
 }
 
 } // namespace

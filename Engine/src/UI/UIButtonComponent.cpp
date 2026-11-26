@@ -66,7 +66,9 @@ void UIButtonComponent::Click() {
 }
 
 bool UIButtonComponent::SubmitActiveFocus() {
-    if (s_FocusedButton && s_FocusedButton->CanInteract()) {
+    const uint64_t currentFrame = Time::GetFrameCount();
+    if (s_FocusedButton && s_FocusedButton->CanInteract() && s_LastSubmitFrame != currentFrame) {
+        s_LastSubmitFrame = currentFrame;
         s_FocusedButton->Click();
         return true;
     }
@@ -78,7 +80,7 @@ bool UIButtonComponent::NavigateFocus(UIFocusDirection direction, const Scene& s
         for (const auto& go : scene.GetGameObjects()) {
             if (!go || !go->IsActiveInHierarchy()) continue;
             if (auto* btn = go->GetComponent<UIButtonComponent>()) {
-                if (btn->Interactable) {
+                if (btn->CanInteract()) {
                     SetFocusedButton(btn);
                     return true;
                 }
@@ -105,7 +107,7 @@ bool UIButtonComponent::NavigateFocus(UIFocusDirection direction, const Scene& s
     }
 
     auto* targetBtn = targetObj->GetComponent<UIButtonComponent>();
-    if (!targetBtn || !targetBtn->Interactable) {
+    if (!targetBtn || !targetBtn->CanInteract()) {
         return false;
     }
 
@@ -153,6 +155,7 @@ UIButtonComponent* UIButtonComponent::ResolveTopmostHoveredButton(
     const Scene& scene, const glm::vec2& mousePos, uint32_t vpW, uint32_t vpH) {
     const uint64_t currentFrame = Time::GetFrameCount();
     if (s_TopmostEvalFrame == currentFrame &&
+        s_TopmostEvalScene == &scene &&
         s_TopmostEvalVpW == vpW &&
         s_TopmostEvalVpH == vpH &&
         s_TopmostEvalMousePos == mousePos) {
@@ -160,6 +163,7 @@ UIButtonComponent* UIButtonComponent::ResolveTopmostHoveredButton(
     }
 
     s_TopmostEvalFrame = currentFrame;
+    s_TopmostEvalScene = &scene;
     s_TopmostEvalMousePos = mousePos;
     s_TopmostEvalVpW = vpW;
     s_TopmostEvalVpH = vpH;
@@ -215,8 +219,10 @@ void UIButtonComponent::Update(float /*deltaTime*/) {
 
         if (navigated) {
             s_LastFocusStepFrame = currentFrame;
-        } else if (Input::IsKeyJustPressed(SDL_SCANCODE_RETURN) || Input::IsKeyJustPressed(SDL_SCANCODE_SPACE) ||
-                   Input::IsGamepadButtonJustPressed(SDL_GAMEPAD_BUTTON_SOUTH)) {
+        } else if (s_LastSubmitFrame != currentFrame &&
+                   (Input::IsKeyJustPressed(SDL_SCANCODE_RETURN) || Input::IsKeyJustPressed(SDL_SCANCODE_SPACE) ||
+                    Input::IsGamepadButtonJustPressed(SDL_GAMEPAD_BUTTON_SOUTH))) {
+            s_LastSubmitFrame = currentFrame;
             Click();
         }
     }

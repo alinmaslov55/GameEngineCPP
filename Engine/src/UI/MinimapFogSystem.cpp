@@ -183,9 +183,8 @@ void MinimapFogSystem::StampExploration(const glm::vec2& worldXZ, float radiusMe
         for (int dx = -radiusTexels; dx <= radiusTexels; ++dx) {
             const glm::ivec2 gCoord = centerGrid + glm::ivec2(dx, dz);
 
-            // Check if within window around current viewer
-            if (std::abs(gCoord.x - m_CurrentGridCenter.x) >= 128 ||
-                std::abs(gCoord.y - m_CurrentGridCenter.y) >= 128) {
+            // Check if within window around current viewer [-128, 127]
+            if (!IsInActiveWindow(gCoord)) {
                 continue;
             }
 
@@ -288,7 +287,7 @@ void MinimapFogSystem::RebuildDisplayBuffer() {
         constexpr float kInnerRadius = 120.0f;
         constexpr float kOuterRadius = 126.0f;
         for (uint32_t vy = 0; vy < TextureSize; ++vy) {
-            const int dz = 128 - static_cast<int>(vy);
+            const int dz = 127 - static_cast<int>(vy);
             for (uint32_t vx = 0; vx < TextureSize; ++vx) {
                 const int dx = static_cast<int>(vx) - 128;
                 const float r = std::sqrt(static_cast<float>(dx * dx + dz * dz));
@@ -305,8 +304,8 @@ void MinimapFogSystem::RebuildDisplayBuffer() {
     }();
 
     for (uint32_t vy = 0; vy < TextureSize; ++vy) {
-        // OpenGL texture V=0 is bottom (South, +Z); V=1 is top (North, -Z)
-        const int dz = 128 - static_cast<int>(vy);
+        // OpenGL texture V=0 is bottom (South, +Z, dz=+127); V=255 is top (North, -Z, dz=-128)
+        const int dz = 127 - static_cast<int>(vy);
         for (uint32_t vx = 0; vx < TextureSize; ++vx) {
             const int dx = static_cast<int>(vx) - 128;
 

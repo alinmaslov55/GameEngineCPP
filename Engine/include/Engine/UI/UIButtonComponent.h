@@ -93,7 +93,9 @@ private:
 
     inline static UIButtonComponent* s_FocusedButton = nullptr;
     inline static uint64_t s_LastFocusStepFrame = std::numeric_limits<uint64_t>::max();
+    inline static uint64_t s_LastSubmitFrame = std::numeric_limits<uint64_t>::max();
     inline static uint64_t s_TopmostEvalFrame = std::numeric_limits<uint64_t>::max();
+    inline static const Scene* s_TopmostEvalScene = nullptr;
     inline static UIButtonComponent* s_TopmostHoveredButton = nullptr;
     inline static glm::vec2 s_TopmostEvalMousePos{ -1.0f, -1.0f };
     inline static uint32_t s_TopmostEvalVpW = 0;

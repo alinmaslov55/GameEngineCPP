@@ -352,8 +352,12 @@ void Texture::SetData(const void* rgbaData, uint32_t sizeBytes) {
         ENGINE_CORE_ERROR("Texture::SetData failed: cannot modify compressed texture '{}'", m_Filepath);
         return;
     }
-    const uint32_t expectedBytes = static_cast<uint32_t>(m_Width) * static_cast<uint32_t>(m_Height) * 4u;
-    if (!rgbaData || sizeBytes < expectedBytes) {
+    if (m_Width <= 0 || m_Height <= 0) {
+        ENGINE_CORE_ERROR("Texture::SetData failed: invalid dimensions ({}x{})", m_Width, m_Height);
+        return;
+    }
+    const uint64_t expectedBytes = static_cast<uint64_t>(m_Width) * static_cast<uint64_t>(m_Height) * 4ull;
+    if (!rgbaData || static_cast<uint64_t>(sizeBytes) < expectedBytes) {
         ENGINE_CORE_ERROR("Texture::SetData size mismatch (got {} bytes, expected {} bytes)", sizeBytes, expectedBytes);
         return;
     }
@@ -394,10 +398,11 @@ void Texture::SetSubData(uint32_t xOffset,
         ENGINE_CORE_ERROR("Texture::SetSubData failed: cannot modify compressed texture '{}'", m_Filepath);
         return;
     }
-    if (!rgbaSubData || width == 0 || height == 0) {
+    if (!rgbaSubData || width == 0 || height == 0 || m_Width <= 0 || m_Height <= 0) {
         return;
     }
-    if (static_cast<int>(xOffset + width) > m_Width || static_cast<int>(yOffset + height) > m_Height) {
+    if (static_cast<uint64_t>(xOffset) + static_cast<uint64_t>(width) > static_cast<uint64_t>(m_Width) ||
+        static_cast<uint64_t>(yOffset) + static_cast<uint64_t>(height) > static_cast<uint64_t>(m_Height)) {
         ENGINE_CORE_ERROR("Texture::SetSubData region ({}, {}, {}x{}) exceeds texture bounds ({}x{})",
                           xOffset, yOffset, width, height, m_Width, m_Height);
         return;

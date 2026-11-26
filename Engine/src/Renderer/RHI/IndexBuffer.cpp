@@ -11,28 +11,16 @@ IndexBuffer::IndexBuffer(const uint32_t* indices, uint32_t count) : m_Count(coun
         return;
     }
 
-    GLint prevVAO = 0;
-    GLint prevEBO = 0;
+    GLint prevCopyWrite = 0;
     if (glad_glGetIntegerv != nullptr) {
-        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &prevVAO);
-        glGetIntegerv(GL_ELEMENT_ARRAY_BUFFER_BINDING, &prevEBO);
+        glGetIntegerv(GL_COPY_WRITE_BUFFER_BINDING, &prevCopyWrite);
     }
 
-    // Unbind VAO temporarily to avoid inadvertently mutating its element array buffer
-    if (prevVAO != 0 && glad_glBindVertexArray != nullptr) {
-        glBindVertexArray(0);
-    }
-
+    // Upload via GL_COPY_WRITE_BUFFER so we never mutate VAO state or bind GL_ELEMENT_ARRAY_BUFFER with VAO == 0
     glGenBuffers(1, &m_RendererID);
-    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_RendererID);
-    glBufferData(GL_ELEMENT_ARRAY_BUFFER, count * sizeof(uint32_t), indices, GL_STATIC_DRAW);
-
-    // Restore previous VAO/EBO bindings
-    if (prevVAO != 0 && glad_glBindVertexArray != nullptr) {
-        glBindVertexArray(static_cast<GLuint>(prevVAO));
-    } else {
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, static_cast<GLuint>(prevEBO));
-    }
+    glBindBuffer(GL_COPY_WRITE_BUFFER, m_RendererID);
+    glBufferData(GL_COPY_WRITE_BUFFER, static_cast<GLsizeiptr>(count) * sizeof(uint32_t), indices, GL_STATIC_DRAW);
+    glBindBuffer(GL_COPY_WRITE_BUFFER, static_cast<GLuint>(prevCopyWrite));
 
     ENGINE_CORE_DEBUG("IndexBuffer created with ID: {} (count: {})", m_RendererID, count);
 }
@@ -75,17 +63,8 @@ void IndexBuffer::Bind() const {
 }
 
 void IndexBuffer::Unbind() const {
-    if (glad_glBindBuffer == nullptr) {
-        return;
-    }
-    GLint boundVAO = 0;
-    if (glad_glGetIntegerv != nullptr) {
-        glGetIntegerv(GL_VERTEX_ARRAY_BINDING, &boundVAO);
-    }
-    // Only unbind if no VAO is currently bound to avoid stripping the VAO's EBO
-    if (boundVAO == 0) {
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
-    }
+    // EBO binding is owned by the bound VAO; binding GL_ELEMENT_ARRAY_BUFFER with VAO == 0
+    // triggers GL_INVALID_OPERATION on strict OpenGL 4.1 Core contexts.
 }
 
 } // namespace Engine

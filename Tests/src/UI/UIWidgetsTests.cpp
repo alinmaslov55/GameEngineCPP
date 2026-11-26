@@ -343,6 +343,7 @@ TEST(UIButtonComponentTest, SingleFrameFocusStepNoCascade) {
     Engine::Input::BeginFrame();
     Engine::Time::SetMockDeltaTime(1.0f / 60.0f);
     Engine::Time::Update();
+    Engine::Time::Update();
 
     Engine::Scene scene("SingleFrameFocusStepScene");
     auto* go0 = scene.CreateGameObject("Btn0");
@@ -397,6 +398,7 @@ TEST(UIButtonComponentTest, OverlappingButtonsRespectZOrder) {
     Engine::Input::BeginFrame();
     Engine::Input::SetViewportRect({ 0.0f, 0.0f }, { 1920.0f, 1080.0f });
     Engine::Time::SetMockDeltaTime(1.0f / 60.0f);
+    Engine::Time::Update();
     Engine::Time::Update();
 
     Engine::Scene scene("ZOrderButtonsScene");
@@ -494,6 +496,75 @@ TEST(UIPanelGeometryTest, RadialSweepCWPartialSectorHasCCWWindingAndOversizedNin
     ASSERT_EQ(nineQuads.size(), 9u);
     EXPECT_LE(nineQuads[4].Vertices[0].TexCoord.x, nineQuads[4].Vertices[1].TexCoord.x);
     EXPECT_LE(nineQuads[4].Vertices[0].TexCoord.y, nineQuads[4].Vertices[3].TexCoord.y);
+}
+
+TEST(UIButtonComponentTest, SameFrameSubmitNoCascadeNavigateChecksEnabledAndMultiSceneHoverCache) {
+    Engine::Time::Reset();
+    Engine::Input::Init();
+    Engine::Input::BeginFrame();
+    Engine::Input::SetViewportRect({ 0.0f, 0.0f }, { 1920.0f, 1080.0f });
+    Engine::Time::SetMockDeltaTime(1.0f / 60.0f);
+    Engine::Time::Update();
+    Engine::Time::Update();
+    Engine::Time::Update();
+
+    Engine::Scene sceneA("SubmitCascadeSceneA");
+    auto* goA = sceneA.CreateGameObject("BtnA");
+    auto* goB = sceneA.CreateGameObject("BtnB");
+    auto* goDisabled = sceneA.CreateGameObject("BtnDisabled");
+
+    auto* btnA = goA->AddComponent<Engine::UIButtonComponent>();
+    auto* btnB = goB->AddComponent<Engine::UIButtonComponent>();
+    auto* btnDisabled = goDisabled->AddComponent<Engine::UIButtonComponent>();
+    btnDisabled->SetEnabled(false);
+
+    // NavigateFocus must skip disabled component even when Interactable == true
+    btnA->SetNeighbors(0, goDisabled->GetUUID(), 0, 0);
+    Engine::UIButtonComponent::SetFocusedButton(btnA);
+    EXPECT_FALSE(Engine::UIButtonComponent::NavigateFocus(Engine::UIFocusDirection::Down, sceneA));
+    EXPECT_EQ(Engine::UIButtonComponent::GetFocusedButton(), btnA);
+
+    // Same-frame submit cascade: btnA->OnClick shifts focus to btnB; btnB must NOT click on the same frame
+    int clicksA = 0;
+    int clicksB = 0;
+    btnA->OnClick = [&]() {
+        ++clicksA;
+        Engine::UIButtonComponent::SetFocusedButton(btnB);
+    };
+    btnB->OnClick = [&]() { ++clicksB; };
+
+    Engine::Input::SetKeyStateForTesting(SDL_SCANCODE_RETURN, true);
+    sceneA.Update(1.0f / 60.0f);
+    EXPECT_EQ(clicksA, 1);
+    EXPECT_EQ(clicksB, 0);
+    Engine::Input::SetKeyStateForTesting(SDL_SCANCODE_RETURN, false);
+
+    // Multi-scene hover cache isolation in the same frame
+    auto* panelA = goA->AddComponent<Engine::UIPanel>();
+    panelA->useRectTransform = false;
+    panelA->position = { 100.0f, 100.0f };
+    panelA->size = { 200.0f, 80.0f };
+
+    Engine::Scene sceneB("HoverSceneB");
+    auto* goOther = sceneB.CreateGameObject("BtnOther");
+    auto* panelOther = goOther->AddComponent<Engine::UIPanel>();
+    panelOther->useRectTransform = false;
+    panelOther->position = { 100.0f, 100.0f };
+    panelOther->size = { 200.0f, 80.0f };
+    auto* btnOther = goOther->AddComponent<Engine::UIButtonComponent>();
+    int clicksOther = 0;
+    btnOther->OnClick = [&]() { ++clicksOther; };
+
+    Engine::Input::SetMousePositionForTesting({ 150.0f, 1080.0f - 140.0f });
+    Engine::Input::SetMouseButtonStateForTesting(SDL_BUTTON_LEFT, true);
+    sceneA.Update(1.0f / 60.0f);
+    sceneB.Update(1.0f / 60.0f);
+    EXPECT_EQ(btnOther->GetState(), Engine::ButtonState::Pressed);
+
+    Engine::Input::SetMouseButtonStateForTesting(SDL_BUTTON_LEFT, false);
+    Engine::Input::BeginFrame();
+    Engine::UIButtonComponent::ClearFocus();
+    Engine::Time::Reset();
 }
 
 } // namespace

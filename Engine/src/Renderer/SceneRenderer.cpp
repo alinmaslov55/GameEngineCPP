@@ -809,10 +809,10 @@ void SceneRenderer::RenderPassCutoutStandees(SceneRenderContext& ctx) {
             return a.viewDepth > b.viewDepth;
         });
 
-        glDepthFunc(GL_GREATER);
-        glDepthMask(GL_FALSE);
-        glEnable(GL_BLEND);
-        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        if (glad_glDepthFunc) glDepthFunc(GL_GREATER);
+        if (glad_glDepthMask) glDepthMask(GL_FALSE);
+        if (glad_glEnable) glEnable(GL_BLEND);
+        if (glad_glBlendFunc) glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
         Renderer2D::BeginScene(*ctx.activeCam, ctx.lighting, /*depthTest=*/true, /*defaultAlphaCutoff=*/0.01f);
         if (ctx.windComp) {
@@ -824,8 +824,8 @@ void SceneRenderer::RenderPassCutoutStandees(SceneRenderContext& ctx) {
 
         Renderer2D::EndScene();
 
-        glDepthFunc(GL_LEQUAL);
-        glDepthMask(GL_TRUE);
+        if (glad_glDepthFunc) glDepthFunc(GL_LEQUAL);
+        if (glad_glDepthMask) glDepthMask(GL_TRUE);
     }
 }
 

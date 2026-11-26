@@ -317,4 +317,25 @@ TEST(RadialWheelTest, QuadTextureIsolationPerQuad) {
     }
 }
 
+TEST(MinimapFogTest, BoundaryDzMinus128StampedAndNoNorthSouthWrap) {
+    Engine::MinimapFogSystem fog;
+    // Establish grid center at (0, 0)
+    fog.Update(glm::vec2(0.0f, 0.0f), 2.0f);
+
+    // Stamp at North boundary dz = -128 (worldZ = -192.0f with TexelWorldSize = 1.5f)
+    const float northWorldZ = -128.0f * Engine::MinimapFogSystem::TexelWorldSize + 0.5f;
+    fog.StampExploration(glm::vec2(0.0f, northWorldZ), 1.0f, false);
+    EXPECT_TRUE(fog.IsDiscovered(glm::vec2(0.0f, northWorldZ)));
+
+    // South edge of display buffer (vy = 0 -> dz = +127) must NOT wrap to North (dz = -128)
+    fog.Update(glm::vec2(0.0f, 0.0f), 2.0f);
+    const auto& buf = fog.GetPixelBuffer();
+    // vy = 0, vx = 128 (dx = 0, dz = +127): Discovered byte (offset + 1) must be 0
+    const size_t southCenterIdx = (0u * Engine::MinimapFogSystem::TextureSize + 128u) * 4u;
+    EXPECT_EQ(buf[southCenterIdx + 1], 0u);
+    // vy = 255, vx = 128 (dx = 0, dz = -128): Discovered byte must be non-zero
+    const size_t northCenterIdx = (255u * Engine::MinimapFogSystem::TextureSize + 128u) * 4u;
+    EXPECT_GT(buf[northCenterIdx + 1], 0u);
+}
+
 } // namespace

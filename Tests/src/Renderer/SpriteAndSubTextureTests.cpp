@@ -114,5 +114,17 @@ TEST(SpriteAtlasTest, AsyncPlaceholderUVNormalizedParity) {
     EXPECT_GE(frame->SubTex->GetMin().y, 0.0f);
 }
 
+TEST(TextureSafetyTest, SetSubDataRejectsUint32OverflowAndSetDataRejectsZeroDims) {
+    auto tex = std::make_shared<Engine::Texture>(8u, 8u);
+    ASSERT_NE(tex, nullptr);
+    const std::array<uint8_t, 16> pixels{};
+    // UINT32_MAX - 1 + 4 would overflow uint32_t to 2 (< 8) without 64-bit bounds check
+    tex->SetSubData(std::numeric_limits<uint32_t>::max() - 1u, 0u, 4u, 2u, pixels.data());
+
+    Engine::Texture emptyTex(0u, 0u);
+    emptyTex.SetData(pixels.data(), static_cast<uint32_t>(pixels.size()));
+    SUCCEED();
+}
+
 } // namespace
 
