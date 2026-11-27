@@ -3,6 +3,7 @@
 
 #include "Scripts/PlayerStatsComponent.h"
 
+#include <Engine/Core/ResourceManager.h>
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Physics/PhysicsLayer.h>
 #include <Engine/Renderer/SpriteRenderer.h>
@@ -60,8 +61,16 @@ public:
         auto* sr = go->AddComponent<Engine::SpriteRenderer>();
         sr->SetBillboardMode(Engine::SpriteRenderer::BillboardMode::ViewPlane);
         sr->SetColor(tint);
+        const char* texPath = "assets/diorama/wood_log.png";
         if (kind == PickupKind::AshEmber) {
+            texPath = "assets/diorama/ash_ember.png";
             sr->SetEmissive(0.85f);
+        } else if (kind == PickupKind::CrimsonBerry) {
+            texPath = "assets/diorama/crimson_heart.png";
+        }
+        if (auto tex = Engine::ResourceManager::Load<Engine::Texture>(texPath)) {
+            sr->SetTexture(tex);
+            sr->SetAlphaCutoff(0.18f);
         }
 
         auto* rb = go->AddComponent<Engine::Rigidbody2D>();

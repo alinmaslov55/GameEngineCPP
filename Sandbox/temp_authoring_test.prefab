@@ -1,0 +1,141 @@
+{
+    "Entities": [
+        {
+            "Active": true,
+            "Components": {
+                "Animator": {
+                    "Clips": [
+                        {
+                            "Events": [
+                                {
+                                    "EventID": "Footstep",
+                                    "FrameIndex": 1,
+                                    "SocketOffsetX": 0.20000000298023224,
+                                    "SocketOffsetY": 0.0
+                                },
+                                {
+                                    "EventID": "HitboxActive",
+                                    "FrameIndex": 3,
+                                    "SocketOffsetX": 0.800000011920929,
+                                    "SocketOffsetY": 0.20000000298023224
+                                }
+                            ],
+                            "FrameDuration": 0.10000000149011612,
+                            "Frames": [],
+                            "Loop": true,
+                            "Name": "Walk"
+                        }
+                    ],
+                    "CurrentClip": "Walk",
+                    "CurrentFacingDirection": 1,
+                    "CurrentFlipX": false,
+                    "DirectionalScheme": 2,
+                    "Enabled": true,
+                    "HysteresisDegrees": 7.0,
+                    "PlaybackSpeed": 1.0
+                },
+                "SpriteRenderer": {
+                    "AlphaCutoff": 0.15000000596046448,
+                    "BillboardMode": 0,
+                    "CastShadows": true,
+                    "Color": [
+                        0.800000011920929,
+                        0.8999999761581421,
+                        1.0,
+                        1.0
+                    ],
+                    "DissolveAmount": 0.0,
+                    "DissolveEdgeWidth": 0.07999999821186066,
+                    "Emissive": 0.0,
+                    "Enabled": true,
+                    "FlashAmount": 0.0,
+                    "FlashColorMode": 0.0,
+                    "FlipX": false,
+                    "FlipY": false,
+                    "ReceiveLighting": true,
+                    "RenderSilhouette": false,
+                    "SilhouetteColor": [
+                        0.25,
+                        0.3499999940395355,
+                        0.8500000238418579,
+                        0.2800000011920929
+                    ],
+                    "WindPhaseOffset": 0.0,
+                    "WindSwayWeight": 0.0
+                },
+                "Transform": {
+                    "Position": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                }
+            },
+            "LayerMask": 1,
+            "Name": "HeroCharacter",
+            "ParentUUID": 0,
+            "Tag": "Untagged",
+            "UUID": 6791329888647368305
+        },
+        {
+            "Active": true,
+            "Components": {
+                "PointLight": {
+                    "CastShadows": false,
+                    "Color": [
+                        1.0,
+                        0.6200000047683716,
+                        0.23999999463558197
+                    ],
+                    "Enabled": true,
+                    "Falloff": 1.7999999523162842,
+                    "Flicker": true,
+                    "FlickerAmount": 0.14000000059604645,
+                    "FlickerSpeed": 7.5,
+                    "HeightOffset": 0.8500000238418579,
+                    "Intensity": 4.0,
+                    "Priority": 1,
+                    "Radius": 4.5,
+                    "Semantic": 1,
+                    "ShadowBias": 0.0024999999441206455,
+                    "ShadowSoftness": 1.600000023841858
+                },
+                "Transform": {
+                    "Position": [
+                        0.5,
+                        1.2000000476837158,
+                        0.0
+                    ],
+                    "Rotation": [
+                        0.0,
+                        0.0,
+                        0.0
+                    ],
+                    "Scale": [
+                        1.0,
+                        1.0,
+                        1.0
+                    ]
+                }
+            },
+            "LayerMask": 1,
+            "Name": "TorchLight",
+            "ParentUUID": 6791329888647368305,
+            "Tag": "Untagged",
+            "UUID": 4186887980528513831
+        }
+    ],
+    "Format": "EnginePrefab",
+    "RootUUID": 6791329888647368305,
+    "Version": 1
+}

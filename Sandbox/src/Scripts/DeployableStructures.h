@@ -7,6 +7,7 @@
 #include "Scripts/PickupComponent.h"
 #include "Scripts/SplinterProjectileComponent.h"
 
+#include <Engine/Core/ResourceManager.h>
 #include <Engine/Particles/DecalManager.h>
 #include <Engine/Physics/Collision2DInfo.h>
 #include <Engine/Physics/PhysicsComponents.h>
@@ -38,6 +39,13 @@ public:
         }
         go->SetTag(Engine::EntityTag::TacticalStructure);
         go->SetLayer(Engine::EntityLayer::LowObstacle);
+
+        if (auto* sr = go->GetComponent<Engine::SpriteRenderer>()) {
+            if (auto tex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/splinter_barricade.png")) {
+                sr->SetTexture(tex);
+                sr->SetAlphaCutoff(0.18f);
+            }
+        }
 
         if (!go->GetComponent<Engine::BoxCollider2D>()) {
             auto* col = go->AddComponent<Engine::BoxCollider2D>();

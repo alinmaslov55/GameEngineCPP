@@ -53,7 +53,7 @@ flowchart LR
 | **`GAM-12`** | **In-Run Ash XP & 3-Card Branch Upgrade Draft** | A3 | **P1** | `DONE` | `branches.json`, `UIX-01..03`, `UIButtonComponent`, `ECS-02` |
 | **`GAM-13`** | **Alpha HUD & Circular Fog-of-War Minimap** | A3 | **P0** | `DONE` | `UIX-01..04`, `UICanvas`, `UIPanel`, `UILabel`, `UIMinimapComponent` |
 | **`GAM-14`** | **Title -> Sanctuary Hub -> Root Altar -> Run -> Summary Loop** | A4 | **P1** | `DONE` | `roots.json`, `SAV-01/02` (`SaveManager`, `SceneManager::TransitionToScene`) |
-| **`GAM-15`** | **Alpha 2.5D Paper-Cutout Art & Animation Pack** | A4 | **P1** | `TODO` | `CutoutProcessor`, `ANI-01..03`, `DIORAMA_ART_WORKFLOW.md` |
+| **`GAM-15`** | **Alpha 2.5D Paper-Cutout Art & Animation Pack** | A4 | **P1** | `DONE` | `CutoutProcessor`, `ANI-01..03`, `DIORAMA_ART_WORKFLOW.md` |
 | **`GAM-16`** | **Alpha Combat Foley & 3-Stem Adaptive Music Pack** | A4 | **P1** | `TODO` | `AUD-01..03` (`AudioManager`, `MusicDirector`), `.wav` + `.ogg` stems |
 
 ---

@@ -38,7 +38,8 @@ namespace {
 void ConfigureArenaTerrainLayers(Engine::TerrainChunkManager& chunkMgr) {
     auto grassTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/grass_seamless.png");
     auto dirtTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/dirt_seamless.png");
-    auto soilTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/soil_seamless.png");
+    auto tarTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/tar_seamless.png");
+    auto chalkTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/chalk_seamless.png");
     auto cobbleTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/cobble_seamless.png");
 
     // Layer 0: Blackwood Thickets (mossy forest floor)
@@ -52,12 +53,12 @@ void ConfigureArenaTerrainLayers(Engine::TerrainChunkManager& chunkMgr) {
     chunkMgr.SetLayerGlossiness(1, 0.08f);
 
     // Layer 2: Tar Bogs (glossy black flammable pools)
-    chunkMgr.SetLayerTexture(2, soilTex);
+    chunkMgr.SetLayerTexture(2, tarTex);
     chunkMgr.SetLayerTilingScale(2, 0.50f);
     chunkMgr.SetLayerGlossiness(2, 0.85f);
 
     // Layer 3: Chalk Highlands (slippery pale limestone)
-    chunkMgr.SetLayerTexture(3, cobbleTex);
+    chunkMgr.SetLayerTexture(3, chalkTex);
     chunkMgr.SetLayerTilingScale(3, 0.48f);
     chunkMgr.SetLayerGlossiness(3, 0.25f);
 

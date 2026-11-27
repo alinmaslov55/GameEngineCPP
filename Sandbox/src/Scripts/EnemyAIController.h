@@ -11,6 +11,7 @@
 #include <Engine/AI/Ballistics.h>
 #include <Engine/AI/StateMachine.h>
 #include <Engine/AI/SteeringSystem.h>
+#include <Engine/Core/ResourceManager.h>
 #include <Engine/Data/GameplayData.h>
 #include <Engine/Data/GameplayDefinitions.h>
 #include <Engine/Physics/PhysicsComponents.h>
@@ -90,6 +91,18 @@ public:
 
         if (auto* rb = go->GetComponent<Engine::Rigidbody2D>()) {
             rb->SetBaseMass(std::max(1.0f, m_Stats.Mass));
+        }
+
+        if (auto* sr = go->GetComponent<Engine::SpriteRenderer>()) {
+            const char* texPath = "assets/diorama/ghoul.png";
+            if (enemyId == "enemy_thrall") texPath = "assets/diorama/thrall.png";
+            else if (enemyId == "enemy_jiangshi") texPath = "assets/diorama/jiangshi.png";
+            else if (enemyId == "enemy_wendigo") texPath = "assets/diorama/wendigo.png";
+            else if (enemyId == "enemy_wisp") texPath = "assets/diorama/blight_wisp.png";
+            if (auto tex = Engine::ResourceManager::Load<Engine::Texture>(texPath)) {
+                sr->SetTexture(tex);
+                sr->SetAlphaCutoff(0.18f);
+            }
         }
 
         auto* health = go->GetComponent<HealthComponent>();

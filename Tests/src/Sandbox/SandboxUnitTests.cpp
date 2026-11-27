@@ -3,8 +3,10 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Audio/MusicDirector.h"
+#include "Engine/Core/ResourceManager.h"
 #include "Engine/Data/GameplayData.h"
 #include "Engine/Data/SaveManager.h"
+#include "Engine/Utils/CutoutProcessor.h"
 #include "Engine/Particles/DecalManager.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
@@ -1669,6 +1671,57 @@ TEST(SandboxUnitTest, RunSummaryBanksAshesOnDeathOrDawnAndTransitionsBackToSanct
     Engine::SaveManager::ClearSaveDirectoryOverride();
     std::filesystem::remove_all(tempDir);
     Engine::Time::Reset();
+}
+
+TEST(SandboxUnitTest, AlphaArtPackLoadsAndProcessesViaCutoutProcessor) {
+    const auto prevRoot = Engine::ResourceManager::GetAssetRoot();
+    Engine::ResourceManager::SetAssetRoot(std::filesystem::current_path() / "Sandbox");
+    Engine::ResourceManager::ClearPathCache();
+    Engine::ResourceManager::ClearType<Engine::Texture>();
+    static constexpr const char* kAssets[] = {
+        "assets/diorama/ghoul.png",
+        "assets/diorama/thrall.png",
+        "assets/diorama/jiangshi.png",
+        "assets/diorama/wendigo.png",
+        "assets/diorama/blight_wisp.png",
+        "assets/diorama/splinter_barricade.png",
+        "assets/diorama/flare_peg.png",
+        "assets/diorama/thumper_trap.png",
+        "assets/diorama/tar_siphon.png",
+        "assets/diorama/wood_log.png",
+        "assets/diorama/ash_ember.png",
+        "assets/diorama/crimson_heart.png",
+        "assets/diorama/tar_seamless.png",
+        "assets/diorama/chalk_seamless.png",
+        "assets/diorama/torch_flame_flipbook.png",
+        "assets/diorama/slash_arc.png"
+    };
+
+    for (const char* relPath : kAssets) {
+        const std::string resolved = Engine::ResourceManager::ResolvePath(relPath);
+        ASSERT_TRUE(std::filesystem::exists(resolved)) << "Missing art asset: " << relPath;
+        auto tex = Engine::ResourceManager::LoadTexture(relPath);
+        ASSERT_NE(tex, nullptr) << "Failed to load texture: " << relPath;
+        EXPECT_GT(tex->GetWidth(), 0u);
+        EXPECT_GT(tex->GetHeight(), 0u);
+    }
+
+    const std::string ghoulIn = Engine::ResourceManager::ResolvePath("assets/diorama/ghoul.png");
+    const auto tempOut = std::filesystem::temp_directory_path() / "gam15_ghoul_cutout_check.png";
+    std::filesystem::remove(tempOut);
+
+    Engine::CutoutProcessSettings settings;
+    settings.BackgroundMode = Engine::CutoutKeyMode::AutoDetectCorner;
+    settings.AutoTrimAndBottomFlush = true;
+    settings.AlphaBleedPasses = 4;
+    const auto res = Engine::CutoutProcessor::ProcessFile(ghoulIn, tempOut.string(), settings);
+    EXPECT_TRUE(res.Success);
+    EXPECT_GT(res.OutputWidth, 0u);
+    EXPECT_GT(res.OutputHeight, 0u);
+    EXPECT_TRUE(std::filesystem::exists(tempOut));
+    std::filesystem::remove(tempOut);
+    Engine::ResourceManager::SetAssetRoot(prevRoot);
+    Engine::ResourceManager::ClearPathCache();
 }
 
 } // namespace
