@@ -45,7 +45,7 @@ flowchart LR
 | **`GAM-04`** | **Active Torch Runes (Ignition, Chronos, Shockwave, Consecrate)** | A2 | **P1** | `DONE` | `runes.json`, `PHY-05` (`SetStasisFrozen`), `TER-04`, `LGT-03` |
 | **`GAM-05`** | **Alpha Survival Arena & Procedural Biome Clearing** | A1 | **P0** | `DONE` | `TER-01/02/03`, `TerrainChunkManager`, `WorldBiomeGenerator`, `Wind` |
 | **`GAM-06`** | **Harvestable Pines, Destructible Props & Bouncing Pickups** | A1 | **P0** | `DONE` | `ECS-01/04/05`, `PHY-01` (`GroundRestitutionY`), `PHY-03` (Sensors) |
-| **`GAM-07`** | **Tactical Drop Wheel & 4 Functional Deployable Structures** | A2 | **P0** | `TODO` | `drops.json`, `prefabs/*.prefab`, `UIX-04`, `ECS-02` (Slow-Mo), `PHY-04` |
+| **`GAM-07`** | **Tactical Drop Wheel & 4 Functional Deployable Structures** | A2 | **P0** | `DONE` | `drops.json`, `prefabs/*.prefab`, `UIX-04`, `ECS-02` (Slow-Mo), `PHY-04` |
 | **`GAM-08`** | **Systemic Tar/Firewall Ignition & Burning-Body Spreading** | A2 | **P0** | `TODO` | `TER-04` (`TerrainFireGrid`), `VFX-01/02`, `LGT-02` |
 | **`GAM-09`** | **5-Archetype Monster AI Suite (Ghoul, Thrall, Jiangshi, Wisp, Wendigo)** | A3 | **P0** | `TODO` | `enemies.json`, `AIX-01` (`SteeringSystem`), `AIX-02` (`StateMachine`, `Ballistics`), `PHY-04` |
 | **`GAM-10`** | **Escalating Night/Wave Director & Mood Progression** | A3 | **P0** | `TODO` | `ECS-04` (`EntityPoolManager`), `DirectionalLight`, `PostProcess`, `AUD-03` |

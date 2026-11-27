@@ -22,6 +22,7 @@
 #include "Scene/AlphaRunScene.h"
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/CombatTargetComponent.h"
+#include "Scripts/DeployableStructures.h"
 #include "Scripts/HarvestableComponent.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
@@ -33,6 +34,7 @@
 #include "Scripts/CameraController.h"
 #include "Scripts/SplinterProjectileComponent.h"
 #include "Scripts/StatusEffectsComponent.h"
+#include "Scripts/StructurePlacerComponent.h"
 #include "Scripts/TorchComponent.h"
 #include "Scripts/WeaponController.h"
 #include "Utils/FilenameUtils.h"
@@ -923,6 +925,141 @@ TEST(SandboxUnitTest, RuneCasterConsecrationHealsPlayerAndBurnsEnemies) {
         }
     }
     EXPECT_FALSE(foundZone);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, StructurePlacerValidatesClearanceDeductsWoodAndSpawnsAll4Structures) {
+    Engine::Scene scene("StructurePlacerTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    player->AddComponent<PlayerController>();
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+    stats->Wood = 50;
+    auto* placer = player->AddComponent<StructurePlacerComponent>();
+
+    // Solid tree trunk at 2.2m in front of player blocks placement
+    auto* tree = scene.CreateGameObject("BlockingTree");
+    tree->SetTag(Engine::EntityTag::HarvestableTree);
+    tree->SetLayer(Engine::EntityLayer::Environment);
+    tree->GetTransform()->position = { 0.0f, 0.0f, 2.2f };
+    auto* treeCol = tree->AddComponent<Engine::BoxCollider2D>();
+    treeCol->size = { 0.6f, 0.6f };
+    treeCol->CategoryBits = Engine::PhysicsLayer::Environment;
+
+    scene.OnRuntimeStart();
+
+    EXPECT_EQ(placer->TryPlaceStructure(Engine::RadialWheelItem::SplinterBarricade), nullptr);
+    EXPECT_EQ(stats->Wood, 50);
+
+    // Move tree away and place all 4 structures (4 + 10 + 15 + 20 = 49 Wood)
+    scene.DestroyGameObject(tree);
+    scene.UpdateRuntime(1.0f / 60.0f);
+
+    auto* bar = placer->TryPlaceStructure(Engine::RadialWheelItem::SplinterBarricade);
+    ASSERT_NE(bar, nullptr);
+    EXPECT_NE(bar->GetComponent<SplinterBarricadeComponent>(), nullptr);
+    EXPECT_EQ(stats->Wood, 46);
+    scene.DestroyGameObject(bar);
+    scene.UpdateRuntime(1.0f / 60.0f);
+
+    auto* flare = placer->TryPlaceStructure(Engine::RadialWheelItem::FlarePeg);
+    ASSERT_NE(flare, nullptr);
+    EXPECT_NE(flare->GetComponent<FlarePegComponent>(), nullptr);
+    EXPECT_EQ(stats->Wood, 36);
+    scene.DestroyGameObject(flare);
+    scene.UpdateRuntime(1.0f / 60.0f);
+
+    auto* thumper = placer->TryPlaceStructure(Engine::RadialWheelItem::Thumper);
+    ASSERT_NE(thumper, nullptr);
+    EXPECT_NE(thumper->GetComponent<ThumperComponent>(), nullptr);
+    EXPECT_EQ(stats->Wood, 21);
+    scene.DestroyGameObject(thumper);
+    scene.UpdateRuntime(1.0f / 60.0f);
+
+    auto* siphon = placer->TryPlaceStructure(Engine::RadialWheelItem::TarSiphon);
+    ASSERT_NE(siphon, nullptr);
+    EXPECT_NE(siphon->GetComponent<TarSiphonComponent>(), nullptr);
+    EXPECT_EQ(stats->Wood, 1);
+
+    // Insufficient wood (1 < 4) blocks next placement
+    EXPECT_EQ(placer->TryPlaceStructure(Engine::RadialWheelItem::SplinterBarricade), nullptr);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, DeployableStructuresExecuteBarricadeFlareThumperAndTarSiphon) {
+    Engine::Scene scene("DeployableBehaviorsTestScene");
+
+    // 1. SplinterBarricade shatters into 5-7 projectiles at 0 HP
+    auto* barGo = scene.CreateGameObject("Barricade");
+    barGo->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    barGo->AddComponent<SplinterBarricadeComponent>();
+
+    // 2. FlarePeg emits 7.5m SafeLifeline light
+    auto* flareGo = scene.CreateGameObject("Flare");
+    flareGo->GetTransform()->position = { 10.0f, 0.0f, 0.0f };
+    auto* flare = flareGo->AddComponent<FlarePegComponent>();
+    flare->RemainingLifetime = 0.25f;
+
+    // 3. Thumper + Enemy within 2.2m
+    auto* thumperGo = scene.CreateGameObject("Thumper");
+    thumperGo->GetTransform()->position = { 20.0f, 0.0f, 0.0f };
+    auto* thumper = thumperGo->AddComponent<ThumperComponent>();
+    auto* enemy = scene.CreateGameObject("Enemy");
+    enemy->SetTag(Engine::EntityTag::Enemy);
+    enemy->GetTransform()->position = { 21.2f, 0.0f, 0.0f };
+    auto* eRb = enemy->AddComponent<Engine::Rigidbody2D>();
+    eRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    eRb->UseGravityY = true;
+    enemy->AddComponent<Engine::CircleCollider2D>()->Radius = 0.4f;
+
+    // 4. TarSiphon spawns AshEmber every 3.0s
+    auto* siphonGo = scene.CreateGameObject("TarSiphon");
+    siphonGo->GetTransform()->position = { -10.0f, 0.0f, 0.0f };
+    auto* siphon = siphonGo->AddComponent<TarSiphonComponent>();
+    siphon->CycleInterval = 0.20f;
+
+    scene.OnRuntimeStart();
+
+    // Shatter barricade
+    DamageEvent lethal;
+    lethal.Amount = 200.0f;
+    lethal.ImpulseXZ = { 10.0f, 0.0f };
+    EXPECT_TRUE(barGo->GetComponent<HealthComponent>()->ApplyDamage(lethal));
+    const auto splinters = scene.FindGameObjectsWithTag(Engine::EntityTag::Projectile);
+    EXPECT_GE(splinters.size(), 5u);
+    EXPECT_LE(splinters.size(), 7u);
+
+    // Check FlarePeg light
+    auto* flareLight = flareGo->GetComponent<Engine::PointLightComponent>();
+    ASSERT_NE(flareLight, nullptr);
+    EXPECT_FLOAT_EQ(flareLight->Radius, 7.5f);
+    EXPECT_EQ(flareLight->Semantic, Engine::LightSemantic::SafeLifeline);
+
+    // Trigger Thumper blast
+    thumper->TriggerBlast();
+    EXPECT_GT(thumper->GetCooldownRemaining(), 2.0f);
+    EXPECT_GE(eRb->VerticalVelocity, 5.5f);
+    EXPECT_GE(scene.GetDecalManager().GetActiveCount(), 1u);
+
+    // Step 0.30s -> Flare expires, TarSiphon spawns AshEmber, Enemy moves backward
+    for (int i = 0; i < 20; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_GT(eRb->GetVelocityXZ().x, 1.0f);
+    EXPECT_GE(scene.FindGameObjectsWithTag(Engine::EntityTag::ResourcePickup).size(), 1u);
+
+    bool flareAlive = false;
+    for (const auto& go : scene.GetGameObjects()) {
+        if (go.get() == flareGo && !go->IsPendingDestroy()) {
+            flareAlive = true;
+            break;
+        }
+    }
+    EXPECT_FALSE(flareAlive);
 
     scene.OnRuntimeStop();
 }

@@ -21,6 +21,7 @@
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
 #include "Scripts/RuneCasterComponent.h"
+#include "Scripts/StructurePlacerComponent.h"
 #include "Scripts/TorchComponent.h"
 #include "Scripts/WeaponController.h"
 
@@ -247,6 +248,9 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
             }
             if (!goPtr->GetComponent<RuneCasterComponent>()) {
                 goPtr->AddComponent<RuneCasterComponent>();
+            }
+            if (!goPtr->GetComponent<StructurePlacerComponent>()) {
+                goPtr->AddComponent<StructurePlacerComponent>();
             }
             if (!goPtr->GetComponent<Engine::CameraComponent>()) {
                 auto* camComp = goPtr->AddComponent<Engine::CameraComponent>();
