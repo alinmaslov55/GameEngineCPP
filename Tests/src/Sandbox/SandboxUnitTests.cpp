@@ -28,6 +28,8 @@
 #include "Scripts/PickupComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
+#include "Scripts/RuneCasterComponent.h"
+#include "Scripts/RuneEffectsComponents.h"
 #include "Scripts/CameraController.h"
 #include "Scripts/SplinterProjectileComponent.h"
 #include "Scripts/StatusEffectsComponent.h"
@@ -767,6 +769,160 @@ TEST(SandboxUnitTest, TorchComponentAshFrenzyAndDarknessDread) {
         scene.UpdateRuntime(1.0f / 60.0f);
     }
     EXPECT_FLOAT_EQ(stats->HP, hpBeforeShelter);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, RuneCasterIgniteAndShockwaveSpendFuelAndTriggerEffects) {
+    Engine::Scene scene("RuneIgniteShockwaveTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->AddComponent<Engine::PointLightComponent>();
+    player->AddComponent<PlayerStatsComponent>();
+    auto* socket = scene.CreateGameObject("TorchSocket");
+    socket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = socket->AddComponent<TorchComponent>();
+    torch->BaseBurnRate = 0.0f;
+    auto* caster = player->AddComponent<RuneCasterComponent>();
+    ASSERT_TRUE(caster->EquipRune("rune_ignite"));
+
+    auto* enemy = scene.CreateGameObject("Cultist");
+    enemy->SetTag(Engine::EntityTag::Enemy);
+    enemy->GetTransform()->position = { 3.0f, 0.0f, 0.0f };
+    auto* rb = enemy->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    enemy->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
+    auto* status = enemy->AddComponent<StatusEffectsComponent>();
+    auto* health = enemy->AddComponent<HealthComponent>();
+    health->ResetHealth(100.0f);
+
+    scene.OnRuntimeStart();
+
+    EXPECT_TRUE(caster->TryCastRune());
+    EXPECT_FLOAT_EQ(torch->Fuel, 85.0f); // 100 - 15
+    EXPECT_FALSE(caster->TryCastRune()); // Cooldown blocks immediate recast
+    EXPECT_LT(health->CurrentHP, 95.0f);
+    EXPECT_TRUE(status->IsBurning());
+
+    // Advance past 4.0s cooldown and cast Rune of Shockwave
+    for (int i = 0; i < 250; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    const float fuelBeforeShockwave = torch->Fuel;
+    ASSERT_TRUE(caster->EquipRune("rune_shockwave"));
+    EXPECT_TRUE(caster->TryCastRune());
+    EXPECT_FLOAT_EQ(torch->Fuel, fuelBeforeShockwave - 12.0f);
+
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_GT(rb->GetVelocityXZ().x, 0.5f);
+
+    bool foundRing = false;
+    for (const auto& go : scene.GetGameObjects()) {
+        if (go && go->GetComponent<ShockwaveRingComponent>() != nullptr) {
+            foundRing = true;
+            break;
+        }
+    }
+    EXPECT_TRUE(foundRing);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, RuneCasterChronosStasisQueuesImpulsesUntilUnfreeze) {
+    Engine::Scene scene("RuneChronosTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->AddComponent<Engine::PointLightComponent>();
+    player->AddComponent<PlayerStatsComponent>();
+    auto* socket = scene.CreateGameObject("TorchSocket");
+    socket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = socket->AddComponent<TorchComponent>();
+    torch->BaseBurnRate = 0.0f;
+    auto* caster = player->AddComponent<RuneCasterComponent>();
+    ASSERT_TRUE(caster->EquipRune("rune_chronos"));
+
+    auto* enemy = scene.CreateGameObject("FrozenGhoul");
+    enemy->SetTag(Engine::EntityTag::Enemy);
+    enemy->GetTransform()->position = { 3.0f, 0.0f, 0.0f };
+    auto* sr = enemy->AddComponent<Engine::SpriteRenderer>();
+    auto* rb = enemy->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->LinearDamping = 0.5f;
+    enemy->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
+    enemy->AddComponent<KineticBowlingComponent>();
+
+    scene.OnRuntimeStart();
+
+    EXPECT_TRUE(caster->TryCastRune());
+    EXPECT_FLOAT_EQ(torch->Fuel, 80.0f); // 100 - 20
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_TRUE(rb->IsStasisFrozen());
+    EXPECT_FLOAT_EQ(sr->GetCutoutFX().z, static_cast<float>(Engine::SpriteRenderer::FlashMode::SpectralBlue));
+
+    // Queue impulse while frozen
+    rb->ApplyImpulseXZ(20.0f, 0.0f);
+    for (int i = 0; i < 60; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_TRUE(rb->IsStasisFrozen());
+    EXPECT_NEAR(glm::length(rb->GetVelocityXZ()), 0.0f, 0.05f);
+
+    // Advance past 4.0s stasis duration -> queued impulse erupts
+    for (int i = 0; i < 190; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FALSE(rb->IsStasisFrozen());
+    EXPECT_GT(rb->GetVelocityXZ().x, 1.0f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, RuneCasterConsecrationHealsPlayerAndBurnsEnemies) {
+    Engine::Scene scene("RuneConsecrateTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->AddComponent<Engine::PointLightComponent>();
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+    stats->HP = 70.0f;
+    auto* socket = scene.CreateGameObject("TorchSocket");
+    socket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = socket->AddComponent<TorchComponent>();
+    torch->BaseBurnRate = 0.0f;
+    auto* caster = player->AddComponent<RuneCasterComponent>();
+    ASSERT_TRUE(caster->EquipRune("rune_consecrate"));
+
+    auto* enemy = scene.CreateGameObject("ShadowFoe");
+    enemy->SetTag(Engine::EntityTag::Enemy);
+    enemy->GetTransform()->position = { 4.0f, 0.0f, 0.0f };
+    auto* health = enemy->AddComponent<HealthComponent>();
+    health->ResetHealth(100.0f);
+
+    scene.OnRuntimeStart();
+
+    EXPECT_TRUE(caster->TryCastRune());
+    EXPECT_FLOAT_EQ(torch->Fuel, 75.0f); // 100 - 25
+
+    for (int i = 0; i < 60; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_GT(stats->HP, 73.0f);
+    EXPECT_LT(health->CurrentHP, 95.0f);
+
+    // Advance past 6.0s duration -> ConsecrationZone expires
+    for (int i = 0; i < 320; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    bool foundZone = false;
+    for (const auto& go : scene.GetGameObjects()) {
+        if (go && go->GetComponent<ConsecrationZoneComponent>() != nullptr) {
+            foundZone = true;
+            break;
+        }
+    }
+    EXPECT_FALSE(foundZone);
 
     scene.OnRuntimeStop();
 }

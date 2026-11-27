@@ -20,6 +20,7 @@
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
+#include "Scripts/RuneCasterComponent.h"
 #include "Scripts/TorchComponent.h"
 #include "Scripts/WeaponController.h"
 
@@ -243,6 +244,9 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
             }
             if (!goPtr->GetComponent<WeaponController>()) {
                 goPtr->AddComponent<WeaponController>();
+            }
+            if (!goPtr->GetComponent<RuneCasterComponent>()) {
+                goPtr->AddComponent<RuneCasterComponent>();
             }
             if (!goPtr->GetComponent<Engine::CameraComponent>()) {
                 auto* camComp = goPtr->AddComponent<Engine::CameraComponent>();
