@@ -2,6 +2,9 @@
 #define SANDBOX_STATUS_EFFECTS_COMPONENT_H
 
 #include <Engine/Scene/Component.h>
+#include <Engine/Scene/GameObject.h>
+#include <Engine/Scene/Scene.h>
+#include <Engine/Scene/Transform.h>
 #include <glm/vec2.hpp>
 
 #include <algorithm>
@@ -29,6 +32,8 @@ public:
     float BurnDPS = 0.0f;
     float BlindTimer = 0.0f;
     float StunTimer = 0.0f;
+    float BurnSpreadRadius = 1.0f;
+    float BurnSpreadInterval = 0.15f;
 
     void ResetAll() noexcept {
         InvulnTimer = 0.0f;
@@ -99,12 +104,25 @@ public:
             }
             if (BurnTimer <= 0.0f) {
                 BurnDPS = 0.0f;
+                m_SpreadTimer = 0.0f;
+            } else {
+                m_SpreadTimer += deltaTime;
+                if (m_SpreadTimer >= BurnSpreadInterval) {
+                    m_SpreadTimer = 0.0f;
+                    if (auto* go = GetGameObject()) {
+                        if (auto* scene = go->GetScene()) {
+                            const glm::vec3 pos = go->GetTransform()->GetWorldPosition();
+                            scene->IgniteAtXZ({ pos.x, pos.z }, BurnSpreadRadius);
+                        }
+                    }
+                }
             }
         }
     }
 
 private:
     float m_PendingBurnDamage = 0.0f;
+    float m_SpreadTimer = 0.0f;
 };
 
 #endif // SANDBOX_STATUS_EFFECTS_COMPONENT_H

@@ -18,6 +18,7 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
 #include "Scripts/ArenaStreamingDriver.h"
+#include "Scripts/FireHazardComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
 #include "Scripts/RuneCasterComponent.h"
@@ -231,6 +232,9 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
         if (goPtr->GetName() == "Terrain") {
             if (auto* chunkMgr = goPtr->GetComponent<Engine::TerrainChunkManager>()) {
                 chunkMgr->AutoStreamWithCamera = false;
+            }
+            if (!goPtr->GetComponent<FireHazardComponent>()) {
+                goPtr->AddComponent<FireHazardComponent>();
             }
         }
         if (goPtr->GetName() == "Player") {

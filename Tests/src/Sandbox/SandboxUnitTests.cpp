@@ -23,6 +23,7 @@
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/DeployableStructures.h"
+#include "Scripts/FireHazardComponent.h"
 #include "Scripts/HarvestableComponent.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
@@ -1060,6 +1061,94 @@ TEST(SandboxUnitTest, DeployableStructuresExecuteBarricadeFlareThumperAndTarSiph
         }
     }
     EXPECT_FALSE(flareAlive);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, TorchDashAndStokeIgniteContiguousTarAndBurnCrossingEnemies) {
+    auto scene = Sandbox::AlphaRunScene::Create(42ULL);
+    ASSERT_NE(scene, nullptr);
+    Sandbox::AlphaRunScene::BindRuntimeGameplayScripts(scene);
+
+    Engine::GameObject* player = nullptr;
+    Engine::GameObject* torchSocket = nullptr;
+    for (const auto& go : scene->GetGameObjects()) {
+        if (go && go->GetName() == "Player") {
+            player = go.get();
+        } else if (go && go->GetName() == "TorchSocket") {
+            torchSocket = go.get();
+        }
+    }
+    ASSERT_NE(player, nullptr);
+    ASSERT_NE(torchSocket, nullptr);
+    auto* stats = player->GetComponent<PlayerStatsComponent>();
+    auto* torch = torchSocket->GetComponent<TorchComponent>();
+    ASSERT_NE(stats, nullptr);
+    ASSERT_NE(torch, nullptr);
+    stats->Wood = 4;
+
+    auto* enemy = scene->CreateGameObject("TarCrosser");
+    enemy->SetTag(Engine::EntityTag::Enemy);
+    enemy->GetTransform()->position = { 3.0f, 0.0f, 2.5f };
+    auto* eStatus = enemy->AddComponent<StatusEffectsComponent>();
+    auto* eHealth = enemy->AddComponent<HealthComponent>();
+    eHealth->ResetHealth(100.0f);
+
+    scene->OnRuntimeStart();
+
+    // Paint contiguous Tar strip from Player (0, 2.5) to Enemy (3.0, 2.5)
+    scene->PaintMaterialWorld({ 0.5f, 2.5f }, 2u, 1.8f, 1.0f);
+    scene->PaintMaterialWorld({ 2.0f, 2.5f }, 2u, 1.8f, 1.0f);
+    scene->PaintMaterialWorld({ 3.2f, 2.5f }, 2u, 1.5f, 1.0f);
+
+    // Stoking over Tar ignites it, spreads at 10 Hz across contiguous Tar, and burns crossing enemy (14 DPS)
+    EXPECT_TRUE(torch->StokeTorch());
+    for (int i = 0; i < 65; ++i) {
+        scene->UpdateRuntime(1.0f / 60.0f);
+    }
+
+    EXPECT_TRUE(scene->IsBurningAtXZ(3.0f, 2.5f));
+    EXPECT_LT(eHealth->CurrentHP, 96.0f);
+    EXPECT_TRUE(eStatus->IsBurning());
+
+    scene->OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, BurningBodySpreadsFireToTarAndScorchesToLayer5) {
+    Engine::Scene scene("BurningBodyTarTestScene");
+
+    auto* terrainGo = scene.CreateGameObject("Terrain");
+    auto* chunkMgr = terrainGo->AddComponent<Engine::TerrainChunkManager>(16.0f, 65u, 1, 2);
+    chunkMgr->AutoStreamWithCamera = false;
+    chunkMgr->UpdateStreaming({ 0.0f, 0.0f, 0.0f });
+    chunkMgr->FlushPendingGenerations();
+    chunkMgr->DrainReadyPayloads();
+
+    auto* runner = scene.CreateGameObject("BurningRunner");
+    runner->SetTag(Engine::EntityTag::Enemy);
+    runner->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* status = runner->AddComponent<StatusEffectsComponent>();
+    status->ApplyBurn(1.0f, 5.0f);
+
+    scene.OnRuntimeStart();
+
+    // Paint flammable Tar at (0, 0)
+    scene.PaintMaterialWorld({ 0.0f, 0.0f }, 2u, 2.5f, 1.0f);
+
+    // Burning body ignites the Tar beneath it
+    for (int i = 0; i < 20; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_TRUE(scene.IsBurningAtXZ(0.0f, 0.0f));
+
+    // Stop burning body and advance past 4.5s MaxBurnDuration -> scorches Tar into Scorched Ash (Layer 5)
+    status->BurnTimer = 0.0f;
+    status->BurnDPS = 0.0f;
+    for (int i = 0; i < 300; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FALSE(scene.IsBurningAtXZ(0.0f, 0.0f));
+    EXPECT_LT(chunkMgr->SampleSurfaceAtXZ(0.0f, 0.0f).Flammability, 0.35f);
 
     scene.OnRuntimeStop();
 }

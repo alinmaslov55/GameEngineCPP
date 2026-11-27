@@ -3,6 +3,7 @@
 
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/HealthComponent.h"
+#include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
 
 #include <Engine/Audio/AudioClip.h>
@@ -48,6 +49,8 @@ public:
     // Stoke Torch
     int StokeWoodCost = 2;
     float StokeFuelRestore = 25.0f;
+    float StokeIgniteRadius = 2.2f;
+    float DashIgniteRadius = 1.2f;
     std::shared_ptr<Engine::AudioClip> StokeClip;
 
     // Ash Frenzy (Fuel <= 20%)
@@ -95,6 +98,10 @@ public:
         m_FlarePulse = 1.0f;
 
         if (auto* go = GetGameObject()) {
+            if (auto* scene = go->GetScene()) {
+                const glm::vec3 pos = go->GetTransform()->GetWorldPosition();
+                scene->IgniteAtXZ({ pos.x, pos.z }, StokeIgniteRadius);
+            }
             if (auto* ps = (player ? player->GetComponent<Engine::ParticleSystem>() : nullptr)) {
                 Engine::ParticleProps flare;
                 flare.position = go->GetTransform()->GetWorldPosition() + glm::vec3(0.0f, 0.6f, 0.0f);
@@ -163,6 +170,11 @@ public:
 
         // 2. Searing Rim ([0.75 * R, 1.05 * R]) & nearby enemy count
         const glm::vec3 torchPos = go->GetTransform()->GetWorldPosition();
+        if (Fuel > 0.0f && player) {
+            if (auto* pc = player->GetComponent<PlayerController>(); pc && pc->IsDodging()) {
+                scene->IgniteAtXZ({ torchPos.x, torchPos.z }, DashIgniteRadius);
+            }
+        }
         const uint32_t nearbyEnemies = UpdateSearingRim(*scene, torchPos, deltaTime);
 
         // 3. Ash Frenzy (0 < Fuel <= 20%)
