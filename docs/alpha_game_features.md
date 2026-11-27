@@ -40,7 +40,7 @@ flowchart LR
 | ID | Feature Name | Milestone | Priority | Status | Engine Systems & Data Used |
 | :--- | :--- | :---: | :---: | :---: | :--- |
 | **`GAM-01`** | **Torchbearer Controller, Dodge Roll & Surface Footwork** | A1 | **P0** | `DONE` | `INP-01/02`, `PHY-01/02`, `TER-04`, `CAM-02`, `ANI-01`, `SquashStretch` |
-| **`GAM-02`** | **Data-Driven Melee Weapons & Domino Bowling Physics** | A1 | **P0** | `TODO` | `weapons.json`, `PHY-03/05`, `ECS-02` (Hit-Stop), `RND-01` (Hit-Flash) |
+| **`GAM-02`** | **Data-Driven Melee Weapons & Domino Bowling Physics** | A1 | **P0** | `DONE` | `weapons.json`, `PHY-03/05`, `ECS-02` (Hit-Stop), `RND-01` (Hit-Flash) |
 | **`GAM-03`** | **Torch Lifeline, Searing Rim, Stoke & Ash Frenzy** | A2 | **P0** | `TODO` | `LGT-01/03`, `PointLightComponent`, `PostProcessComponent`, `AUD-03` |
 | **`GAM-04`** | **Active Torch Runes (Ignition, Chronos, Shockwave, Consecrate)** | A2 | **P1** | `TODO` | `runes.json`, `PHY-05` (`SetStasisFrozen`), `TER-04`, `LGT-03` |
 | **`GAM-05`** | **Alpha Survival Arena & Procedural Biome Clearing** | A1 | **P0** | `TODO` | `TER-01/02/03`, `TerrainChunkManager`, `WorldBiomeGenerator`, `Wind` |

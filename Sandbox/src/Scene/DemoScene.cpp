@@ -1,10 +1,12 @@
 #include "Scene/DemoScene.h"
 
 #include "Scripts/PlayerController.h"
+#include "Scripts/WeaponController.h"
 
 #include <Engine/Audio/AudioClip.h>
 #include <Engine/Audio/AudioSource.h>
 #include <Engine/Core/ResourceManager.h>
+#include <Engine/Data/GameplayData.h>
 #include <Engine/Particles/ParticleSystem.h>
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Renderer/SpriteRenderer.h>
@@ -422,6 +424,10 @@ void DemoScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Scene>&
         return;
     }
 
+    if (!Engine::GameplayData::IsInitialized()) {
+        Engine::GameplayData::Init("Sandbox/assets/data");
+    }
+
     for (const auto& goPtr : runtimeScene->GetGameObjects()) {
         if (goPtr->GetName() == "Player") {
             if (auto* rb = goPtr->GetComponent<Engine::Rigidbody2D>()) {
@@ -429,6 +435,9 @@ void DemoScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Scene>&
             }
             if (!goPtr->GetComponent<PlayerController>()) {
                 goPtr->AddComponent<PlayerController>();
+            }
+            if (!goPtr->GetComponent<WeaponController>()) {
+                goPtr->AddComponent<WeaponController>();
             }
             if (!goPtr->GetComponent<Engine::CameraComponent>()) {
                 auto* camComp = goPtr->AddComponent<Engine::CameraComponent>();

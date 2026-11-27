@@ -2,14 +2,22 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Data/GameplayData.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
+#include "Engine/Physics/PhysicsLayer.h"
 #include "Engine/Renderer/PerspectiveCamera.h"
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Scene/Components/CameraComponent.h"
+#include "Engine/Scene/Components/FoliageWindComponents.h"
+#include "Engine/Scene/EntityTag.h"
 #include "Engine/Terrain/TerrainComponent.h"
+#include "Scripts/CombatTargetComponent.h"
+#include "Scripts/KineticBowlingComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/CameraController.h"
+#include "Scripts/SplinterProjectileComponent.h"
+#include "Scripts/WeaponController.h"
 #include "Utils/FilenameUtils.h"
 
 namespace {
@@ -162,6 +170,164 @@ TEST(SandboxUnitTest, PlayerControllerAimSocketsAndCameraIntegration) {
 
     controller->TriggerImpactFeedback(0.45f, { 0.5f, -0.25f });
     EXPECT_GT(camComp->GetTrauma(), 0.4f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, WeaponControllerDataDrivenStatsAndSwingLifecycle) {
+    ASSERT_TRUE(Engine::GameplayData::Init("Sandbox/assets/data"));
+
+    Engine::Scene scene("WeaponLifecycleTestScene");
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    player->AddComponent<PlayerController>();
+    auto* wc = player->AddComponent<WeaponController>();
+
+    auto* enemy = scene.CreateGameObject("Ghoul");
+    enemy->SetTag(Engine::EntityTag::Enemy);
+    enemy->SetLayer(Engine::EntityLayer::Enemy);
+    enemy->GetTransform()->position = { 0.0f, 0.0f, 1.5f };
+    auto* enemyRb = enemy->AddComponent<Engine::Rigidbody2D>();
+    enemyRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    enemy->AddComponent<Engine::CircleCollider2D>()->Radius = 0.4f;
+    auto* enemyTarget = enemy->AddComponent<CombatTargetComponent>();
+    enemyTarget->ResetHealth(100.0f);
+    auto* enemyBowling = enemy->AddComponent<KineticBowlingComponent>();
+
+    scene.OnRuntimeStart();
+
+    EXPECT_TRUE(wc->EquipWeapon("weapon_halberd_t1"));
+    EXPECT_FLOAT_EQ(wc->GetEquippedWeapon().Reach, 3.5f);
+    EXPECT_TRUE(wc->EquipWeapon("weapon_sickle_t1"));
+    EXPECT_FLOAT_EQ(wc->GetEquippedWeapon().AttackRate, 2.0f);
+    EXPECT_TRUE(wc->EquipWeapon("weapon_maul_t1"));
+    EXPECT_FLOAT_EQ(wc->GetEquippedWeapon().KnockbackImpulse, 22.0f);
+
+    // Aim +Z toward the Ghoul at (0, 0, 1.5)
+    wc->SetAimOverrideXZ({ 0.0f, 1.0f });
+    EXPECT_TRUE(wc->RequestAttack());
+    EXPECT_EQ(wc->GetSwingPhase(), WeaponController::SwingPhase::Windup);
+
+    // Requesting during Windup buffers the follow-up swing
+    EXPECT_FALSE(wc->RequestAttack());
+    EXPECT_TRUE(wc->IsAttackBuffered());
+
+    // Advance past Windup (~0.31s for Maul) to trigger ActiveCleave
+    for (int i = 0; i < 22; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_EQ(wc->GetLastHitCount(), 1u);
+    EXPECT_LT(enemyTarget->Health, 100.0f);
+    EXPECT_TRUE(enemyBowling->IsLaunched());
+    EXPECT_GT(enemyRb->GetVelocityXZ().y, 1.0f);
+
+    scene.OnRuntimeStop();
+    Engine::GameplayData::Shutdown();
+}
+
+TEST(SandboxUnitTest, KineticBowlingEnemyDominoAndWallSlam) {
+    Engine::Scene scene("KineticBowlingDominoTestScene");
+
+    auto* enemyA = scene.CreateGameObject("EnemyA");
+    enemyA->SetTag(Engine::EntityTag::Enemy);
+    enemyA->SetLayer(Engine::EntityLayer::Enemy);
+    enemyA->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* rbA = enemyA->AddComponent<Engine::Rigidbody2D>();
+    rbA->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rbA->LinearDamping = 0.0f;
+    enemyA->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
+    auto* targetA = enemyA->AddComponent<CombatTargetComponent>();
+    targetA->ResetHealth(200.0f);
+    auto* bowlingA = enemyA->AddComponent<KineticBowlingComponent>();
+
+    auto* enemyB = scene.CreateGameObject("EnemyB");
+    enemyB->SetTag(Engine::EntityTag::Enemy);
+    enemyB->SetLayer(Engine::EntityLayer::Enemy);
+    enemyB->GetTransform()->position = { 1.4f, 0.0f, 0.0f };
+    auto* rbB = enemyB->AddComponent<Engine::Rigidbody2D>();
+    rbB->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    enemyB->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
+    enemyB->AddComponent<Engine::SpriteRenderer>();
+    auto* targetB = enemyB->AddComponent<CombatTargetComponent>();
+    targetB->ResetHealth(200.0f);
+    enemyB->AddComponent<KineticBowlingComponent>();
+
+    auto* tree = scene.CreateGameObject("PineTree");
+    tree->SetTag(Engine::EntityTag::HarvestableTree);
+    tree->SetLayer(Engine::EntityLayer::Environment);
+    tree->GetTransform()->position = { -1.5f, 0.0f, 5.0f };
+    tree->AddComponent<Engine::BoxCollider2D>()->size = { 0.8f, 0.8f };
+    tree->AddComponent<Engine::SquashStretchComponent>();
+
+    auto* enemyC = scene.CreateGameObject("EnemyC");
+    enemyC->SetTag(Engine::EntityTag::Enemy);
+    enemyC->SetLayer(Engine::EntityLayer::Enemy);
+    enemyC->GetTransform()->position = { 0.0f, 0.0f, 5.0f };
+    auto* rbC = enemyC->AddComponent<Engine::Rigidbody2D>();
+    rbC->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rbC->LinearDamping = 0.0f;
+    enemyC->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
+    auto* targetC = enemyC->AddComponent<CombatTargetComponent>();
+    targetC->ResetHealth(200.0f);
+    auto* bowlingC = enemyC->AddComponent<KineticBowlingComponent>();
+
+    scene.OnRuntimeStart();
+
+    // Launch EnemyA +X into EnemyB
+    bowlingA->Launch(0.6f);
+    rbA->SetVelocityXZ(14.0f, 0.0f);
+    for (int i = 0; i < 15; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_LT(targetA->Health, 200.0f);
+    EXPECT_LT(targetB->Health, 200.0f);
+    EXPECT_GT(rbB->GetVelocityXZ().x, 1.0f);
+
+    // Launch EnemyC -X into PineTree for wall-slam bonus damage + 0.6s stun
+    bowlingC->Launch(0.6f);
+    rbC->SetVelocityXZ(-16.0f, 0.0f);
+    for (int i = 0; i < 15; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_LT(targetC->Health, 200.0f);
+    EXPECT_TRUE(targetC->IsStunned());
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, KineticBowlingBarricadeShatterSpawnsSplinters) {
+    Engine::Scene scene("BarricadeShatterTestScene");
+
+    auto* enemy = scene.CreateGameObject("LaunchedGhoul");
+    enemy->SetTag(Engine::EntityTag::Enemy);
+    enemy->SetLayer(Engine::EntityLayer::Enemy);
+    enemy->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* rb = enemy->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    rb->LinearDamping = 0.0f;
+    enemy->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
+    enemy->AddComponent<CombatTargetComponent>()->ResetHealth(200.0f);
+    auto* bowling = enemy->AddComponent<KineticBowlingComponent>();
+
+    auto* barricade = scene.CreateGameObject("Splinter Barricade");
+    barricade->SetTag(Engine::EntityTag::TacticalStructure);
+    barricade->SetLayer(Engine::EntityLayer::LowObstacle);
+    barricade->GetTransform()->position = { 1.5f, 0.0f, 0.0f };
+    barricade->AddComponent<Engine::BoxCollider2D>()->size = { 0.6f, 1.4f };
+    auto* bTarget = barricade->AddComponent<CombatTargetComponent>();
+    bTarget->ResetHealth(30.0f); // Shatters on single high-speed slam
+
+    scene.OnRuntimeStart();
+    bowling->Launch(0.6f);
+    rb->SetVelocityXZ(14.0f, 0.0f);
+    for (int i = 0; i < 15; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+
+    const auto splinters = scene.FindGameObjectsWithTag(Engine::EntityTag::Projectile);
+    EXPECT_GE(splinters.size(), 5u);
+    EXPECT_LE(splinters.size(), 7u);
 
     scene.OnRuntimeStop();
 }
