@@ -1,6 +1,8 @@
 #include "Scene/AlphaRunScene.h"
 
 #include "Engine/Audio/AudioClip.h"
+#include "Engine/Audio/AudioManager.h"
+#include "Engine/Audio/MusicDirector.h"
 #include "Engine/Audio/AudioSource.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Data/GameplayData.h"
@@ -307,6 +309,13 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
     }
 
     BindHarvestableProps(*runtimeScene);
+    if (Engine::AudioManager::IsInitialized()) {
+        Engine::MusicDirector::PlaySynchronizedStems({
+            "assets/audio/mus_run_dread.ogg",
+            "assets/audio/mus_run_combat.ogg",
+            "assets/audio/mus_run_frenzy.ogg"
+        }, 1.2f);
+    }
 }
 
 std::shared_ptr<Engine::Scene> AlphaRunScene::CreateSanctuaryHubScene() {
@@ -347,6 +356,10 @@ std::shared_ptr<Engine::Scene> AlphaRunScene::CreateSanctuaryHubScene() {
 
     auto* titleGo = hub->CreateGameObject("TitleOverlay");
     titleGo->AddComponent<TitleOverlayComponent>()->Kind = SanctuaryStationKind::TitleOverlay;
+
+    if (Engine::AudioManager::IsInitialized()) {
+        Engine::MusicDirector::PlaySingleTrack("assets/audio/mus_sanctuary_hub.ogg", 1.2f);
+    }
 
     return hub;
 }

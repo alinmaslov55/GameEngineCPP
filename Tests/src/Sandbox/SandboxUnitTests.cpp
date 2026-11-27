@@ -2,6 +2,8 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Audio/AudioClip.h"
+#include "Engine/Audio/AudioManager.h"
 #include "Engine/Audio/MusicDirector.h"
 #include "Engine/Core/ResourceManager.h"
 #include "Engine/Data/GameplayData.h"
@@ -1720,6 +1722,70 @@ TEST(SandboxUnitTest, AlphaArtPackLoadsAndProcessesViaCutoutProcessor) {
     EXPECT_GT(res.OutputHeight, 0u);
     EXPECT_TRUE(std::filesystem::exists(tempOut));
     std::filesystem::remove(tempOut);
+    Engine::ResourceManager::SetAssetRoot(prevRoot);
+    Engine::ResourceManager::ClearPathCache();
+}
+
+TEST(SandboxUnitTest, AlphaAudioPackLoadsAndDrivesMusicDirector) {
+    const auto prevRoot = Engine::ResourceManager::GetAssetRoot();
+    Engine::ResourceManager::SetAssetRoot(std::filesystem::current_path() / "Sandbox");
+    Engine::ResourceManager::ClearPathCache();
+    Engine::ResourceManager::ClearType<Engine::AudioClip>();
+
+    const bool wasAudioInit = Engine::AudioManager::IsInitialized();
+    if (!wasAudioInit) {
+        Engine::AudioManager::Init();
+    }
+
+    static constexpr const char* kSfxAssets[] = {
+        "assets/audio/sfx_maul_swing.wav",
+        "assets/audio/sfx_hit_heavy.wav",
+        "assets/audio/sfx_domino_crunch.wav",
+        "assets/audio/sfx_wood_chop.wav",
+        "assets/audio/sfx_barricade_shatter.wav",
+        "assets/audio/sfx_pickup_wood.wav",
+        "assets/audio/sfx_pickup_ash.wav",
+        "assets/audio/sfx_torch_stoke.wav",
+        "assets/audio/sfx_fire_ignite.wav",
+        "assets/audio/sfx_rune_cast.wav",
+        "assets/audio/sfx_player_hurt.wav",
+        "assets/audio/sfx_level_up.wav"
+    };
+
+    for (const char* relPath : kSfxAssets) {
+        const std::string resolved = Engine::ResourceManager::ResolvePath(relPath);
+        ASSERT_TRUE(std::filesystem::exists(resolved)) << "Missing SFX asset: " << relPath;
+        auto clip = Engine::ResourceManager::Load<Engine::AudioClip>(relPath);
+        ASSERT_NE(clip, nullptr) << "Failed to load AudioClip: " << relPath;
+        EXPECT_GT(clip->GetFrameCount(), 0u) << relPath;
+        EXPECT_GT(clip->GetDurationSeconds(), 0.0f) << relPath;
+        const auto handle = Engine::AudioManager::PlayOneShot(clip);
+        EXPECT_NE(handle, Engine::kInvalidVoiceHandle) << relPath;
+    }
+
+    Engine::MusicDirector::PlaySingleTrack("assets/audio/mus_sanctuary_hub.ogg", 0.1f);
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingSingleTrack());
+
+    Engine::MusicDirector::PlaySynchronizedStems({
+        "assets/audio/mus_run_dread.ogg",
+        "assets/audio/mus_run_combat.ogg",
+        "assets/audio/mus_run_frenzy.ogg"
+    }, 0.1f);
+    EXPECT_TRUE(Engine::MusicDirector::IsPlayingStems());
+
+    Engine::MusicDirector::UpdateCombatState(0.10f, 0u, 0.25f);
+    EXPECT_EQ(Engine::MusicDirector::GetCombatTier(), Engine::CombatMusicTier::PitchBlackAmbience);
+
+    Engine::MusicDirector::UpdateCombatState(0.50f, 2u, 0.25f);
+    EXPECT_EQ(Engine::MusicDirector::GetCombatTier(), Engine::CombatMusicTier::MediumTorchExploration);
+
+    Engine::MusicDirector::UpdateCombatState(0.90f, 8u, 0.25f);
+    EXPECT_EQ(Engine::MusicDirector::GetCombatTier(), Engine::CombatMusicTier::AshFrenzyCombat);
+
+    Engine::MusicDirector::Shutdown();
+    if (!wasAudioInit) {
+        Engine::AudioManager::Shutdown();
+    }
     Engine::ResourceManager::SetAssetRoot(prevRoot);
     Engine::ResourceManager::ClearPathCache();
 }

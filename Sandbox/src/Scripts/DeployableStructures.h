@@ -1,6 +1,7 @@
 #ifndef SANDBOX_DEPLOYABLE_STRUCTURES_H
 #define SANDBOX_DEPLOYABLE_STRUCTURES_H
 
+#include "Scripts/AudioCueHelper.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
@@ -93,6 +94,12 @@ public:
         }
 
         const glm::vec3 origin = go->GetTransform()->GetWorldPosition();
+        Engine::SoundPlayParams shatterParams;
+        shatterParams.Bus = Engine::AudioBus::SFX;
+        shatterParams.Volume = 0.95f;
+        shatterParams.SpatializedXZ = true;
+        shatterParams.WorldPos = origin;
+        Sandbox::PlaySfxCue("assets/audio/sfx_barricade_shatter.wav", shatterParams);
         const float dirLen = glm::length(impactDir);
         const glm::vec2 baseDir = (std::isfinite(dirLen) && dirLen > 1e-4f)
             ? (impactDir / dirLen)
@@ -168,6 +175,13 @@ public:
         }
         health->ResetHealth(MaxHP);
         health->DestroyOnDeath = true;
+
+        Engine::SoundPlayParams igniteParams;
+        igniteParams.Bus = Engine::AudioBus::SFX;
+        igniteParams.Volume = 0.80f;
+        igniteParams.SpatializedXZ = true;
+        igniteParams.WorldPos = go->GetTransform()->GetWorldPosition();
+        Sandbox::PlaySfxCue("assets/audio/sfx_fire_ignite.wav", igniteParams);
     }
 
     void Update(float deltaTime) override {

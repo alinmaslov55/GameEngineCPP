@@ -1,6 +1,7 @@
 #ifndef SANDBOX_PICKUP_COMPONENT_H
 #define SANDBOX_PICKUP_COMPONENT_H
 
+#include "Scripts/AudioCueHelper.h"
 #include "Scripts/PlayerStatsComponent.h"
 
 #include <Engine/Core/ResourceManager.h>
@@ -161,13 +162,16 @@ public:
         switch (Kind) {
             case PickupKind::WoodLog:
                 stats->AddWood(Amount);
+                Sandbox::PlaySfxCue("assets/audio/sfx_pickup_wood.wav");
                 break;
             case PickupKind::AshEmber:
                 stats->AddXP(Amount);
                 stats->AddRunAshes(SecondaryAmount);
+                Sandbox::PlaySfxCue("assets/audio/sfx_pickup_ash.wav");
                 break;
             case PickupKind::CrimsonBerry:
                 stats->Heal(HealAmount);
+                Sandbox::PlaySfxCue("assets/audio/sfx_pickup_ash.wav");
                 break;
         }
 

@@ -128,14 +128,18 @@ public:
                 flare.velocityVariation = { 2.4f, 1.4f, 2.4f };
                 ps->EmitBurst(flare, 12u);
             }
-            if (StokeClip && Engine::AudioManager::IsInitialized()) {
+            std::shared_ptr<Engine::AudioClip> stokeClip = StokeClip;
+            if (!stokeClip) {
+                stokeClip = Engine::ResourceManager::Load<Engine::AudioClip>("assets/audio/sfx_torch_stoke.wav");
+            }
+            if (stokeClip && Engine::AudioManager::IsInitialized()) {
                 Engine::SoundPlayParams params;
                 params.Bus = Engine::AudioBus::SFX;
                 params.PitchMin = 0.96f;
                 params.PitchMax = 1.06f;
                 params.SpatializedXZ = true;
                 params.WorldPos = go->GetTransform()->GetWorldPosition();
-                Engine::AudioManager::PlayOneShot(StokeClip, params);
+                Engine::AudioManager::PlayOneShot(stokeClip, params);
             }
         }
         return true;

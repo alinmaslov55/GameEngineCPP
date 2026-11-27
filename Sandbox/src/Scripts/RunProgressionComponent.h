@@ -1,6 +1,7 @@
 #ifndef SANDBOX_RUN_PROGRESSION_COMPONENT_H
 #define SANDBOX_RUN_PROGRESSION_COMPONENT_H
 
+#include "Scripts/AudioCueHelper.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
@@ -166,6 +167,11 @@ private:
 
         RollThreeDistinctCards();
         BuildDraftOverlay(scene);
+        Engine::SoundPlayParams levelParams;
+        levelParams.Bus = Engine::AudioBus::UI;
+        levelParams.PitchMin = 1.0f;
+        levelParams.PitchMax = 1.0f;
+        Sandbox::PlaySfxCue("assets/audio/sfx_level_up.wav", levelParams);
     }
 
     void CloseDraft() {

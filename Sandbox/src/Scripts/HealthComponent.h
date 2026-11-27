@@ -158,6 +158,12 @@ public:
                     clipToPlay = audioSrc->GetClip();
                 }
             }
+            if (!clipToPlay) {
+                const char* fallbackPath = (go->GetTag() == Engine::EntityTag::Player)
+                    ? "assets/audio/sfx_player_hurt.wav"
+                    : "assets/audio/sfx_hit_heavy.wav";
+                clipToPlay = Engine::ResourceManager::Load<Engine::AudioClip>(fallbackPath);
+            }
             if (clipToPlay && Engine::AudioManager::IsInitialized()) {
                 Engine::SoundPlayParams params;
                 params.Bus = Engine::AudioBus::SFX;

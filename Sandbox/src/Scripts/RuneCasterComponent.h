@@ -1,6 +1,7 @@
 #ifndef SANDBOX_RUNE_CASTER_COMPONENT_H
 #define SANDBOX_RUNE_CASTER_COMPONENT_H
 
+#include "Scripts/AudioCueHelper.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
@@ -98,6 +99,12 @@ public:
         } else if (m_EquippedRune.Id == "rune_consecrate") {
             CastConsecration(*scene, origin);
         }
+        Engine::SoundPlayParams runeParams;
+        runeParams.Bus = Engine::AudioBus::SFX;
+        runeParams.Volume = 0.95f;
+        runeParams.SpatializedXZ = true;
+        runeParams.WorldPos = origin;
+        Sandbox::PlaySfxCue("assets/audio/sfx_rune_cast.wav", runeParams);
         return true;
     }
 

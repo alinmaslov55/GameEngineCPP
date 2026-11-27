@@ -1,6 +1,7 @@
 #ifndef SANDBOX_WEAPON_CONTROLLER_H
 #define SANDBOX_WEAPON_CONTROLLER_H
 
+#include "Scripts/AudioCueHelper.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
@@ -171,6 +172,14 @@ private:
             if (auto* ss = go->GetComponent<Engine::SquashStretchComponent>()) {
                 ss->TriggerImpulse(-1.6f, 6.0f);
             }
+            Engine::SoundPlayParams swingParams;
+            swingParams.Bus = Engine::AudioBus::SFX;
+            swingParams.Volume = 0.85f;
+            swingParams.PitchMin = 0.92f;
+            swingParams.PitchMax = 1.08f;
+            swingParams.SpatializedXZ = true;
+            swingParams.WorldPos = go->GetTransform()->GetWorldPosition();
+            Sandbox::PlaySfxCue("assets/audio/sfx_maul_swing.wav", swingParams);
         }
     }
 

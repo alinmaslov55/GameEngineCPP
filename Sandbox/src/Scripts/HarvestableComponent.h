@@ -1,6 +1,7 @@
 #ifndef SANDBOX_HARVESTABLE_COMPONENT_H
 #define SANDBOX_HARVESTABLE_COMPONENT_H
 
+#include "Scripts/AudioCueHelper.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/PickupComponent.h"
 
@@ -112,6 +113,12 @@ private:
         for (int i = 0; i < 8; ++i) {
             ps->Emit(chipProps);
         }
+        Engine::SoundPlayParams chopParams;
+        chopParams.Bus = Engine::AudioBus::SFX;
+        chopParams.Volume = 0.85f;
+        chopParams.SpatializedXZ = true;
+        chopParams.WorldPos = go->GetTransform()->GetWorldPosition();
+        Sandbox::PlaySfxCue("assets/audio/sfx_wood_chop.wav", chopParams);
     }
 
     void HandleFelled() {

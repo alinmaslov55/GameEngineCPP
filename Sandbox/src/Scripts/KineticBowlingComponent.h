@@ -1,6 +1,7 @@
 #ifndef SANDBOX_KINETIC_BOWLING_COMPONENT_H
 #define SANDBOX_KINETIC_BOWLING_COMPONENT_H
 
+#include "Scripts/AudioCueHelper.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/SplinterProjectileComponent.h"
 
@@ -143,6 +144,13 @@ private:
 
         if (auto* audio = self->GetComponent<Engine::AudioSource>()) {
             audio->Play();
+        } else {
+            Engine::SoundPlayParams crunchParams;
+            crunchParams.Bus = Engine::AudioBus::SFX;
+            crunchParams.Volume = 0.95f;
+            crunchParams.SpatializedXZ = true;
+            crunchParams.WorldPos = self->GetTransform()->GetWorldPosition();
+            Sandbox::PlaySfxCue("assets/audio/sfx_domino_crunch.wav", crunchParams);
         }
         Engine::Time::TriggerHitStop(0.025f, 0.04f);
         TriggerPlayerMicroFeedback(self->GetScene(), 0.18f, info.NormalXZ * 0.18f);
