@@ -49,7 +49,7 @@ flowchart LR
 | **`GAM-08`** | **Systemic Tar/Firewall Ignition & Burning-Body Spreading** | A2 | **P0** | `TODO` | `TER-04` (`TerrainFireGrid`), `VFX-01/02`, `LGT-02` |
 | **`GAM-09`** | **5-Archetype Monster AI Suite (Ghoul, Thrall, Jiangshi, Wisp, Wendigo)** | A3 | **P0** | `TODO` | `enemies.json`, `AIX-01` (`SteeringSystem`), `AIX-02` (`StateMachine`, `Ballistics`), `PHY-04` |
 | **`GAM-10`** | **Escalating Night/Wave Director & Mood Progression** | A3 | **P0** | `TODO` | `ECS-04` (`EntityPoolManager`), `DirectionalLight`, `PostProcess`, `AUD-03` |
-| **`GAM-11`** | **Unified Health, Damage, Status Effects & Impact Feel** | A1 | **P0** | `TODO` | `RND-01` (Dissolve/Flash), `VFX-01/02` (Flipbooks/Decals), `AUD-02` |
+| **`GAM-11`** | **Unified Health, Damage, Status Effects & Impact Feel** | A1 | **P0** | `DONE` | `RND-01` (Dissolve/Flash), `VFX-01/02` (Flipbooks/Decals), `AUD-02` |
 | **`GAM-12`** | **In-Run Ash XP & 3-Card Branch Upgrade Draft** | A3 | **P1** | `TODO` | `branches.json`, `UIX-01..03`, `UIButtonComponent`, `ECS-02` |
 | **`GAM-13`** | **Alpha HUD & Circular Fog-of-War Minimap** | A3 | **P0** | `TODO` | `UIX-01..04`, `UICanvas`, `UIPanel`, `UILabel`, `UIMinimapComponent` |
 | **`GAM-14`** | **Title -> Sanctuary Hub -> Root Altar -> Run -> Summary Loop** | A4 | **P1** | `TODO` | `roots.json`, `SAV-01/02` (`SaveManager`, `SceneManager::TransitionToScene`) |

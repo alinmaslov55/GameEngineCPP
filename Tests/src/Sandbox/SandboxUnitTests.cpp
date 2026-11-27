@@ -3,6 +3,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Data/GameplayData.h"
+#include "Engine/Particles/DecalManager.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
 #include "Engine/Physics/PhysicsLayer.h"
@@ -10,7 +11,9 @@
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Scene/Components/CameraComponent.h"
 #include "Engine/Scene/Components/FoliageWindComponents.h"
+#include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/EntityTag.h"
+#include "Engine/Scene/Prefab.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
 #include "Engine/Terrain/TerrainComponent.h"
 #include "Engine/Scene/Components/LightComponents.h"
@@ -18,12 +21,14 @@
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/HarvestableComponent.h"
+#include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
 #include "Scripts/PickupComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
 #include "Scripts/CameraController.h"
 #include "Scripts/SplinterProjectileComponent.h"
+#include "Scripts/StatusEffectsComponent.h"
 #include "Scripts/WeaponController.h"
 #include "Utils/FilenameUtils.h"
 
@@ -525,6 +530,108 @@ TEST(SandboxUnitTest, PickupCollectionGrantsWoodAshAndHeal) {
     EXPECT_FLOAT_EQ(stats->HP, 80.0f);
     EXPECT_GT(stats->XP, 0);
     EXPECT_GT(stats->RunAshes, 0);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, HealthComponentAppliesMitigationFlashSquashParticlesAndKnockback) {
+    Engine::Scene scene("HealthImpactTestScene");
+
+    auto* entity = scene.CreateGameObject("Cultist");
+    entity->SetTag(Engine::EntityTag::Enemy);
+    entity->SetLayer(Engine::EntityLayer::Enemy);
+    auto* sr = entity->AddComponent<Engine::SpriteRenderer>();
+    entity->AddComponent<Engine::SquashStretchComponent>();
+    entity->AddComponent<Engine::ParticleSystem>(64);
+    auto* rb = entity->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    entity->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
+    auto* status = entity->AddComponent<StatusEffectsComponent>();
+    auto* health = entity->AddComponent<HealthComponent>();
+    health->ResetHealth(100.0f);
+    health->DamageReduction = 0.25f;
+    health->KnockbackResistance = 0.50f;
+    health->InvulnOnHitDuration = 0.20f;
+
+    scene.OnRuntimeStart();
+
+    DamageEvent evt;
+    evt.Amount = 40.0f;
+    evt.ImpulseXZ = { 20.0f, 0.0f };
+    evt.StunDuration = 0.30f;
+    evt.IsFire = true;
+
+    EXPECT_TRUE(health->ApplyDamage(evt));
+    EXPECT_FLOAT_EQ(health->CurrentHP, 70.0f); // 40 * (1 - 0.25) = 30 damage
+    EXPECT_TRUE(status->IsStunned());
+    EXPECT_TRUE(status->IsInvulnerable());
+    EXPECT_FLOAT_EQ(sr->GetFlashAmount(), 1.0f);
+    EXPECT_FLOAT_EQ(sr->GetCutoutFX().z, static_cast<float>(Engine::SpriteRenderer::FlashMode::CrimsonImpact));
+
+    // Invulnerability blocks immediate repeat hit
+    EXPECT_FALSE(health->ApplyDamage(evt));
+
+    // Flash decays to 0 over 0.12s
+    for (int i = 0; i < 8; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FLOAT_EQ(sr->GetFlashAmount(), 0.0f);
+
+    // Burn ticks through StatusEffectsComponent -> HealthComponent
+    status->ApplyBurn(0.50f, 20.0f);
+    EXPECT_TRUE(status->IsBurning());
+    for (int i = 0; i < 30; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_LT(health->CurrentHP, 65.0f);
+    EXPECT_FALSE(status->IsBurning());
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, HealthComponentDeathSpawnsDecalDissolvesAndReleasesToPool) {
+    Engine::Scene scene("HealthPoolDeathTestScene");
+
+    auto* proto = scene.CreateGameObject("PooledGhoul");
+    proto->SetTag(Engine::EntityTag::Enemy);
+    proto->AddComponent<Engine::SpriteRenderer>();
+    proto->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
+    auto prefab = Engine::Prefab::CreateFromGameObject(proto);
+    scene.DestroyGameObject(proto);
+
+    auto& poolMgr = scene.GetPoolManager();
+    poolMgr.PrewarmPool("ghoul_pool", *prefab, 1u);
+    auto* enemy = poolMgr.AcquirePooled("ghoul_pool", *prefab, { 1.0f, 0.0f, 2.0f });
+    ASSERT_NE(enemy, nullptr);
+
+    auto* sr = enemy->GetComponent<Engine::SpriteRenderer>();
+    ASSERT_NE(sr, nullptr);
+    auto* health = enemy->AddComponent<HealthComponent>();
+    health->ResetHealth(25.0f);
+    health->DissolveDuration = 0.20f;
+    health->PoolKey = "ghoul_pool";
+
+    scene.OnRuntimeStart();
+
+    DamageEvent lethal;
+    lethal.Amount = 50.0f;
+    EXPECT_TRUE(health->ApplyDamage(lethal));
+    EXPECT_TRUE(health->IsDying());
+    EXPECT_EQ(scene.GetDecalManager().GetActiveCount(), 1u);
+
+    // Advance partway through dissolve
+    for (int i = 0; i < 6; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_GT(sr->GetDissolveAmount(), 0.0f);
+    EXPECT_LT(sr->GetDissolveAmount(), 1.0f);
+
+    // Finish dissolve -> entity returned to pool
+    for (int i = 0; i < 10; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_EQ(poolMgr.GetPoolFreeCount("ghoul_pool"), 1u);
+    EXPECT_FALSE(enemy->IsActive());
 
     scene.OnRuntimeStop();
 }

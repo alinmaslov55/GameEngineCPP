@@ -2,6 +2,7 @@
 #define SANDBOX_WEAPON_CONTROLLER_H
 
 #include "Scripts/CombatTargetComponent.h"
+#include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
 #include "Scripts/PlayerController.h"
 
@@ -199,31 +200,53 @@ private:
             }
             ++m_LastHitCount;
 
-            if (auto* target = targetGo->GetComponent<CombatTargetComponent>()) {
-                const float stunSec = isHalberd ? 0.35f : (isMaul ? 0.25f : 0.10f);
-                target->ApplyDamage(m_Weapon.Damage, stunSec, Engine::SpriteRenderer::FlashMode::PureWhite);
-                if (isSickle) {
-                    target->ApplyBurn(2.5f, 4.0f);
+            glm::vec2 pushDir = aimXZ;
+            if (auto* t = targetGo->GetTransform()) {
+                const glm::vec3 twp = t->GetWorldPosition();
+                const glm::vec2 delta{ twp.x - originXZ.x, twp.z - originXZ.y };
+                const float dLen = glm::length(delta);
+                if (std::isfinite(dLen) && dLen > 1e-4f) {
+                    pushDir = delta / dLen;
                 }
-            } else if (auto* sr = targetGo->GetComponent<Engine::SpriteRenderer>()) {
-                sr->SetFlashMode(Engine::SpriteRenderer::FlashMode::PureWhite);
-                sr->SetFlashAmount(1.0f);
             }
 
-            if (auto* targetRb = targetGo->GetComponent<Engine::Rigidbody2D>()) {
-                glm::vec2 pushDir = aimXZ;
-                if (auto* t = targetGo->GetTransform()) {
-                    const glm::vec3 twp = t->GetWorldPosition();
-                    const glm::vec2 delta{ twp.x - originXZ.x, twp.z - originXZ.y };
-                    const float dLen = glm::length(delta);
-                    if (std::isfinite(dLen) && dLen > 1e-4f) {
-                        pushDir = delta / dLen;
+            const float stunSec = isHalberd ? 0.35f : (isMaul ? 0.25f : 0.10f);
+            if (auto* health = targetGo->GetComponent<HealthComponent>()) {
+                DamageEvent evt;
+                evt.Amount = m_Weapon.Damage;
+                evt.Source = go;
+                evt.ImpulseXZ = pushDir * m_Weapon.KnockbackImpulse;
+                evt.StunDuration = stunSec;
+                evt.IsFire = isSickle;
+                health->ApplyDamage(evt);
+                if (isSickle) {
+                    if (auto* status = targetGo->GetComponent<StatusEffectsComponent>()) {
+                        status->ApplyBurn(2.5f, 4.0f);
                     }
                 }
-                targetRb->ApplyImpulseXZ(pushDir * m_Weapon.KnockbackImpulse);
-                if (isHalberd && targetRb->VerticalVelocity > 0.0f) {
-                    // Interrupt hopping enemies (e.g. Jiangshi) mid-air
-                    targetRb->VerticalVelocity = 0.0f;
+                if (isHalberd) {
+                    if (auto* targetRb = targetGo->GetComponent<Engine::Rigidbody2D>();
+                        targetRb && targetRb->VerticalVelocity > 0.0f) {
+                        targetRb->VerticalVelocity = 0.0f;
+                    }
+                }
+            } else {
+                if (auto* target = targetGo->GetComponent<CombatTargetComponent>()) {
+                    target->ApplyDamage(m_Weapon.Damage, stunSec, Engine::SpriteRenderer::FlashMode::PureWhite);
+                    if (isSickle) {
+                        target->ApplyBurn(2.5f, 4.0f);
+                    }
+                } else if (auto* sr = targetGo->GetComponent<Engine::SpriteRenderer>()) {
+                    sr->SetFlashMode(Engine::SpriteRenderer::FlashMode::PureWhite);
+                    sr->SetFlashAmount(1.0f);
+                }
+
+                if (auto* targetRb = targetGo->GetComponent<Engine::Rigidbody2D>()) {
+                    targetRb->ApplyImpulseXZ(pushDir * m_Weapon.KnockbackImpulse);
+                    if (isHalberd && targetRb->VerticalVelocity > 0.0f) {
+                        // Interrupt hopping enemies (e.g. Jiangshi) mid-air
+                        targetRb->VerticalVelocity = 0.0f;
+                    }
                 }
             }
 
