@@ -1,5 +1,6 @@
 #include "Editor/EditorLayer.h"
 
+#include "Scene/AlphaRunScene.h"
 #include "Scene/DemoScene.h"
 
 #include <Engine/Animation/Animator.h>
@@ -190,7 +191,11 @@ void EditorLayer::OnScenePlay() {
                                          static_cast<uint32_t>(viewportSize.y));
     }
 
-    DemoScene::BindRuntimeGameplayScripts(m_RuntimeScene);
+    if (AlphaRunScene::IsAlphaScene(*m_RuntimeScene)) {
+        AlphaRunScene::BindRuntimeGameplayScripts(m_RuntimeScene);
+    } else {
+        DemoScene::BindRuntimeGameplayScripts(m_RuntimeScene);
+    }
 
     m_ActiveScene = m_RuntimeScene;
     Engine::SceneManager::LoadScene(m_ActiveScene);
@@ -245,6 +250,42 @@ void EditorLayer::RenderMenuBar() {
             }
             if (ImGui::MenuItem("Load Scene...")) {
                 m_OpenLoadPopup = true;
+            }
+            if (ImGui::MenuItem("Open Alpha Test Scene")) {
+                if (m_SceneState == SceneState::Play) {
+                    OnSceneStop();
+                }
+                const std::string resolvedAlpha = Engine::ResourceManager::ResolvePath("assets/AlphaTest.scene");
+                if (!std::filesystem::exists(resolvedAlpha)) {
+                    AlphaRunScene::SaveAlphaTestScene("assets/AlphaTest.scene", 42ULL);
+                }
+                auto alphaScene = std::make_shared<Engine::Scene>("AlphaTest");
+                Engine::SceneSerializer deserializer(alphaScene);
+                if (deserializer.Deserialize("assets/AlphaTest.scene")) {
+                    m_EditorScene = alphaScene;
+                    m_ActiveScene = m_EditorScene;
+                    const glm::vec2 viewportSize = m_ViewportPanel.GetViewportSize();
+                    if (viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
+                        m_ActiveScene->OnViewportResize(static_cast<uint32_t>(viewportSize.x),
+                                                        static_cast<uint32_t>(viewportSize.y));
+                    }
+                    Engine::SceneManager::LoadScene(m_ActiveScene);
+                    m_SelectedEntityUUID = 0;
+                }
+            }
+            if (ImGui::MenuItem("Open Sanctuary Hub")) {
+                if (m_SceneState == SceneState::Play) {
+                    OnSceneStop();
+                }
+                m_EditorScene = AlphaRunScene::CreateSanctuaryHubScene();
+                m_ActiveScene = m_EditorScene;
+                const glm::vec2 viewportSize = m_ViewportPanel.GetViewportSize();
+                if (viewportSize.x > 0.0f && viewportSize.y > 0.0f) {
+                    m_ActiveScene->OnViewportResize(static_cast<uint32_t>(viewportSize.x),
+                                                    static_cast<uint32_t>(viewportSize.y));
+                }
+                Engine::SceneManager::LoadScene(m_ActiveScene);
+                m_SelectedEntityUUID = 0;
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit")) {

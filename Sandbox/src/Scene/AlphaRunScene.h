@@ -4,6 +4,7 @@
 #include <Engine/Scene/Scene.h>
 #include <cstdint>
 #include <memory>
+#include <string>
 
 namespace Sandbox {
 
@@ -24,6 +25,12 @@ public:
     /// @brief Attaches runtime gameplay scripts (PlayerController, WeaponController, CameraComponent,
     /// ArenaStreamingDriver) and initializes GameplayData when entering Play Mode.
     static void BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Scene>& runtimeScene);
+
+    /// @brief Returns true if the scene is an Alpha Survival / Sanctuary scene rather than DemoScene.
+    [[nodiscard]] static bool IsAlphaScene(const Engine::Scene& scene);
+
+    /// @brief Generates and serializes a ready-to-play Alpha test .scene file to disk.
+    static bool SaveAlphaTestScene(const std::string& filepath = "assets/AlphaTest.scene", uint64_t seed = 42ULL);
 };
 
 } // namespace Sandbox

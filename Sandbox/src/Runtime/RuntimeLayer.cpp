@@ -1,5 +1,6 @@
 #include "Runtime/RuntimeLayer.h"
 
+#include "Scene/AlphaRunScene.h"
 #include "Scene/DemoScene.h"
 
 #include <Engine/Core/Application.h>
@@ -51,7 +52,11 @@ void RuntimeLayer::OnAttach() {
         );
     }
 
-    DemoScene::BindRuntimeGameplayScripts(m_ActiveScene);
+    if (AlphaRunScene::IsAlphaScene(*m_ActiveScene)) {
+        AlphaRunScene::BindRuntimeGameplayScripts(m_ActiveScene);
+    } else {
+        DemoScene::BindRuntimeGameplayScripts(m_ActiveScene);
+    }
     Engine::SceneManager::LoadScene(m_ActiveScene);
     m_ActiveScene->OnRuntimeStart();
 

@@ -17,6 +17,7 @@
 #include "Engine/Scene/Components/SquashStretchComponent.h"
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/GameObject.h"
+#include "Engine/Scene/SceneSerializer.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
 #include "Scripts/AlphaHUDController.h"
@@ -362,6 +363,29 @@ std::shared_ptr<Engine::Scene> AlphaRunScene::CreateSanctuaryHubScene() {
     }
 
     return hub;
+}
+
+bool AlphaRunScene::IsAlphaScene(const Engine::Scene& scene) {
+    const std::string& name = scene.GetName();
+    if (name == "AlphaRun" || name == "AlphaTest" || name == "SanctuaryHub") {
+        return true;
+    }
+    for (const auto& go : scene.GetGameObjects()) {
+        if (go && (go->GetName() == "Sanctuary Brazier" || go->GetName() == "WaveDirector")) {
+            return true;
+        }
+    }
+    return false;
+}
+
+bool AlphaRunScene::SaveAlphaTestScene(const std::string& filepath, uint64_t seed) {
+    auto scene = Create(seed);
+    if (!scene) {
+        return false;
+    }
+    scene->SetName("AlphaTest");
+    Engine::SceneSerializer serializer(scene);
+    return serializer.Serialize(filepath);
 }
 
 } // namespace Sandbox

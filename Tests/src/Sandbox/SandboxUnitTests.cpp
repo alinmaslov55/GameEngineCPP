@@ -22,6 +22,7 @@
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/Prefab.h"
 #include "Engine/Scene/SceneManager.h"
+#include "Engine/Scene/SceneSerializer.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
 #include "Engine/Terrain/TerrainComponent.h"
 #include "Engine/Scene/Components/LightComponents.h"
@@ -1786,6 +1787,54 @@ TEST(SandboxUnitTest, AlphaAudioPackLoadsAndDrivesMusicDirector) {
     if (!wasAudioInit) {
         Engine::AudioManager::Shutdown();
     }
+    Engine::ResourceManager::SetAssetRoot(prevRoot);
+    Engine::ResourceManager::ClearPathCache();
+}
+
+TEST(SandboxUnitTest, AlphaTestSceneSerializesLoadsAndRunsInPlayMode) {
+    const auto prevRoot = Engine::ResourceManager::GetAssetRoot();
+    Engine::ResourceManager::SetAssetRoot(std::filesystem::current_path() / "Sandbox");
+    Engine::ResourceManager::ClearPathCache();
+
+    ASSERT_TRUE(Sandbox::AlphaRunScene::SaveAlphaTestScene("assets/AlphaTest.scene", 42ULL));
+    const std::string resolvedPath = Engine::ResourceManager::ResolvePath("assets/AlphaTest.scene");
+    ASSERT_TRUE(std::filesystem::exists(resolvedPath));
+
+    auto loadedScene = std::make_shared<Engine::Scene>("Loaded");
+    Engine::SceneSerializer deserializer(loadedScene);
+    ASSERT_TRUE(deserializer.Deserialize("assets/AlphaTest.scene"));
+    EXPECT_TRUE(Sandbox::AlphaRunScene::IsAlphaScene(*loadedScene));
+
+    auto findByName = [&](const char* name) -> Engine::GameObject* {
+        for (const auto& go : loadedScene->GetGameObjects()) {
+            if (go && go->GetName() == name) {
+                return go.get();
+            }
+        }
+        return nullptr;
+    };
+
+    EXPECT_NE(findByName("Player"), nullptr);
+    EXPECT_NE(findByName("Sanctuary Brazier"), nullptr);
+    EXPECT_NE(findByName("Terrain"), nullptr);
+    EXPECT_NE(findByName("MoonLight"), nullptr);
+
+    Sandbox::AlphaRunScene::BindRuntimeGameplayScripts(loadedScene);
+    loadedScene->OnRuntimeStart();
+    for (int i = 0; i < 3; ++i) {
+        loadedScene->UpdateRuntime(1.0f / 60.0f);
+    }
+
+    auto* player = findByName("Player");
+    ASSERT_NE(player, nullptr);
+    EXPECT_NE(player->GetComponent<PlayerController>(), nullptr);
+    EXPECT_NE(player->GetComponent<WeaponController>(), nullptr);
+    EXPECT_NE(player->GetComponent<RuneCasterComponent>(), nullptr);
+    EXPECT_NE(player->GetComponent<RunProgressionComponent>(), nullptr);
+    EXPECT_NE(findByName("WaveDirector"), nullptr);
+    EXPECT_NE(findByName("AlphaHUD"), nullptr);
+
+    loadedScene->OnRuntimeStop();
     Engine::ResourceManager::SetAssetRoot(prevRoot);
     Engine::ResourceManager::ClearPathCache();
 }
