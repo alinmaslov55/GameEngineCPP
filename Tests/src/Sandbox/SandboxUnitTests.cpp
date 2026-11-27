@@ -11,7 +11,11 @@
 #include "Engine/Scene/Components/CameraComponent.h"
 #include "Engine/Scene/Components/FoliageWindComponents.h"
 #include "Engine/Scene/EntityTag.h"
+#include "Engine/Terrain/TerrainChunkManager.h"
 #include "Engine/Terrain/TerrainComponent.h"
+#include "Engine/Scene/Components/LightComponents.h"
+#include "Scene/AlphaRunScene.h"
+#include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
 #include "Scripts/PlayerController.h"
@@ -330,6 +334,103 @@ TEST(SandboxUnitTest, KineticBowlingBarricadeShatterSpawnsSplinters) {
     EXPECT_LE(splinters.size(), 7u);
 
     scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, AlphaRunSceneCreatesSafeClearingAndNightLighting) {
+    auto scene = Sandbox::AlphaRunScene::Create(1337ULL);
+    ASSERT_NE(scene, nullptr);
+
+    auto findByName = [](Engine::Scene& s, const char* name) -> Engine::GameObject* {
+        for (const auto& go : s.GetGameObjects()) {
+            if (go && go->GetName() == name) {
+                return go.get();
+            }
+        }
+        return nullptr;
+    };
+
+    auto* moonGo = findByName(*scene, "MoonLight");
+    ASSERT_NE(moonGo, nullptr);
+    auto* moonLight = moonGo->GetComponent<Engine::DirectionalLightComponent>();
+    ASSERT_NE(moonLight, nullptr);
+    EXPECT_FLOAT_EQ(moonLight->SunIntensity, Sandbox::AlphaRunScene::kNightMoonIntensity);
+
+    auto* terrainGo = findByName(*scene, "Terrain");
+    ASSERT_NE(terrainGo, nullptr);
+    auto* chunkMgr = terrainGo->GetComponent<Engine::TerrainChunkManager>();
+    ASSERT_NE(chunkMgr, nullptr);
+    EXPECT_TRUE(chunkMgr->GetWorldGenConfig().Enabled);
+    EXPECT_EQ(chunkMgr->GetWorldGenConfig().Seed, 1337ULL);
+    EXPECT_FLOAT_EQ(chunkMgr->GetWorldGenConfig().OriginSafeRadius, 8.0f);
+    EXPECT_EQ(chunkMgr->GetActiveChunkCount(), 49u);
+
+    const auto originBiome = chunkMgr->SampleBiomeAtXZ(0.0f, 0.0f);
+    const auto spawnBiome = chunkMgr->SampleBiomeAtXZ(0.0f, 2.5f);
+    EXPECT_EQ(originBiome.DominantBiome, Engine::BiomeType::SanctuaryCobble);
+    EXPECT_EQ(spawnBiome.DominantBiome, Engine::BiomeType::SanctuaryCobble);
+
+    auto* brazierGo = findByName(*scene, "Sanctuary Brazier");
+    ASSERT_NE(brazierGo, nullptr);
+    auto* brazierLight = brazierGo->GetComponent<Engine::PointLightComponent>();
+    ASSERT_NE(brazierLight, nullptr);
+    EXPECT_EQ(brazierLight->Semantic, Engine::LightSemantic::SafeLifeline);
+    EXPECT_TRUE(brazierLight->CastShadows);
+
+    auto* playerGo = findByName(*scene, "Player");
+    ASSERT_NE(playerGo, nullptr);
+    auto* heroTorch = playerGo->GetComponent<Engine::PointLightComponent>();
+    ASSERT_NE(heroTorch, nullptr);
+    EXPECT_EQ(heroTorch->Priority, Engine::LightPriority::Critical_HeroTorch);
+    EXPECT_TRUE(heroTorch->CastShadows);
+    EXPECT_NE(playerGo->GetComponent<Engine::CameraComponent>(), nullptr);
+    EXPECT_NE(findByName(*scene, "TorchSocket"), nullptr);
+    EXPECT_NE(findByName(*scene, "WeaponSocket"), nullptr);
+}
+
+TEST(SandboxUnitTest, AlphaRunSceneStreamsBiomesOnPlayerMovement) {
+    auto scene = Sandbox::AlphaRunScene::Create(2026ULL);
+    ASSERT_NE(scene, nullptr);
+    Sandbox::AlphaRunScene::BindRuntimeGameplayScripts(scene);
+
+    auto findByName = [](Engine::Scene& s, const char* name) -> Engine::GameObject* {
+        for (const auto& go : s.GetGameObjects()) {
+            if (go && go->GetName() == name) {
+                return go.get();
+            }
+        }
+        return nullptr;
+    };
+
+    auto* terrainGo = findByName(*scene, "Terrain");
+    auto* playerGo = findByName(*scene, "Player");
+    ASSERT_NE(terrainGo, nullptr);
+    ASSERT_NE(playerGo, nullptr);
+    auto* chunkMgr = terrainGo->GetComponent<Engine::TerrainChunkManager>();
+    ASSERT_NE(chunkMgr, nullptr);
+    EXPECT_NE(playerGo->GetComponent<PlayerController>(), nullptr);
+    EXPECT_NE(playerGo->GetComponent<WeaponController>(), nullptr);
+    EXPECT_NE(playerGo->GetComponent<Sandbox::ArenaStreamingDriver>(), nullptr);
+
+    scene->OnRuntimeStart();
+
+    // Move Player 32m east (2 chunks at 16m/chunk) and step runtime
+    playerGo->GetTransform()->position = { 32.0f, 0.0f, 0.0f };
+    if (auto* rb = playerGo->GetComponent<Engine::Rigidbody2D>()) {
+        rb->SetPositionXZ(32.0f, 0.0f);
+    }
+    scene->UpdateRuntime(1.0f / 60.0f);
+    chunkMgr->FlushPendingGenerations();
+    chunkMgr->DrainReadyPayloads();
+
+    const Engine::ChunkCoord expectedCoord{ 2, 0 };
+    EXPECT_EQ(chunkMgr->GetLastViewerChunk().cx, expectedCoord.cx);
+    EXPECT_EQ(chunkMgr->GetLastViewerChunk().cz, expectedCoord.cz);
+    const auto* streamedChunk = chunkMgr->GetChunk(expectedCoord);
+    ASSERT_NE(streamedChunk, nullptr);
+    EXPECT_TRUE(streamedChunk->State == Engine::ChunkLoadState::Resident ||
+                streamedChunk->State == Engine::ChunkLoadState::ReadyForGpuUpload);
+
+    scene->OnRuntimeStop();
 }
 
 } // namespace

@@ -43,7 +43,7 @@ flowchart LR
 | **`GAM-02`** | **Data-Driven Melee Weapons & Domino Bowling Physics** | A1 | **P0** | `DONE` | `weapons.json`, `PHY-03/05`, `ECS-02` (Hit-Stop), `RND-01` (Hit-Flash) |
 | **`GAM-03`** | **Torch Lifeline, Searing Rim, Stoke & Ash Frenzy** | A2 | **P0** | `TODO` | `LGT-01/03`, `PointLightComponent`, `PostProcessComponent`, `AUD-03` |
 | **`GAM-04`** | **Active Torch Runes (Ignition, Chronos, Shockwave, Consecrate)** | A2 | **P1** | `TODO` | `runes.json`, `PHY-05` (`SetStasisFrozen`), `TER-04`, `LGT-03` |
-| **`GAM-05`** | **Alpha Survival Arena & Procedural Biome Clearing** | A1 | **P0** | `TODO` | `TER-01/02/03`, `TerrainChunkManager`, `WorldBiomeGenerator`, `Wind` |
+| **`GAM-05`** | **Alpha Survival Arena & Procedural Biome Clearing** | A1 | **P0** | `DONE` | `TER-01/02/03`, `TerrainChunkManager`, `WorldBiomeGenerator`, `Wind` |
 | **`GAM-06`** | **Harvestable Pines, Destructible Props & Bouncing Pickups** | A1 | **P0** | `TODO` | `ECS-01/04/05`, `PHY-01` (`GroundRestitutionY`), `PHY-03` (Sensors) |
 | **`GAM-07`** | **Tactical Drop Wheel & 4 Functional Deployable Structures** | A2 | **P0** | `TODO` | `drops.json`, `prefabs/*.prefab`, `UIX-04`, `ECS-02` (Slow-Mo), `PHY-04` |
 | **`GAM-08`** | **Systemic Tar/Firewall Ignition & Burning-Body Spreading** | A2 | **P0** | `TODO` | `TER-04` (`TerrainFireGrid`), `VFX-01/02`, `LGT-02` |

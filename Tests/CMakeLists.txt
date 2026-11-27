@@ -2,7 +2,9 @@ file(GLOB_RECURSE TEST_SOURCES CONFIGURE_DEPENDS
     "src/*.cpp"
 )
 
-add_executable(EngineTests ${TEST_SOURCES})
+add_executable(EngineTests ${TEST_SOURCES}
+    "${CMAKE_SOURCE_DIR}/Sandbox/src/Scene/AlphaRunScene.cpp"
+)
 
 # Apply strict compiler warnings
 target_compile_options(EngineTests PRIVATE ${ENGINE_COMPILER_WARNINGS})
