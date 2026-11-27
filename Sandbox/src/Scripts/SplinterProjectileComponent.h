@@ -1,8 +1,9 @@
 #ifndef SANDBOX_SPLINTER_PROJECTILE_COMPONENT_H
 #define SANDBOX_SPLINTER_PROJECTILE_COMPONENT_H
 
+#include "Scripts/AudioCueHelper.h"
 #include "Scripts/CombatDamageHelper.h"
-#include "Scripts/CombatTargetComponent.h"
+#include "Scripts/HealthComponent.h"
 
 #include <Engine/Physics/PhysicsComponents.h>
 #include <Engine/Physics/PhysicsLayer.h>
@@ -27,6 +28,48 @@ public:
     float KnockbackImpulse = 6.0f;
     float Lifetime = 0.65f;
     int RemainingPierces = 3;
+
+    static void SpawnBurst(Engine::Scene& scene,
+                           const glm::vec3& origin,
+                           const glm::vec2& impactDir,
+                           int count = 6,
+                           float spreadRad = 0.65f) {
+        Engine::SoundPlayParams shatterParams;
+        shatterParams.Bus = Engine::AudioBus::SFX;
+        shatterParams.Volume = 0.95f;
+        shatterParams.SpatializedXZ = true;
+        shatterParams.WorldPos = origin;
+        Sandbox::PlaySfxCue("assets/audio/sfx_barricade_shatter.wav", shatterParams);
+
+        const glm::vec2 baseDir = Sandbox::SafeNormalizeXZ(impactDir);
+        const float baseAngle = std::atan2(baseDir.y, baseDir.x);
+        const int clampedCount = std::clamp(count, 5, 7);
+        for (int i = 0; i < clampedCount; ++i) {
+            const float t = (clampedCount > 1)
+                ? (static_cast<float>(i) / static_cast<float>(clampedCount - 1))
+                : 0.5f;
+            const float angle = baseAngle + (t - 0.5f) * 2.0f * spreadRad;
+            const glm::vec2 dir{ std::cos(angle), std::sin(angle) };
+
+            auto* splinter = scene.CreateGameObject("BarricadeSplinter");
+            splinter->SetTag(Engine::EntityTag::Projectile);
+            splinter->SetLayer(Engine::EntityLayer::Projectile);
+            splinter->GetTransform()->position = { origin.x + dir.x * 0.35f, 0.35f, origin.z + dir.y * 0.35f };
+
+            auto* rb = splinter->AddComponent<Engine::Rigidbody2D>();
+            rb->Type = Engine::Rigidbody2D::BodyType::Kinematic;
+            rb->IsBullet = true;
+
+            auto* col = splinter->AddComponent<Engine::CircleCollider2D>();
+            col->Radius = 0.22f;
+            col->IsSensor = true;
+            col->CategoryBits = Engine::PhysicsLayer::Projectile;
+            col->MaskBits = Engine::PhysicsLayer::Enemy;
+
+            auto* proj = splinter->AddComponent<SplinterProjectileComponent>();
+            proj->DirectionXZ = dir;
+        }
+    }
 
     void OnTriggerEnter2D(Engine::GameObject* other) override {
         HandleHit(other);

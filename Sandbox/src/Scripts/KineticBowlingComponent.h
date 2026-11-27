@@ -3,7 +3,6 @@
 
 #include "Scripts/AudioCueHelper.h"
 #include "Scripts/CombatDamageHelper.h"
-#include "Scripts/CombatTargetComponent.h"
 #include "Scripts/SplinterProjectileComponent.h"
 
 #include <Engine/Audio/AudioSource.h>
@@ -122,15 +121,7 @@ private:
 
         Sandbox::ApplyImpactDamage(self, other, collateralDamage, 0.25f);
         const glm::vec2 pushDir = Sandbox::SafeNormalizeXZ(info.NormalXZ);
-        const bool otherHadHealth = (other->GetComponent<HealthComponent>() != nullptr);
         Sandbox::ApplyImpactDamage(other, self, collateralDamage, 0.35f, pushDir * (info.ApproachSpeed * 1.35f));
-        if (!otherHadHealth) {
-            if (auto* otherRb = other->GetComponent<Engine::Rigidbody2D>()) {
-                if (!other->GetComponent<CombatTargetComponent>()) {
-                    otherRb->ApplyImpulseXZ(pushDir * (info.ApproachSpeed * 1.35f));
-                }
-            }
-        }
         if (auto* otherBowling = other->GetComponent<KineticBowlingComponent>()) {
             otherBowling->Launch(0.45f);
         }
@@ -166,39 +157,25 @@ private:
                                Engine::GameObject* barricade,
                                const Engine::Collision2DInfo& info) {
         const float structDamage = BarricadeStructureDamage + 2.5f * info.ApproachSpeed;
-        bool handledBarricade = false;
-
-        if (auto* barricadeHealth = barricade->GetComponent<HealthComponent>()) {
-            handledBarricade = true;
-            const bool wasAlive = barricadeHealth->IsAlive();
-            const glm::vec2 impactDir = Sandbox::SafeNormalizeXZ(-info.NormalXZ);
-            DamageEvent evt;
-            evt.Amount = structDamage;
-            evt.Source = self;
-            evt.ImpulseXZ = impactDir;
-            barricadeHealth->ApplyDamage(evt);
-            if (wasAlive && !barricadeHealth->IsAlive()) {
-                if (!barricadeHealth->OnKilled) {
-                    SpawnBarricadeSplinters(barricade, info);
-                }
-                if (auto* scene = barricade->GetScene()) {
-                    scene->DestroyGameObject(barricade);
-                }
-            }
-        } else if (auto* barricadeTarget = barricade->GetComponent<CombatTargetComponent>()) {
-            handledBarricade = true;
-            const bool wasAlive = barricadeTarget->IsAlive();
-            barricadeTarget->ApplyDamage(structDamage, 0.0f, Engine::SpriteRenderer::FlashMode::PureWhite);
-            if (wasAlive && !barricadeTarget->IsAlive()) {
-                SpawnBarricadeSplinters(barricade, info);
-                if (auto* scene = barricade->GetScene()) {
-                    scene->DestroyGameObject(barricade);
-                }
-            }
+        auto* barricadeHealth = barricade->GetComponent<HealthComponent>();
+        if (!barricadeHealth) {
+            return;
         }
 
-        if (!handledBarricade) {
-            return;
+        const bool wasAlive = barricadeHealth->IsAlive();
+        const glm::vec2 impactDir = Sandbox::SafeNormalizeXZ(-info.NormalXZ);
+        DamageEvent evt;
+        evt.Amount = structDamage;
+        evt.Source = self;
+        evt.ImpulseXZ = impactDir;
+        barricadeHealth->ApplyDamage(evt);
+        if (wasAlive && !barricadeHealth->IsAlive()) {
+            if (!barricadeHealth->OnKilled) {
+                SpawnBarricadeSplinters(barricade, info);
+            }
+            if (auto* scene = barricade->GetScene()) {
+                scene->DestroyGameObject(barricade);
+            }
         }
 
         Sandbox::ApplyImpactDamage(self, barricade, 15.0f, 0.35f, { 0.0f, 0.0f }, false);
@@ -212,39 +189,12 @@ private:
         if (!scene || !bTransform) {
             return;
         }
-
-        const glm::vec3 origin = bTransform->GetWorldPosition();
-        const float nLen = glm::length(info.NormalXZ);
-        const glm::vec2 baseDir = (std::isfinite(nLen) && nLen > 1e-4f)
-            ? (-info.NormalXZ / nLen)
-            : glm::vec2(1.0f, 0.0f);
-        const float baseAngle = std::atan2(baseDir.y, baseDir.x);
-
-        const int count = std::clamp(BarricadeSplinterCount, 5, 7);
-        constexpr float kSpreadRad = 0.610865f; // +/- 35 degrees
-        for (int i = 0; i < count; ++i) {
-            const float t = (count > 1) ? (static_cast<float>(i) / static_cast<float>(count - 1)) : 0.5f;
-            const float angle = baseAngle + (t - 0.5f) * 2.0f * kSpreadRad;
-            const glm::vec2 dir{ std::cos(angle), std::sin(angle) };
-
-            auto* splinter = scene->CreateGameObject("BarricadeSplinter");
-            splinter->SetTag(Engine::EntityTag::Projectile);
-            splinter->SetLayer(Engine::EntityLayer::Projectile);
-            splinter->GetTransform()->position = { origin.x + dir.x * 0.35f, 0.35f, origin.z + dir.y * 0.35f };
-
-            auto* rb = splinter->AddComponent<Engine::Rigidbody2D>();
-            rb->Type = Engine::Rigidbody2D::BodyType::Kinematic;
-            rb->IsBullet = true;
-
-            auto* col = splinter->AddComponent<Engine::CircleCollider2D>();
-            col->Radius = 0.22f;
-            col->IsSensor = true;
-            col->CategoryBits = Engine::PhysicsLayer::Projectile;
-            col->MaskBits = Engine::PhysicsLayer::Enemy;
-
-            auto* proj = splinter->AddComponent<SplinterProjectileComponent>();
-            proj->DirectionXZ = dir;
-        }
+        SplinterProjectileComponent::SpawnBurst(
+            *scene,
+            bTransform->GetWorldPosition(),
+            -info.NormalXZ,
+            BarricadeSplinterCount,
+            0.610865f);
     }
 
     float m_LaunchedTimer = 0.0f;

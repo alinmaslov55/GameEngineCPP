@@ -1,7 +1,6 @@
 #ifndef SANDBOX_RUNE_EFFECTS_COMPONENTS_H
 #define SANDBOX_RUNE_EFFECTS_COMPONENTS_H
 
-#include "Scripts/CombatTargetComponent.h"
 #include "Scripts/CombatDamageHelper.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
@@ -53,102 +52,6 @@ public:
 
 private:
     float m_Elapsed = 0.0f;
-};
-
-/// @brief Holds an enemy in Chronos Stasis with SpectralBlue tint until unfreeze erupts queued impulses.
-class ChronosStasisTrackerComponent final : public Engine::Component {
-public:
-    float RemainingSec = 4.0f;
-    float BowlingImpulseThreshold = 10.0f;
-
-    void Refresh(float durationSec) {
-        if (!std::isfinite(durationSec) || durationSec <= 0.0f) {
-            return;
-        }
-        RemainingSec = m_Released ? durationSec : std::max(RemainingSec, durationSec);
-        m_Released = false;
-        ApplyFrozenVisuals(true);
-    }
-
-    void Start() override {
-        if (RemainingSec > 0.0f) {
-            m_Released = false;
-            ApplyFrozenVisuals(true);
-        } else {
-            m_Released = true;
-        }
-    }
-
-    void OnPoolAcquire() override {
-        RemainingSec = 0.0f;
-        m_Released = true;
-        ApplyFrozenVisuals(false);
-    }
-
-    void OnPoolRelease() override {
-        RemainingSec = 0.0f;
-        m_Released = true;
-        ApplyFrozenVisuals(false);
-    }
-
-    void Update(float deltaTime) override {
-        if (m_Released || !std::isfinite(deltaTime) || deltaTime <= 0.0f) {
-            return;
-        }
-        RemainingSec -= deltaTime;
-        if (RemainingSec <= 0.0f) {
-            ReleaseStasis();
-        }
-    }
-
-    void OnDestroy() override {
-        if (!m_Released) {
-            ApplyFrozenVisuals(false);
-        }
-    }
-
-private:
-    void ApplyFrozenVisuals(bool frozen) {
-        auto* go = GetGameObject();
-        if (!go) {
-            return;
-        }
-        if (auto* rb = go->GetComponent<Engine::Rigidbody2D>()) {
-            rb->SetStasisFrozen(frozen);
-        }
-        if (auto* sr = go->GetComponent<Engine::SpriteRenderer>()) {
-            if (frozen) {
-                sr->SetFlashMode(Engine::SpriteRenderer::FlashMode::SpectralBlue);
-                sr->SetFlashAmount(0.75f);
-            } else {
-                sr->SetFlashAmount(0.0f);
-            }
-        }
-    }
-
-    void ReleaseStasis() {
-        m_Released = true;
-        auto* go = GetGameObject();
-        if (!go) {
-            return;
-        }
-
-        glm::vec2 queuedImpulse{ 0.0f };
-        if (auto* rb = go->GetComponent<Engine::Rigidbody2D>()) {
-            queuedImpulse = rb->GetQueuedStasisImpulseXZ();
-            rb->SetStasisFrozen(false);
-        }
-        if (auto* sr = go->GetComponent<Engine::SpriteRenderer>()) {
-            sr->SetFlashAmount(0.0f);
-        }
-        if (glm::length(queuedImpulse) >= BowlingImpulseThreshold) {
-            if (auto* bowling = go->GetComponent<KineticBowlingComponent>()) {
-                bowling->Launch(0.6f);
-            }
-        }
-    }
-
-    bool m_Released = false;
 };
 
 /// @brief 6s hallowed SafeLifeline circle spawned by Rune of Consecration: heals Player & burns/repels enemies.
@@ -210,23 +113,14 @@ public:
                 const float dist = std::sqrt(distSq);
                 const glm::vec2 outDir = (dist > 1e-4f) ? (delta / dist) : glm::vec2(1.0f, 0.0f);
 
-                if (auto* health = enemy->GetComponent<HealthComponent>()) {
-                    DamageEvent evt;
-                    evt.Amount = EnemyBurnDPS * tickDt;
-                    evt.Source = go;
-                    evt.ImpulseXZ = outDir * (RepelImpulse * tickDt * 4.0f);
-                    evt.IsFire = true;
-                    evt.IsRadiant = true;
-                    evt.BypassInvuln = true;
-                    health->ApplyDamage(evt);
-                } else {
-                    if (auto* target = enemy->GetComponent<CombatTargetComponent>()) {
-                        target->ApplyDamage(EnemyBurnDPS * tickDt, 0.0f, Engine::SpriteRenderer::FlashMode::CrimsonImpact);
-                    }
-                    if (auto* rb = enemy->GetComponent<Engine::Rigidbody2D>()) {
-                        rb->ApplyImpulseXZ(outDir * (RepelImpulse * tickDt * 4.0f));
-                    }
-                }
+                DamageEvent evt;
+                evt.Amount = EnemyBurnDPS * tickDt;
+                evt.Source = go;
+                evt.ImpulseXZ = outDir * (RepelImpulse * tickDt * 4.0f);
+                evt.IsFire = true;
+                evt.IsRadiant = true;
+                evt.BypassInvuln = true;
+                Sandbox::CombatDamage::Apply(enemy, evt);
             }
         }
     }

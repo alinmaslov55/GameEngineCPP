@@ -2,8 +2,9 @@
 #define SANDBOX_WEAPON_CONTROLLER_H
 
 #include "Scripts/AudioCueHelper.h"
-#include "Scripts/CombatTargetComponent.h"
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/HealthComponent.h"
+#include "Scripts/WeaponArchetypes.h"
 #include "Scripts/KineticBowlingComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
@@ -154,14 +155,8 @@ private:
         const float effectiveRate = std::max(0.25f, m_Weapon.AttackRate * frenzyMult);
         const float cycleSec = 1.0f / effectiveRate;
 
-        float windupFrac = 0.25f;
-        if (m_Weapon.WeaponType == "Maul") {
-            windupFrac = 0.28f;
-        } else if (m_Weapon.WeaponType == "Halberd") {
-            windupFrac = 0.20f;
-        } else if (m_Weapon.WeaponType == "Sickle") {
-            windupFrac = 0.15f;
-        }
+        const auto& cfg = Sandbox::WeaponArchetypeRegistry::Resolve(m_Weapon.WeaponType).GetConfig();
+        const float windupFrac = cfg.WindupFraction;
 
         m_WindupDuration = cycleSec * windupFrac;
         m_RecoveryDuration = std::max(0.05f, cycleSec * (1.0f - windupFrac));
@@ -180,7 +175,7 @@ private:
             swingParams.PitchMax = 1.08f;
             swingParams.SpatializedXZ = true;
             swingParams.WorldPos = go->GetTransform()->GetWorldPosition();
-            Sandbox::PlaySfxCue("assets/audio/sfx_maul_swing.wav", swingParams);
+            Sandbox::PlaySfxCue(cfg.SwingSfxPath, swingParams);
         }
     }
 
@@ -201,12 +196,7 @@ private:
         } else if (auto* pc = go->GetComponent<PlayerController>()) {
             aimXZ = pc->GetAimDirectionXZ();
         }
-        const float aimLen = glm::length(aimXZ);
-        if (std::isfinite(aimLen) && aimLen > 1e-4f) {
-            aimXZ /= aimLen;
-        } else {
-            aimXZ = { 1.0f, 0.0f };
-        }
+        aimXZ = Sandbox::SafeNormalizeXZ(aimXZ);
 
         m_HitScratch.clear();
         const uint64_t hitMask = Engine::PhysicsLayer::Enemy |
@@ -215,9 +205,8 @@ private:
         Engine::PhysicsQueries::OverlapArcXZ(
             *scene, originXZ, aimXZ, m_Weapon.Reach, m_Weapon.SwingArcDeg * 0.5f, hitMask, m_HitScratch);
 
-        const bool isMaul = (m_Weapon.WeaponType == "Maul");
-        const bool isHalberd = (m_Weapon.WeaponType == "Halberd");
-        const bool isSickle = (m_Weapon.WeaponType == "Sickle");
+        const auto& behavior = Sandbox::WeaponArchetypeRegistry::Resolve(m_Weapon.WeaponType);
+        const auto& cfg = behavior.GetConfig();
 
         for (Engine::GameObject* targetGo : m_HitScratch) {
             if (!targetGo || targetGo == go || targetGo->IsPendingDestroy()) {
@@ -228,62 +217,32 @@ private:
             glm::vec2 pushDir = aimXZ;
             if (auto* t = targetGo->GetTransform()) {
                 const glm::vec3 twp = t->GetWorldPosition();
-                const glm::vec2 delta{ twp.x - originXZ.x, twp.z - originXZ.y };
-                const float dLen = glm::length(delta);
-                if (std::isfinite(dLen) && dLen > 1e-4f) {
-                    pushDir = delta / dLen;
-                }
+                pushDir = Sandbox::SafeNormalizeXZ({ twp.x - originXZ.x, twp.z - originXZ.y }, aimXZ);
             }
 
-            const float stunSec = isHalberd ? 0.35f : (isMaul ? 0.25f : 0.10f);
             float totalDamage = m_Weapon.Damage;
             float totalKnockback = m_Weapon.KnockbackImpulse;
+            float burnDPS = cfg.InnateBurnDPS;
             if (auto* pStats = go->GetComponent<PlayerStatsComponent>()) {
                 totalDamage += pStats->BonusDamage;
                 totalKnockback += pStats->BonusKnockbackImpulse;
-            }
-            if (auto* health = targetGo->GetComponent<HealthComponent>()) {
-                DamageEvent evt;
-                evt.Amount = totalDamage;
-                evt.Source = go;
-                evt.ImpulseXZ = pushDir * totalKnockback;
-                evt.StunDuration = stunSec;
-                evt.IsFire = isSickle;
-                health->ApplyDamage(evt);
-                float burnDPS = isSickle ? 4.0f : 0.0f;
-                if (auto* pStats = go->GetComponent<PlayerStatsComponent>(); pStats && pStats->BurnDamageOnHit > 0.0f) {
+                if (pStats->BurnDamageOnHit > 0.0f) {
                     burnDPS = std::max(burnDPS, pStats->BurnDamageOnHit);
                 }
-                if (burnDPS > 0.0f) {
-                    if (auto* status = targetGo->GetComponent<StatusEffectsComponent>()) {
-                        status->ApplyBurn(2.5f, burnDPS);
-                    }
-                }
-                if (isHalberd) {
-                    if (auto* targetRb = targetGo->GetComponent<Engine::Rigidbody2D>();
-                        targetRb && targetRb->VerticalVelocity > 0.0f) {
-                        targetRb->VerticalVelocity = 0.0f;
-                    }
-                }
-            } else {
-                if (auto* target = targetGo->GetComponent<CombatTargetComponent>()) {
-                    target->ApplyDamage(m_Weapon.Damage, stunSec, Engine::SpriteRenderer::FlashMode::PureWhite);
-                    if (isSickle) {
-                        target->ApplyBurn(2.5f, 4.0f);
-                    }
-                } else if (auto* sr = targetGo->GetComponent<Engine::SpriteRenderer>()) {
-                    sr->SetFlashMode(Engine::SpriteRenderer::FlashMode::PureWhite);
-                    sr->SetFlashAmount(1.0f);
-                }
-
-                if (auto* targetRb = targetGo->GetComponent<Engine::Rigidbody2D>()) {
-                    targetRb->ApplyImpulseXZ(pushDir * m_Weapon.KnockbackImpulse);
-                    if (isHalberd && targetRb->VerticalVelocity > 0.0f) {
-                        // Interrupt hopping enemies (e.g. Jiangshi) mid-air
-                        targetRb->VerticalVelocity = 0.0f;
-                    }
-                }
             }
+            DamageEvent evt;
+            evt.Amount = totalDamage;
+            evt.Source = go;
+            evt.ImpulseXZ = pushDir * totalKnockback;
+            evt.StunDuration = cfg.StunSec;
+            evt.IsFire = cfg.IsFire;
+            StatusApplication status;
+            if (burnDPS > 0.0f) {
+                status.BurnDurationSec = 2.5f;
+                status.BurnDPS = burnDPS;
+            }
+            Sandbox::CombatDamage::Apply(targetGo, evt, status, true);
+            behavior.OnTargetHit(*targetGo);
 
             if (auto* bowling = targetGo->GetComponent<KineticBowlingComponent>()) {
                 if (m_Weapon.KnockbackImpulse >= 12.0f) {
@@ -293,17 +252,11 @@ private:
         }
 
         if (m_LastHitCount > 0u) {
-            if (isSickle) {
-                m_FrenzyStacks = std::min(5, m_FrenzyStacks + 1);
-                m_FrenzyDecayTimer = 3.0f;
-            }
-
-            const float hitStopSec = isMaul ? 0.045f : (isHalberd ? 0.030f : 0.015f);
-            const float trauma = isMaul ? 0.38f : (isHalberd ? 0.24f : 0.12f);
-            Engine::Time::TriggerHitStop(hitStopSec, 0.02f);
+            behavior.OnSwingConnected(m_FrenzyStacks, m_FrenzyDecayTimer);
+            Engine::Time::TriggerHitStop(cfg.HitStopSec, 0.02f);
 
             if (auto* pc = go->GetComponent<PlayerController>()) {
-                pc->TriggerImpactFeedback(trauma, aimXZ * (trauma * 0.6f));
+                pc->TriggerImpactFeedback(cfg.Trauma, aimXZ * (cfg.Trauma * 0.6f));
             }
             if (auto* audio = go->GetComponent<Engine::AudioSource>()) {
                 audio->Play();

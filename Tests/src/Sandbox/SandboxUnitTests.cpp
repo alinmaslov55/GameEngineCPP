@@ -27,9 +27,11 @@
 #include "Engine/Terrain/TerrainComponent.h"
 #include "Engine/Scene/Components/LightComponents.h"
 #include "Scene/AlphaRunScene.h"
+#include "Scene/SceneBootstrapper.h"
+#include "Scene/ScenePrefabs.h"
 #include "Scripts/AlphaHUDController.h"
 #include "Scripts/ArenaStreamingDriver.h"
-#include "Scripts/CombatTargetComponent.h"
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/DeployableStructures.h"
 #include "Scripts/EnemyAIController.h"
 #include "Scripts/HarvestableComponent.h"
@@ -228,7 +230,7 @@ TEST(SandboxUnitTest, WeaponControllerDataDrivenStatsAndSwingLifecycle) {
     auto* enemyRb = enemy->AddComponent<Engine::Rigidbody2D>();
     enemyRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     enemy->AddComponent<Engine::CircleCollider2D>()->Radius = 0.4f;
-    auto* enemyTarget = enemy->AddComponent<CombatTargetComponent>();
+    auto* enemyTarget = enemy->AddComponent<HealthComponent>();
     enemyTarget->ResetHealth(100.0f);
     auto* enemyBowling = enemy->AddComponent<KineticBowlingComponent>();
 
@@ -255,7 +257,7 @@ TEST(SandboxUnitTest, WeaponControllerDataDrivenStatsAndSwingLifecycle) {
         scene.UpdateRuntime(1.0f / 60.0f);
     }
     EXPECT_EQ(wc->GetLastHitCount(), 1u);
-    EXPECT_LT(enemyTarget->Health, 100.0f);
+    EXPECT_LT(enemyTarget->CurrentHP, 100.0f);
     EXPECT_TRUE(enemyBowling->IsLaunched());
     EXPECT_GT(enemyRb->GetVelocityXZ().y, 1.0f);
 
@@ -274,7 +276,7 @@ TEST(SandboxUnitTest, KineticBowlingEnemyDominoAndWallSlam) {
     rbA->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     rbA->LinearDamping = 0.0f;
     enemyA->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
-    auto* targetA = enemyA->AddComponent<CombatTargetComponent>();
+    auto* targetA = enemyA->AddComponent<HealthComponent>();
     targetA->ResetHealth(200.0f);
     auto* bowlingA = enemyA->AddComponent<KineticBowlingComponent>();
 
@@ -286,7 +288,7 @@ TEST(SandboxUnitTest, KineticBowlingEnemyDominoAndWallSlam) {
     rbB->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     enemyB->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
     enemyB->AddComponent<Engine::SpriteRenderer>();
-    auto* targetB = enemyB->AddComponent<CombatTargetComponent>();
+    auto* targetB = enemyB->AddComponent<HealthComponent>();
     targetB->ResetHealth(200.0f);
     enemyB->AddComponent<KineticBowlingComponent>();
 
@@ -305,7 +307,8 @@ TEST(SandboxUnitTest, KineticBowlingEnemyDominoAndWallSlam) {
     rbC->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     rbC->LinearDamping = 0.0f;
     enemyC->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
-    auto* targetC = enemyC->AddComponent<CombatTargetComponent>();
+    auto* statusC = enemyC->AddComponent<StatusEffectsComponent>();
+    auto* targetC = enemyC->AddComponent<HealthComponent>();
     targetC->ResetHealth(200.0f);
     auto* bowlingC = enemyC->AddComponent<KineticBowlingComponent>();
 
@@ -317,8 +320,8 @@ TEST(SandboxUnitTest, KineticBowlingEnemyDominoAndWallSlam) {
     for (int i = 0; i < 15; ++i) {
         scene.UpdateRuntime(1.0f / 60.0f);
     }
-    EXPECT_LT(targetA->Health, 200.0f);
-    EXPECT_LT(targetB->Health, 200.0f);
+    EXPECT_LT(targetA->CurrentHP, 200.0f);
+    EXPECT_LT(targetB->CurrentHP, 200.0f);
     EXPECT_GT(rbB->GetVelocityXZ().x, 1.0f);
 
     // Launch EnemyC -X into PineTree for wall-slam bonus damage + 0.6s stun
@@ -327,8 +330,8 @@ TEST(SandboxUnitTest, KineticBowlingEnemyDominoAndWallSlam) {
     for (int i = 0; i < 15; ++i) {
         scene.UpdateRuntime(1.0f / 60.0f);
     }
-    EXPECT_LT(targetC->Health, 200.0f);
-    EXPECT_TRUE(targetC->IsStunned());
+    EXPECT_LT(targetC->CurrentHP, 200.0f);
+    EXPECT_TRUE(statusC->IsStunned());
 
     scene.OnRuntimeStop();
     Engine::Time::Reset();
@@ -345,7 +348,7 @@ TEST(SandboxUnitTest, KineticBowlingBarricadeShatterSpawnsSplinters) {
     rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     rb->LinearDamping = 0.0f;
     enemy->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
-    enemy->AddComponent<CombatTargetComponent>()->ResetHealth(200.0f);
+    enemy->AddComponent<HealthComponent>()->ResetHealth(200.0f);
     auto* bowling = enemy->AddComponent<KineticBowlingComponent>();
 
     auto* barricade = scene.CreateGameObject("Splinter Barricade");
@@ -353,7 +356,7 @@ TEST(SandboxUnitTest, KineticBowlingBarricadeShatterSpawnsSplinters) {
     barricade->SetLayer(Engine::EntityLayer::LowObstacle);
     barricade->GetTransform()->position = { 1.5f, 0.0f, 0.0f };
     barricade->AddComponent<Engine::BoxCollider2D>()->size = { 0.6f, 1.4f };
-    auto* bTarget = barricade->AddComponent<CombatTargetComponent>();
+    auto* bTarget = barricade->AddComponent<HealthComponent>();
     bTarget->ResetHealth(30.0f); // Shatters on single high-speed slam
 
     scene.OnRuntimeStart();
@@ -483,18 +486,22 @@ TEST(SandboxUnitTest, HarvestablePropShakesAndDropsBouncingPickupsOnFell) {
 
     scene.OnRuntimeStart();
 
-    auto* target = pine->GetComponent<CombatTargetComponent>();
+    auto* target = pine->GetComponent<HealthComponent>();
     ASSERT_NE(target, nullptr);
     target->ResetHealth(30.0f);
 
     // Chipping hit shakes and emits wood-chip particles without felling
-    EXPECT_TRUE(target->ApplyDamage(10.0f));
+    DamageEvent chipEvt;
+    chipEvt.Amount = 10.0f;
+    EXPECT_TRUE(target->ApplyDamage(chipEvt));
     EXPECT_FALSE(harvestable->IsFelled());
     EXPECT_NE(pine->GetComponent<Engine::SquashStretchComponent>(), nullptr);
     EXPECT_NE(pine->GetComponent<Engine::ParticleSystem>(), nullptr);
 
     // Lethal hit fells tree and spawns 2-4 bouncing PickupComponent entities
-    EXPECT_TRUE(target->ApplyDamage(25.0f));
+    DamageEvent lethalEvt;
+    lethalEvt.Amount = 25.0f;
+    EXPECT_TRUE(target->ApplyDamage(lethalEvt));
     EXPECT_TRUE(harvestable->IsFelled());
 
     const auto pickups = scene.FindGameObjectsWithTag(Engine::EntityTag::ResourcePickup);
@@ -999,28 +1006,36 @@ TEST(SandboxUnitTest, StructurePlacerValidatesClearanceDeductsWoodAndSpawnsAll4S
 
     auto* bar = placer->TryPlaceStructure(Engine::RadialWheelItem::SplinterBarricade);
     ASSERT_NE(bar, nullptr);
-    EXPECT_NE(bar->GetComponent<SplinterBarricadeComponent>(), nullptr);
+    auto* barComp = bar->GetComponent<DeployableStructureComponent>();
+    ASSERT_NE(barComp, nullptr);
+    EXPECT_EQ(barComp->GetKind(), Engine::RadialWheelItem::SplinterBarricade);
     EXPECT_EQ(stats->Wood, 46);
     scene.DestroyGameObject(bar);
     scene.UpdateRuntime(1.0f / 60.0f);
 
     auto* flare = placer->TryPlaceStructure(Engine::RadialWheelItem::FlarePeg);
     ASSERT_NE(flare, nullptr);
-    EXPECT_NE(flare->GetComponent<FlarePegComponent>(), nullptr);
+    auto* flareComp = flare->GetComponent<DeployableStructureComponent>();
+    ASSERT_NE(flareComp, nullptr);
+    EXPECT_EQ(flareComp->GetKind(), Engine::RadialWheelItem::FlarePeg);
     EXPECT_EQ(stats->Wood, 36);
     scene.DestroyGameObject(flare);
     scene.UpdateRuntime(1.0f / 60.0f);
 
     auto* thumper = placer->TryPlaceStructure(Engine::RadialWheelItem::Thumper);
     ASSERT_NE(thumper, nullptr);
-    EXPECT_NE(thumper->GetComponent<ThumperComponent>(), nullptr);
+    auto* thumperComp = thumper->GetComponent<DeployableStructureComponent>();
+    ASSERT_NE(thumperComp, nullptr);
+    EXPECT_EQ(thumperComp->GetKind(), Engine::RadialWheelItem::Thumper);
     EXPECT_EQ(stats->Wood, 21);
     scene.DestroyGameObject(thumper);
     scene.UpdateRuntime(1.0f / 60.0f);
 
     auto* siphon = placer->TryPlaceStructure(Engine::RadialWheelItem::TarSiphon);
     ASSERT_NE(siphon, nullptr);
-    EXPECT_NE(siphon->GetComponent<TarSiphonComponent>(), nullptr);
+    auto* siphonComp = siphon->GetComponent<DeployableStructureComponent>();
+    ASSERT_NE(siphonComp, nullptr);
+    EXPECT_EQ(siphonComp->GetKind(), Engine::RadialWheelItem::TarSiphon);
     EXPECT_EQ(stats->Wood, 1);
 
     // Insufficient wood (1 < 4) blocks next placement
@@ -1036,18 +1051,24 @@ TEST(SandboxUnitTest, DeployableStructuresExecuteBarricadeFlareThumperAndTarSiph
     // 1. SplinterBarricade shatters into 5-7 projectiles at 0 HP
     auto* barGo = scene.CreateGameObject("Barricade");
     barGo->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
-    barGo->AddComponent<SplinterBarricadeComponent>();
+    barGo->AddComponent<DeployableStructureComponent>()->SetKind(Engine::RadialWheelItem::SplinterBarricade);
 
     // 2. FlarePeg emits 7.5m SafeLifeline light
     auto* flareGo = scene.CreateGameObject("Flare");
     flareGo->GetTransform()->position = { 10.0f, 0.0f, 0.0f };
-    auto* flare = flareGo->AddComponent<FlarePegComponent>();
+    auto* flareComp = flareGo->AddComponent<DeployableStructureComponent>();
+    flareComp->SetKind(Engine::RadialWheelItem::FlarePeg);
+    auto* flare = flareComp->GetBehavior<Sandbox::FlarePegBehavior>();
+    ASSERT_NE(flare, nullptr);
     flare->RemainingLifetime = 0.25f;
 
     // 3. Thumper + Enemy within 2.2m
     auto* thumperGo = scene.CreateGameObject("Thumper");
     thumperGo->GetTransform()->position = { 20.0f, 0.0f, 0.0f };
-    auto* thumper = thumperGo->AddComponent<ThumperComponent>();
+    auto* thumperComp = thumperGo->AddComponent<DeployableStructureComponent>();
+    thumperComp->SetKind(Engine::RadialWheelItem::Thumper);
+    auto* thumper = thumperComp->GetBehavior<Sandbox::ThumperBehavior>();
+    ASSERT_NE(thumper, nullptr);
     auto* enemy = scene.CreateGameObject("Enemy");
     enemy->SetTag(Engine::EntityTag::Enemy);
     enemy->GetTransform()->position = { 21.2f, 0.0f, 0.0f };
@@ -1059,7 +1080,10 @@ TEST(SandboxUnitTest, DeployableStructuresExecuteBarricadeFlareThumperAndTarSiph
     // 4. TarSiphon spawns AshEmber every 3.0s
     auto* siphonGo = scene.CreateGameObject("TarSiphon");
     siphonGo->GetTransform()->position = { -10.0f, 0.0f, 0.0f };
-    auto* siphon = siphonGo->AddComponent<TarSiphonComponent>();
+    auto* siphonComp = siphonGo->AddComponent<DeployableStructureComponent>();
+    siphonComp->SetKind(Engine::RadialWheelItem::TarSiphon);
+    auto* siphon = siphonComp->GetBehavior<Sandbox::TarSiphonBehavior>();
+    ASSERT_NE(siphon, nullptr);
     siphon->CycleInterval = 0.20f;
 
     scene.OnRuntimeStart();
@@ -1080,8 +1104,8 @@ TEST(SandboxUnitTest, DeployableStructuresExecuteBarricadeFlareThumperAndTarSiph
     EXPECT_EQ(flareLight->Semantic, Engine::LightSemantic::SafeLifeline);
 
     // Trigger Thumper blast
-    thumper->TriggerBlast();
-    EXPECT_GT(thumper->GetCooldownRemaining(), 2.0f);
+    thumper->TriggerBlast(*thumperGo);
+    EXPECT_GT(thumper->CooldownTimer, 2.0f);
     EXPECT_GE(eRb->VerticalVelocity, 5.5f);
     EXPECT_GE(scene.GetDecalManager().GetActiveCount(), 1u);
 
@@ -1261,7 +1285,7 @@ TEST(SandboxUnitTest, EnemyAIThrallPrioritizesBarricadeAndJiangshiHopsOverIt) {
 
     auto* bar = scene.CreateGameObject("Splinter Barricade");
     bar->GetTransform()->position = { 2.5f, 0.0f, 0.0f };
-    bar->AddComponent<SplinterBarricadeComponent>();
+    bar->AddComponent<DeployableStructureComponent>()->SetKind(Engine::RadialWheelItem::SplinterBarricade);
     auto* barHealth = bar->GetComponent<HealthComponent>();
     ASSERT_NE(barHealth, nullptr);
 
@@ -2010,33 +2034,37 @@ TEST(SandboxUnitTest, ChronosStasisRefreshesAndResetsCleanlyAcrossPoolReuse) {
     auto* rb = enemy->AddComponent<Engine::Rigidbody2D>();
     rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     enemy->AddComponent<Engine::CircleCollider2D>()->Radius = 0.35f;
-    auto* tracker = enemy->AddComponent<ChronosStasisTrackerComponent>();
-    tracker->RemainingSec = 0.10f;
+    auto* status = enemy->AddComponent<StatusEffectsComponent>();
 
     scene.OnRuntimeStart();
-    scene.UpdateRuntime(1.0f / 60.0f);
+    status->ApplyStasis(0.10f);
+    EXPECT_TRUE(status->IsStasisFrozen());
     EXPECT_TRUE(rb->IsStasisFrozen());
 
     // 1. Let first stasis expire naturally
     for (int i = 0; i < 10; ++i) {
         scene.UpdateRuntime(1.0f / 60.0f);
     }
+    EXPECT_FALSE(status->IsStasisFrozen());
     EXPECT_FALSE(rb->IsStasisFrozen());
 
-    // 2. Re-cast Chronos (Refresh after previous release) must freeze AND unfreeze cleanly
-    tracker->Refresh(0.10f);
+    // 2. Re-cast Chronos (ApplyStasis after previous release) must freeze AND unfreeze cleanly
+    status->ApplyStasis(0.10f);
+    EXPECT_TRUE(status->IsStasisFrozen());
     EXPECT_TRUE(rb->IsStasisFrozen());
     for (int i = 0; i < 10; ++i) {
         scene.UpdateRuntime(1.0f / 60.0f);
     }
+    EXPECT_FALSE(status->IsStasisFrozen());
     EXPECT_FALSE(rb->IsStasisFrozen());
 
     // 3. Pool release mid-stasis and re-acquire must unfreeze
-    tracker->Refresh(2.0f);
+    status->ApplyStasis(2.0f);
     EXPECT_TRUE(rb->IsStasisFrozen());
-    tracker->OnPoolRelease();
+    status->OnPoolRelease();
+    EXPECT_FALSE(status->IsStasisFrozen());
     EXPECT_FALSE(rb->IsStasisFrozen());
-    tracker->OnPoolAcquire();
+    status->OnPoolAcquire();
     EXPECT_FALSE(rb->IsStasisFrozen());
     for (int i = 0; i < 5; ++i) {
         scene.UpdateRuntime(1.0f / 60.0f);
@@ -2131,7 +2159,7 @@ TEST(SandboxUnitTest, TorchComponentRestoresVignetteOnDestroyAndEnemyUsesDeltaTi
 
     EXPECT_TRUE(pp->VignetteEnabled);
     EXPECT_GT(pp->VignetteColor.r, 0.4f);
-    EXPECT_GT(stats->FrenzySpeedMultiplier, 1.0f);
+    EXPECT_GT(stats->MoveSpeed.TransientMultiplier, 1.0f);
     EXPECT_GT(enemy->GetTransform()->position.x, ai->GetStats().MoveSpeed * 0.05f);
 
     // Destroy torch mid-frenzy -> baseline vignette and speed must be restored
@@ -2140,9 +2168,247 @@ TEST(SandboxUnitTest, TorchComponentRestoresVignetteOnDestroyAndEnemyUsesDeltaTi
     EXPECT_FALSE(pp->VignetteEnabled);
     EXPECT_FLOAT_EQ(pp->VignetteColor.r, 0.10f);
     EXPECT_FLOAT_EQ(pp->VignetteIntensity, 0.15f);
-    EXPECT_FLOAT_EQ(stats->FrenzySpeedMultiplier, 1.0f);
+    EXPECT_FLOAT_EQ(stats->MoveSpeed.TransientMultiplier, 1.0f);
 
     scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, EnemyArchetypeRegistryResolvesKnownIdsAndFallsBackByDefinitionArchetype) {
+    EXPECT_STREQ(Sandbox::EnemyArchetypeRegistry::Resolve("enemy_ghoul").GetTexturePath(), "assets/diorama/ghoul.png");
+    EXPECT_STREQ(Sandbox::EnemyArchetypeRegistry::Resolve("enemy_thrall").GetTexturePath(), "assets/diorama/thrall.png");
+    EXPECT_STREQ(Sandbox::EnemyArchetypeRegistry::Resolve("enemy_jiangshi").GetTexturePath(), "assets/diorama/jiangshi.png");
+    EXPECT_STREQ(Sandbox::EnemyArchetypeRegistry::Resolve("enemy_wisp").GetTexturePath(), "assets/diorama/blight_wisp.png");
+    EXPECT_STREQ(Sandbox::EnemyArchetypeRegistry::Resolve("enemy_wendigo").GetTexturePath(), "assets/diorama/wendigo.png");
+
+    // Fallback by EnemyDefinition::Archetype for future data-driven enemy IDs
+    const auto& customJumper = Sandbox::EnemyArchetypeRegistry::Resolve("enemy_custom_hopper", "Jumper");
+    EXPECT_FLOAT_EQ(customJumper.GetWindupSpec().DurationSec, 0.35f);
+    const auto& customBoss = Sandbox::EnemyArchetypeRegistry::Resolve("enemy_custom_boss", "EliteStalker");
+    EXPECT_EQ(customBoss.GetWindupSpec().Flash, Engine::SpriteRenderer::FlashMode::CrimsonImpact);
+}
+
+TEST(SandboxUnitTest, RuneRegistryResolvesAllFourRunesAndFallbackDefinitions) {
+    for (const char* id : { "rune_ignite", "rune_chronos", "rune_shockwave", "rune_consecrate" }) {
+        EXPECT_NE(Sandbox::RuneRegistry::FindStrategy(id), nullptr) << id;
+        Engine::RuneDefinition def;
+        EXPECT_TRUE(Sandbox::RuneRegistry::TryGetFallbackDefinition(id, def)) << id;
+        EXPECT_EQ(def.Id, id);
+    }
+    EXPECT_EQ(Sandbox::RuneRegistry::FindStrategy("rune_unknown"), nullptr);
+}
+
+TEST(SandboxUnitTest, WeaponArchetypeRegistryResolvesConfigsAndBehaviors) {
+    const auto& maul = Sandbox::WeaponArchetypeRegistry::Resolve("Maul");
+    EXPECT_FLOAT_EQ(maul.GetConfig().WindupFraction, 0.28f);
+    EXPECT_FLOAT_EQ(maul.GetConfig().Trauma, 0.38f);
+
+    const auto& halberd = Sandbox::WeaponArchetypeRegistry::Resolve("Halberd");
+    EXPECT_FLOAT_EQ(halberd.GetConfig().StunSec, 0.35f);
+    Engine::Scene scene("WeaponBehaviorTestScene");
+    auto* hopper = scene.CreateGameObject("Hopper");
+    auto* rb = hopper->AddComponent<Engine::Rigidbody2D>();
+    rb->VerticalVelocity = 8.0f;
+    halberd.OnTargetHit(*hopper);
+    EXPECT_FLOAT_EQ(rb->VerticalVelocity, 0.0f);
+
+    const auto& sickle = Sandbox::WeaponArchetypeRegistry::Resolve("Sickle");
+    EXPECT_TRUE(sickle.GetConfig().IsFire);
+    EXPECT_FLOAT_EQ(sickle.GetConfig().InnateBurnDPS, 4.0f);
+    int stacks = 0;
+    float decay = 0.0f;
+    sickle.OnSwingConnected(stacks, decay);
+    EXPECT_EQ(stacks, 1);
+    EXPECT_FLOAT_EQ(decay, 3.0f);
+}
+
+TEST(SandboxUnitTest, StatAccumulatorStacksPermanentRunAndTransientLayersCleanly) {
+    Engine::Scene scene("StatAccumulatorTestScene");
+    auto* player = scene.CreateGameObject("Player");
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(
+        *player, Sandbox::StatModifierKey::MoveSpeed, 1.0f, StatLayer::Permanent));
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(
+        *player, Sandbox::StatModifierKey::MoveSpeed, 2.0f, StatLayer::Run));
+    stats->MoveSpeed.SetTransientMultiplier(1.20f);
+
+    // (1.0 base + 0.10 permanent + 0.20 run) * 1.20 transient = 1.56
+    EXPECT_NEAR(stats->GetEffectiveMoveSpeedMultiplier(), 1.56f, 1e-4f);
+    stats->MoveSpeed.SetTransientMultiplier(1.0f);
+    EXPECT_NEAR(stats->GetEffectiveMoveSpeedMultiplier(), 1.30f, 1e-4f);
+}
+
+TEST(SandboxUnitTest, SimulationPauseStackRefCountsOverlappingOverlays) {
+    Engine::Time::Reset();
+    Sandbox::UI::SimulationPauseStack::Reset();
+
+    Engine::Scene scene("OverlayPauseTestScene");
+    Sandbox::UI::BranchDraftOverlay draft;
+    Engine::BranchDefinition card;
+    card.Id = "branch_test";
+    card.Name = "Test Branch";
+    card.Rarity = "Common";
+    draft.Cards = { card };
+
+    Sandbox::UI::RunSummaryOverlay summary;
+    summary.SurvivalSec = 12.0f;
+
+    draft.Open(scene);
+    EXPECT_TRUE(draft.IsOpen());
+    EXPECT_EQ(Sandbox::UI::SimulationPauseStack::GetDepth(), 1u);
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.0f);
+
+    summary.Open(scene);
+    EXPECT_TRUE(summary.IsOpen());
+    EXPECT_EQ(Sandbox::UI::SimulationPauseStack::GetDepth(), 2u);
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.0f);
+
+    draft.Close(&scene);
+    EXPECT_FALSE(draft.IsOpen());
+    EXPECT_EQ(Sandbox::UI::SimulationPauseStack::GetDepth(), 1u);
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.0f);
+
+    summary.Close(&scene);
+    EXPECT_FALSE(summary.IsOpen());
+    EXPECT_EQ(Sandbox::UI::SimulationPauseStack::GetDepth(), 0u);
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 1.0f);
+
+    Engine::Time::Reset();
+}
+
+TEST(SandboxUnitTest, PlayerInteractionSensorSelectsSingleNearestStation) {
+    Engine::Scene scene("SensorNearestTestScene");
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+
+    auto* farGo = scene.CreateGameObject("FarStation");
+    farGo->GetTransform()->position = { 1.8f, 0.0f, 0.0f };
+    auto* farStation = farGo->AddComponent<SanctuaryStationComponent>();
+    farStation->Kind = SanctuaryStationKind::WeaponRack;
+    farStation->InteractRadius = 2.5f;
+
+    auto* nearGo = scene.CreateGameObject("NearStation");
+    nearGo->GetTransform()->position = { 0.6f, 0.0f, 0.0f };
+    auto* nearStation = nearGo->AddComponent<SanctuaryStationComponent>();
+    nearStation->Kind = SanctuaryStationKind::RunePedestal;
+    nearStation->InteractRadius = 2.5f;
+
+    const auto nearest = Sandbox::PlayerInteractionSensor::FindNearest(scene, { 0.0f, 0.0f }, player);
+    EXPECT_EQ(nearest.Station, nearStation);
+    EXPECT_STREQ(nearest.PromptText, "[E] Swap Rune");
+
+    farStation->Update(1.0f / 60.0f);
+    nearStation->Update(1.0f / 60.0f);
+    EXPECT_FALSE(farStation->IsPlayerInRange());
+    EXPECT_TRUE(nearStation->IsPlayerInRange());
+}
+
+TEST(SandboxUnitTest, SceneBootstrapRegistryResolvesAndBindsWithoutWaveDirectorInHub) {
+    auto hub = Sandbox::AlphaRunScene::CreateSanctuaryHubScene();
+    auto run = Sandbox::AlphaRunScene::Create(77ULL);
+    Engine::Scene village("Cult Diorama Clearing");
+
+    auto hubBoot = Sandbox::SceneBootstrapRegistry::Resolve(*hub);
+    auto runBoot = Sandbox::SceneBootstrapRegistry::Resolve(*run);
+    auto villageBoot = Sandbox::SceneBootstrapRegistry::Resolve(village);
+
+    EXPECT_STREQ(hubBoot->GetName(), "SanctuaryHubBootstrapper");
+    EXPECT_STREQ(runBoot->GetName(), "AlphaRunBootstrapper");
+    EXPECT_STREQ(villageBoot->GetName(), "DemoVillageBootstrapper");
+
+    Sandbox::SceneBootstrapRegistry::BindScene(hub);
+    Engine::GameObject* player = hub->FindFirstGameObjectWithTag(Engine::EntityTag::Player);
+    ASSERT_NE(player, nullptr);
+    EXPECT_NE(player->GetComponent<Engine::SpriteRenderer>(), nullptr);
+    EXPECT_NE(player->GetComponent<Engine::CameraComponent>(), nullptr);
+
+    bool hasWaveDirector = false;
+    for (const auto& go : hub->GetGameObjects()) {
+        if (go && go->GetComponent<WaveDirectorComponent>()) {
+            hasWaveDirector = true;
+        }
+    }
+    EXPECT_FALSE(hasWaveDirector);
+}
+
+TEST(SandboxUnitTest, RunTransitionServiceTransitionsBetweenRunAndSanctuaryHub) {
+    Engine::SceneManager::Shutdown();
+    Engine::Time::Reset();
+
+    auto hub = Sandbox::AlphaRunScene::CreateSanctuaryHubScene();
+    Engine::SceneManager::LoadScene(hub);
+
+    EXPECT_TRUE(Sandbox::RunTransitionService::HasFactories());
+    EXPECT_TRUE(Sandbox::RunTransitionService::StartNewRun(0.10f));
+    EXPECT_TRUE(Engine::SceneManager::IsTransitioning());
+    for (int i = 0; i < 15; ++i) {
+        Engine::SceneManager::UpdateTransition(1.0f / 60.0f);
+    }
+    auto activeAfterStart = Engine::SceneManager::GetActiveScene();
+    ASSERT_NE(activeAfterStart, nullptr);
+    EXPECT_TRUE(Sandbox::AlphaRunScene::IsAlphaScene(*activeAfterStart));
+
+    EXPECT_TRUE(Sandbox::RunTransitionService::ReturnToSanctuary(0.10f));
+    for (int i = 0; i < 15; ++i) {
+        Engine::SceneManager::UpdateTransition(1.0f / 60.0f);
+    }
+    auto activeAfterReturn = Engine::SceneManager::GetActiveScene();
+    ASSERT_NE(activeAfterReturn, nullptr);
+    EXPECT_TRUE(Sandbox::AlphaRunScene::IsSanctuaryHubScene(*activeAfterReturn));
+
+    Engine::SceneManager::Shutdown();
+    Engine::Time::Reset();
+}
+
+TEST(SandboxUnitTest, WaveDirectorNightPhaseConfigTableCoversAllPhases) {
+    Engine::Scene scene("PhaseConfigTestScene");
+    auto* wdGo = scene.CreateGameObject("WaveDirector");
+    auto* wd = wdGo->AddComponent<WaveDirectorComponent>();
+
+    const auto& configs = wd->GetPhaseConfigs();
+    ASSERT_EQ(configs.size(), 5u);
+    EXPECT_EQ(configs[0].Phase, NightPhase::Dusk);
+    EXPECT_EQ(configs[1].Phase, NightPhase::DeepNight);
+    EXPECT_EQ(configs[2].Phase, NightPhase::UmbralSurge);
+    EXPECT_EQ(configs[3].Phase, NightPhase::EclipseClimax);
+    EXPECT_EQ(configs[4].Phase, NightPhase::DawnBreak);
+    EXPECT_TRUE(configs[4].TriggersDawnVictory);
+    for (size_t i = 0; i < 4; ++i) {
+        EXPECT_FALSE(configs[i].WeightedPool.empty());
+        EXPECT_LT(configs[i].StartTimeSec, configs[i + 1].StartTimeSec);
+    }
+}
+
+TEST(SandboxUnitTest, PickupSpecAndPoolingReusesCollectedPickups) {
+    Engine::Scene scene("PickupPoolTestScene");
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+
+    EXPECT_FALSE(PickupComponent::GetSpec(PickupKind::WoodLog).MagnetizeToPlayer);
+    EXPECT_TRUE(PickupComponent::GetSpec(PickupKind::AshEmber).MagnetizeToPlayer);
+    EXPECT_FLOAT_EQ(PickupComponent::GetSpec(PickupKind::CrimsonBerry).DefaultHealAmount, 20.0f);
+
+    auto* first = PickupComponent::SpawnPickup(scene, PickupKind::AshEmber, { 1.0f, 0.2f, 1.0f }, { 0.0f, 0.0f }, 5.0f);
+    ASSERT_NE(first, nullptr);
+    EXPECT_TRUE(first->IsPooled());
+    EXPECT_TRUE(first->IsActive());
+
+    auto* comp = first->GetComponent<PickupComponent>();
+    ASSERT_NE(comp, nullptr);
+    comp->OnTriggerEnter2D(player);
+    EXPECT_EQ(stats->XP, 10);
+    EXPECT_EQ(stats->RunAshes, 5);
+    EXPECT_FALSE(first->IsActive());
+
+    auto* second = PickupComponent::SpawnPickup(scene, PickupKind::AshEmber, { 2.0f, 0.2f, 2.0f }, { 0.0f, 0.0f }, 5.0f);
+    EXPECT_EQ(second, first);
+    EXPECT_TRUE(second->IsActive());
+
+    second->GetComponent<PickupComponent>()->OnTriggerEnter2D(player);
+    EXPECT_EQ(stats->XP, 20);
+    EXPECT_EQ(stats->RunAshes, 10);
 }
 
 } // namespace

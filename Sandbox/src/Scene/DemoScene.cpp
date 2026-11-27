@@ -1,4 +1,6 @@
 #include "Scene/DemoScene.h"
+#include "Scene/SceneBootstrapper.h"
+#include "Scene/ScenePrefabs.h"
 
 #include "Scripts/PlayerController.h"
 #include "Scripts/WeaponController.h"
@@ -40,6 +42,12 @@ std::shared_ptr<Engine::SubTexture2D> MakeQuadrantTile(const std::shared_ptr<Eng
     const glm::vec2 maxUV = { (col + 1) * 0.5f - kInset, (row + 1) * 0.5f - kInset };
     return std::make_shared<Engine::SubTexture2D>(atlas, minUV, maxUV);
 }
+struct DemoBootstrapperRegistrar {
+    DemoBootstrapperRegistrar() {
+        SceneBootstrapRegistry::RegisterFallbackDemoBinder(&DemoScene::BindRuntimeGameplayScripts);
+    }
+};
+static DemoBootstrapperRegistrar s_DemoBootstrapperRegistrar;
 } // namespace
 
 std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
@@ -51,28 +59,19 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     cam.SetDistance(15.0f);
     cam.SetFocalPoint({ 6.5f, 0.0f, 7.0f });
 
-    // 0. Golden-Hour 2.5D Directional Sun & Cool Indigo Shadow Fill
-    Engine::GameObject* sunObject = editorScene->CreateGameObject("Sun Light");
-    sunObject->GetTransform()->position = { 6.5f, 8.0f, 6.5f };
-    auto* sunLight = sunObject->AddComponent<Engine::DirectionalLightComponent>();
-    sunLight->ElevationDegrees = 40.0f;
-    sunLight->AzimuthDegrees = -42.0f;
-    sunLight->SunColor = { 1.0f, 0.91f, 0.74f };
-    sunLight->SunIntensity = 1.05f;
-    sunLight->AmbientColor = { 0.36f, 0.41f, 0.62f };
-    sunLight->AmbientIntensity = 0.62f;
-    sunLight->CastShadows = true;
-    sunLight->ShadowSoftness = 1.35f;
-
-    // 0b. HDR Post-Processing Volume (Multi-Mip Bloom + Storybook Split-Tone Grade + Diorama Vignette)
-    Engine::GameObject* postProcessObject = editorScene->CreateGameObject("Post Process Volume");
-    auto* postProcess = postProcessObject->AddComponent<Engine::PostProcessComponent>();
-    postProcess->ApplyPreset(Engine::PostProcessComponent::Preset::CultStorybook);
-
-    // 0c. Global 2.5D Wind Zone (Traveling Gust Waves + Interactive Player Foliage Parting)
-    Engine::GameObject* windObject = editorScene->CreateGameObject("Wind Zone");
-    auto* windZone = windObject->AddComponent<Engine::WindComponent>();
-    windZone->ApplyPreset(Engine::WindComponent::Preset::GentleMeadowBreeze);
+    // 0. Golden-Hour 2.5D Directional Sun, HDR Post-Processing, and Global 2.5D Wind Zone
+    AtmosphereConfig villageAtmos;
+    villageAtmos.LightName = "Sun Light";
+    villageAtmos.LightPosition = { 6.5f, 8.0f, 6.5f };
+    villageAtmos.ElevationDegrees = 40.0f;
+    villageAtmos.AzimuthDegrees = -42.0f;
+    villageAtmos.SunColor = { 1.0f, 0.91f, 0.74f };
+    villageAtmos.SunIntensity = 1.05f;
+    villageAtmos.AmbientColor = { 0.36f, 0.41f, 0.62f };
+    villageAtmos.AmbientIntensity = 0.62f;
+    villageAtmos.CastShadows = true;
+    villageAtmos.ShadowSoftness = 1.35f;
+    ScenePrefabs::CreateAtmosphere(*editorScene, villageAtmos);
 
     // 1A. Organic 4-Layer Splatmap Terrain Clearing ([-1.5, 14.5] x [-1.5, 14.5])
     Engine::GameObject* terrainObject = editorScene->CreateGameObject("Terrain");
@@ -145,48 +144,13 @@ std::shared_ptr<Engine::Scene> DemoScene::CreateVillageScene() {
     }
 
     // 2. Player ("Hero Lamb" 2.5D Cutout Standee)
-    auto heroTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/hero_lamb.png");
-    Engine::GameObject* player = editorScene->CreateGameObject("Player");
-    player->SetTag(Engine::EntityTag::Player);
-    auto* playerTransform = player->GetTransform();
-    playerTransform->position = { 6.5f, 0.0f, 9.2f };
-    playerTransform->scale = { 1.25f, 1.35f, 1.0f };
-
-    auto* playerSprite = player->AddComponent<Engine::SpriteRenderer>();
-    playerSprite->SetTexture(heroTex);
-    playerSprite->SetBillboardMode(Engine::SpriteRenderer::BillboardMode::ViewPlane);
-    playerSprite->SetAlphaCutoff(0.18f);
-
-    auto* heroTorch = player->AddComponent<Engine::PointLightComponent>();
-    heroTorch->Color = { 1.0f, 0.58f, 0.22f };
-    heroTorch->Intensity = 2.15f;
-    heroTorch->Radius = 7.5f;
-    heroTorch->Falloff = 1.7f;
-    heroTorch->HeightOffset = 0.90f;
-    heroTorch->Priority = Engine::LightPriority::Critical_HeroTorch;
-    heroTorch->Semantic = Engine::LightSemantic::SafeLifeline;
-    heroTorch->CastShadows = true;
-    heroTorch->ShadowSoftness = 1.6f;
-    heroTorch->ShadowBias = 0.0025f;
-    heroTorch->Flicker = true;
-    heroTorch->FlickerSpeed = 8.5f;
-    heroTorch->FlickerAmount = 0.14f;
-
-    player->AddComponent<Engine::ParticleSystem>(500);
-
-    auto* playerRb = player->AddComponent<Engine::Rigidbody2D>();
-    playerRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
-    playerRb->UseGravityY = true;
-    playerRb->GroundLevelY = 0.0f;
-
-    auto* playerCollider = player->AddComponent<Engine::BoxCollider2D>();
-    playerCollider->size = { 0.55f, 0.45f };
-    playerCollider->Friction = 0.0f;
-
-    auto* playerAudio = player->AddComponent<Engine::AudioSource>();
-    playerAudio->SetClip(Engine::ResourceManager::Load<Engine::AudioClip>("jump.wav"));
-
-    player->AddComponent<Engine::SquashStretchComponent>();
+    PlayerPrefabConfig villagePlayerCfg;
+    villagePlayerCfg.Position = { 6.5f, 0.0f, 9.2f };
+    villagePlayerCfg.TorchIntensity = 2.15f;
+    villagePlayerCfg.UseTerrainFriction = false;
+    villagePlayerCfg.AttachCamera = false;
+    villagePlayerCfg.AttachSockets = false;
+    ScenePrefabs::CreateDefaultPlayer(*editorScene, villagePlayerCfg);
 
     // 3. Central Cult Shrine Centerpiece (with Subtle Crimson Rune Glow)
     auto shrineTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/cult_shrine.png");

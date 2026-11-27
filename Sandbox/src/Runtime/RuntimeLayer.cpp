@@ -2,6 +2,7 @@
 
 #include "Scene/AlphaRunScene.h"
 #include "Scene/DemoScene.h"
+#include "Scene/SceneBootstrapper.h"
 
 #include <Engine/Core/Application.h>
 #include <Engine/Core/Input.h>
@@ -52,13 +53,7 @@ void RuntimeLayer::OnAttach() {
         );
     }
 
-    if (AlphaRunScene::IsSanctuaryHubScene(*m_ActiveScene)) {
-        AlphaRunScene::BindSanctuaryHubScripts(m_ActiveScene);
-    } else if (AlphaRunScene::IsAlphaScene(*m_ActiveScene)) {
-        AlphaRunScene::BindRuntimeGameplayScripts(m_ActiveScene);
-    } else {
-        DemoScene::BindRuntimeGameplayScripts(m_ActiveScene);
-    }
+    Sandbox::SceneBootstrapRegistry::BindScene(m_ActiveScene);
     Engine::SceneManager::LoadScene(m_ActiveScene);
     m_ActiveScene->OnRuntimeStart();
 

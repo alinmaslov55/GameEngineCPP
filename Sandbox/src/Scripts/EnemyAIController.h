@@ -2,6 +2,7 @@
 #define SANDBOX_ENEMY_AI_CONTROLLER_H
 
 #include "Scripts/CombatDamageHelper.h"
+#include "Scripts/EnemyArchetypes.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
 #include "Scripts/PickupComponent.h"
@@ -82,6 +83,7 @@ public:
     bool ConfigureArchetype(const std::string& enemyId) {
         EnemyId = enemyId;
         m_Stats = ResolveEnemyDefinition(enemyId);
+        m_Archetype = &Sandbox::EnemyArchetypeRegistry::Resolve(enemyId, m_Stats.Archetype);
 
         auto* go = GetGameObject();
         if (!go) {
@@ -95,11 +97,9 @@ public:
         }
 
         if (auto* sr = go->GetComponent<Engine::SpriteRenderer>()) {
-            const char* texPath = "assets/diorama/ghoul.png";
-            if (enemyId == "enemy_thrall") texPath = "assets/diorama/thrall.png";
-            else if (enemyId == "enemy_jiangshi") texPath = "assets/diorama/jiangshi.png";
-            else if (enemyId == "enemy_wendigo") texPath = "assets/diorama/wendigo.png";
-            else if (enemyId == "enemy_wisp") texPath = "assets/diorama/blight_wisp.png";
+            const char* texPath = m_Stats.SpriteSheet.empty()
+                ? m_Archetype->GetTexturePath()
+                : m_Stats.SpriteSheet.c_str();
             if (auto tex = Engine::ResourceManager::Load<Engine::Texture>(texPath)) {
                 sr->SetTexture(tex);
                 sr->SetAlphaCutoff(0.18f);
@@ -225,12 +225,11 @@ private:
 
         m_StateMachine.RegisterState(EnemyAIState::Windup, {
             .OnEnter = [](EnemyAIController* self) {
-                self->m_StateTimer = self->ResolveWindupDuration();
+                const auto windup = self->ActiveArchetype().GetWindupSpec();
+                self->m_StateTimer = windup.DurationSec;
                 if (auto* go = self->GetGameObject()) {
                     if (auto* sr = go->GetComponent<Engine::SpriteRenderer>()) {
-                        sr->SetFlashMode(self->EnemyId == "enemy_wendigo"
-                            ? Engine::SpriteRenderer::FlashMode::CrimsonImpact
-                            : Engine::SpriteRenderer::FlashMode::PureWhite);
+                        sr->SetFlashMode(windup.Flash);
                         sr->SetFlashAmount(0.85f);
                     }
                     if (auto* ss = go->GetComponent<Engine::SquashStretchComponent>()) {
@@ -293,39 +292,11 @@ private:
         });
     }
 
-    [[nodiscard]] float ResolveWindupDuration() const noexcept {
-        if (EnemyId == "enemy_jiangshi") return 0.35f;
-        if (EnemyId == "enemy_wendigo") return 0.45f;
-        if (EnemyId == "enemy_wisp") return 0.22f;
-        return 0.25f;
-    }
-
-    [[nodiscard]] Engine::GameObject* SelectTarget(Engine::Scene& scene, const glm::vec3& selfPos) const {
-        Engine::GameObject* player = scene.FindFirstGameObjectWithTag(Engine::EntityTag::Player);
-        if (EnemyId == "enemy_thrall") {
-            Engine::GameObject* closestStruct = nullptr;
-            float bestDistSq = 4.5f * 4.5f;
-            for (const auto& goPtr : scene.GetGameObjects()) {
-                if (!goPtr || goPtr->IsPendingDestroy()) {
-                    continue;
-                }
-                const auto tag = goPtr->GetTag();
-                if (tag == Engine::EntityTag::TacticalStructure || tag == Engine::EntityTag::SafeZoneBrazier) {
-                    const glm::vec3 sPos = goPtr->GetTransform()->GetWorldPosition();
-                    const float dx = sPos.x - selfPos.x;
-                    const float dz = sPos.z - selfPos.z;
-                    const float dSq = dx * dx + dz * dz;
-                    if (dSq < bestDistSq) {
-                        bestDistSq = dSq;
-                        closestStruct = goPtr.get();
-                    }
-                }
-            }
-            if (closestStruct) {
-                return closestStruct;
-            }
+    [[nodiscard]] const Sandbox::IEnemyArchetype& ActiveArchetype() const noexcept {
+        if (!m_Archetype) {
+            return Sandbox::EnemyArchetypeRegistry::Resolve(EnemyId, m_Stats.Archetype);
         }
-        return player;
+        return *m_Archetype;
     }
 
     void UpdateChase(float dt) {
@@ -336,8 +307,9 @@ private:
             return;
         }
 
+        const auto& archetype = ActiveArchetype();
         const glm::vec3 selfPos = go->GetTransform()->GetWorldPosition();
-        m_Target = SelectTarget(*scene, selfPos);
+        m_Target = archetype.SelectTarget(*scene, selfPos);
         if (!m_Target || m_Target->IsPendingDestroy()) {
             if (rb) rb->SetVelocityXZ(0.0f, 0.0f);
             return;
@@ -348,38 +320,13 @@ private:
         glm::vec2 targetXZ{ tPos.x, tPos.z };
         const float dist = glm::length(targetXZ - selfXZ);
 
-        // Archetype special transitions
-        if (EnemyId == "enemy_jiangshi" && m_SpecialCooldown <= 0.0f && dist <= HopRange && dist >= 1.8f) {
-            Transition(EnemyAIState::Windup);
-            return;
-        }
-        if (EnemyId == "enemy_wisp" && m_SpecialCooldown <= 0.0f && dist <= 7.0f) {
-            Transition(EnemyAIState::Windup);
-            return;
-        }
-        if (EnemyId == "enemy_wendigo" && m_SpecialCooldown <= 0.0f && dist <= LungeRange && dist >= 1.6f) {
-            Transition(EnemyAIState::Windup);
-            return;
-        }
-        if (dist <= AttackRange && m_AttackCooldown <= 0.0f) {
+        if (archetype.ShouldStartSpecial(dist, m_SpecialCooldown) ||
+            (dist <= AttackRange && m_AttackCooldown <= 0.0f)) {
             Transition(EnemyAIState::Windup);
             return;
         }
 
-        // Apex Wendigo shadow-stalking via Scene::EvaluateIlluminationAtXZ (LGT-03)
-        if (EnemyId == "enemy_wendigo" && dist > 2.2f) {
-            const auto illum = scene->EvaluateIlluminationAtXZ(selfXZ);
-            if (illum.IsInSafeLight(0.15f)) {
-                // Sidestep toward darker flank perpendicular to target
-                const glm::vec2 toTarget = (dist > 1e-4f) ? ((targetXZ - selfXZ) / dist) : glm::vec2(1.0f, 0.0f);
-                const glm::vec2 perp{ -toTarget.y, toTarget.x };
-                const glm::vec2 probeA = selfXZ + perp * 3.0f;
-                const glm::vec2 probeB = selfXZ - perp * 3.0f;
-                const float lumA = scene->EvaluateIlluminationAtXZ(probeA).SafeIntensity;
-                const float lumB = scene->EvaluateIlluminationAtXZ(probeB).SafeIntensity;
-                targetXZ = (lumA <= lumB) ? probeA : probeB;
-            }
-        }
+        targetXZ = archetype.ModifyChaseTarget(*scene, selfXZ, targetXZ, dist);
 
         m_NeighborScratch.clear();
         for (Engine::GameObject* other : scene->FindGameObjectsWithTag(Engine::EntityTag::Enemy)) {
@@ -391,7 +338,7 @@ private:
 
         Engine::SteeringParams sp;
         sp.MaxSpeed = m_Stats.MoveSpeed;
-        sp.TargetOrbitRadius = (EnemyId == "enemy_wisp") ? 5.5f : 0.0f;
+        sp.TargetOrbitRadius = archetype.GetOrbitRadius();
         const glm::vec2 velXZ = Engine::SteeringSystem::ComputeContextSteeringXZ(
             *scene, go, targetXZ, m_NeighborScratch, sp);
 
@@ -408,101 +355,79 @@ private:
         }
     }
 
+    Sandbox::EnemyAttackContext BuildAttackContext(Engine::GameObject& go, Engine::Scene& scene) {
+        return Sandbox::EnemyAttackContext{
+            go,
+            scene,
+            go.GetComponent<Engine::Rigidbody2D>(),
+            m_Stats,
+            AttackRange,
+            HopRange,
+            LungeRange,
+            HopCooldown,
+            LungeCooldown,
+            WispDartCooldown,
+            m_StateTimer,
+            m_AttackCooldown,
+            m_SpecialCooldown,
+            m_IsAirborneHop,
+            m_LandingSpotXZ,
+            [this](Engine::GameObject* target, bool siphonFuel, bool checkMeleeRange) {
+                ApplyAttackHit(target, siphonFuel, checkMeleeRange);
+            },
+            [this, &scene](const glm::vec2& spotXZ) {
+                SpawnLandingIndicator(scene, spotXZ);
+            },
+            [this]() {
+                Transition(EnemyAIState::Chase);
+            }
+        };
+    }
+
     void EnterAttack() {
         auto* go = GetGameObject();
         auto* scene = go ? go->GetScene() : nullptr;
-        auto* rb = go ? go->GetComponent<Engine::Rigidbody2D>() : nullptr;
         if (!go || !scene) {
             Transition(EnemyAIState::Chase);
             return;
         }
 
+        const auto& archetype = ActiveArchetype();
         const glm::vec3 selfPos = go->GetTransform()->GetWorldPosition();
-        m_Target = SelectTarget(*scene, selfPos);
+        m_Target = archetype.SelectTarget(*scene, selfPos);
         const glm::vec2 selfXZ{ selfPos.x, selfPos.z };
         const glm::vec2 targetXZ = (m_Target && !m_Target->IsPendingDestroy())
             ? glm::vec2(m_Target->GetTransform()->GetWorldPosition().x, m_Target->GetTransform()->GetWorldPosition().z)
             : (selfXZ + glm::vec2(1.0f, 0.0f));
 
-        if (EnemyId == "enemy_jiangshi") {
-            glm::vec2 targetVel{ 0.0f };
-            if (m_Target) {
-                if (auto* tRb = m_Target->GetComponent<Engine::Rigidbody2D>()) {
-                    targetVel = tRb->GetVelocityXZ();
-                }
-            }
-            const float flightDur = 0.65f;
-            const float gravityY = rb ? rb->GravityY : -22.0f;
-            const auto sol = Engine::Ballistics::SolveInterceptHopArc(
-                selfXZ, targetXZ, targetVel, HopRange, flightDur, gravityY, 0.75f);
-
-            m_LandingSpotXZ = sol.LandingSpotXZ;
-            m_IsAirborneHop = true;
-            m_StateTimer = flightDur;
-            m_SpecialCooldown = HopCooldown;
-            if (rb) {
-                rb->LaunchVertical(sol.InitialVelocityY);
-                rb->SetVelocityXZ(sol.VelocityXZ);
-            }
-            SpawnLandingIndicator(*scene, sol.LandingSpotXZ);
-            return;
-        }
-
-        if (EnemyId == "enemy_wisp") {
-            const glm::vec2 dir = glm::normalize(targetXZ - selfXZ + glm::vec2(1e-5f, 0.0f));
-            m_StateTimer = 0.35f;
-            m_SpecialCooldown = WispDartCooldown;
-            if (rb) {
-                rb->SetVelocityXZ(dir * (m_Stats.MoveSpeed * 1.85f));
-            }
-            ApplyAttackHit(m_Target, true);
-            return;
-        }
-
-        if (EnemyId == "enemy_wendigo") {
-            const glm::vec2 dir = glm::normalize(targetXZ - selfXZ + glm::vec2(1e-5f, 0.0f));
-            m_StateTimer = 0.30f;
-            m_SpecialCooldown = LungeCooldown;
-            if (rb) {
-                rb->SetVelocityXZ(dir * 14.0f);
-            }
-            ApplyAttackHit(m_Target, false);
-            return;
-        }
-
-        // Standard Ghoul / Thrall melee strike
-        m_StateTimer = 0.20f;
-        m_AttackCooldown = 1.0f;
-        ApplyAttackHit(m_Target, false);
+        auto ctx = BuildAttackContext(*go, *scene);
+        archetype.OnEnterAttack(ctx, m_Target, selfXZ, targetXZ);
     }
 
     void UpdateAttack(float dt) {
         m_StateTimer -= dt;
-        if (m_IsAirborneHop) {
-            auto* go = GetGameObject();
-            auto* rb = go ? go->GetComponent<Engine::Rigidbody2D>() : nullptr;
-            if (m_StateTimer <= 0.0f || (rb && rb->IsGrounded(go->GetTransform()->position.y) && m_StateTimer < 0.50f)) {
-                ExecuteJiangshiLandingSlam();
-                Transition(EnemyAIState::Chase);
-            }
+        auto* go = GetGameObject();
+        auto* scene = go ? go->GetScene() : nullptr;
+        if (!go || !scene) {
+            Transition(EnemyAIState::Chase);
             return;
         }
-        if (m_StateTimer <= 0.0f) {
-            Transition(EnemyAIState::Chase);
-        }
+        auto ctx = BuildAttackContext(*go, *scene);
+        ActiveArchetype().OnUpdateAttack(ctx, dt);
     }
 
-    void ApplyAttackHit(Engine::GameObject* target, bool siphonFuel) {
+    void ApplyAttackHit(Engine::GameObject* target, bool siphonFuel, bool checkMeleeRange = true) {
         auto* go = GetGameObject();
         if (!go || !target || target->IsPendingDestroy()) {
             return;
         }
-        const glm::vec3 sPos = go->GetTransform()->GetWorldPosition();
-        const glm::vec3 tPos = target->GetTransform()->GetWorldPosition();
-        const glm::vec2 delta{ tPos.x - sPos.x, tPos.z - sPos.z };
-        const float dist = glm::length(delta);
-        if (dist > (AttackRange + 0.6f) && EnemyId != "enemy_wisp" && EnemyId != "enemy_wendigo") {
-            return;
+        if (checkMeleeRange) {
+            const glm::vec3 sPos = go->GetTransform()->GetWorldPosition();
+            const glm::vec3 tPos = target->GetTransform()->GetWorldPosition();
+            const float dist = glm::length(glm::vec2{ tPos.x - sPos.x, tPos.z - sPos.z });
+            if (dist > (AttackRange + 0.6f)) {
+                return;
+            }
         }
 
         if (target->GetTag() == Engine::EntityTag::Player) {
@@ -522,26 +447,6 @@ private:
             evt.Amount = m_Stats.Damage;
             evt.Source = go;
             targetHealth->ApplyDamage(evt);
-        }
-    }
-
-    void ExecuteJiangshiLandingSlam() {
-        auto* go = GetGameObject();
-        auto* scene = go ? go->GetScene() : nullptr;
-        if (!go || !scene) {
-            return;
-        }
-        const glm::vec3 center = go->GetTransform()->GetWorldPosition();
-        constexpr float kSlamRadius = 1.8f;
-        const float rSq = kSlamRadius * kSlamRadius;
-
-        if (auto* player = scene->FindFirstGameObjectWithTag(Engine::EntityTag::Player)) {
-            const glm::vec3 pPos = player->GetTransform()->GetWorldPosition();
-            const float dx = pPos.x - center.x;
-            const float dz = pPos.z - center.z;
-            if ((dx * dx + dz * dz) <= rSq) {
-                Sandbox::ApplyPlayerOrTargetDamage(player, go, m_Stats.Damage);
-            }
         }
     }
 
@@ -575,21 +480,11 @@ private:
         if (!go || !scene) {
             return;
         }
-        const glm::vec3 origin = go->GetTransform()->GetWorldPosition();
-        if (EnemyId == "enemy_wendigo") {
-            // Guaranteed Ash Jackpot + Crimson Berry
-            for (int i = 0; i < 5; ++i) {
-                const float angle = 1.256637f * static_cast<float>(i);
-                PickupComponent::SpawnPickup(
-                    *scene, PickupKind::AshEmber, origin, { std::cos(angle) * 2.4f, std::sin(angle) * 2.4f }, 5.5f);
-            }
-            PickupComponent::SpawnPickup(*scene, PickupKind::CrimsonBerry, origin, { 0.0f, 1.8f }, 6.0f);
-        } else {
-            PickupComponent::SpawnPickup(*scene, PickupKind::AshEmber, origin, { 0.8f, 0.5f }, 4.8f);
-        }
+        ActiveArchetype().OnKilled(*scene, go->GetTransform()->GetWorldPosition());
     }
 
     Engine::EnemyDefinition m_Stats{ "enemy_ghoul", "Flesheater Ghoul", "Swarm", 35.0f, 3.8f, 8.0f, 25.0f, 1.2f, "" };
+    const Sandbox::IEnemyArchetype* m_Archetype = nullptr;
     Engine::StateMachine<EnemyAIController*> m_StateMachine;
     bool m_StatesRegistered = false;
     Engine::GameObject* m_Target = nullptr;

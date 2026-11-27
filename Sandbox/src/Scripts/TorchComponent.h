@@ -1,7 +1,6 @@
 #ifndef SANDBOX_TORCH_COMPONENT_H
 #define SANDBOX_TORCH_COMPONENT_H
 
-#include "Scripts/CombatTargetComponent.h"
 #include "Scripts/CombatDamageHelper.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/PlayerController.h"
@@ -206,7 +205,9 @@ public:
         const bool frenzy = IsAshFrenzy();
         if (player) {
             if (auto* stats = player->GetComponent<PlayerStatsComponent>()) {
-                stats->FrenzySpeedMultiplier = frenzy ? (1.0f + AshFrenzySpeedBonus) : 1.0f;
+                const float frenzyMult = frenzy ? (1.0f + AshFrenzySpeedBonus) : 1.0f;
+                stats->MoveSpeed.SetTransientMultiplier(frenzyMult);
+                stats->AttackSpeed.SetTransientMultiplier(frenzyMult);
             }
         }
         UpdateAshFrenzyVignette(*scene, frenzy, deltaTime);
@@ -227,7 +228,8 @@ public:
         auto* scene = go ? go->GetScene() : nullptr;
         if (auto* player = ResolvePlayer()) {
             if (auto* stats = player->GetComponent<PlayerStatsComponent>()) {
-                stats->FrenzySpeedMultiplier = 1.0f;
+                stats->MoveSpeed.SetTransientMultiplier(1.0f);
+                stats->AttackSpeed.SetTransientMultiplier(1.0f);
             }
         }
         if (scene && m_SavedBaselineVignette) {
@@ -315,9 +317,7 @@ private:
                 evt.IsFire = true;
                 evt.IsRadiant = true;
                 evt.BypassInvuln = true;
-                health->ApplyDamage(evt);
-            } else if (auto* target = enemy->GetComponent<CombatTargetComponent>()) {
-                target->ApplyDamage(AuraDamage * tickDt, 0.0f, Engine::SpriteRenderer::FlashMode::CrimsonImpact);
+                Sandbox::CombatDamage::Apply(enemy, evt);
             }
 
             if (auto* ps = enemy->GetComponent<Engine::ParticleSystem>()) {

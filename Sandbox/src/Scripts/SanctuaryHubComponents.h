@@ -1,30 +1,23 @@
 #ifndef SANDBOX_SANCTUARY_HUB_COMPONENTS_H
 #define SANDBOX_SANCTUARY_HUB_COMPONENTS_H
 
-#include "Scene/AlphaRunScene.h"
-#include "Scripts/RuneCasterComponent.h"
+#include "Scripts/InteractableBehavior.h"
 #include "Scripts/RunSessionManager.h"
-#include "Scripts/WeaponController.h"
+#include "Scripts/UIOverlaySystem.h"
 
-#include <Engine/Core/Application.h>
 #include <Engine/Core/Input.h>
 #include <Engine/Data/SaveManager.h>
 #include <Engine/Scene/Component.h>
 #include <Engine/Scene/EntityTag.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Scene.h>
-#include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/Transform.h>
-#include <Engine/UI/UIButtonComponent.h>
-#include <Engine/UI/UICanvas.h>
-#include <Engine/UI/UILabel.h>
-#include <Engine/UI/UIPanel.h>
 #include <glm/glm.hpp>
 
 #include <algorithm>
-#include <array>
-#include <cmath>
 #include <functional>
+#include <limits>
+#include <memory>
 #include <string>
 
 enum class SanctuaryStationKind : uint8_t {
@@ -34,6 +27,25 @@ enum class SanctuaryStationKind : uint8_t {
     UmbralGate = 3,
     TitleOverlay = 4
 };
+
+class SanctuaryStationComponent;
+
+namespace Sandbox {
+
+struct NearestInteractableResult {
+    SanctuaryStationComponent* Station = nullptr;
+    const char* PromptText = "";
+    float DistanceSq = std::numeric_limits<float>::max();
+};
+
+class PlayerInteractionSensor {
+public:
+    [[nodiscard]] static NearestInteractableResult FindNearest(Engine::Scene& scene,
+                                                               const glm::vec2& playerPos,
+                                                               Engine::GameObject* player = nullptr);
+};
+
+} // namespace Sandbox
 
 class SanctuaryStationComponent final : public Engine::Component {
 public:
@@ -50,200 +62,170 @@ public:
             .PadButton = SDL_GAMEPAD_BUTTON_WEST,
             .PadTriggerAxis = SDL_GAMEPAD_AXIS_INVALID
         });
+        EnsureBehavior();
     }
 
     void Start() override {
         if (Kind == SanctuaryStationKind::TitleOverlay) {
-            BuildTitleUI();
+            EnsureTitleOpened();
+        } else {
+            EnsureBehavior();
         }
     }
 
-    [[nodiscard]] bool IsOpen() const noexcept { return m_Open; }
-    [[nodiscard]] bool IsSettingsOpen() const noexcept { return m_SettingsOpen; }
+    [[nodiscard]] bool IsOpen() const noexcept { return m_TitleOverlay.IsOpen(); }
+    [[nodiscard]] bool IsSettingsOpen() const noexcept { return m_TitleOverlay.IsSettingsOpen(); }
     [[nodiscard]] bool IsPlayerInRange() const noexcept { return m_PlayerInRange; }
 
+    [[nodiscard]] const char* GetPromptText() {
+        EnsureBehavior();
+        return m_Behavior ? m_Behavior->GetPromptText() : "";
+    }
+
+    [[nodiscard]] bool CanInteract(Engine::Scene& scene, Engine::GameObject& player) {
+        if (Kind == SanctuaryStationKind::TitleOverlay) {
+            return false;
+        }
+        EnsureBehavior();
+        return m_Behavior ? m_Behavior->CanInteract(scene, player) : false;
+    }
+
     void DismissTitle() {
-        m_Open = false;
-        m_SettingsOpen = false;
-        if (m_Root) {
-            m_Root->SetActive(false);
-        }
-        if (m_SettingsPanel) {
-            m_SettingsPanel->SetActive(false);
-        }
+        m_TitleOverlay.Dismiss();
     }
 
     void ToggleSettings() {
-        m_SettingsOpen = !m_SettingsOpen;
-        if (m_SettingsPanel) {
-            m_SettingsPanel->SetActive(m_SettingsOpen);
-        }
+        m_TitleOverlay.ToggleSettings();
     }
 
     void ApplySettings(float masterVol, float sfxVol, float musicVol, bool fullscreen, bool vsync) {
-        auto& session = RunSessionManager::Get();
-        session.Profile.BusVolumes[0] = std::clamp(masterVol, 0.0f, 1.0f);
-        session.Profile.BusVolumes[1] = std::clamp(musicVol, 0.0f, 1.0f);
-        session.Profile.BusVolumes[2] = std::clamp(sfxVol, 0.0f, 1.0f);
-        session.Profile.Fullscreen = fullscreen;
-        session.Profile.VSync = vsync;
-        Engine::SaveManager::ApplyAudioAndVideoSettings(session.Profile);
-        session.SaveProfile();
+        m_TitleOverlay.ApplySettings(masterVol, sfxVol, musicVol, fullscreen, vsync);
     }
 
     bool Interact() {
         auto* go = GetGameObject();
         auto* scene = go ? go->GetScene() : nullptr;
         auto* player = scene ? scene->FindFirstGameObjectWithTag(Engine::EntityTag::Player) : nullptr;
-        if (!scene || !player) {
+        if (!scene || !player || Kind == SanctuaryStationKind::TitleOverlay) {
             return false;
         }
-
-        auto& session = RunSessionManager::Get();
-        switch (Kind) {
-            case SanctuaryStationKind::WeaponRack: {
-                static constexpr std::array<const char*, 3> kWeapons = {
-                    "weapon_maul_t1", "weapon_halberd_t1", "weapon_sickle_t1"
-                };
-                m_WeaponIndex = (m_WeaponIndex + 1u) % kWeapons.size();
-                session.SelectedWeaponId = kWeapons[m_WeaponIndex];
-                if (auto* wc = player->GetComponent<WeaponController>()) {
-                    wc->EquipWeapon(session.SelectedWeaponId);
-                }
-                return true;
-            }
-            case SanctuaryStationKind::RunePedestal: {
-                static constexpr std::array<const char*, 4> kRunes = {
-                    "rune_ignite", "rune_chronos", "rune_shockwave", "rune_consecrate"
-                };
-                m_RuneIndex = (m_RuneIndex + 1u) % kRunes.size();
-                session.SelectedRuneId = kRunes[m_RuneIndex];
-                if (auto* rc = player->GetComponent<RuneCasterComponent>()) {
-                    rc->EquipRune(session.SelectedRuneId);
-                }
-                return true;
-            }
-            case SanctuaryStationKind::RootAltar:
-                return session.PurchaseRootRank(ActiveRootId);
-
-            case SanctuaryStationKind::UmbralGate: {
-                session.ResetRunTelemetry();
-                const uint64_t runSeed = session.NextRunSeed++;
-                Engine::SceneManager::TransitionToScene([runSeed]() {
-                    auto runScene = Sandbox::AlphaRunScene::Create(runSeed);
-                    Sandbox::AlphaRunScene::BindRuntimeGameplayScripts(runScene);
-                    return runScene;
-                }, 0.45f);
-                return true;
-            }
-            case SanctuaryStationKind::TitleOverlay:
-                DismissTitle();
-                return true;
-        }
-        return false;
+        EnsureBehavior();
+        return m_Behavior ? m_Behavior->Interact(*scene, *player) : false;
     }
 
     void Update(float /*deltaTime*/) override {
         if (Kind == SanctuaryStationKind::TitleOverlay) {
-            if (!m_Built) {
-                BuildTitleUI();
-            }
+            EnsureTitleOpened();
             return;
         }
 
         auto* go = GetGameObject();
         auto* scene = go ? go->GetScene() : nullptr;
         auto* player = scene ? scene->FindFirstGameObjectWithTag(Engine::EntityTag::Player) : nullptr;
-        if (!go || !player) {
+        if (!go || !scene || !player) {
             m_PlayerInRange = false;
             return;
         }
 
-        const glm::vec3 sPos = go->GetTransform()->GetWorldPosition();
-        const glm::vec3 pPos = player->GetTransform()->GetWorldPosition();
-        const float dx = pPos.x - sPos.x;
-        const float dz = pPos.z - sPos.z;
-        m_PlayerInRange = ((dx * dx + dz * dz) <= (InteractRadius * InteractRadius));
+        const glm::vec3 playerPos3 = player->GetTransform()->GetWorldPosition();
+        const auto nearest = Sandbox::PlayerInteractionSensor::FindNearest(
+            *scene, glm::vec2(playerPos3.x, playerPos3.y), player);
+        m_PlayerInRange = (nearest.Station == this);
 
         if (m_PlayerInRange && Engine::Input::IsActionJustPressed("Interact")) {
             Interact();
         }
     }
 
-private:
-    void BuildTitleUI() {
+    void OnDestroy() override {
         auto* go = GetGameObject();
         auto* scene = go ? go->GetScene() : nullptr;
-        if (!scene || m_Built) {
-            return;
-        }
-        m_Built = true;
-
-        m_Root = scene->CreateGameObject("TitleOverlayRoot");
-        auto* bg = m_Root->AddComponent<Engine::UIPanel>();
-        bg->useRectTransform = true;
-        bg->rectTransform.Anchor = Engine::UIAnchor::Center;
-        bg->rectTransform.Pivot = { 0.5f, 0.5f };
-        bg->rectTransform.Size = { 520.0f, 360.0f };
-        bg->rectTransform.ZOrder = 220;
-        bg->color = { 0.06f, 0.05f, 0.10f, 0.90f };
-
-        auto* title = m_Root->AddComponent<Engine::UILabel>();
-        title->text = "CULT OF THE LANTERN";
-        title->scale = 1.2f;
-
-        auto makeBtn = [&](const char* name, float yOffset, const std::string& label, std::function<void()> onClick) {
-            auto* bGo = scene->CreateGameObject(name);
-            bGo->GetTransform()->SetParent(m_Root->GetTransform(), false);
-            auto* p = bGo->AddComponent<Engine::UIPanel>();
-            p->useRectTransform = true;
-            p->rectTransform.Anchor = Engine::UIAnchor::Center;
-            p->rectTransform.Pivot = { 0.5f, 0.5f };
-            p->rectTransform.AnchoredOffset = { 0.0f, yOffset };
-            p->rectTransform.Size = { 260.0f, 44.0f };
-            p->rectTransform.ZOrder = 221;
-            p->color = { 0.24f, 0.20f, 0.30f, 0.95f };
-            auto* l = bGo->AddComponent<Engine::UILabel>();
-            l->text = label;
-            l->scale = 0.85f;
-            auto* btn = bGo->AddComponent<Engine::UIButtonComponent>();
-            btn->OnClick = std::move(onClick);
-            return bGo;
-        };
-
-        makeBtn("Btn_Play", 40.0f, "Play / Continue", [this]() { DismissTitle(); });
-        makeBtn("Btn_Settings", -16.0f, "Settings", [this]() { ToggleSettings(); });
-        makeBtn("Btn_Quit", -72.0f, "Quit", [this]() {
-            if (OnQuitRequested) {
-                OnQuitRequested();
-            } else {
-                Engine::Application::Get().Close();
-            }
-        });
-
-        m_SettingsPanel = scene->CreateGameObject("TitleSettingsPanel");
-        m_SettingsPanel->GetTransform()->SetParent(m_Root->GetTransform(), false);
-        auto* sp = m_SettingsPanel->AddComponent<Engine::UIPanel>();
-        sp->useRectTransform = true;
-        sp->rectTransform.Anchor = Engine::UIAnchor::Center;
-        sp->rectTransform.Pivot = { 0.5f, 0.5f };
-        sp->rectTransform.AnchoredOffset = { 0.0f, -145.0f };
-        sp->rectTransform.Size = { 340.0f, 70.0f };
-        sp->rectTransform.ZOrder = 222;
-        sp->color = { 0.12f, 0.10f, 0.18f, 0.95f };
-        m_SettingsPanel->SetActive(false);
+        m_TitleOverlay.Close(scene);
+        m_TitleBuilt = false;
     }
 
-    bool m_Built = false;
-    bool m_Open = true;
-    bool m_SettingsOpen = false;
+private:
+    void EnsureBehavior() {
+        if (m_Behavior && m_BuiltKind == Kind) {
+            return;
+        }
+        m_BuiltKind = Kind;
+        switch (Kind) {
+        case SanctuaryStationKind::WeaponRack:
+            m_Behavior = std::make_unique<Sandbox::WeaponRackBehavior>();
+            break;
+        case SanctuaryStationKind::RunePedestal:
+            m_Behavior = std::make_unique<Sandbox::RunePedestalBehavior>();
+            break;
+        case SanctuaryStationKind::RootAltar:
+            m_Behavior = std::make_unique<Sandbox::RootAltarBehavior>(&ActiveRootId);
+            break;
+        case SanctuaryStationKind::UmbralGate:
+            m_Behavior = std::make_unique<Sandbox::UmbralGateBehavior>();
+            break;
+        case SanctuaryStationKind::TitleOverlay:
+            m_Behavior.reset();
+            break;
+        }
+    }
+
+    void EnsureTitleOpened() {
+        if (m_TitleBuilt) {
+            return;
+        }
+        auto* go = GetGameObject();
+        auto* scene = go ? go->GetScene() : nullptr;
+        if (!scene) {
+            return;
+        }
+        m_TitleBuilt = true;
+        m_TitleOverlay.OnQuitRequested = OnQuitRequested;
+        m_TitleOverlay.Open(*scene);
+    }
+
+    SanctuaryStationKind m_BuiltKind = SanctuaryStationKind::WeaponRack;
+    std::unique_ptr<Sandbox::IInteractableBehavior> m_Behavior;
+    Sandbox::UI::TitleMenuOverlay m_TitleOverlay;
+    bool m_TitleBuilt = false;
     bool m_PlayerInRange = false;
-    size_t m_WeaponIndex = 0;
-    size_t m_RuneIndex = 0;
-    Engine::GameObject* m_Root = nullptr;
-    Engine::GameObject* m_SettingsPanel = nullptr;
 };
 
 using TitleOverlayComponent = SanctuaryStationComponent;
+
+namespace Sandbox {
+
+inline NearestInteractableResult PlayerInteractionSensor::FindNearest(Engine::Scene& scene,
+                                                                      const glm::vec2& playerPos,
+                                                                      Engine::GameObject* player) {
+    NearestInteractableResult best;
+    if (!player) {
+        player = scene.FindFirstGameObjectWithTag(Engine::EntityTag::Player);
+    }
+
+    for (const auto& obj : scene.GetGameObjects()) {
+        if (!obj || !obj->IsActive()) {
+            continue;
+        }
+        auto* station = obj->GetComponent<SanctuaryStationComponent>();
+        if (!station || !station->IsEnabled() || station->Kind == SanctuaryStationKind::TitleOverlay) {
+            continue;
+        }
+        if (player && !station->CanInteract(scene, *player)) {
+            continue;
+        }
+        const glm::vec3 pos3 = obj->GetTransform()->GetWorldPosition();
+        const glm::vec2 diff(pos3.x - playerPos.x, pos3.y - playerPos.y);
+        const float distSq = glm::dot(diff, diff);
+        const float radiusSq = station->InteractRadius * station->InteractRadius;
+        if (distSq <= radiusSq && distSq < best.DistanceSq) {
+            best.DistanceSq = distSq;
+            best.Station = station;
+            best.PromptText = station->GetPromptText();
+        }
+    }
+    return best;
+}
+
+} // namespace Sandbox
 
 #endif // SANDBOX_SANCTUARY_HUB_COMPONENTS_H

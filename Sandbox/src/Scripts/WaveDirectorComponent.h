@@ -34,6 +34,27 @@ enum class NightPhase : uint8_t {
     DawnBreak = 4      // >= 5:00 (300s+)
 };
 
+struct WaveEnemyEntry {
+    const char* EnemyId = "enemy_ghoul";
+    uint32_t Weight = 1;
+};
+
+struct NightPhaseConfig {
+    NightPhase Phase = NightPhase::Dusk;
+    float StartTimeSec = 0.0f;
+    float SunIntensity = 0.25f;
+    float AmbientIntensity = 0.22f;
+    bool OverrideSunColor = false;
+    glm::vec3 SunColor = { 0.42f, 0.50f, 0.78f };
+    float SpawnIntervalSec = 4.2f;
+    int SpawnsPerTick = 1;
+    uint32_t BonusSpawnPct = 0;
+    const char* BonusEnemyId = nullptr;
+    std::vector<WaveEnemyEntry> WeightedPool;
+    std::vector<const char*> OnEnterGuaranteedSpawns;
+    bool TriggersDawnVictory = false;
+};
+
 class WaveDirectorComponent final : public Engine::Component {
 public:
     static constexpr float kDuskEndSec = 75.0f;
@@ -48,7 +69,18 @@ public:
     std::function<void()> OnDawnVictory;
 
     void Start() override {
+        EnsureDefaultPhaseConfigs();
         PrewarmPools();
+    }
+
+    [[nodiscard]] const std::vector<NightPhaseConfig>& GetPhaseConfigs() {
+        EnsureDefaultPhaseConfigs();
+        return m_PhaseConfigs;
+    }
+
+    void SetPhaseConfigs(std::vector<NightPhaseConfig> configs) {
+        m_PhaseConfigs = std::move(configs);
+        m_PhaseConfigsInitialized = true;
     }
 
     [[nodiscard]] float GetElapsedSeconds() const noexcept { return m_ElapsedSec; }
@@ -221,24 +253,24 @@ private:
     }
 
     void EvaluatePhaseAndMood() {
-        NightPhase nextPhase = NightPhase::Dusk;
-        if (!EndlessMode && m_ElapsedSec >= kDawnBreakSec) {
-            nextPhase = NightPhase::DawnBreak;
-        } else if (m_ElapsedSec >= kUmbralSurgeEndSec) {
-            nextPhase = NightPhase::EclipseClimax;
-        } else if (m_ElapsedSec >= kDeepNightEndSec) {
-            nextPhase = NightPhase::UmbralSurge;
-        } else if (m_ElapsedSec >= kDuskEndSec) {
-            nextPhase = NightPhase::DeepNight;
+        EnsureDefaultPhaseConfigs();
+        const NightPhaseConfig* targetCfg = &m_PhaseConfigs.front();
+        for (const auto& cfg : m_PhaseConfigs) {
+            if (EndlessMode && cfg.TriggersDawnVictory) {
+                continue;
+            }
+            if (m_ElapsedSec >= cfg.StartTimeSec && cfg.StartTimeSec >= targetCfg->StartTimeSec) {
+                targetCfg = &cfg;
+            }
         }
 
-        if (nextPhase != m_Phase) {
-            m_Phase = nextPhase;
-            OnPhaseEntered(nextPhase);
+        if (targetCfg->Phase != m_Phase) {
+            m_Phase = targetCfg->Phase;
+            OnPhaseEntered(*targetCfg);
         }
     }
 
-    void OnPhaseEntered(NightPhase phase) {
+    void OnPhaseEntered(const NightPhaseConfig& cfg) {
         auto* go = GetGameObject();
         auto* scene = go ? go->GetScene() : nullptr;
         if (!scene) {
@@ -246,43 +278,27 @@ private:
         }
 
         Engine::DirectionalLightComponent* moon = FindMoonLight(*scene);
-        switch (phase) {
-            case NightPhase::Dusk:
-                if (moon) {
-                    moon->SunIntensity = 0.25f;
+        if (cfg.TriggersDawnVictory) {
+            TriggerDawnBreak(*scene, moon);
+            return;
+        }
+
+        if (moon) {
+            moon->SunIntensity = cfg.SunIntensity;
+            moon->AmbientIntensity = cfg.AmbientIntensity;
+            if (cfg.OverrideSunColor) {
+                moon->SunColor = cfg.SunColor;
+            }
+        }
+
+        const uint32_t phaseBit = 1u << static_cast<uint8_t>(cfg.Phase);
+        if ((m_EnteredPhasesMask & phaseBit) == 0u) {
+            m_EnteredPhasesMask |= phaseBit;
+            for (const char* enemyId : cfg.OnEnterGuaranteedSpawns) {
+                if (enemyId) {
+                    SpawnPooledEnemy(enemyId);
                 }
-                break;
-            case NightPhase::DeepNight:
-                if (moon) {
-                    moon->SunIntensity = 0.14f;
-                    moon->AmbientIntensity = 0.15f;
-                }
-                break;
-            case NightPhase::UmbralSurge:
-                if (moon) {
-                    moon->SunIntensity = 0.10f;
-                    moon->AmbientIntensity = 0.12f;
-                }
-                if (!m_FirstWendigoSpawned) {
-                    m_FirstWendigoSpawned = true;
-                    SpawnPooledEnemy("enemy_wendigo");
-                }
-                break;
-            case NightPhase::EclipseClimax:
-                if (moon) {
-                    moon->SunIntensity = 0.06f;
-                    moon->SunColor = { 0.58f, 0.24f, 0.42f };
-                }
-                if (!m_TwinWendigosSpawned) {
-                    m_TwinWendigosSpawned = true;
-                    SpawnPooledEnemy("enemy_wendigo");
-                    SpawnPooledEnemy("enemy_wendigo");
-                    SpawnPooledEnemy("enemy_jiangshi");
-                }
-                break;
-            case NightPhase::DawnBreak:
-                TriggerDawnBreak(*scene, moon);
-                break;
+            }
         }
     }
 
@@ -329,33 +345,117 @@ private:
             return;
         }
 
-        const uint32_t roll = NextRand() % 100u;
-        switch (m_Phase) {
-            case NightPhase::Dusk:
-                m_SpawnTimer = 4.2f;
-                SpawnPooledEnemy((roll < 70u) ? "enemy_ghoul" : "enemy_thrall");
-                if (roll < 35u) SpawnPooledEnemy("enemy_ghoul");
-                break;
-            case NightPhase::DeepNight:
-                m_SpawnTimer = 3.2f;
-                if (roll < 40u) SpawnPooledEnemy("enemy_ghoul");
-                else if (roll < 65u) SpawnPooledEnemy("enemy_thrall");
-                else if (roll < 85u) SpawnPooledEnemy("enemy_jiangshi");
-                else SpawnPooledEnemy("enemy_wisp");
-                break;
-            case NightPhase::UmbralSurge:
-                m_SpawnTimer = 2.4f;
-                SpawnPooledEnemy((roll < 50u) ? "enemy_ghoul" : "enemy_jiangshi");
-                SpawnPooledEnemy((roll < 45u) ? "enemy_thrall" : "enemy_wisp");
-                break;
-            case NightPhase::EclipseClimax:
-                m_SpawnTimer = 1.8f;
-                SpawnPooledEnemy((roll < 40u) ? "enemy_jiangshi" : "enemy_ghoul");
-                SpawnPooledEnemy((roll < 50u) ? "enemy_wisp" : "enemy_thrall");
-                break;
-            case NightPhase::DawnBreak:
-                break;
+        EnsureDefaultPhaseConfigs();
+        const NightPhaseConfig* cfg = FindPhaseConfig(m_Phase);
+        if (!cfg || cfg->WeightedPool.empty()) {
+            return;
         }
+
+        m_SpawnTimer = cfg->SpawnIntervalSec;
+        uint32_t totalWeight = 0u;
+        for (const auto& entry : cfg->WeightedPool) {
+            totalWeight += entry.Weight;
+        }
+        if (totalWeight == 0u) {
+            return;
+        }
+
+        for (int i = 0; i < cfg->SpawnsPerTick; ++i) {
+            uint32_t roll = NextRand() % totalWeight;
+            const char* chosen = cfg->WeightedPool.front().EnemyId;
+            for (const auto& entry : cfg->WeightedPool) {
+                if (roll < entry.Weight) {
+                    chosen = entry.EnemyId;
+                    break;
+                }
+                roll -= entry.Weight;
+            }
+            SpawnPooledEnemy(chosen);
+        }
+
+        if (cfg->BonusEnemyId && cfg->BonusSpawnPct > 0u && (NextRand() % 100u) < cfg->BonusSpawnPct) {
+            SpawnPooledEnemy(cfg->BonusEnemyId);
+        }
+    }
+
+    void EnsureDefaultPhaseConfigs() {
+        if (m_PhaseConfigsInitialized && !m_PhaseConfigs.empty()) {
+            return;
+        }
+        m_PhaseConfigsInitialized = true;
+        m_PhaseConfigs = {
+            NightPhaseConfig{
+                .Phase = NightPhase::Dusk,
+                .StartTimeSec = 0.0f,
+                .SunIntensity = 0.25f,
+                .AmbientIntensity = 0.22f,
+                .SpawnIntervalSec = 4.2f,
+                .SpawnsPerTick = 1,
+                .BonusSpawnPct = 35u,
+                .BonusEnemyId = "enemy_ghoul",
+                .WeightedPool = { { "enemy_ghoul", 70u }, { "enemy_thrall", 30u } }
+            },
+            NightPhaseConfig{
+                .Phase = NightPhase::DeepNight,
+                .StartTimeSec = kDuskEndSec,
+                .SunIntensity = 0.14f,
+                .AmbientIntensity = 0.15f,
+                .SpawnIntervalSec = 3.2f,
+                .SpawnsPerTick = 1,
+                .WeightedPool = {
+                    { "enemy_ghoul", 40u },
+                    { "enemy_thrall", 25u },
+                    { "enemy_jiangshi", 20u },
+                    { "enemy_wisp", 15u }
+                }
+            },
+            NightPhaseConfig{
+                .Phase = NightPhase::UmbralSurge,
+                .StartTimeSec = kDeepNightEndSec,
+                .SunIntensity = 0.10f,
+                .AmbientIntensity = 0.12f,
+                .SpawnIntervalSec = 2.4f,
+                .SpawnsPerTick = 2,
+                .WeightedPool = {
+                    { "enemy_ghoul", 25u },
+                    { "enemy_jiangshi", 25u },
+                    { "enemy_thrall", 22u },
+                    { "enemy_wisp", 28u }
+                },
+                .OnEnterGuaranteedSpawns = { "enemy_wendigo" }
+            },
+            NightPhaseConfig{
+                .Phase = NightPhase::EclipseClimax,
+                .StartTimeSec = kUmbralSurgeEndSec,
+                .SunIntensity = 0.06f,
+                .AmbientIntensity = 0.12f,
+                .OverrideSunColor = true,
+                .SunColor = { 0.58f, 0.24f, 0.42f },
+                .SpawnIntervalSec = 1.8f,
+                .SpawnsPerTick = 2,
+                .WeightedPool = {
+                    { "enemy_jiangshi", 20u },
+                    { "enemy_ghoul", 30u },
+                    { "enemy_wisp", 25u },
+                    { "enemy_thrall", 25u }
+                },
+                .OnEnterGuaranteedSpawns = { "enemy_wendigo", "enemy_wendigo", "enemy_jiangshi" }
+            },
+            NightPhaseConfig{
+                .Phase = NightPhase::DawnBreak,
+                .StartTimeSec = kDawnBreakSec,
+                .TriggersDawnVictory = true
+            }
+        };
+    }
+
+    [[nodiscard]] const NightPhaseConfig* FindPhaseConfig(NightPhase phase) const noexcept {
+        for (const auto& cfg : m_PhaseConfigs) {
+            if (cfg.Phase == phase) {
+                return &cfg;
+            }
+        }
+        return nullptr;
     }
 
     [[nodiscard]] glm::vec3 FindDarkSpawnPoint(const Engine::Scene& scene, const glm::vec2& playerXZ) {
@@ -408,11 +508,12 @@ private:
     float m_ElapsedSec = 0.0f;
     float m_SpawnTimer = 1.5f;
     bool m_PoolsPrewarmed = false;
-    bool m_FirstWendigoSpawned = false;
-    bool m_TwinWendigosSpawned = false;
+    bool m_PhaseConfigsInitialized = false;
+    uint32_t m_EnteredPhasesMask = 0u;
     bool m_Victory = false;
     uint32_t m_TotalSpawned = 0;
     uint32_t m_RngState = 0xA511E9B3u;
+    std::vector<NightPhaseConfig> m_PhaseConfigs;
     std::vector<uint64_t> m_ActiveBossUUIDs;
     std::unordered_map<std::string, std::shared_ptr<Engine::Prefab>> m_Prefabs;
 };

@@ -115,7 +115,7 @@ public:
                 continue;
             }
             const float bonus = def.ModifierPerRank * static_cast<float>(rank);
-            Sandbox::StatModifierRegistry::Apply(player, def.StatModifier, bonus);
+            Sandbox::StatModifierRegistry::Apply(player, def.StatModifier, bonus, StatLayer::Permanent);
         }
     }
 

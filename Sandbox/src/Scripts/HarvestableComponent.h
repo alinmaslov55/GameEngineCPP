@@ -2,7 +2,7 @@
 #define SANDBOX_HARVESTABLE_COMPONENT_H
 
 #include "Scripts/AudioCueHelper.h"
-#include "Scripts/CombatTargetComponent.h"
+#include "Scripts/HealthComponent.h"
 #include "Scripts/PickupComponent.h"
 
 #include <Engine/Particles/ParticleSystem.h>
@@ -66,20 +66,20 @@ private:
             return;
         }
 
-        auto* target = go->GetComponent<CombatTargetComponent>();
-        if (!target) {
-            target = go->AddComponent<CombatTargetComponent>();
+        auto* health = go->GetComponent<HealthComponent>();
+        if (!health) {
+            health = go->AddComponent<HealthComponent>();
             const float hp = (go->GetTag() == Engine::EntityTag::HarvestableTree)
                 ? DefaultTreeHealth
                 : DefaultPropHealth;
-            target->ResetHealth(hp);
+            health->ResetHealth(hp);
         }
-        target->DestroyOnDeath = false;
+        health->DestroyOnDeath = false;
 
-        target->OnDamaged = [this](float /*amount*/) {
+        health->OnDamaged = [this](const DamageEvent& /*evt*/, float /*amount*/) {
             HandleDamagedFeedback();
         };
-        target->OnKilled = [this]() {
+        health->OnKilled = [this](const DamageEvent& /*evt*/) {
             HandleFelled();
         };
         m_Bound = true;

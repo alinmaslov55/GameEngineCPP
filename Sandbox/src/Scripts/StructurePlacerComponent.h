@@ -42,19 +42,7 @@ public:
     }
 
     [[nodiscard]] int GetWoodCost(Engine::RadialWheelItem item) const {
-        const char* id = ItemToDropId(item);
-        if (id && Engine::GameplayData::IsInitialized()) {
-            if (const auto* def = Engine::GameplayData::Drops().Find(id)) {
-                return static_cast<int>(def->WoodCost);
-            }
-        }
-        switch (item) {
-            case Engine::RadialWheelItem::SplinterBarricade: return 4;
-            case Engine::RadialWheelItem::FlarePeg:          return 10;
-            case Engine::RadialWheelItem::Thumper:           return 15;
-            case Engine::RadialWheelItem::TarSiphon:         return 20;
-            default:                                         return 0;
-        }
+        return Sandbox::DeployableRegistry::ResolveWoodCost(item);
     }
 
     [[nodiscard]] glm::vec3 ComputePlacementPosition() const {
@@ -121,30 +109,11 @@ public:
             return nullptr;
         }
 
-        switch (item) {
-            case Engine::RadialWheelItem::SplinterBarricade:
-                if (!spawned->GetComponent<SplinterBarricadeComponent>()) {
-                    spawned->AddComponent<SplinterBarricadeComponent>();
-                }
-                break;
-            case Engine::RadialWheelItem::FlarePeg:
-                if (!spawned->GetComponent<FlarePegComponent>()) {
-                    spawned->AddComponent<FlarePegComponent>();
-                }
-                break;
-            case Engine::RadialWheelItem::Thumper:
-                if (!spawned->GetComponent<ThumperComponent>()) {
-                    spawned->AddComponent<ThumperComponent>();
-                }
-                break;
-            case Engine::RadialWheelItem::TarSiphon:
-                if (!spawned->GetComponent<TarSiphonComponent>()) {
-                    spawned->AddComponent<TarSiphonComponent>();
-                }
-                break;
-            default:
-                break;
+        auto* deployable = spawned->GetComponent<DeployableStructureComponent>();
+        if (!deployable) {
+            deployable = spawned->AddComponent<DeployableStructureComponent>();
         }
+        deployable->SetKind(item);
         return spawned;
     }
 
@@ -174,37 +143,15 @@ public:
             }
         }
 
-        if (Engine::Input::IsKeyJustPressed(SDL_SCANCODE_1)) {
-            TryPlaceStructure(Engine::RadialWheelItem::SplinterBarricade);
-        } else if (Engine::Input::IsKeyJustPressed(SDL_SCANCODE_2)) {
-            TryPlaceStructure(Engine::RadialWheelItem::FlarePeg);
-        } else if (Engine::Input::IsKeyJustPressed(SDL_SCANCODE_3)) {
-            TryPlaceStructure(Engine::RadialWheelItem::Thumper);
-        } else if (Engine::Input::IsKeyJustPressed(SDL_SCANCODE_4)) {
-            TryPlaceStructure(Engine::RadialWheelItem::TarSiphon);
+        for (const auto& entry : Sandbox::DeployableRegistry::All()) {
+            if (entry.Hotkey != SDL_SCANCODE_UNKNOWN && Engine::Input::IsKeyJustPressed(entry.Hotkey)) {
+                TryPlaceStructure(entry.Item);
+                break;
+            }
         }
     }
 
 private:
-    [[nodiscard]] static const char* ItemToDropId(Engine::RadialWheelItem item) noexcept {
-        switch (item) {
-            case Engine::RadialWheelItem::SplinterBarricade: return "drop_barricade";
-            case Engine::RadialWheelItem::FlarePeg:          return "drop_beacon";
-            case Engine::RadialWheelItem::Thumper:           return "drop_springboard";
-            case Engine::RadialWheelItem::TarSiphon:         return "drop_siphon";
-            default:                                         return nullptr;
-        }
-    }
-
-    [[nodiscard]] static const char* FallbackPrefabPath(Engine::RadialWheelItem item) noexcept {
-        switch (item) {
-            case Engine::RadialWheelItem::SplinterBarricade: return "assets/prefabs/barricade.prefab";
-            case Engine::RadialWheelItem::FlarePeg:          return "assets/prefabs/beacon.prefab";
-            case Engine::RadialWheelItem::Thumper:           return "assets/prefabs/springboard.prefab";
-            case Engine::RadialWheelItem::TarSiphon:         return "assets/prefabs/siphon.prefab";
-            default:                                         return nullptr;
-        }
-    }
 
     [[nodiscard]] static Engine::UIRadialWheelComponent* FindRadialWheel(Engine::Scene& scene) noexcept {
         for (const auto& goPtr : scene.GetGameObjects()) {
@@ -220,16 +167,15 @@ private:
     Engine::GameObject* InstantiateStructure(Engine::Scene& scene,
                                              Engine::RadialWheelItem item,
                                              const glm::vec3& worldPos) const {
+        const auto* desc = Sandbox::DeployableRegistry::Find(item);
         std::string prefabRelPath;
-        if (const char* dropId = ItemToDropId(item); dropId && Engine::GameplayData::IsInitialized()) {
-            if (const auto* def = Engine::GameplayData::Drops().Find(dropId)) {
+        if (desc && Engine::GameplayData::IsInitialized()) {
+            if (const auto* def = Engine::GameplayData::Drops().Find(desc->DropId)) {
                 prefabRelPath = def->PrefabPath;
             }
         }
-        if (prefabRelPath.empty()) {
-            if (const char* fb = FallbackPrefabPath(item)) {
-                prefabRelPath = fb;
-            }
+        if (prefabRelPath.empty() && desc && desc->FallbackPrefabPath) {
+            prefabRelPath = desc->FallbackPrefabPath;
         }
 
         if (!prefabRelPath.empty()) {
@@ -247,14 +193,7 @@ private:
             }
         }
 
-        const char* fallbackName = "DeployableStructure";
-        switch (item) {
-            case Engine::RadialWheelItem::SplinterBarricade: fallbackName = "Splinter Barricade"; break;
-            case Engine::RadialWheelItem::FlarePeg:          fallbackName = "Flare Peg"; break;
-            case Engine::RadialWheelItem::Thumper:           fallbackName = "Thumper"; break;
-            case Engine::RadialWheelItem::TarSiphon:         fallbackName = "Tar Siphon"; break;
-            default: break;
-        }
+        const char* fallbackName = desc ? desc->DisplayName : "DeployableStructure";
         auto* fallbackGo = scene.CreateGameObject(fallbackName);
         fallbackGo->GetTransform()->position = worldPos;
         fallbackGo->AddComponent<Engine::SpriteRenderer>()->SetBillboardMode(Engine::SpriteRenderer::BillboardMode::ViewPlane);

@@ -1,7 +1,7 @@
 #ifndef SANDBOX_FIRE_HAZARD_COMPONENT_H
 #define SANDBOX_FIRE_HAZARD_COMPONENT_H
 
-#include "Scripts/CombatTargetComponent.h"
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/StatusEffectsComponent.h"
 
@@ -49,21 +49,15 @@ public:
                 continue;
             }
 
-            if (auto* health = enemy->GetComponent<HealthComponent>()) {
-                DamageEvent evt;
-                evt.Amount = FireDPS * tickDt;
-                evt.Source = go;
-                evt.IsFire = true;
-                evt.BypassInvuln = true;
-                health->ApplyDamage(evt);
-            } else if (auto* target = enemy->GetComponent<CombatTargetComponent>()) {
-                target->ApplyDamage(FireDPS * tickDt, 0.0f, Engine::SpriteRenderer::FlashMode::CrimsonImpact);
-                target->ApplyBurn(BurnDurationSec, BurnSpreadDPS);
-            }
-
-            if (auto* status = enemy->GetComponent<StatusEffectsComponent>()) {
-                status->ApplyBurn(BurnDurationSec, BurnSpreadDPS);
-            }
+            DamageEvent evt;
+            evt.Amount = FireDPS * tickDt;
+            evt.Source = go;
+            evt.IsFire = true;
+            evt.BypassInvuln = true;
+            StatusApplication status;
+            status.BurnDurationSec = BurnDurationSec;
+            status.BurnDPS = BurnSpreadDPS;
+            Sandbox::CombatDamage::Apply(enemy, evt, status);
         }
     }
 

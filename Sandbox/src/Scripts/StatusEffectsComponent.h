@@ -1,29 +1,19 @@
 #ifndef SANDBOX_STATUS_EFFECTS_COMPONENT_H
 #define SANDBOX_STATUS_EFFECTS_COMPONENT_H
 
+#include "Scripts/CombatTypes.h"
+
+#include <Engine/Physics/PhysicsComponents.h>
+#include <Engine/Renderer/SpriteRenderer.h>
 #include <Engine/Scene/Component.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Scene.h>
 #include <Engine/Scene/Transform.h>
-#include <glm/vec2.hpp>
+#include <glm/glm.hpp>
 
 #include <algorithm>
 #include <cmath>
-
-namespace Engine {
-class GameObject;
-}
-
-struct DamageEvent {
-    float Amount = 0.0f;
-    Engine::GameObject* Source = nullptr;
-    glm::vec2 ImpulseXZ{ 0.0f };
-    float HitStopSec = 0.0f;
-    float StunDuration = 0.0f;
-    bool IsFire = false;
-    bool IsRadiant = false;
-    bool BypassInvuln = false;
-};
+#include <functional>
 
 class StatusEffectsComponent final : public Engine::Component {
 public:
@@ -32,8 +22,11 @@ public:
     float BurnDPS = 0.0f;
     float BlindTimer = 0.0f;
     float StunTimer = 0.0f;
+    float StasisTimer = 0.0f;
+    float StasisBowlingThreshold = 10.0f;
     float BurnSpreadRadius = 1.0f;
     float BurnSpreadInterval = 0.15f;
+    std::function<void(Engine::GameObject&, const glm::vec2&)> OnStasisBurst;
 
     void ResetAll() noexcept {
         InvulnTimer = 0.0f;
@@ -41,11 +34,21 @@ public:
         BurnDPS = 0.0f;
         BlindTimer = 0.0f;
         StunTimer = 0.0f;
+        StasisTimer = 0.0f;
         m_PendingBurnDamage = 0.0f;
+        m_SpreadTimer = 0.0f;
+        ApplyStasisVisuals(false);
     }
 
     void OnPoolAcquire() override { ResetAll(); }
     void OnPoolRelease() override { ResetAll(); }
+
+    void OnDestroy() override {
+        if (StasisTimer > 0.0f) {
+            ApplyStasisVisuals(false);
+            StasisTimer = 0.0f;
+        }
+    }
 
     void SetInvulnerable(float durationSec) noexcept {
         if (std::isfinite(durationSec) && durationSec > 0.0f) {
@@ -72,10 +75,19 @@ public:
         }
     }
 
+    void ApplyStasis(float durationSec) noexcept {
+        if (!std::isfinite(durationSec) || durationSec <= 0.0f) {
+            return;
+        }
+        StasisTimer = (StasisTimer > 0.0f) ? std::max(StasisTimer, durationSec) : durationSec;
+        ApplyStasisVisuals(true);
+    }
+
     [[nodiscard]] bool IsInvulnerable() const noexcept { return InvulnTimer > 0.0f; }
     [[nodiscard]] bool IsBurning() const noexcept { return BurnTimer > 0.0f && BurnDPS > 0.0f; }
     [[nodiscard]] bool IsBlinded() const noexcept { return BlindTimer > 0.0f; }
     [[nodiscard]] bool IsStunned() const noexcept { return StunTimer > 0.0f; }
+    [[nodiscard]] bool IsStasisFrozen() const noexcept { return StasisTimer > 0.0f; }
 
     [[nodiscard]] float ConsumePendingBurnDamage() noexcept {
         const float dmg = m_PendingBurnDamage;
@@ -95,6 +107,12 @@ public:
         }
         if (StunTimer > 0.0f) {
             StunTimer = std::max(0.0f, StunTimer - deltaTime);
+        }
+        if (StasisTimer > 0.0f) {
+            StasisTimer = std::max(0.0f, StasisTimer - deltaTime);
+            if (StasisTimer <= 0.0f) {
+                ReleaseStasis();
+            }
         }
         if (BurnTimer > 0.0f) {
             const float activeDt = std::min(deltaTime, BurnTimer);
@@ -121,6 +139,42 @@ public:
     }
 
 private:
+    void ApplyStasisVisuals(bool frozen) noexcept {
+        auto* go = GetGameObject();
+        if (!go) {
+            return;
+        }
+        if (auto* rb = go->GetComponent<Engine::Rigidbody2D>()) {
+            rb->SetStasisFrozen(frozen);
+        }
+        if (auto* sr = go->GetComponent<Engine::SpriteRenderer>()) {
+            if (frozen) {
+                sr->SetFlashMode(Engine::SpriteRenderer::FlashMode::SpectralBlue);
+                sr->SetFlashAmount(0.75f);
+            } else {
+                sr->SetFlashAmount(0.0f);
+            }
+        }
+    }
+
+    void ReleaseStasis() {
+        auto* go = GetGameObject();
+        if (!go) {
+            return;
+        }
+        glm::vec2 queuedImpulse{ 0.0f };
+        if (auto* rb = go->GetComponent<Engine::Rigidbody2D>()) {
+            queuedImpulse = rb->GetQueuedStasisImpulseXZ();
+            rb->SetStasisFrozen(false);
+        }
+        if (auto* sr = go->GetComponent<Engine::SpriteRenderer>()) {
+            sr->SetFlashAmount(0.0f);
+        }
+        if (glm::length(queuedImpulse) >= StasisBowlingThreshold && OnStasisBurst) {
+            OnStasisBurst(*go, queuedImpulse);
+        }
+    }
+
     float m_PendingBurnDamage = 0.0f;
     float m_SpreadTimer = 0.0f;
 };

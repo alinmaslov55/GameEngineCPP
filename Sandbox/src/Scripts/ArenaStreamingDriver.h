@@ -7,7 +7,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
-#include "Scripts/CombatTargetComponent.h"
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/HarvestableComponent.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/StatusEffectsComponent.h"
@@ -61,20 +61,15 @@ public:
                     if (!enemy || enemy->IsPendingDestroy()) continue;
                     const glm::vec3 ePos = enemy->GetTransform()->GetWorldPosition();
                     if (!scene->IsBurningAtXZ(ePos.x, ePos.z)) continue;
-                    if (auto* health = enemy->GetComponent<HealthComponent>()) {
-                        DamageEvent evt;
-                        evt.Amount = 14.0f * tickDt;
-                        evt.Source = owner;
-                        evt.IsFire = true;
-                        evt.BypassInvuln = true;
-                        health->ApplyDamage(evt);
-                    } else if (auto* target = enemy->GetComponent<CombatTargetComponent>()) {
-                        target->ApplyDamage(14.0f * tickDt, 0.0f, Engine::SpriteRenderer::FlashMode::CrimsonImpact);
-                        target->ApplyBurn(2.5f, 6.0f);
-                    }
-                    if (auto* status = enemy->GetComponent<StatusEffectsComponent>()) {
-                        status->ApplyBurn(2.5f, 6.0f);
-                    }
+                    DamageEvent evt;
+                    evt.Amount = 14.0f * tickDt;
+                    evt.Source = owner;
+                    evt.IsFire = true;
+                    evt.BypassInvuln = true;
+                    StatusApplication status;
+                    status.BurnDurationSec = 2.5f;
+                    status.BurnDPS = 6.0f;
+                    CombatDamage::Apply(enemy, evt, status);
                 }
             }
         }

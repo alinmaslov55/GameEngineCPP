@@ -2,6 +2,7 @@
 
 #include "Scene/AlphaRunScene.h"
 #include "Scene/DemoScene.h"
+#include "Scene/SceneBootstrapper.h"
 
 #include <Engine/Animation/Animator.h>
 #include <Engine/Audio/AudioManager.h>
@@ -191,13 +192,7 @@ void EditorLayer::OnScenePlay() {
                                          static_cast<uint32_t>(viewportSize.y));
     }
 
-    if (AlphaRunScene::IsSanctuaryHubScene(*m_RuntimeScene)) {
-        AlphaRunScene::BindSanctuaryHubScripts(m_RuntimeScene);
-    } else if (AlphaRunScene::IsAlphaScene(*m_RuntimeScene)) {
-        AlphaRunScene::BindRuntimeGameplayScripts(m_RuntimeScene);
-    } else {
-        DemoScene::BindRuntimeGameplayScripts(m_RuntimeScene);
-    }
+    Sandbox::SceneBootstrapRegistry::BindScene(m_RuntimeScene);
 
     m_ActiveScene = m_RuntimeScene;
     Engine::SceneManager::LoadScene(m_ActiveScene);
