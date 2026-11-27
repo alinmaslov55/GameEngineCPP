@@ -24,6 +24,7 @@
 #include "Scripts/RuneCasterComponent.h"
 #include "Scripts/StructurePlacerComponent.h"
 #include "Scripts/TorchComponent.h"
+#include "Scripts/WaveDirectorComponent.h"
 #include "Scripts/WeaponController.h"
 
 namespace Sandbox {
@@ -225,9 +226,13 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
         Engine::GameplayData::Init("Sandbox/assets/data");
     }
 
+    bool hasWaveDirector = false;
     for (const auto& goPtr : runtimeScene->GetGameObjects()) {
         if (!goPtr) {
             continue;
+        }
+        if (goPtr->GetComponent<WaveDirectorComponent>()) {
+            hasWaveDirector = true;
         }
         if (goPtr->GetName() == "Terrain") {
             if (auto* chunkMgr = goPtr->GetComponent<Engine::TerrainChunkManager>()) {
@@ -279,6 +284,11 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
                 }
             }
         }
+    }
+
+    if (!hasWaveDirector) {
+        auto* directorGo = runtimeScene->CreateGameObject("WaveDirector");
+        directorGo->AddComponent<WaveDirectorComponent>();
     }
 
     BindHarvestableProps(*runtimeScene);

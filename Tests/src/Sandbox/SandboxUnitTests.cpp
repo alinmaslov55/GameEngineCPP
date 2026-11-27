@@ -38,6 +38,7 @@
 #include "Scripts/StatusEffectsComponent.h"
 #include "Scripts/StructurePlacerComponent.h"
 #include "Scripts/TorchComponent.h"
+#include "Scripts/WaveDirectorComponent.h"
 #include "Scripts/WeaponController.h"
 #include "Utils/FilenameUtils.h"
 
@@ -1311,6 +1312,64 @@ TEST(SandboxUnitTest, EnemyAIWispSiphonsTorchFuelAndWendigoDropsAshJackpot) {
     lethal.Amount = 300.0f;
     EXPECT_TRUE(wendigo->GetComponent<HealthComponent>()->ApplyDamage(lethal));
     EXPECT_GE(scene.FindGameObjectsWithTag(Engine::EntityTag::ResourcePickup).size(), 6u);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, WaveDirectorProgressesPhasesSpawnsPooledInDarknessAndTriggersDawn) {
+    Engine::Scene scene("WaveDirectorTestScene");
+
+    auto* moonGo = scene.CreateGameObject("MoonLight");
+    auto* moon = moonGo->AddComponent<Engine::DirectionalLightComponent>();
+    moon->SunIntensity = 0.25f;
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* torchLight = player->AddComponent<Engine::PointLightComponent>();
+    torchLight->Radius = 7.5f;
+    torchLight->Intensity = 2.2f;
+    torchLight->Semantic = Engine::LightSemantic::SafeLifeline;
+
+    auto* dirGo = scene.CreateGameObject("WaveDirector");
+    auto* director = dirGo->AddComponent<WaveDirectorComponent>();
+    bool dawnFired = false;
+    director->OnDawnVictory = [&]() { dawnFired = true; };
+
+    scene.OnRuntimeStart();
+    scene.UpdateRuntime(1.0f / 60.0f);
+
+    EXPECT_EQ(director->GetCurrentPhase(), NightPhase::Dusk);
+
+    // Pooled enemy spawns outside SafeLifeline light & outside camera frustum (>= 11.5m)
+    auto* ghoul = director->SpawnPooledEnemy("enemy_ghoul");
+    ASSERT_NE(ghoul, nullptr);
+    const glm::vec3 gPos = ghoul->GetTransform()->GetWorldPosition();
+    EXPECT_FALSE(scene.EvaluateIlluminationAtXZ({ gPos.x, gPos.z }).IsInSafeLight(0.05f));
+    EXPECT_GE(glm::length(glm::vec2(gPos.x, gPos.z)), 11.0f);
+
+    // 1:15 -> Deep Night dims MoonLight
+    director->AdvanceClockForTest(76.0f);
+    EXPECT_EQ(director->GetCurrentPhase(), NightPhase::DeepNight);
+    EXPECT_LT(moon->SunIntensity, 0.20f);
+
+    // 2:45 -> Umbral Surge spawns Apex Wendigo boss
+    director->AdvanceClockForTest(166.0f);
+    EXPECT_EQ(director->GetCurrentPhase(), NightPhase::UmbralSurge);
+    ASSERT_NE(director->GetActiveBoss(), nullptr);
+    EXPECT_EQ(director->GetActiveBoss()->GetComponent<EnemyAIController>()->EnemyId, "enemy_wendigo");
+
+    // 4:15 -> Eclipse Climax
+    director->AdvanceClockForTest(256.0f);
+    EXPECT_EQ(director->GetCurrentPhase(), NightPhase::EclipseClimax);
+
+    // 5:00 -> Dawn Break triggers golden sunrise & dissolves remaining enemies
+    director->AdvanceClockForTest(300.0f);
+    EXPECT_EQ(director->GetCurrentPhase(), NightPhase::DawnBreak);
+    EXPECT_TRUE(director->IsVictory());
+    EXPECT_TRUE(dawnFired);
+    EXPECT_GE(moon->SunIntensity, 1.0f);
+    EXPECT_TRUE(ghoul->GetComponent<HealthComponent>()->IsDying());
 
     scene.OnRuntimeStop();
 }
