@@ -14,6 +14,8 @@ public:
     int XP = 0;
     int RunAshes = 0;
     float AshAttractionRange = 5.5f;
+    float MoveSpeedMultiplier = 1.0f;
+    float AttackSpeedMultiplier = 1.0f;
 
     void AddWood(int amount) noexcept {
         if (amount > 0) {

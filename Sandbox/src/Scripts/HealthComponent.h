@@ -34,6 +34,7 @@ public:
     float CurrentHP = 100.0f;
     float DamageReduction = 0.0f;     // [0.0, 0.90]
     float KnockbackResistance = 0.0f; // [0.0, 1.0]
+    float LightVulnerability = 1.0f;  // Searing Rim radiant multiplier
     float InvulnOnHitDuration = 0.0f;
     float DissolveDuration = 0.35f;
     bool DestroyOnDeath = true;

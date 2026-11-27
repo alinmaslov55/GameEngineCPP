@@ -20,6 +20,7 @@
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
+#include "Scripts/TorchComponent.h"
 #include "Scripts/WeaponController.h"
 
 namespace Sandbox {
@@ -257,6 +258,14 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
 
             EnsureChildSocket(*runtimeScene, *goPtr, "TorchSocket");
             EnsureChildSocket(*runtimeScene, *goPtr, "WeaponSocket");
+            for (Engine::Transform* child : goPtr->GetTransform()->GetChildren()) {
+                if (child && child->GetGameObject() && child->GetGameObject()->GetName() == "TorchSocket") {
+                    if (!child->GetGameObject()->GetComponent<TorchComponent>()) {
+                        child->GetGameObject()->AddComponent<TorchComponent>();
+                    }
+                    break;
+                }
+            }
         }
     }
 

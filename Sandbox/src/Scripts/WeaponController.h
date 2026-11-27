@@ -5,6 +5,7 @@
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
 #include "Scripts/PlayerController.h"
+#include "Scripts/PlayerStatsComponent.h"
 
 #include <Engine/Audio/AudioSource.h>
 #include <Engine/Core/Input.h>
@@ -133,7 +134,15 @@ public:
 
 private:
     void StartSwing() {
-        const float frenzyMult = 1.0f + 0.05f * static_cast<float>(m_FrenzyStacks);
+        float statsAttackMult = 1.0f;
+        if (auto* go = GetGameObject()) {
+            if (auto* stats = go->GetComponent<PlayerStatsComponent>()) {
+                if (std::isfinite(stats->AttackSpeedMultiplier) && stats->AttackSpeedMultiplier > 0.0f) {
+                    statsAttackMult = stats->AttackSpeedMultiplier;
+                }
+            }
+        }
+        const float frenzyMult = (1.0f + 0.05f * static_cast<float>(m_FrenzyStacks)) * statsAttackMult;
         const float effectiveRate = std::max(0.25f, m_Weapon.AttackRate * frenzyMult);
         const float cycleSec = 1.0f / effectiveRate;
 

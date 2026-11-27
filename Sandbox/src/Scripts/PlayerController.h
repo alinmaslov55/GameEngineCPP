@@ -1,6 +1,8 @@
 #ifndef PLAYER_CONTROLLER_H
 #define PLAYER_CONTROLLER_H
 
+#include "Scripts/PlayerStatsComponent.h"
+
 #include <Engine/Animation/Animator.h>
 #include <Engine/Audio/AudioSource.h>
 #include <Engine/Core/Input.h>
@@ -192,6 +194,11 @@ public:
             }
             if (std::isfinite(sample.LinearDamping) && sample.LinearDamping >= 0.0f) {
                 surfaceDamping = sample.LinearDamping;
+            }
+        }
+        if (auto* stats = go->GetComponent<PlayerStatsComponent>()) {
+            if (std::isfinite(stats->MoveSpeedMultiplier) && stats->MoveSpeedMultiplier > 0.0f) {
+                speedMultiplier *= stats->MoveSpeedMultiplier;
             }
         }
         m_EffectiveMoveSpeed = moveSpeed * speedMultiplier;

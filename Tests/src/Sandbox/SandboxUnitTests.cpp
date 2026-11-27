@@ -2,6 +2,7 @@
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
+#include "Engine/Audio/MusicDirector.h"
 #include "Engine/Data/GameplayData.h"
 #include "Engine/Particles/DecalManager.h"
 #include "Engine/Particles/ParticleSystem.h"
@@ -11,6 +12,7 @@
 #include "Engine/Renderer/SpriteRenderer.h"
 #include "Engine/Scene/Components/CameraComponent.h"
 #include "Engine/Scene/Components/FoliageWindComponents.h"
+#include "Engine/Scene/Components/PostProcessComponent.h"
 #include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/Prefab.h"
@@ -29,6 +31,7 @@
 #include "Scripts/CameraController.h"
 #include "Scripts/SplinterProjectileComponent.h"
 #include "Scripts/StatusEffectsComponent.h"
+#include "Scripts/TorchComponent.h"
 #include "Scripts/WeaponController.h"
 #include "Utils/FilenameUtils.h"
 
@@ -632,6 +635,138 @@ TEST(SandboxUnitTest, HealthComponentDeathSpawnsDecalDissolvesAndReleasesToPool)
     }
     EXPECT_EQ(poolMgr.GetPoolFreeCount("ghoul_pool"), 1u);
     EXPECT_FALSE(enemy->IsActive());
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, TorchComponentFuelBurnRadiusAndStoke) {
+    Engine::Scene scene("TorchFuelTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    auto* light = player->AddComponent<Engine::PointLightComponent>();
+    light->Priority = Engine::LightPriority::Critical_HeroTorch;
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+    stats->Wood = 3;
+    player->AddComponent<Engine::ParticleSystem>(64);
+
+    auto* socket = scene.CreateGameObject("TorchSocket");
+    socket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = socket->AddComponent<TorchComponent>();
+
+    scene.OnRuntimeStart();
+
+    for (int i = 0; i < 600; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+
+    EXPECT_NEAR(torch->Fuel, 78.0f, 0.25f);
+    EXPECT_GT(light->Radius, torch->MinRadius);
+    EXPECT_LT(light->Radius, torch->MaxRadius);
+    EXPECT_LT(light->Intensity, torch->MaxIntensity);
+
+    EXPECT_TRUE(torch->StokeTorch());
+    EXPECT_EQ(stats->Wood, 1);
+    EXPECT_FLOAT_EQ(torch->Fuel, 100.0f);
+    EXPECT_FALSE(torch->StokeTorch()); // Only 1 Wood left
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, TorchComponentSearingRimBurnsVulnerableEnemies) {
+    Engine::Scene scene("TorchSearingRimTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->AddComponent<Engine::PointLightComponent>();
+    player->AddComponent<PlayerStatsComponent>();
+    auto* socket = scene.CreateGameObject("TorchSocket");
+    socket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = socket->AddComponent<TorchComponent>();
+    torch->AuraDamage = 20.0f;
+    torch->BaseBurnRate = 0.0f;
+
+    auto makeEnemy = [&](const char* name, float xPos, float vuln) -> HealthComponent* {
+        auto* e = scene.CreateGameObject(name);
+        e->SetTag(Engine::EntityTag::Enemy);
+        e->GetTransform()->position = { xPos, 0.0f, 0.0f };
+        e->AddComponent<Engine::SpriteRenderer>();
+        e->AddComponent<Engine::ParticleSystem>(32);
+        auto* h = e->AddComponent<HealthComponent>();
+        h->ResetHealth(100.0f);
+        h->LightVulnerability = vuln;
+        return h;
+    };
+
+    auto* innerHealth = makeEnemy("InnerEnemy", 2.5f, 2.0f); // < 0.75 * 9.5
+    auto* rimHealth = makeEnemy("RimEnemy", 8.5f, 2.0f);     // in [7.125, 9.975]
+    auto* farHealth = makeEnemy("FarEnemy", 12.0f, 2.0f);    // > 1.05 * 9.5
+
+    scene.OnRuntimeStart();
+
+    for (int i = 0; i < 30; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+
+    EXPECT_FLOAT_EQ(innerHealth->CurrentHP, 100.0f);
+    EXPECT_LT(rimHealth->CurrentHP, 90.0f); // 20 DPS * 0.5s * 2.0 vuln = 20 dmg
+    EXPECT_FLOAT_EQ(farHealth->CurrentHP, 100.0f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, TorchComponentAshFrenzyAndDarknessDread) {
+    Engine::Scene scene("TorchFrenzyDreadTestScene");
+
+    auto* ppGo = scene.CreateGameObject("PostProcess");
+    auto* pp = ppGo->AddComponent<Engine::PostProcessComponent>();
+    pp->ApplyPreset(Engine::PostProcessComponent::Preset::CultStorybook);
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    auto* light = player->AddComponent<Engine::PointLightComponent>();
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+    stats->HP = 100.0f;
+    auto* socket = scene.CreateGameObject("TorchSocket");
+    socket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = socket->AddComponent<TorchComponent>();
+    torch->BaseBurnRate = 0.0f;
+
+    scene.OnRuntimeStart();
+
+    // 1. Ash Frenzy (Fuel <= 20%)
+    torch->Fuel = 15.0f;
+    for (int i = 0; i < 6; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_TRUE(torch->IsAshFrenzy());
+    EXPECT_FLOAT_EQ(stats->MoveSpeedMultiplier, 1.20f);
+    EXPECT_FLOAT_EQ(stats->AttackSpeedMultiplier, 1.20f);
+    EXPECT_GT(pp->VignetteColor.r, 0.4f);
+    EXPECT_EQ(Engine::MusicDirector::GetCombatTier(), Engine::CombatMusicTier::AshFrenzyCombat);
+
+    // 2. Darkness Dread (Fuel == 0%) deals 6 HP/s
+    torch->Fuel = 0.0f;
+    for (int i = 0; i < 60; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_TRUE(torch->IsDarknessDread());
+    EXPECT_FLOAT_EQ(light->Radius, torch->DreadRadius);
+    EXPECT_NEAR(stats->HP, 94.0f, 0.25f);
+
+    // 3. Lit SafeLifeline brazier shelters player from Darkness Dread
+    auto* brazier = scene.CreateGameObject("Sanctuary Brazier");
+    brazier->SetTag(Engine::EntityTag::SafeZoneBrazier);
+    auto* bLight = brazier->AddComponent<Engine::PointLightComponent>();
+    bLight->Semantic = Engine::LightSemantic::SafeLifeline;
+    bLight->Radius = 6.0f;
+    bLight->Intensity = 2.0f;
+
+    const float hpBeforeShelter = stats->HP;
+    for (int i = 0; i < 60; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FLOAT_EQ(stats->HP, hpBeforeShelter);
 
     scene.OnRuntimeStop();
 }
