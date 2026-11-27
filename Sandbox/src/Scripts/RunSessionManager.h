@@ -4,6 +4,7 @@
 #include "Scripts/HealthComponent.h"
 #include "Scripts/PlayerStatsComponent.h"
 #include "Scripts/RuneCasterComponent.h"
+#include "Scripts/StatModifierRegistry.h"
 #include "Scripts/TorchComponent.h"
 #include "Scripts/WeaponController.h"
 
@@ -28,7 +29,7 @@ public:
 
     Engine::PlayerProfileData Profile;
     uint32_t SlotIndex = 0;
-    std::string SelectedWeaponId = "rough_iron_maul";
+    std::string SelectedWeaponId = "weapon_maul_t1";
     std::string SelectedRuneId = "rune_ignite";
     uint64_t NextRunSeed = 42ULL;
 
@@ -95,20 +96,8 @@ public:
     }
 
     void ApplyRootUpgradesToPlayer(Engine::GameObject& player) const {
-        auto* stats = player.GetComponent<PlayerStatsComponent>();
-        auto* health = player.GetComponent<HealthComponent>();
         auto* weapon = player.GetComponent<WeaponController>();
         auto* runeCaster = player.GetComponent<RuneCasterComponent>();
-
-        TorchComponent* torch = nullptr;
-        for (Engine::Transform* child : player.GetTransform()->GetChildren()) {
-            if (child && child->GetGameObject()) {
-                if (auto* t = child->GetGameObject()->GetComponent<TorchComponent>()) {
-                    torch = t;
-                    break;
-                }
-            }
-        }
 
         if (weapon && !SelectedWeaponId.empty()) {
             weapon->EquipWeapon(SelectedWeaponId);
@@ -126,29 +115,7 @@ public:
                 continue;
             }
             const float bonus = def.ModifierPerRank * static_cast<float>(rank);
-            if (def.StatModifier == "MaxHealth" && stats) {
-                stats->MaxHP += bonus;
-                stats->HP += bonus;
-            } else if (def.StatModifier == "DamageReduction" && health) {
-                health->DamageReduction = std::clamp(health->DamageReduction + bonus, 0.0f, 0.90f);
-            } else if (def.StatModifier == "MoveSpeed" && stats) {
-                stats->MoveSpeedMultiplier += bonus * 0.1f;
-            } else if (def.StatModifier == "AttackRate" && stats) {
-                stats->AttackSpeedMultiplier += bonus;
-            } else if (def.StatModifier == "SlowBurnRate" && torch) {
-                torch->BurnRateMultiplier = std::max(0.25f, torch->BurnRateMultiplier - bonus);
-            } else if (def.StatModifier == "AuraDamage" && torch) {
-                torch->AuraDamage += bonus;
-            } else if (def.StatModifier == "AshAttractionRange" && stats) {
-                stats->AshAttractionRange += bonus;
-            } else if (def.StatModifier == "FuelOnKill" && stats) {
-                stats->FuelOnKill += bonus;
-            } else if (def.StatModifier == "MaxFuel" && torch) {
-                torch->MaxFuel += bonus;
-                torch->Fuel = torch->MaxFuel;
-            } else if (def.StatModifier == "StartingWood" && stats) {
-                stats->AddWood(static_cast<int>(std::round(bonus)));
-            }
+            Sandbox::StatModifierRegistry::Apply(player, def.StatModifier, bonus);
         }
     }
 

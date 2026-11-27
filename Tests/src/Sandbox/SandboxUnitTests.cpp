@@ -770,8 +770,17 @@ TEST(SandboxUnitTest, TorchComponentAshFrenzyAndDarknessDread) {
         scene.UpdateRuntime(1.0f / 60.0f);
     }
     EXPECT_TRUE(torch->IsAshFrenzy());
-    EXPECT_FLOAT_EQ(stats->MoveSpeedMultiplier, 1.20f);
-    EXPECT_FLOAT_EQ(stats->AttackSpeedMultiplier, 1.20f);
+    EXPECT_FLOAT_EQ(stats->GetEffectiveMoveSpeedMultiplier(), 1.20f);
+    EXPECT_FLOAT_EQ(stats->GetEffectiveAttackSpeedMultiplier(), 1.20f);
+
+    // Upgrades on MoveSpeedMultiplier / AttackSpeedMultiplier must not be clobbered by Ash Frenzy
+    stats->MoveSpeedMultiplier = 1.15f;
+    stats->AttackSpeedMultiplier = 1.10f;
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_FLOAT_EQ(stats->MoveSpeedMultiplier, 1.15f);
+    EXPECT_FLOAT_EQ(stats->AttackSpeedMultiplier, 1.10f);
+    EXPECT_NEAR(stats->GetEffectiveMoveSpeedMultiplier(), 1.15f * 1.20f, 1e-4f);
+    EXPECT_NEAR(stats->GetEffectiveAttackSpeedMultiplier(), 1.10f * 1.20f, 1e-4f);
     EXPECT_GT(pp->VignetteColor.r, 0.4f);
     EXPECT_EQ(Engine::MusicDirector::GetCombatTier(), Engine::CombatMusicTier::AshFrenzyCombat);
 
@@ -1595,7 +1604,11 @@ TEST(SandboxUnitTest, SanctuaryHubStationsSwapLoadoutPurchaseRootsAndTransitionT
 
     // Weapon Rack & Rune Pedestal cycle loadout
     EXPECT_TRUE(weaponRack->Interact());
-    EXPECT_EQ(session.SelectedWeaponId, "ashwood_halberd");
+    EXPECT_EQ(session.SelectedWeaponId, "weapon_halberd_t1");
+    if (auto* wc = player->GetComponent<WeaponController>()) {
+        EXPECT_EQ(wc->GetEquippedWeapon().Id, "weapon_halberd_t1");
+        EXPECT_EQ(wc->GetEquippedWeapon().WeaponType, "Halberd");
+    }
     EXPECT_TRUE(runePedestal->Interact());
     EXPECT_EQ(session.SelectedRuneId, "rune_chronos");
 
@@ -1837,6 +1850,299 @@ TEST(SandboxUnitTest, AlphaTestSceneSerializesLoadsAndRunsInPlayMode) {
     loadedScene->OnRuntimeStop();
     Engine::ResourceManager::SetAssetRoot(prevRoot);
     Engine::ResourceManager::ClearPathCache();
+}
+
+TEST(SandboxUnitTest, KineticBowlingAndSplintersDamageHealthComponentTargets) {
+    Engine::Scene scene("BowlingHealthTargetsTestScene");
+
+    auto* enemyA = scene.CreateGameObject("EnemyA");
+    enemyA->SetTag(Engine::EntityTag::Enemy);
+    enemyA->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* rbA = enemyA->AddComponent<Engine::Rigidbody2D>();
+    rbA->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    enemyA->AddComponent<Engine::CircleCollider2D>()->Radius = 0.4f;
+    auto* healthA = enemyA->AddComponent<HealthComponent>();
+    healthA->ResetHealth(100.0f);
+    auto* bowlingA = enemyA->AddComponent<KineticBowlingComponent>();
+
+    auto* enemyB = scene.CreateGameObject("EnemyB");
+    enemyB->SetTag(Engine::EntityTag::Enemy);
+    enemyB->GetTransform()->position = { 1.0f, 0.0f, 0.0f };
+    auto* rbB = enemyB->AddComponent<Engine::Rigidbody2D>();
+    rbB->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    enemyB->AddComponent<Engine::CircleCollider2D>()->Radius = 0.4f;
+    auto* healthB = enemyB->AddComponent<HealthComponent>();
+    healthB->ResetHealth(100.0f);
+    enemyB->AddComponent<KineticBowlingComponent>();
+
+    auto* barricade = scene.CreateGameObject("SplinterBarricade");
+    barricade->SetTag(Engine::EntityTag::TacticalStructure);
+    barricade->GetTransform()->position = { 3.0f, 0.0f, 0.0f };
+    auto* barHealth = barricade->AddComponent<HealthComponent>();
+    barHealth->ResetHealth(30.0f);
+    barHealth->DestroyOnDeath = true;
+    int shatterCalls = 0;
+    barHealth->OnKilled = [&](const DamageEvent&) { ++shatterCalls; };
+
+    auto* splinter = scene.CreateGameObject("Splinter");
+    splinter->SetTag(Engine::EntityTag::Projectile);
+    splinter->GetTransform()->position = { 2.0f, 0.0f, 0.0f };
+    auto* proj = splinter->AddComponent<SplinterProjectileComponent>();
+    proj->DirectionXZ = { -1.0f, 0.0f };
+    proj->Damage = 18.0f;
+
+    scene.OnRuntimeStart();
+
+    // 1. Domino collision between two HealthComponent enemies
+    bowlingA->Launch(0.5f);
+    Engine::Collision2DInfo dominoInfo;
+    dominoInfo.Other = enemyB;
+    dominoInfo.NormalXZ = { 1.0f, 0.0f };
+    dominoInfo.ApproachSpeed = 10.0f;
+    bowlingA->OnCollisionEnter2D(dominoInfo);
+    EXPECT_LT(healthA->CurrentHP, 100.0f);
+    EXPECT_LT(healthB->CurrentHP, 100.0f);
+
+    // 2. Barricade impact against HealthComponent barricade triggers shatter & death
+    bowlingA->Launch(0.5f);
+    Engine::Collision2DInfo barInfo;
+    barInfo.Other = barricade;
+    barInfo.NormalXZ = { 1.0f, 0.0f };
+    barInfo.ApproachSpeed = 12.0f;
+    bowlingA->OnCollisionEnter2D(barInfo);
+    EXPECT_FALSE(barHealth->IsAlive());
+    EXPECT_EQ(shatterCalls, 1);
+
+    // 3. Splinter projectile damages HealthComponent enemy
+    const float hpBeforeSplinter = healthB->CurrentHP;
+    proj->OnTriggerEnter2D(enemyB);
+    EXPECT_FLOAT_EQ(healthB->CurrentHP, hpBeforeSplinter - 18.0f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, AllRootsAndBranchesModifiersAreSupportedAndApply) {
+    if (!Engine::GameplayData::IsInitialized()) {
+        Engine::GameplayData::Init("Sandbox/assets/data");
+    }
+
+    for (const auto& root : Engine::GameplayData::Roots().GetAll()) {
+        EXPECT_TRUE(Sandbox::StatModifierRegistry::IsSupported(root.StatModifier))
+            << "Unsupported root StatModifier: " << root.StatModifier << " (" << root.Id << ")";
+    }
+    for (const auto& branch : Engine::GameplayData::Branches().GetAll()) {
+        EXPECT_TRUE(Sandbox::StatModifierRegistry::IsSupported(branch.StatModifier))
+            << "Unsupported branch StatModifier: " << branch.StatModifier << " (" << branch.Id << ")";
+    }
+
+    Engine::Scene scene("AllModifiersTestScene");
+    auto* player = scene.CreateGameObject("Player");
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+    auto* health = player->AddComponent<HealthComponent>();
+    health->ResetHealth(100.0f);
+    player->AddComponent<WeaponController>();
+    auto* torchGo = scene.CreateGameObject("TorchSocket");
+    torchGo->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = torchGo->AddComponent<TorchComponent>();
+
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(*player, "MaxTorchFuel", 25.0f));
+    EXPECT_FLOAT_EQ(torch->MaxFuel, 125.0f);
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(*player, "FuelDepletionRate", -0.06f));
+    EXPECT_NEAR(torch->BurnRateMultiplier, 0.94f, 1e-4f);
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(*player, "BaseDamage", 5.0f));
+    EXPECT_FLOAT_EQ(stats->BonusDamage, 5.0f);
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(*player, "RuneCooldownReduction", 0.08f));
+    EXPECT_NEAR(stats->RuneCooldownMultiplier, 0.92f, 1e-4f);
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(*player, "SecondChanceRevive", 1.0f));
+    EXPECT_EQ(stats->ReviveCharges, 1);
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(*player, "AshFrenzyBoost", 0.4f));
+    EXPECT_NEAR(torch->AshFrenzySpeedBonus, 0.60f, 1e-4f);
+}
+
+TEST(SandboxUnitTest, PlayerHealthComponentReceivesUpgradesAndPreventsDoubleDreadDamage) {
+    auto scene = Sandbox::AlphaRunScene::Create(42ULL);
+    Sandbox::AlphaRunScene::BindRuntimeGameplayScripts(scene);
+
+    Engine::GameObject* player = nullptr;
+    for (const auto& go : scene->GetGameObjects()) {
+        if (go && go->GetName() == "Player") {
+            player = go.get();
+            break;
+        }
+    }
+    ASSERT_NE(player, nullptr);
+
+    auto* stats = player->GetComponent<PlayerStatsComponent>();
+    auto* health = player->GetComponent<HealthComponent>();
+    ASSERT_NE(stats, nullptr);
+    ASSERT_NE(health, nullptr);
+
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(*player, "DamageReduction", 0.25f));
+    EXPECT_FLOAT_EQ(health->DamageReduction, 0.25f);
+    EXPECT_TRUE(Sandbox::StatModifierRegistry::Apply(*player, "KnockbackResistance", 0.30f));
+    EXPECT_FLOAT_EQ(health->KnockbackResistance, 0.30f);
+
+    // Move outside Sanctuary Brazier safe zone and trigger Darkness Dread for 1 second
+    player->GetTransform()->position = { 25.0f, 0.0f, 0.0f };
+    if (auto* rb = player->GetComponent<Engine::Rigidbody2D>()) {
+        rb->SetPositionXZ(25.0f, 0.0f);
+    }
+    TorchComponent* torch = Sandbox::StatModifierRegistry::FindTorch(*player);
+    ASSERT_NE(torch, nullptr);
+    torch->BaseBurnRate = 0.0f;
+    torch->Fuel = 0.0f;
+    health->DamageReduction = 0.0f; // Measure exact 1x DreadDamagePerSec
+
+    scene->OnRuntimeStart();
+    for (int i = 0; i < 60; ++i) {
+        scene->UpdateRuntime(1.0f / 60.0f);
+    }
+    // 6.0 HP/s for 1s -> ~94.0 HP (NOT 88.0 HP from double damage)
+    EXPECT_NEAR(health->CurrentHP, 100.0f - torch->DreadDamagePerSec, 0.25f);
+    EXPECT_FLOAT_EQ(stats->HP, health->CurrentHP);
+    scene->OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, ChronosStasisRefreshesAndResetsCleanlyAcrossPoolReuse) {
+    Engine::Scene scene("ChronosPoolTestScene");
+    auto* enemy = scene.CreateGameObject("PooledGhoul");
+    enemy->SetTag(Engine::EntityTag::Enemy);
+    auto* rb = enemy->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    enemy->AddComponent<Engine::CircleCollider2D>()->Radius = 0.35f;
+    auto* tracker = enemy->AddComponent<ChronosStasisTrackerComponent>();
+    tracker->RemainingSec = 0.10f;
+
+    scene.OnRuntimeStart();
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_TRUE(rb->IsStasisFrozen());
+
+    // 1. Let first stasis expire naturally
+    for (int i = 0; i < 10; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FALSE(rb->IsStasisFrozen());
+
+    // 2. Re-cast Chronos (Refresh after previous release) must freeze AND unfreeze cleanly
+    tracker->Refresh(0.10f);
+    EXPECT_TRUE(rb->IsStasisFrozen());
+    for (int i = 0; i < 10; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FALSE(rb->IsStasisFrozen());
+
+    // 3. Pool release mid-stasis and re-acquire must unfreeze
+    tracker->Refresh(2.0f);
+    EXPECT_TRUE(rb->IsStasisFrozen());
+    tracker->OnPoolRelease();
+    EXPECT_FALSE(rb->IsStasisFrozen());
+    tracker->OnPoolAcquire();
+    EXPECT_FALSE(rb->IsStasisFrozen());
+    for (int i = 0; i < 5; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_FALSE(rb->IsStasisFrozen());
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, SanctuaryHubIsNotMisclassifiedAsRunArenaAndHasVisiblePlayerWithCamera) {
+    auto hub = Sandbox::AlphaRunScene::CreateSanctuaryHubScene();
+    ASSERT_NE(hub, nullptr);
+    EXPECT_TRUE(Sandbox::AlphaRunScene::IsSanctuaryHubScene(*hub));
+    EXPECT_FALSE(Sandbox::AlphaRunScene::IsAlphaScene(*hub));
+
+    Sandbox::AlphaRunScene::BindSanctuaryHubScripts(hub);
+    auto findByName = [&](const char* name) -> Engine::GameObject* {
+        for (const auto& go : hub->GetGameObjects()) {
+            if (go && go->GetName() == name) {
+                return go.get();
+            }
+        }
+        return nullptr;
+    };
+
+    EXPECT_EQ(findByName("WaveDirector"), nullptr);
+    EXPECT_EQ(findByName("AlphaHUD"), nullptr);
+
+    auto* player = findByName("Player");
+    ASSERT_NE(player, nullptr);
+    EXPECT_NE(player->GetComponent<Engine::SpriteRenderer>(), nullptr);
+    EXPECT_NE(player->GetComponent<Engine::CameraComponent>(), nullptr);
+    EXPECT_NE(player->GetComponent<Engine::PointLightComponent>(), nullptr);
+}
+
+TEST(SandboxUnitTest, WaveDirectorTracksTwinBossesByUUIDWithoutUAF) {
+    Engine::Scene scene("TwinBossUUIDTestScene");
+    auto* dirGo = scene.CreateGameObject("WaveDirector");
+    auto* director = dirGo->AddComponent<WaveDirectorComponent>();
+    scene.OnRuntimeStart();
+
+    auto* boss1 = director->SpawnPooledEnemy("enemy_wendigo");
+    auto* boss2 = director->SpawnPooledEnemy("enemy_wendigo");
+    ASSERT_NE(boss1, nullptr);
+    ASSERT_NE(boss2, nullptr);
+    EXPECT_EQ(director->GetActiveBossCount(), 2u);
+    EXPECT_EQ(director->GetActiveBoss(), boss1);
+
+    // Destroy boss1 -> GetActiveBoss() safely falls back to boss2 without UAF
+    scene.DestroyGameObject(boss1);
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_EQ(director->GetActiveBossCount(), 1u);
+    EXPECT_EQ(director->GetActiveBoss(), boss2);
+
+    // Destroy boss2 -> GetActiveBoss() returns nullptr cleanly
+    scene.DestroyGameObject(boss2);
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_EQ(director->GetActiveBossCount(), 0u);
+    EXPECT_EQ(director->GetActiveBoss(), nullptr);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, TorchComponentRestoresVignetteOnDestroyAndEnemyUsesDeltaTime) {
+    Engine::Scene scene("VignetteAndDtTestScene");
+    auto* ppGo = scene.CreateGameObject("PostProcess");
+    auto* pp = ppGo->AddComponent<Engine::PostProcessComponent>();
+    pp->VignetteEnabled = false;
+    pp->VignetteColor = { 0.10f, 0.20f, 0.30f };
+    pp->VignetteIntensity = 0.15f;
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->GetTransform()->position = { 20.0f, 0.0f, 0.0f };
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+
+    auto* socket = scene.CreateGameObject("TorchSocket");
+    socket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = socket->AddComponent<TorchComponent>();
+    torch->BaseBurnRate = 0.0f;
+    torch->Fuel = 15.0f; // Ash Frenzy
+
+    auto* enemy = scene.CreateGameObject("NonRbGhoul");
+    enemy->SetTag(Engine::EntityTag::Enemy);
+    enemy->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* ai = enemy->AddComponent<EnemyAIController>();
+    ai->ConfigureArchetype("enemy_ghoul");
+
+    scene.OnRuntimeStart();
+    // Step with dt = 0.1s (6x larger than 1/60) so non-RB movement scales with dt
+    scene.UpdateRuntime(0.1f);
+
+    EXPECT_TRUE(pp->VignetteEnabled);
+    EXPECT_GT(pp->VignetteColor.r, 0.4f);
+    EXPECT_GT(stats->FrenzySpeedMultiplier, 1.0f);
+    EXPECT_GT(enemy->GetTransform()->position.x, ai->GetStats().MoveSpeed * 0.05f);
+
+    // Destroy torch mid-frenzy -> baseline vignette and speed must be restored
+    scene.DestroyGameObject(socket);
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_FALSE(pp->VignetteEnabled);
+    EXPECT_FLOAT_EQ(pp->VignetteColor.r, 0.10f);
+    EXPECT_FLOAT_EQ(pp->VignetteIntensity, 0.15f);
+    EXPECT_FLOAT_EQ(stats->FrenzySpeedMultiplier, 1.0f);
+
+    scene.OnRuntimeStop();
 }
 
 } // namespace

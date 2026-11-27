@@ -86,8 +86,14 @@ public:
             return false;
         }
 
+        float cooldownMult = 1.0f;
+        if (auto* pStats = go->GetComponent<PlayerStatsComponent>()) {
+            if (std::isfinite(pStats->RuneCooldownMultiplier) && pStats->RuneCooldownMultiplier > 0.0f) {
+                cooldownMult = pStats->RuneCooldownMultiplier;
+            }
+        }
         torch->Fuel = std::max(0.0f, torch->Fuel - m_EquippedRune.FuelCost);
-        m_CooldownTimer = m_EquippedRune.CooldownSec;
+        m_CooldownTimer = m_EquippedRune.CooldownSec * cooldownMult;
 
         const glm::vec3 origin = go->GetTransform()->GetWorldPosition();
         if (m_EquippedRune.Id == "rune_ignite") {

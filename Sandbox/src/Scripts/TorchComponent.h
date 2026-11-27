@@ -2,6 +2,7 @@
 #define SANDBOX_TORCH_COMPONENT_H
 
 #include "Scripts/CombatTargetComponent.h"
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
@@ -205,9 +206,7 @@ public:
         const bool frenzy = IsAshFrenzy();
         if (player) {
             if (auto* stats = player->GetComponent<PlayerStatsComponent>()) {
-                const float mult = frenzy ? (1.0f + AshFrenzySpeedBonus) : 1.0f;
-                stats->MoveSpeedMultiplier = mult;
-                stats->AttackSpeedMultiplier = mult;
+                stats->FrenzySpeedMultiplier = frenzy ? (1.0f + AshFrenzySpeedBonus) : 1.0f;
             }
         }
         UpdateAshFrenzyVignette(*scene, frenzy, deltaTime);
@@ -218,16 +217,21 @@ public:
         if (Fuel <= 0.0f && player) {
             if (!IsShelteredBySafeLifeline(*scene, player)) {
                 const float dreadDmg = DreadDamagePerSec * deltaTime;
-                if (auto* stats = player->GetComponent<PlayerStatsComponent>()) {
-                    stats->TakeDamage(dreadDmg);
-                }
-                if (auto* health = player->GetComponent<HealthComponent>()) {
-                    DamageEvent evt;
-                    evt.Amount = dreadDmg;
-                    evt.BypassInvuln = true;
-                    health->ApplyDamage(evt);
-                }
+                Sandbox::ApplyPlayerOrTargetDamage(player, GetGameObject(), dreadDmg, true);
             }
+        }
+    }
+
+    void OnDestroy() override {
+        auto* go = GetGameObject();
+        auto* scene = go ? go->GetScene() : nullptr;
+        if (auto* player = ResolvePlayer()) {
+            if (auto* stats = player->GetComponent<PlayerStatsComponent>()) {
+                stats->FrenzySpeedMultiplier = 1.0f;
+            }
+        }
+        if (scene && m_SavedBaselineVignette) {
+            UpdateAshFrenzyVignette(*scene, false, 0.0f);
         }
     }
 
@@ -348,6 +352,7 @@ private:
 
         if (frenzyActive) {
             if (!m_SavedBaselineVignette) {
+                m_BaselineVignetteEnabled = pp->VignetteEnabled;
                 m_BaselineVignetteColor = pp->VignetteColor;
                 m_BaselineVignetteIntensity = pp->VignetteIntensity;
                 m_SavedBaselineVignette = true;
@@ -358,6 +363,7 @@ private:
             pp->VignetteColor = { 0.55f, 0.06f, 0.08f };
             pp->VignetteIntensity = std::clamp(m_BaselineVignetteIntensity + 0.14f + 0.12f * pulse, 0.0f, 1.0f);
         } else if (m_SavedBaselineVignette) {
+            pp->VignetteEnabled = m_BaselineVignetteEnabled;
             pp->VignetteColor = m_BaselineVignetteColor;
             pp->VignetteIntensity = m_BaselineVignetteIntensity;
             m_SavedBaselineVignette = false;
@@ -390,6 +396,7 @@ private:
     float m_SearingTimer = 0.0f;
     float m_FrenzyPulseTime = 0.0f;
     bool m_SavedBaselineVignette = false;
+    bool m_BaselineVignetteEnabled = false;
     glm::vec3 m_BaselineVignetteColor{ 0.06f, 0.04f, 0.10f };
     float m_BaselineVignetteIntensity = 0.36f;
 };

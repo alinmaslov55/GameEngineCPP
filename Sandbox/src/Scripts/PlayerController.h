@@ -197,8 +197,9 @@ public:
             }
         }
         if (auto* stats = go->GetComponent<PlayerStatsComponent>()) {
-            if (std::isfinite(stats->MoveSpeedMultiplier) && stats->MoveSpeedMultiplier > 0.0f) {
-                speedMultiplier *= stats->MoveSpeedMultiplier;
+            const float effectiveMove = stats->GetEffectiveMoveSpeedMultiplier();
+            if (std::isfinite(effectiveMove) && effectiveMove > 0.0f) {
+                speedMultiplier *= effectiveMove;
             }
         }
         m_EffectiveMoveSpeed = moveSpeed * speedMultiplier;

@@ -2,6 +2,7 @@
 #define SANDBOX_KINETIC_BOWLING_COMPONENT_H
 
 #include "Scripts/AudioCueHelper.h"
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/SplinterProjectileComponent.h"
 
@@ -119,24 +120,16 @@ private:
                            const Engine::Collision2DInfo& info) {
         const float collateralDamage = CollateralDamageFactor * selfMass * info.ApproachSpeed;
 
-        if (auto* selfTarget = self->GetComponent<CombatTargetComponent>()) {
-            selfTarget->ApplyDamage(collateralDamage, 0.25f, Engine::SpriteRenderer::FlashMode::PureWhite);
-        } else if (auto* selfSr = self->GetComponent<Engine::SpriteRenderer>()) {
-            selfSr->SetFlashMode(Engine::SpriteRenderer::FlashMode::PureWhite);
-            selfSr->SetFlashAmount(1.0f);
-        }
-
-        if (auto* otherTarget = other->GetComponent<CombatTargetComponent>()) {
-            otherTarget->ApplyDamage(collateralDamage, 0.35f, Engine::SpriteRenderer::FlashMode::PureWhite);
-        } else if (auto* otherSr = other->GetComponent<Engine::SpriteRenderer>()) {
-            otherSr->SetFlashMode(Engine::SpriteRenderer::FlashMode::PureWhite);
-            otherSr->SetFlashAmount(1.0f);
-        }
-
-        if (auto* otherRb = other->GetComponent<Engine::Rigidbody2D>()) {
-            const float nLen = glm::length(info.NormalXZ);
-            const glm::vec2 pushDir = (std::isfinite(nLen) && nLen > 1e-4f) ? (info.NormalXZ / nLen) : glm::vec2(1.0f, 0.0f);
-            otherRb->ApplyImpulseXZ(pushDir * (info.ApproachSpeed * 1.35f));
+        Sandbox::ApplyImpactDamage(self, other, collateralDamage, 0.25f);
+        const glm::vec2 pushDir = Sandbox::SafeNormalizeXZ(info.NormalXZ);
+        const bool otherHadHealth = (other->GetComponent<HealthComponent>() != nullptr);
+        Sandbox::ApplyImpactDamage(other, self, collateralDamage, 0.35f, pushDir * (info.ApproachSpeed * 1.35f));
+        if (!otherHadHealth) {
+            if (auto* otherRb = other->GetComponent<Engine::Rigidbody2D>()) {
+                if (!other->GetComponent<CombatTargetComponent>()) {
+                    otherRb->ApplyImpulseXZ(pushDir * (info.ApproachSpeed * 1.35f));
+                }
+            }
         }
         if (auto* otherBowling = other->GetComponent<KineticBowlingComponent>()) {
             otherBowling->Launch(0.45f);
@@ -160,12 +153,8 @@ private:
                         Engine::GameObject* other,
                         const Engine::Collision2DInfo& info) {
         const float wallDamage = WallSlamBaseDamage + 1.5f * info.ApproachSpeed;
-        if (auto* selfTarget = self->GetComponent<CombatTargetComponent>()) {
-            selfTarget->ApplyDamage(wallDamage, WallSlamStunDuration, Engine::SpriteRenderer::FlashMode::PureWhite);
-        }
-        if (auto* otherTarget = other->GetComponent<CombatTargetComponent>()) {
-            otherTarget->ApplyDamage(wallDamage * 0.5f, 0.0f, Engine::SpriteRenderer::FlashMode::PureWhite);
-        }
+        Sandbox::ApplyImpactDamage(self, other, wallDamage, WallSlamStunDuration, { 0.0f, 0.0f }, false);
+        Sandbox::ApplyImpactDamage(other, self, wallDamage * 0.5f, 0.0f, { 0.0f, 0.0f }, false);
         if (auto* otherSS = other->GetComponent<Engine::SquashStretchComponent>()) {
             otherSS->TriggerImpulse(-2.8f, 12.0f);
         }
@@ -177,23 +166,42 @@ private:
                                Engine::GameObject* barricade,
                                const Engine::Collision2DInfo& info) {
         const float structDamage = BarricadeStructureDamage + 2.5f * info.ApproachSpeed;
-        auto* barricadeTarget = barricade->GetComponent<CombatTargetComponent>();
-        if (!barricadeTarget) {
-            return;
-        }
+        bool handledBarricade = false;
 
-        const bool wasAlive = barricadeTarget->IsAlive();
-        barricadeTarget->ApplyDamage(structDamage, 0.0f, Engine::SpriteRenderer::FlashMode::PureWhite);
-        if (wasAlive && !barricadeTarget->IsAlive()) {
-            SpawnBarricadeSplinters(barricade, info);
-            if (auto* scene = barricade->GetScene()) {
-                scene->DestroyGameObject(barricade);
+        if (auto* barricadeHealth = barricade->GetComponent<HealthComponent>()) {
+            handledBarricade = true;
+            const bool wasAlive = barricadeHealth->IsAlive();
+            const glm::vec2 impactDir = Sandbox::SafeNormalizeXZ(-info.NormalXZ);
+            DamageEvent evt;
+            evt.Amount = structDamage;
+            evt.Source = self;
+            evt.ImpulseXZ = impactDir;
+            barricadeHealth->ApplyDamage(evt);
+            if (wasAlive && !barricadeHealth->IsAlive()) {
+                if (!barricadeHealth->OnKilled) {
+                    SpawnBarricadeSplinters(barricade, info);
+                }
+                if (auto* scene = barricade->GetScene()) {
+                    scene->DestroyGameObject(barricade);
+                }
+            }
+        } else if (auto* barricadeTarget = barricade->GetComponent<CombatTargetComponent>()) {
+            handledBarricade = true;
+            const bool wasAlive = barricadeTarget->IsAlive();
+            barricadeTarget->ApplyDamage(structDamage, 0.0f, Engine::SpriteRenderer::FlashMode::PureWhite);
+            if (wasAlive && !barricadeTarget->IsAlive()) {
+                SpawnBarricadeSplinters(barricade, info);
+                if (auto* scene = barricade->GetScene()) {
+                    scene->DestroyGameObject(barricade);
+                }
             }
         }
 
-        if (auto* selfTarget = self->GetComponent<CombatTargetComponent>()) {
-            selfTarget->ApplyDamage(15.0f, 0.35f, Engine::SpriteRenderer::FlashMode::PureWhite);
+        if (!handledBarricade) {
+            return;
         }
+
+        Sandbox::ApplyImpactDamage(self, barricade, 15.0f, 0.35f, { 0.0f, 0.0f }, false);
         Engine::Time::TriggerHitStop(0.030f, 0.04f);
         TriggerPlayerMicroFeedback(self->GetScene(), 0.25f, info.NormalXZ * 0.22f);
     }

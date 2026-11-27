@@ -56,10 +56,40 @@ public:
     [[nodiscard]] bool IsVictory() const noexcept { return m_Victory; }
     [[nodiscard]] uint32_t GetTotalSpawned() const noexcept { return m_TotalSpawned; }
     [[nodiscard]] Engine::GameObject* GetActiveBoss() const noexcept {
-        if (m_ActiveBoss && !m_ActiveBoss->IsPendingDestroy() && m_ActiveBoss->IsActive()) {
-            return m_ActiveBoss;
+        auto* go = GetGameObject();
+        auto* scene = go ? go->GetScene() : nullptr;
+        if (!scene) {
+            return nullptr;
+        }
+        for (const uint64_t uuid : m_ActiveBossUUIDs) {
+            if (auto* boss = scene->FindGameObjectByUUID(uuid)) {
+                if (!boss->IsPendingDestroy() && boss->IsActive()) {
+                    if (auto* health = boss->GetComponent<HealthComponent>(); !health || health->IsAlive()) {
+                        return boss;
+                    }
+                }
+            }
         }
         return nullptr;
+    }
+
+    [[nodiscard]] size_t GetActiveBossCount() const noexcept {
+        auto* go = GetGameObject();
+        auto* scene = go ? go->GetScene() : nullptr;
+        if (!scene) {
+            return 0u;
+        }
+        size_t count = 0u;
+        for (const uint64_t uuid : m_ActiveBossUUIDs) {
+            if (auto* boss = scene->FindGameObjectByUUID(uuid)) {
+                if (!boss->IsPendingDestroy() && boss->IsActive()) {
+                    if (auto* health = boss->GetComponent<HealthComponent>(); !health || health->IsAlive()) {
+                        ++count;
+                    }
+                }
+            }
+        }
+        return count;
     }
 
     void AdvanceClockForTest(float elapsedSeconds) {
@@ -105,7 +135,10 @@ public:
 
         ++m_TotalSpawned;
         if (enemyId == "enemy_wendigo") {
-            m_ActiveBoss = spawned;
+            const uint64_t bossUuid = spawned->GetUUID();
+            if (std::find(m_ActiveBossUUIDs.begin(), m_ActiveBossUUIDs.end(), bossUuid) == m_ActiveBossUUIDs.end()) {
+                m_ActiveBossUUIDs.push_back(bossUuid);
+            }
         }
         return spawned;
     }
@@ -380,7 +413,7 @@ private:
     bool m_Victory = false;
     uint32_t m_TotalSpawned = 0;
     uint32_t m_RngState = 0xA511E9B3u;
-    Engine::GameObject* m_ActiveBoss = nullptr;
+    std::vector<uint64_t> m_ActiveBossUUIDs;
     std::unordered_map<std::string, std::shared_ptr<Engine::Prefab>> m_Prefabs;
 };
 

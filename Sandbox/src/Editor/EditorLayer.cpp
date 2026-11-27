@@ -191,7 +191,9 @@ void EditorLayer::OnScenePlay() {
                                          static_cast<uint32_t>(viewportSize.y));
     }
 
-    if (AlphaRunScene::IsAlphaScene(*m_RuntimeScene)) {
+    if (AlphaRunScene::IsSanctuaryHubScene(*m_RuntimeScene)) {
+        AlphaRunScene::BindSanctuaryHubScripts(m_RuntimeScene);
+    } else if (AlphaRunScene::IsAlphaScene(*m_RuntimeScene)) {
         AlphaRunScene::BindRuntimeGameplayScripts(m_RuntimeScene);
     } else {
         DemoScene::BindRuntimeGameplayScripts(m_RuntimeScene);

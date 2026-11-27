@@ -144,8 +144,9 @@ private:
         float statsAttackMult = 1.0f;
         if (auto* go = GetGameObject()) {
             if (auto* stats = go->GetComponent<PlayerStatsComponent>()) {
-                if (std::isfinite(stats->AttackSpeedMultiplier) && stats->AttackSpeedMultiplier > 0.0f) {
-                    statsAttackMult = stats->AttackSpeedMultiplier;
+                const float effectiveAtk = stats->GetEffectiveAttackSpeedMultiplier();
+                if (std::isfinite(effectiveAtk) && effectiveAtk > 0.0f) {
+                    statsAttackMult = effectiveAtk;
                 }
             }
         }
@@ -235,11 +236,17 @@ private:
             }
 
             const float stunSec = isHalberd ? 0.35f : (isMaul ? 0.25f : 0.10f);
+            float totalDamage = m_Weapon.Damage;
+            float totalKnockback = m_Weapon.KnockbackImpulse;
+            if (auto* pStats = go->GetComponent<PlayerStatsComponent>()) {
+                totalDamage += pStats->BonusDamage;
+                totalKnockback += pStats->BonusKnockbackImpulse;
+            }
             if (auto* health = targetGo->GetComponent<HealthComponent>()) {
                 DamageEvent evt;
-                evt.Amount = m_Weapon.Damage;
+                evt.Amount = totalDamage;
                 evt.Source = go;
-                evt.ImpulseXZ = pushDir * m_Weapon.KnockbackImpulse;
+                evt.ImpulseXZ = pushDir * totalKnockback;
                 evt.StunDuration = stunSec;
                 evt.IsFire = isSickle;
                 health->ApplyDamage(evt);

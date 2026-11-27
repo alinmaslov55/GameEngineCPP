@@ -52,7 +52,9 @@ void RuntimeLayer::OnAttach() {
         );
     }
 
-    if (AlphaRunScene::IsAlphaScene(*m_ActiveScene)) {
+    if (AlphaRunScene::IsSanctuaryHubScene(*m_ActiveScene)) {
+        AlphaRunScene::BindSanctuaryHubScripts(m_ActiveScene);
+    } else if (AlphaRunScene::IsAlphaScene(*m_ActiveScene)) {
         AlphaRunScene::BindRuntimeGameplayScripts(m_ActiveScene);
     } else {
         DemoScene::BindRuntimeGameplayScripts(m_ActiveScene);

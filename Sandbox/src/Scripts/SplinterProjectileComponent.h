@@ -1,6 +1,7 @@
 #ifndef SANDBOX_SPLINTER_PROJECTILE_COMPONENT_H
 #define SANDBOX_SPLINTER_PROJECTILE_COMPONENT_H
 
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/CombatTargetComponent.h"
 
 #include <Engine/Physics/PhysicsComponents.h>
@@ -75,14 +76,8 @@ private:
             return;
         }
 
-        if (auto* target = other->GetComponent<CombatTargetComponent>()) {
-            target->ApplyDamage(Damage, 0.15f, Engine::SpriteRenderer::FlashMode::PureWhite);
-        }
-        if (auto* rb = other->GetComponent<Engine::Rigidbody2D>()) {
-            const float len = glm::length(DirectionXZ);
-            const glm::vec2 dir = (std::isfinite(len) && len > 1e-4f) ? (DirectionXZ / len) : glm::vec2(1.0f, 0.0f);
-            rb->ApplyImpulseXZ(dir * KnockbackImpulse);
-        }
+        const glm::vec2 dir = Sandbox::SafeNormalizeXZ(DirectionXZ);
+        Sandbox::ApplyImpactDamage(other, self, Damage, 0.15f, dir * KnockbackImpulse, false);
 
         --RemainingPierces;
         if (RemainingPierces <= 0) {

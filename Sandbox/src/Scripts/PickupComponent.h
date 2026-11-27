@@ -2,6 +2,7 @@
 #define SANDBOX_PICKUP_COMPONENT_H
 
 #include "Scripts/AudioCueHelper.h"
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/PlayerStatsComponent.h"
 
 #include <Engine/Core/ResourceManager.h>
@@ -170,7 +171,7 @@ public:
                 Sandbox::PlaySfxCue("assets/audio/sfx_pickup_ash.wav");
                 break;
             case PickupKind::CrimsonBerry:
-                stats->Heal(HealAmount);
+                Sandbox::HealPlayerOrTarget(other, HealAmount);
                 Sandbox::PlaySfxCue("assets/audio/sfx_pickup_ash.wav");
                 break;
         }

@@ -55,17 +55,21 @@ public:
 
         auto* player = scene->FindFirstGameObjectWithTag(Engine::EntityTag::Player);
         auto* stats = player ? player->GetComponent<PlayerStatsComponent>() : nullptr;
+        auto* playerHealth = player ? player->GetComponent<HealthComponent>() : nullptr;
         auto* torch = ResolveTorch(player);
         auto* runeCaster = player ? player->GetComponent<RuneCasterComponent>() : nullptr;
         auto* prog = player ? player->GetComponent<RunProgressionComponent>() : nullptr;
         auto* director = FindWaveDirector(*scene);
 
+        const float currentHP = stats ? stats->HP : (playerHealth ? playerHealth->CurrentHP : 0.0f);
+        const float maxHP = stats ? stats->MaxHP : (playerHealth ? playerHealth->MaxHP : 0.0f);
+
         // 1. Top-Left: HP Bar, Torch Fuel Bar, Active Rune RadialSweepCW
-        if (m_HealthBar && stats) {
-            m_HealthBar->fillAmount = (stats->MaxHP > 1e-4f) ? std::clamp(stats->HP / stats->MaxHP, 0.0f, 1.0f) : 0.0f;
+        if (m_HealthBar && (playerHealth || stats)) {
+            m_HealthBar->fillAmount = (maxHP > 1e-4f) ? std::clamp(currentHP / maxHP, 0.0f, 1.0f) : 0.0f;
             if (m_HealthLabel) {
                 char buf[48];
-                std::snprintf(buf, sizeof(buf), "HP %d / %d", static_cast<int>(std::ceil(stats->HP)), static_cast<int>(stats->MaxHP));
+                std::snprintf(buf, sizeof(buf), "HP %d / %d", static_cast<int>(std::ceil(currentHP)), static_cast<int>(maxHP));
                 m_HealthLabel->text = buf;
             }
         }
@@ -178,7 +182,7 @@ public:
         }
 
         // 6. Run Summary Trigger (Player HP <= 0 or Dawn Break Victory)
-        if (!m_SummaryOpen && ((stats && stats->HP <= 0.0f) || (director && director->IsVictory()))) {
+        if (!m_SummaryOpen && (((playerHealth || stats) && currentHP <= 0.0f) || (director && director->IsVictory()))) {
             const float elapsed = director ? director->GetElapsedSeconds() : 0.0f;
             const uint64_t ashes = stats ? static_cast<uint64_t>(std::max(0, stats->RunAshes)) : 0ULL;
             const bool victory = (director && director->IsVictory());

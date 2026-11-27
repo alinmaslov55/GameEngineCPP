@@ -84,6 +84,49 @@ void EnsureChildSocket(Engine::Scene& scene, Engine::GameObject& parent, const c
     socketGo->GetTransform()->SetParent(parent.GetTransform(), false);
 }
 
+void ConfigurePlayerVisualsAndCamera(Engine::Scene& scene, Engine::GameObject& player) {
+    if (!player.GetComponent<Engine::SpriteRenderer>()) {
+        auto heroTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/hero_lamb.png");
+        auto* playerSprite = player.AddComponent<Engine::SpriteRenderer>();
+        playerSprite->SetTexture(heroTex);
+        playerSprite->SetBillboardMode(Engine::SpriteRenderer::BillboardMode::ViewPlane);
+        playerSprite->SetAlphaCutoff(0.18f);
+    }
+
+    if (!player.GetComponent<Engine::PointLightComponent>()) {
+        auto* heroTorch = player.AddComponent<Engine::PointLightComponent>();
+        heroTorch->Color = { 1.0f, 0.58f, 0.22f };
+        heroTorch->Intensity = 2.25f;
+        heroTorch->Radius = 7.5f;
+        heroTorch->Falloff = 1.7f;
+        heroTorch->HeightOffset = 0.90f;
+        heroTorch->Priority = Engine::LightPriority::Critical_HeroTorch;
+        heroTorch->Semantic = Engine::LightSemantic::SafeLifeline;
+        heroTorch->CastShadows = true;
+        heroTorch->ShadowSoftness = 1.6f;
+        heroTorch->ShadowBias = 0.0025f;
+        heroTorch->Flicker = true;
+        heroTorch->FlickerSpeed = 8.5f;
+        heroTorch->FlickerAmount = 0.14f;
+    }
+
+    if (!player.GetComponent<Engine::SquashStretchComponent>()) {
+        player.AddComponent<Engine::SquashStretchComponent>();
+    }
+
+    if (!player.GetComponent<Engine::CameraComponent>()) {
+        auto* camComp = player.AddComponent<Engine::CameraComponent>();
+        camComp->FOV = 32.0f;
+        camComp->Distance = 15.0f;
+        camComp->Pitch = 40.0f;
+        camComp->SmoothFollow = true;
+        camComp->ResetToTarget(player.GetTransform()->position);
+    }
+
+    EnsureChildSocket(scene, player, "TorchSocket");
+    EnsureChildSocket(scene, player, "WeaponSocket");
+}
+
 } // namespace
 
 std::shared_ptr<Engine::Scene> AlphaRunScene::Create(uint64_t seed) {
@@ -169,31 +212,10 @@ std::shared_ptr<Engine::Scene> AlphaRunScene::Create(uint64_t seed) {
     brazierLight->FlickerAmount = 0.16f;
 
     // 5. Player ("Hero Lamb") inside the 8.0m safe clearing with 360° shadow-casting Torch
-    auto heroTex = Engine::ResourceManager::Load<Engine::Texture>("assets/diorama/hero_lamb.png");
     Engine::GameObject* player = scene->CreateGameObject("Player");
     player->SetTag(Engine::EntityTag::Player);
     player->GetTransform()->position = { 0.0f, 0.0f, 2.5f };
     player->GetTransform()->scale = { 1.25f, 1.35f, 1.0f };
-
-    auto* playerSprite = player->AddComponent<Engine::SpriteRenderer>();
-    playerSprite->SetTexture(heroTex);
-    playerSprite->SetBillboardMode(Engine::SpriteRenderer::BillboardMode::ViewPlane);
-    playerSprite->SetAlphaCutoff(0.18f);
-
-    auto* heroTorch = player->AddComponent<Engine::PointLightComponent>();
-    heroTorch->Color = { 1.0f, 0.58f, 0.22f };
-    heroTorch->Intensity = 2.25f;
-    heroTorch->Radius = 7.5f;
-    heroTorch->Falloff = 1.7f;
-    heroTorch->HeightOffset = 0.90f;
-    heroTorch->Priority = Engine::LightPriority::Critical_HeroTorch;
-    heroTorch->Semantic = Engine::LightSemantic::SafeLifeline;
-    heroTorch->CastShadows = true;
-    heroTorch->ShadowSoftness = 1.6f;
-    heroTorch->ShadowBias = 0.0025f;
-    heroTorch->Flicker = true;
-    heroTorch->FlickerSpeed = 8.5f;
-    heroTorch->FlickerAmount = 0.14f;
 
     player->AddComponent<Engine::ParticleSystem>(500);
 
@@ -210,17 +232,7 @@ std::shared_ptr<Engine::Scene> AlphaRunScene::Create(uint64_t seed) {
     auto* playerAudio = player->AddComponent<Engine::AudioSource>();
     playerAudio->SetClip(Engine::ResourceManager::Load<Engine::AudioClip>("jump.wav"));
 
-    player->AddComponent<Engine::SquashStretchComponent>();
-
-    auto* camComp = player->AddComponent<Engine::CameraComponent>();
-    camComp->FOV = 32.0f;
-    camComp->Distance = 15.0f;
-    camComp->Pitch = 40.0f;
-    camComp->SmoothFollow = true;
-    camComp->ResetToTarget(player->GetTransform()->position);
-
-    EnsureChildSocket(*scene, *player, "TorchSocket");
-    EnsureChildSocket(*scene, *player, "WeaponSocket");
+    ConfigurePlayerVisualsAndCamera(*scene, *player);
 
     return scene;
 }
@@ -258,9 +270,26 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
             if (!goPtr->GetComponent<PlayerController>()) {
                 goPtr->AddComponent<PlayerController>();
             }
-            if (!goPtr->GetComponent<PlayerStatsComponent>()) {
-                goPtr->AddComponent<PlayerStatsComponent>();
+            auto* stats = goPtr->GetComponent<PlayerStatsComponent>();
+            if (!stats) {
+                stats = goPtr->AddComponent<PlayerStatsComponent>();
             }
+            auto* health = goPtr->GetComponent<HealthComponent>();
+            if (!health) {
+                health = goPtr->AddComponent<HealthComponent>();
+                health->DestroyOnDeath = false;
+                health->InvulnOnHitDuration = 0.25f;
+                health->ResetHealth(stats->MaxHP);
+            }
+            Engine::GameObject* playerPtr = goPtr.get();
+            health->OnDamaged = [playerPtr](const DamageEvent&, float) {
+                if (auto* pStats = playerPtr->GetComponent<PlayerStatsComponent>()) {
+                    if (auto* pHealth = playerPtr->GetComponent<HealthComponent>()) {
+                        pStats->HP = pHealth->CurrentHP;
+                        pStats->MaxHP = pHealth->MaxHP;
+                    }
+                }
+            };
             if (!goPtr->GetComponent<WeaponController>()) {
                 goPtr->AddComponent<WeaponController>();
             }
@@ -326,6 +355,13 @@ std::shared_ptr<Engine::Scene> AlphaRunScene::CreateSanctuaryHubScene() {
     }
     RunSessionManager::Get().LoadOrCreateProfile(0);
 
+    auto& cam = hub->GetCamera();
+    cam.SetFOVDegrees(32.0f);
+    cam.SetPitchDegrees(40.0f);
+    cam.SetYawDegrees(0.0f);
+    cam.SetDistance(15.0f);
+    cam.SetFocalPoint({ 0.0f, 0.0f, 1.5f });
+
     auto* sunGo = hub->CreateGameObject("SanctuarySun");
     auto* sun = sunGo->AddComponent<Engine::DirectionalLightComponent>();
     sun->SunIntensity = 0.85f;
@@ -334,6 +370,7 @@ std::shared_ptr<Engine::Scene> AlphaRunScene::CreateSanctuaryHubScene() {
     auto* player = hub->CreateGameObject("Player");
     player->SetTag(Engine::EntityTag::Player);
     player->GetTransform()->position = { 0.0f, 0.0f, 2.5f };
+    player->GetTransform()->scale = { 1.25f, 1.35f, 1.0f };
     auto* rb = player->AddComponent<Engine::Rigidbody2D>();
     rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
     player->AddComponent<Engine::BoxCollider2D>()->size = { 0.55f, 0.45f };
@@ -341,6 +378,7 @@ std::shared_ptr<Engine::Scene> AlphaRunScene::CreateSanctuaryHubScene() {
     player->AddComponent<PlayerStatsComponent>();
     player->AddComponent<WeaponController>();
     player->AddComponent<RuneCasterComponent>();
+    ConfigurePlayerVisualsAndCamera(*hub, *player);
 
     auto addStation = [&](const char* name, SanctuaryStationKind kind, glm::vec3 pos) {
         auto* stGo = hub->CreateGameObject(name);
@@ -365,9 +403,47 @@ std::shared_ptr<Engine::Scene> AlphaRunScene::CreateSanctuaryHubScene() {
     return hub;
 }
 
+void AlphaRunScene::BindSanctuaryHubScripts(const std::shared_ptr<Engine::Scene>& runtimeScene) {
+    if (!runtimeScene) {
+        return;
+    }
+    if (!Engine::GameplayData::IsInitialized()) {
+        Engine::GameplayData::Init("Sandbox/assets/data");
+    }
+    for (const auto& goPtr : runtimeScene->GetGameObjects()) {
+        if (!goPtr || goPtr->GetName() != "Player") {
+            continue;
+        }
+        if (!goPtr->GetComponent<PlayerController>()) goPtr->AddComponent<PlayerController>();
+        if (!goPtr->GetComponent<PlayerStatsComponent>()) goPtr->AddComponent<PlayerStatsComponent>();
+        if (!goPtr->GetComponent<WeaponController>()) goPtr->AddComponent<WeaponController>();
+        if (!goPtr->GetComponent<RuneCasterComponent>()) goPtr->AddComponent<RuneCasterComponent>();
+        ConfigurePlayerVisualsAndCamera(*runtimeScene, *goPtr);
+        break;
+    }
+    if (Engine::AudioManager::IsInitialized()) {
+        Engine::MusicDirector::PlaySingleTrack("assets/audio/mus_sanctuary_hub.ogg", 1.2f);
+    }
+}
+
+bool AlphaRunScene::IsSanctuaryHubScene(const Engine::Scene& scene) {
+    if (scene.GetName() == "SanctuaryHub") {
+        return true;
+    }
+    for (const auto& go : scene.GetGameObjects()) {
+        if (go && go->GetComponent<SanctuaryStationComponent>()) {
+            return true;
+        }
+    }
+    return false;
+}
+
 bool AlphaRunScene::IsAlphaScene(const Engine::Scene& scene) {
+    if (IsSanctuaryHubScene(scene)) {
+        return false;
+    }
     const std::string& name = scene.GetName();
-    if (name == "AlphaRun" || name == "AlphaTest" || name == "SanctuaryHub") {
+    if (name == "AlphaRun" || name == "AlphaTest") {
         return true;
     }
     for (const auto& go : scene.GetGameObjects()) {

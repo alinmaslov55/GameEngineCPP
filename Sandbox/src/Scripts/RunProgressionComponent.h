@@ -5,6 +5,7 @@
 #include "Scripts/HealthComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
+#include "Scripts/StatModifierRegistry.h"
 #include "Scripts/TorchComponent.h"
 #include "Scripts/WeaponController.h"
 
@@ -108,48 +109,10 @@ public:
         if (!go) {
             return;
         }
-        auto* stats = go->GetComponent<PlayerStatsComponent>();
-        if (!stats) {
-            stats = go->AddComponent<PlayerStatsComponent>();
+        if (!go->GetComponent<PlayerStatsComponent>()) {
+            go->AddComponent<PlayerStatsComponent>();
         }
-
-        const std::string& mod = card.StatModifier;
-        const float val = card.Value;
-
-        if (mod == "AttackRate") {
-            stats->AttackSpeedMultiplier += val;
-        } else if (mod == "MaxHealth") {
-            stats->MaxHP += val;
-            stats->Heal(val);
-        } else if (mod == "AuraDamage") {
-            if (auto* torch = ResolveTorch(*go)) {
-                torch->AuraDamage += val;
-            }
-        } else if (mod == "MoveSpeed") {
-            stats->MoveSpeedMultiplier += val * 0.1f;
-        } else if (mod == "AshAttractionRange") {
-            stats->AshAttractionRange += val;
-        } else if (mod == "KnockbackResistance") {
-            if (auto* health = go->GetComponent<HealthComponent>()) {
-                health->KnockbackResistance = std::min(1.0f, health->KnockbackResistance + val);
-            }
-        } else if (mod == "BurnDamageOnHit") {
-            stats->BurnDamageOnHit += val;
-        } else if (mod == "FuelOnKill") {
-            stats->FuelOnKill += val;
-        } else if (mod == "SwingArcDeg") {
-            if (auto* wc = go->GetComponent<WeaponController>()) {
-                wc->AddSwingArcBonus(val);
-            }
-        } else if (mod == "HealOnBurnKill") {
-            stats->HealOnBurnKill += val;
-        } else if (mod == "BlindDuration") {
-            stats->SolarFlareBlindSec += val;
-        } else if (mod == "QuakeRadius") {
-            stats->QuakeRadius = std::max(stats->QuakeRadius, val);
-        } else if (mod == "BeaconRegenRate") {
-            stats->BeaconRegenRate += val;
-        }
+        Sandbox::StatModifierRegistry::Apply(*go, card.StatModifier, card.Value);
     }
 
     void OnDestroy() override {

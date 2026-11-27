@@ -103,7 +103,7 @@ public:
         switch (Kind) {
             case SanctuaryStationKind::WeaponRack: {
                 static constexpr std::array<const char*, 3> kWeapons = {
-                    "rough_iron_maul", "ashwood_halberd", "culling_sickle"
+                    "weapon_maul_t1", "weapon_halberd_t1", "weapon_sickle_t1"
                 };
                 m_WeaponIndex = (m_WeaponIndex + 1u) % kWeapons.size();
                 session.SelectedWeaponId = kWeapons[m_WeaponIndex];

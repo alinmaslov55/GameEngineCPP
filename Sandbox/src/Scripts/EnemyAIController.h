@@ -1,6 +1,7 @@
 #ifndef SANDBOX_ENEMY_AI_CONTROLLER_H
 #define SANDBOX_ENEMY_AI_CONTROLLER_H
 
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
 #include "Scripts/PickupComponent.h"
@@ -327,7 +328,7 @@ private:
         return player;
     }
 
-    void UpdateChase(float /*dt*/) {
+    void UpdateChase(float dt) {
         auto* go = GetGameObject();
         auto* scene = go ? go->GetScene() : nullptr;
         auto* rb = go ? go->GetComponent<Engine::Rigidbody2D>() : nullptr;
@@ -396,9 +397,11 @@ private:
 
         if (rb) {
             rb->SetVelocityXZ(velXZ);
-        } else {
-            go->GetTransform()->position.x += velXZ.x * (1.0f / 60.0f);
-            go->GetTransform()->position.z += velXZ.y * (1.0f / 60.0f);
+        } else if (std::isfinite(dt) && dt > 0.0f) {
+            auto* transform = go->GetTransform();
+            transform->position.x += velXZ.x * dt;
+            transform->position.z += velXZ.y * dt;
+            transform->SetDirty();
         }
         if (auto* sr = go->GetComponent<Engine::SpriteRenderer>(); sr && std::abs(velXZ.x) > 0.05f) {
             sr->SetFlipX(velXZ.x < 0.0f);
@@ -503,9 +506,7 @@ private:
         }
 
         if (target->GetTag() == Engine::EntityTag::Player) {
-            if (auto* stats = target->GetComponent<PlayerStatsComponent>()) {
-                stats->TakeDamage(m_Stats.Damage);
-            }
+            Sandbox::ApplyPlayerOrTargetDamage(target, go, m_Stats.Damage);
             if (siphonFuel) {
                 for (Engine::Transform* child : target->GetTransform()->GetChildren()) {
                     if (child && child->GetGameObject()) {
@@ -539,9 +540,7 @@ private:
             const float dx = pPos.x - center.x;
             const float dz = pPos.z - center.z;
             if ((dx * dx + dz * dz) <= rSq) {
-                if (auto* stats = player->GetComponent<PlayerStatsComponent>()) {
-                    stats->TakeDamage(m_Stats.Damage);
-                }
+                Sandbox::ApplyPlayerOrTargetDamage(player, go, m_Stats.Damage);
             }
         }
     }

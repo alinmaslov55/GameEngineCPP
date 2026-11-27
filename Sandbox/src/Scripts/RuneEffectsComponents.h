@@ -2,6 +2,7 @@
 #define SANDBOX_RUNE_EFFECTS_COMPONENTS_H
 
 #include "Scripts/CombatTargetComponent.h"
+#include "Scripts/CombatDamageHelper.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
 #include "Scripts/PlayerStatsComponent.h"
@@ -61,12 +62,33 @@ public:
     float BowlingImpulseThreshold = 10.0f;
 
     void Refresh(float durationSec) {
-        RemainingSec = std::max(RemainingSec, durationSec);
+        if (!std::isfinite(durationSec) || durationSec <= 0.0f) {
+            return;
+        }
+        RemainingSec = m_Released ? durationSec : std::max(RemainingSec, durationSec);
+        m_Released = false;
         ApplyFrozenVisuals(true);
     }
 
     void Start() override {
-        ApplyFrozenVisuals(true);
+        if (RemainingSec > 0.0f) {
+            m_Released = false;
+            ApplyFrozenVisuals(true);
+        } else {
+            m_Released = true;
+        }
+    }
+
+    void OnPoolAcquire() override {
+        RemainingSec = 0.0f;
+        m_Released = true;
+        ApplyFrozenVisuals(false);
+    }
+
+    void OnPoolRelease() override {
+        RemainingSec = 0.0f;
+        m_Released = true;
+        ApplyFrozenVisuals(false);
     }
 
     void Update(float deltaTime) override {
@@ -164,12 +186,7 @@ public:
             const float dx = pPos.x - center.x;
             const float dz = pPos.z - center.z;
             if ((dx * dx + dz * dz) <= rSq) {
-                if (auto* stats = player->GetComponent<PlayerStatsComponent>()) {
-                    stats->Heal(PlayerHealPerSec * deltaTime);
-                }
-                if (auto* health = player->GetComponent<HealthComponent>()) {
-                    health->CurrentHP = std::min(health->MaxHP, health->CurrentHP + PlayerHealPerSec * deltaTime);
-                }
+                Sandbox::HealPlayerOrTarget(player, PlayerHealPerSec * deltaTime);
             }
         }
 

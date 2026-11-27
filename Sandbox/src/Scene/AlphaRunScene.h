@@ -26,8 +26,14 @@ public:
     /// ArenaStreamingDriver) and initializes GameplayData when entering Play Mode.
     static void BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Scene>& runtimeScene);
 
-    /// @brief Returns true if the scene is an Alpha Survival / Sanctuary scene rather than DemoScene.
+    /// @brief Attaches runtime gameplay scripts for the Sanctuary Hub (no WaveDirector or combat music).
+    static void BindSanctuaryHubScripts(const std::shared_ptr<Engine::Scene>& runtimeScene);
+
+    /// @brief Returns true if the scene is an Alpha Survival Run scene (excludes SanctuaryHub and DemoScene).
     [[nodiscard]] static bool IsAlphaScene(const Engine::Scene& scene);
+
+    /// @brief Returns true if the scene is the Sanctuary Clearing Hub.
+    [[nodiscard]] static bool IsSanctuaryHubScene(const Engine::Scene& scene);
 
     /// @brief Generates and serializes a ready-to-play Alpha test .scene file to disk.
     static bool SaveAlphaTestScene(const std::string& filepath = "assets/AlphaTest.scene", uint64_t seed = 42ULL);
