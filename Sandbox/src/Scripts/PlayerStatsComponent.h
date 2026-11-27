@@ -17,6 +17,14 @@ public:
     float MoveSpeedMultiplier = 1.0f;
     float AttackSpeedMultiplier = 1.0f;
 
+    // GAM-12 Branch Synergy Stats
+    float BurnDamageOnHit = 0.0f;
+    float FuelOnKill = 0.0f;
+    float HealOnBurnKill = 0.0f;
+    float SolarFlareBlindSec = 0.0f;
+    float QuakeRadius = 0.0f;
+    float BeaconRegenRate = 0.0f;
+
     void AddWood(int amount) noexcept {
         if (amount > 0) {
             Wood += amount;

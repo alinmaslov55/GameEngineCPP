@@ -101,6 +101,20 @@ public:
             if (auto* scene = go->GetScene()) {
                 const glm::vec3 pos = go->GetTransform()->GetWorldPosition();
                 scene->IgniteAtXZ({ pos.x, pos.z }, StokeIgniteRadius);
+                if (stats->SolarFlareBlindSec > 0.0f) {
+                    const float blindRSq = m_CurrentRadius * m_CurrentRadius;
+                    for (Engine::GameObject* enemy : scene->FindGameObjectsWithTag(Engine::EntityTag::Enemy)) {
+                        if (!enemy || enemy->IsPendingDestroy()) continue;
+                        const glm::vec3 ePos = enemy->GetTransform()->GetWorldPosition();
+                        const float dx = ePos.x - pos.x;
+                        const float dz = ePos.z - pos.z;
+                        if ((dx * dx + dz * dz) <= blindRSq) {
+                            if (auto* eStatus = enemy->GetComponent<StatusEffectsComponent>()) {
+                                eStatus->ApplyBlind(stats->SolarFlareBlindSec);
+                            }
+                        }
+                    }
+                }
             }
             if (auto* ps = (player ? player->GetComponent<Engine::ParticleSystem>() : nullptr)) {
                 Engine::ParticleProps flare;
@@ -137,7 +151,13 @@ public:
         }
 
         const float burnMult = std::max(0.0f, std::isfinite(BurnRateMultiplier) ? BurnRateMultiplier : 1.0f);
-        Fuel = std::max(0.0f, Fuel - BaseBurnRate * burnMult * deltaTime);
+        float passiveRegen = 0.0f;
+        if (auto* p = ResolvePlayer()) {
+            if (auto* pStats = p->GetComponent<PlayerStatsComponent>(); pStats && pStats->BeaconRegenRate > 0.0f) {
+                passiveRegen = pStats->BeaconRegenRate;
+            }
+        }
+        Fuel = std::clamp(Fuel + (passiveRegen - BaseBurnRate * burnMult) * deltaTime, 0.0f, MaxFuel);
 
         if (m_FlarePulse > 0.0f) {
             m_FlarePulse = std::max(0.0f, m_FlarePulse - deltaTime * 2.2f);

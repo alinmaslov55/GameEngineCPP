@@ -81,6 +81,12 @@ public:
     [[nodiscard]] uint32_t GetLastHitCount() const noexcept { return m_LastHitCount; }
     [[nodiscard]] int GetFrenzyStacks() const noexcept { return m_FrenzyStacks; }
 
+    void AddSwingArcBonus(float extraDeg) noexcept {
+        if (std::isfinite(extraDeg) && extraDeg > 0.0f) {
+            m_Weapon.SwingArcDeg = std::min(360.0f, m_Weapon.SwingArcDeg + extraDeg);
+        }
+    }
+
     void SetAimOverrideXZ(const glm::vec2& aimXZ) noexcept {
         m_HasAimOverride = true;
         m_AimOverrideXZ = aimXZ;
@@ -228,9 +234,13 @@ private:
                 evt.StunDuration = stunSec;
                 evt.IsFire = isSickle;
                 health->ApplyDamage(evt);
-                if (isSickle) {
+                float burnDPS = isSickle ? 4.0f : 0.0f;
+                if (auto* pStats = go->GetComponent<PlayerStatsComponent>(); pStats && pStats->BurnDamageOnHit > 0.0f) {
+                    burnDPS = std::max(burnDPS, pStats->BurnDamageOnHit);
+                }
+                if (burnDPS > 0.0f) {
                     if (auto* status = targetGo->GetComponent<StatusEffectsComponent>()) {
-                        status->ApplyBurn(2.5f, 4.0f);
+                        status->ApplyBurn(2.5f, burnDPS);
                     }
                 }
                 if (isHalberd) {

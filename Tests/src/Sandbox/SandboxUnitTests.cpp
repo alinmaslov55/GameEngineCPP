@@ -33,6 +33,7 @@
 #include "Scripts/PlayerStatsComponent.h"
 #include "Scripts/RuneCasterComponent.h"
 #include "Scripts/RuneEffectsComponents.h"
+#include "Scripts/RunProgressionComponent.h"
 #include "Scripts/CameraController.h"
 #include "Scripts/SplinterProjectileComponent.h"
 #include "Scripts/StatusEffectsComponent.h"
@@ -72,6 +73,7 @@ TEST(SandboxUnitTest, PlayerControllerAwakeAndIdleFixedUpdate) {
     // Idle braking reduces velocity toward 0
     EXPECT_LT(glm::length(rb->GetVelocityXZ()), 4.0f);
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, CameraControllerDeadzoneAndSmoothFollow) {
@@ -136,6 +138,7 @@ TEST(SandboxUnitTest, PlayerControllerDodgeRollCooldownInvulnAndVaulting) {
     EXPECT_TRUE(controller->TriggerDodgeRoll({ 0.0f, 1.0f }));
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, PlayerControllerSurfaceFootworkModulatesSpeedAndDamping) {
@@ -166,6 +169,7 @@ TEST(SandboxUnitTest, PlayerControllerSurfaceFootworkModulatesSpeedAndDamping) {
     EXPECT_GT(tarDamping, cobbleDamping);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, PlayerControllerAimSocketsAndCameraIntegration) {
@@ -194,6 +198,7 @@ TEST(SandboxUnitTest, PlayerControllerAimSocketsAndCameraIntegration) {
     EXPECT_GT(camComp->GetTrauma(), 0.4f);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, WeaponControllerDataDrivenStatsAndSwingLifecycle) {
@@ -316,6 +321,7 @@ TEST(SandboxUnitTest, KineticBowlingEnemyDominoAndWallSlam) {
     EXPECT_TRUE(targetC->IsStunned());
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, KineticBowlingBarricadeShatterSpawnsSplinters) {
@@ -352,6 +358,7 @@ TEST(SandboxUnitTest, KineticBowlingBarricadeShatterSpawnsSplinters) {
     EXPECT_LE(splinters.size(), 7u);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, AlphaRunSceneCreatesSafeClearingAndNightLighting) {
@@ -504,6 +511,7 @@ TEST(SandboxUnitTest, HarvestablePropShakesAndDropsBouncingPickupsOnFell) {
     EXPECT_EQ(scene.FindGameObjectsWithTag(Engine::EntityTag::HarvestableTree).size(), 0u);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, PickupCollectionGrantsWoodAshAndHeal) {
@@ -542,6 +550,7 @@ TEST(SandboxUnitTest, PickupCollectionGrantsWoodAshAndHeal) {
     EXPECT_GT(stats->RunAshes, 0);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, HealthComponentAppliesMitigationFlashSquashParticlesAndKnockback) {
@@ -597,6 +606,7 @@ TEST(SandboxUnitTest, HealthComponentAppliesMitigationFlashSquashParticlesAndKno
     EXPECT_FALSE(status->IsBurning());
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, HealthComponentDeathSpawnsDecalDissolvesAndReleasesToPool) {
@@ -644,6 +654,7 @@ TEST(SandboxUnitTest, HealthComponentDeathSpawnsDecalDissolvesAndReleasesToPool)
     EXPECT_FALSE(enemy->IsActive());
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, TorchComponentFuelBurnRadiusAndStoke) {
@@ -678,6 +689,7 @@ TEST(SandboxUnitTest, TorchComponentFuelBurnRadiusAndStoke) {
     EXPECT_FALSE(torch->StokeTorch()); // Only 1 Wood left
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, TorchComponentSearingRimBurnsVulnerableEnemies) {
@@ -720,6 +732,7 @@ TEST(SandboxUnitTest, TorchComponentSearingRimBurnsVulnerableEnemies) {
     EXPECT_FLOAT_EQ(farHealth->CurrentHP, 100.0f);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, TorchComponentAshFrenzyAndDarknessDread) {
@@ -776,6 +789,7 @@ TEST(SandboxUnitTest, TorchComponentAshFrenzyAndDarknessDread) {
     EXPECT_FLOAT_EQ(stats->HP, hpBeforeShelter);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, RuneCasterIgniteAndShockwaveSpendFuelAndTriggerEffects) {
@@ -832,6 +846,7 @@ TEST(SandboxUnitTest, RuneCasterIgniteAndShockwaveSpendFuelAndTriggerEffects) {
     EXPECT_TRUE(foundRing);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, RuneCasterChronosStasisQueuesImpulsesUntilUnfreeze) {
@@ -882,6 +897,7 @@ TEST(SandboxUnitTest, RuneCasterChronosStasisQueuesImpulsesUntilUnfreeze) {
     EXPECT_GT(rb->GetVelocityXZ().x, 1.0f);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, RuneCasterConsecrationHealsPlayerAndBurnsEnemies) {
@@ -930,6 +946,7 @@ TEST(SandboxUnitTest, RuneCasterConsecrationHealsPlayerAndBurnsEnemies) {
     EXPECT_FALSE(foundZone);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, StructurePlacerValidatesClearanceDeductsWoodAndSpawnsAll4Structures) {
@@ -991,6 +1008,7 @@ TEST(SandboxUnitTest, StructurePlacerValidatesClearanceDeductsWoodAndSpawnsAll4S
     EXPECT_EQ(placer->TryPlaceStructure(Engine::RadialWheelItem::SplinterBarricade), nullptr);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, DeployableStructuresExecuteBarricadeFlareThumperAndTarSiphon) {
@@ -1065,6 +1083,7 @@ TEST(SandboxUnitTest, DeployableStructuresExecuteBarricadeFlareThumperAndTarSiph
     EXPECT_FALSE(flareAlive);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, TorchDashAndStokeIgniteContiguousTarAndBurnCrossingEnemies) {
@@ -1153,6 +1172,7 @@ TEST(SandboxUnitTest, BurningBodySpreadsFireToTarAndScorchesToLayer5) {
     EXPECT_LT(chunkMgr->SampleSurfaceAtXZ(0.0f, 0.0f).Flammability, 0.35f);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, EnemyAIStatesYieldDuringStunAndDissolveOnDeath) {
@@ -1209,6 +1229,7 @@ TEST(SandboxUnitTest, EnemyAIStatesYieldDuringStunAndDissolveOnDeath) {
     EXPECT_GT(sr->GetDissolveAmount(), 0.2f);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, EnemyAIThrallPrioritizesBarricadeAndJiangshiHopsOverIt) {
@@ -1264,6 +1285,7 @@ TEST(SandboxUnitTest, EnemyAIThrallPrioritizesBarricadeAndJiangshiHopsOverIt) {
     EXPECT_TRUE(sawLandingRing);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, EnemyAIWispSiphonsTorchFuelAndWendigoDropsAshJackpot) {
@@ -1314,6 +1336,7 @@ TEST(SandboxUnitTest, EnemyAIWispSiphonsTorchFuelAndWendigoDropsAshJackpot) {
     EXPECT_GE(scene.FindGameObjectsWithTag(Engine::EntityTag::ResourcePickup).size(), 6u);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 TEST(SandboxUnitTest, WaveDirectorProgressesPhasesSpawnsPooledInDarknessAndTriggersDawn) {
@@ -1372,6 +1395,84 @@ TEST(SandboxUnitTest, WaveDirectorProgressesPhasesSpawnsPooledInDarknessAndTrigg
     EXPECT_TRUE(ghoul->GetComponent<HealthComponent>()->IsDying());
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
+}
+
+TEST(SandboxUnitTest, RunProgressionDrafts3DistinctWeightedCardsAndAppliesSynergies) {
+    Engine::Time::Reset();
+    EXPECT_EQ(RunProgressionComponent::ComputeThresholdForLevel(1), 15);
+    EXPECT_EQ(RunProgressionComponent::ComputeThresholdForLevel(2), 35);
+    EXPECT_EQ(RunProgressionComponent::ComputeThresholdForLevel(3), 65);
+    EXPECT_EQ(RunProgressionComponent::ComputeThresholdForLevel(4), 105);
+    EXPECT_FLOAT_EQ(RunProgressionComponent::GetRarityWeight("Common"), 60.0f);
+    EXPECT_FLOAT_EQ(RunProgressionComponent::GetRarityWeight("Rare"), 28.0f);
+    EXPECT_FLOAT_EQ(RunProgressionComponent::GetRarityWeight("Epic"), 10.0f);
+    EXPECT_FLOAT_EQ(RunProgressionComponent::GetRarityWeight("Legendary"), 2.0f);
+
+    if (!Engine::GameplayData::IsInitialized()) {
+        Engine::GameplayData::Init("Sandbox/assets/data");
+    }
+
+    Engine::Scene scene("RunProgressionTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->AddComponent<Engine::PointLightComponent>();
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+    auto* weapon = player->AddComponent<WeaponController>();
+    auto* prog = player->AddComponent<RunProgressionComponent>();
+    auto* socket = scene.CreateGameObject("TorchSocket");
+    socket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = socket->AddComponent<TorchComponent>();
+    torch->BaseBurnRate = 0.0f;
+
+    scene.OnRuntimeStart();
+
+    // Grant 15 XP -> triggers Level 1 draft, pauses TimeScale to 0.0f, creates 3 distinct UI cards
+    stats->AddXP(15);
+    scene.UpdateRuntime(1.0f / 60.0f);
+
+    EXPECT_TRUE(prog->IsDraftOpen());
+    EXPECT_EQ(prog->GetLevel(), 1);
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.0f);
+
+    const auto& cards = prog->GetCurrentCards();
+    ASSERT_EQ(cards.size(), 3u);
+    EXPECT_NE(cards[0].Id, cards[1].Id);
+    EXPECT_NE(cards[1].Id, cards[2].Id);
+    EXPECT_NE(cards[0].Id, cards[2].Id);
+
+    const auto& buttons = prog->GetCardButtons();
+    ASSERT_EQ(buttons.size(), 3u);
+    auto* btn0 = buttons[0]->GetComponent<Engine::UIButtonComponent>();
+    auto* btn1 = buttons[1]->GetComponent<Engine::UIButtonComponent>();
+    ASSERT_NE(btn0, nullptr);
+    ASSERT_NE(btn1, nullptr);
+    EXPECT_TRUE(Engine::UIButtonComponent::NavigateFocus(Engine::UIFocusDirection::Right, scene));
+    EXPECT_TRUE(btn0->IsFocused());
+    EXPECT_TRUE(Engine::UIButtonComponent::NavigateFocus(Engine::UIFocusDirection::Right, scene));
+    EXPECT_TRUE(btn1->IsFocused());
+
+    // Click focused card -> closes draft and restores TimeScale to 1.0f
+    btn1->Click();
+    EXPECT_FALSE(prog->IsDraftOpen());
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 1.0f);
+
+    // Verify standout synergy cards apply cleanly
+    const float baseArc = weapon->GetEquippedWeapon().SwingArcDeg;
+    prog->ApplyBranchCard({ "branch_cleaving_momentum", "Cleaving Momentum", "", "Rare", {}, "SwingArcDeg", 30.0f, "" });
+    EXPECT_FLOAT_EQ(weapon->GetEquippedWeapon().SwingArcDeg, baseArc + 30.0f);
+
+    prog->ApplyBranchCard({ "branch_ignited_edges", "Ignited Edges", "", "Rare", {}, "BurnDamageOnHit", 6.0f, "" });
+    EXPECT_FLOAT_EQ(stats->BurnDamageOnHit, 6.0f);
+
+    prog->ApplyBranchCard({ "branch_eternal_beacon", "Eternal Beacon", "", "Legendary", {}, "BeaconRegenRate", 2.0f, "" });
+    torch->Fuel = 50.0f;
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_GT(torch->Fuel, 50.0f);
+
+    scene.OnRuntimeStop();
+    Engine::Time::Reset();
 }
 
 } // namespace
