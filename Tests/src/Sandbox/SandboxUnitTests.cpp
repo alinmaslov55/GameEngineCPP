@@ -23,6 +23,7 @@
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/DeployableStructures.h"
+#include "Scripts/EnemyAIController.h"
 #include "Scripts/FireHazardComponent.h"
 #include "Scripts/HarvestableComponent.h"
 #include "Scripts/HealthComponent.h"
@@ -1149,6 +1150,167 @@ TEST(SandboxUnitTest, BurningBodySpreadsFireToTarAndScorchesToLayer5) {
     }
     EXPECT_FALSE(scene.IsBurningAtXZ(0.0f, 0.0f));
     EXPECT_LT(chunkMgr->SampleSurfaceAtXZ(0.0f, 0.0f).Flammability, 0.35f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, EnemyAIStatesYieldDuringStunAndDissolveOnDeath) {
+    Engine::Scene scene("EnemyAIStateTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+
+    auto* ghoul = scene.CreateGameObject("Ghoul");
+    ghoul->GetTransform()->position = { 6.0f, 0.0f, 0.0f };
+    auto* sr = ghoul->AddComponent<Engine::SpriteRenderer>();
+    auto* rb = ghoul->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    ghoul->AddComponent<Engine::CircleCollider2D>()->Radius = 0.40f;
+    auto* ai = ghoul->AddComponent<EnemyAIController>();
+    ai->EnemyId = "enemy_ghoul";
+
+    scene.OnRuntimeStart();
+    EXPECT_FLOAT_EQ(ai->GetStats().Health, 35.0f);
+    EXPECT_FLOAT_EQ(ai->GetStats().Mass, 25.0f);
+    EXPECT_EQ(ai->GetCurrentState(), EnemyAIState::Chase);
+
+    for (int i = 0; i < 15; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_LT(ghoul->GetTransform()->position.x, 5.9f);
+
+    // Knockback + Stun yields velocity control to Box2D
+    auto* health = ghoul->GetComponent<HealthComponent>();
+    ASSERT_NE(health, nullptr);
+    const float xBeforeKnockback = ghoul->GetTransform()->position.x;
+    DamageEvent kbEvt;
+    kbEvt.Amount = 10.0f;
+    kbEvt.ImpulseXZ = { 80.0f, 0.0f };
+    kbEvt.StunDuration = 0.50f;
+    EXPECT_TRUE(health->ApplyDamage(kbEvt));
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_EQ(ai->GetCurrentState(), EnemyAIState::Stunned);
+    for (int i = 0; i < 10; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_GT(ghoul->GetTransform()->position.x, xBeforeKnockback);
+
+    // Lethal damage transitions to Dying with 0.45s RND-01 dissolve
+    DamageEvent lethal;
+    lethal.Amount = 100.0f;
+    EXPECT_TRUE(health->ApplyDamage(lethal));
+    scene.UpdateRuntime(1.0f / 60.0f);
+    EXPECT_EQ(ai->GetCurrentState(), EnemyAIState::Dying);
+    for (int i = 0; i < 12; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_GT(sr->GetDissolveAmount(), 0.2f);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, EnemyAIThrallPrioritizesBarricadeAndJiangshiHopsOverIt) {
+    Engine::Scene scene("ThrallAndJiangshiTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    player->AddComponent<PlayerStatsComponent>();
+
+    auto* bar = scene.CreateGameObject("Splinter Barricade");
+    bar->GetTransform()->position = { 2.5f, 0.0f, 0.0f };
+    bar->AddComponent<SplinterBarricadeComponent>();
+    auto* barHealth = bar->GetComponent<HealthComponent>();
+    ASSERT_NE(barHealth, nullptr);
+
+    auto* thrall = scene.CreateGameObject("Thrall");
+    thrall->GetTransform()->position = { 3.5f, 0.0f, 0.0f };
+    auto* tRb = thrall->AddComponent<Engine::Rigidbody2D>();
+    tRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    thrall->AddComponent<Engine::CircleCollider2D>()->Radius = 0.45f;
+    auto* thrallAI = thrall->AddComponent<EnemyAIController>();
+    thrallAI->ConfigureArchetype("enemy_thrall");
+
+    auto* jiangshi = scene.CreateGameObject("Jiangshi");
+    jiangshi->GetTransform()->position = { 4.2f, 0.0f, 1.0f };
+    auto* jRb = jiangshi->AddComponent<Engine::Rigidbody2D>();
+    jRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    jRb->UseGravityY = true;
+    jiangshi->AddComponent<Engine::CircleCollider2D>()->Radius = 0.40f;
+    auto* jiangshiAI = jiangshi->AddComponent<EnemyAIController>();
+    jiangshiAI->ConfigureArchetype("enemy_jiangshi");
+    jiangshiAI->HopCooldown = 0.1f;
+
+    scene.OnRuntimeStart();
+    EXPECT_FLOAT_EQ(thrallAI->GetStats().Health, 50.0f);
+    EXPECT_FLOAT_EQ(jiangshiAI->GetStats().Health, 65.0f);
+
+    bool jiangshiWentAirborne = false;
+    bool sawLandingRing = false;
+    for (int i = 0; i < 120; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+        if (jRb->VerticalVelocity > 1.0f) {
+            jiangshiWentAirborne = true;
+        }
+        if (jiangshiAI->HasLandingIndicator()) {
+            sawLandingRing = true;
+        }
+    }
+
+    EXPECT_LT(barHealth->CurrentHP, 120.0f);
+    EXPECT_TRUE(jiangshiWentAirborne);
+    EXPECT_TRUE(sawLandingRing);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, EnemyAIWispSiphonsTorchFuelAndWendigoDropsAshJackpot) {
+    Engine::Scene scene("WispAndWendigoTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    player->AddComponent<Engine::PointLightComponent>();
+    player->AddComponent<PlayerStatsComponent>();
+    auto* socket = scene.CreateGameObject("TorchSocket");
+    socket->GetTransform()->SetParent(player->GetTransform(), false);
+    auto* torch = socket->AddComponent<TorchComponent>();
+    torch->BaseBurnRate = 0.0f;
+
+    auto* wisp = scene.CreateGameObject("Wisp");
+    wisp->GetTransform()->position = { 5.5f, 0.0f, 0.0f };
+    auto* wRb = wisp->AddComponent<Engine::Rigidbody2D>();
+    wRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    wisp->AddComponent<Engine::CircleCollider2D>()->Radius = 0.35f;
+    auto* wispAI = wisp->AddComponent<EnemyAIController>();
+    wispAI->ConfigureArchetype("enemy_wisp");
+
+    auto* wendigo = scene.CreateGameObject("Wendigo");
+    wendigo->GetTransform()->position = { 8.0f, 0.0f, 0.0f };
+    auto* eRb = wendigo->AddComponent<Engine::Rigidbody2D>();
+    eRb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    wendigo->AddComponent<Engine::CircleCollider2D>()->Radius = 0.60f;
+    auto* wendigoAI = wendigo->AddComponent<EnemyAIController>();
+    wendigoAI->ConfigureArchetype("enemy_wendigo");
+
+    scene.OnRuntimeStart();
+    EXPECT_FLOAT_EQ(wispAI->GetStats().Health, 20.0f);
+    EXPECT_FLOAT_EQ(wispAI->GetStats().LightVulnerability, 2.0f);
+    EXPECT_FLOAT_EQ(wendigoAI->GetStats().Health, 180.0f);
+    EXPECT_FLOAT_EQ(wendigoAI->GetStats().Mass, 90.0f);
+
+    // Step 1.0s -> Wisp darts in and siphons -8 Torch Fuel
+    for (int i = 0; i < 60; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_LE(torch->Fuel, 92.0f);
+
+    // Defeat Apex Wendigo -> drops guaranteed 5 AshEmber + 1 CrimsonBerry jackpot
+    DamageEvent lethal;
+    lethal.Amount = 300.0f;
+    EXPECT_TRUE(wendigo->GetComponent<HealthComponent>()->ApplyDamage(lethal));
+    EXPECT_GE(scene.FindGameObjectsWithTag(Engine::EntityTag::ResourcePickup).size(), 6u);
 
     scene.OnRuntimeStop();
 }
