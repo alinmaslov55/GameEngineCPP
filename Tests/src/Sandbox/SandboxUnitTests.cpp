@@ -4,6 +4,7 @@
 #include "Engine/Scene/Transform.h"
 #include "Engine/Audio/MusicDirector.h"
 #include "Engine/Data/GameplayData.h"
+#include "Engine/Data/SaveManager.h"
 #include "Engine/Particles/DecalManager.h"
 #include "Engine/Particles/ParticleSystem.h"
 #include "Engine/Physics/PhysicsComponents.h"
@@ -16,6 +17,7 @@
 #include "Engine/Scene/EntityPoolManager.h"
 #include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/Prefab.h"
+#include "Engine/Scene/SceneManager.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
 #include "Engine/Terrain/TerrainComponent.h"
 #include "Engine/Scene/Components/LightComponents.h"
@@ -25,7 +27,6 @@
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/DeployableStructures.h"
 #include "Scripts/EnemyAIController.h"
-#include "Scripts/FireHazardComponent.h"
 #include "Scripts/HarvestableComponent.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
@@ -35,6 +36,9 @@
 #include "Scripts/RuneCasterComponent.h"
 #include "Scripts/RuneEffectsComponents.h"
 #include "Scripts/RunProgressionComponent.h"
+#include "Scripts/RunSessionManager.h"
+#include "Scripts/RunSummaryController.h"
+#include "Scripts/SanctuaryHubComponents.h"
 #include "Scripts/CameraController.h"
 #include "Scripts/SplinterProjectileComponent.h"
 #include "Scripts/StatusEffectsComponent.h"
@@ -1535,6 +1539,135 @@ TEST(SandboxUnitTest, AlphaHUDUpdatesBarsClockMinimapAndBossBar) {
     EXPECT_FLOAT_EQ(hud->GetBossBar()->fillAmount, 1.0f);
 
     scene->OnRuntimeStop();
+    Engine::Time::Reset();
+}
+
+TEST(SandboxUnitTest, SanctuaryHubStationsSwapLoadoutPurchaseRootsAndTransitionToRun) {
+    Engine::Time::Reset();
+    const auto tempDir = std::filesystem::temp_directory_path() / "umbral_gam14_hub_test";
+    std::filesystem::remove_all(tempDir);
+    Engine::SaveManager::SetSaveDirectoryOverride(tempDir);
+
+    auto& session = RunSessionManager::Get();
+    session.Profile = Engine::PlayerProfileData{};
+    session.Profile.BankedAshes = 250;
+    session.SaveProfile();
+
+    auto hub = Sandbox::AlphaRunScene::CreateSanctuaryHubScene();
+    ASSERT_NE(hub, nullptr);
+    Engine::SceneManager::LoadScene(hub);
+    hub->OnRuntimeStart();
+
+    SanctuaryStationComponent* weaponRack = nullptr;
+    SanctuaryStationComponent* runePedestal = nullptr;
+    SanctuaryStationComponent* rootAltar = nullptr;
+    SanctuaryStationComponent* umbralGate = nullptr;
+    TitleOverlayComponent* titleOverlay = nullptr;
+    Engine::GameObject* player = nullptr;
+
+    for (const auto& go : hub->GetGameObjects()) {
+        if (!go) continue;
+        if (go->GetName() == "Player") player = go.get();
+        if (auto* s = go->GetComponent<SanctuaryStationComponent>()) {
+            switch (s->Kind) {
+                case SanctuaryStationKind::WeaponRack:   weaponRack = s; break;
+                case SanctuaryStationKind::RunePedestal: runePedestal = s; break;
+                case SanctuaryStationKind::RootAltar:    rootAltar = s; break;
+                case SanctuaryStationKind::UmbralGate:   umbralGate = s; break;
+                case SanctuaryStationKind::TitleOverlay: titleOverlay = s; break;
+            }
+        }
+    }
+    ASSERT_NE(player, nullptr);
+    ASSERT_NE(titleOverlay, nullptr);
+    ASSERT_NE(weaponRack, nullptr);
+    ASSERT_NE(runePedestal, nullptr);
+    ASSERT_NE(rootAltar, nullptr);
+    ASSERT_NE(umbralGate, nullptr);
+
+    titleOverlay->DismissTitle();
+    EXPECT_FALSE(titleOverlay->IsOpen());
+
+    // Weapon Rack & Rune Pedestal cycle loadout
+    EXPECT_TRUE(weaponRack->Interact());
+    EXPECT_EQ(session.SelectedWeaponId, "ashwood_halberd");
+    EXPECT_TRUE(runePedestal->Interact());
+    EXPECT_EQ(session.SelectedRuneId, "rune_chronos");
+
+    // Root Altar purchases Iron Sinew (100 Ashes -> 150 remaining)
+    rootAltar->ActiveRootId = "root_iron_sinew";
+    EXPECT_TRUE(rootAltar->Interact());
+    EXPECT_EQ(session.GetRootRank("root_iron_sinew"), 1u);
+    EXPECT_EQ(session.Profile.BankedAshes, 150u);
+
+    // Northern Umbral Gate triggers 0.45s SceneManager::TransitionToScene
+    EXPECT_TRUE(umbralGate->Interact());
+    EXPECT_TRUE(Engine::SceneManager::IsTransitioning());
+    for (int i = 0; i < 35; ++i) {
+        Engine::SceneManager::UpdateTransition(1.0f / 60.0f);
+    }
+    auto activeRun = Engine::SceneManager::GetActiveScene();
+    ASSERT_NE(activeRun, nullptr);
+    EXPECT_EQ(activeRun->GetName(), "AlphaRun");
+
+    Engine::SceneManager::Shutdown();
+    Engine::SaveManager::ClearSaveDirectoryOverride();
+    std::filesystem::remove_all(tempDir);
+    Engine::Time::Reset();
+}
+
+TEST(SandboxUnitTest, RunSummaryBanksAshesOnDeathOrDawnAndTransitionsBackToSanctuary) {
+    Engine::Time::Reset();
+    const auto tempDir = std::filesystem::temp_directory_path() / "umbral_gam14_summary_test";
+    std::filesystem::remove_all(tempDir);
+    Engine::SaveManager::SetSaveDirectoryOverride(tempDir);
+
+    auto& session = RunSessionManager::Get();
+    session.Profile = Engine::PlayerProfileData{};
+    session.Profile.BankedAshes = 50;
+    session.SaveProfile();
+
+    auto runScene = Sandbox::AlphaRunScene::Create(99ULL);
+    Sandbox::AlphaRunScene::BindRuntimeGameplayScripts(runScene);
+    Engine::SceneManager::LoadScene(runScene);
+    runScene->OnRuntimeStart();
+
+    RunSummaryController* summary = nullptr;
+    Engine::GameObject* player = nullptr;
+    for (const auto& go : runScene->GetGameObjects()) {
+        if (!go) continue;
+        if (auto* s = go->GetComponent<RunSummaryController>()) summary = s;
+        if (go->GetName() == "Player") player = go.get();
+    }
+    ASSERT_NE(summary, nullptr);
+    ASSERT_NE(player, nullptr);
+
+    auto* stats = player->GetComponent<PlayerStatsComponent>();
+    ASSERT_NE(stats, nullptr);
+    stats->RunAshes = 75;
+    stats->HP = 0.0f;
+
+    runScene->UpdateRuntime(1.0f / 60.0f);
+    EXPECT_TRUE(summary->IsSummaryOpen());
+    EXPECT_FLOAT_EQ(Engine::Time::GetTimeScale(), 0.0f);
+
+    Engine::PlayerProfileData reloaded;
+    ASSERT_TRUE(Engine::SaveManager::LoadProfile(0, reloaded));
+    EXPECT_EQ(reloaded.BankedAshes, 125u); // 50 + 75
+
+    // Return to Sanctuary transitions back cleanly
+    summary->TriggerReturnToSanctuary();
+    EXPECT_TRUE(Engine::SceneManager::IsTransitioning());
+    for (int i = 0; i < 35; ++i) {
+        Engine::SceneManager::UpdateTransition(1.0f / 60.0f);
+    }
+    auto hubScene = Engine::SceneManager::GetActiveScene();
+    ASSERT_NE(hubScene, nullptr);
+    EXPECT_EQ(hubScene->GetName(), "SanctuaryHub");
+
+    Engine::SceneManager::Shutdown();
+    Engine::SaveManager::ClearSaveDirectoryOverride();
+    std::filesystem::remove_all(tempDir);
     Engine::Time::Reset();
 }
 

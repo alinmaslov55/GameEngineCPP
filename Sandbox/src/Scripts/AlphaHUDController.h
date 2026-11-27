@@ -1,20 +1,25 @@
 #ifndef SANDBOX_ALPHA_HUD_CONTROLLER_H
 #define SANDBOX_ALPHA_HUD_CONTROLLER_H
 
+#include "Scene/AlphaRunScene.h"
 #include "Scripts/DeployableStructures.h"
 #include "Scripts/HealthComponent.h"
 #include "Scripts/PlayerStatsComponent.h"
 #include "Scripts/RuneCasterComponent.h"
 #include "Scripts/RunProgressionComponent.h"
+#include "Scripts/RunSessionManager.h"
 #include "Scripts/TorchComponent.h"
 #include "Scripts/WaveDirectorComponent.h"
 
+#include <Engine/Core/Time.h>
 #include <Engine/Scene/Component.h>
 #include <Engine/Scene/EntityTag.h>
 #include <Engine/Scene/GameObject.h>
 #include <Engine/Scene/Scene.h>
+#include <Engine/Scene/SceneManager.h>
 #include <Engine/Scene/Transform.h>
 #include <Engine/UI/MinimapFogSystem.h>
+#include <Engine/UI/UIButtonComponent.h>
 #include <Engine/UI/UICanvas.h>
 #include <Engine/UI/UILabel.h>
 #include <Engine/UI/UIMinimapComponent.h>
@@ -170,6 +175,44 @@ public:
             } else {
                 m_PromptLabel->text.clear();
             }
+        }
+
+        // 6. Run Summary Trigger (Player HP <= 0 or Dawn Break Victory)
+        if (!m_SummaryOpen && ((stats && stats->HP <= 0.0f) || (director && director->IsVictory()))) {
+            const float elapsed = director ? director->GetElapsedSeconds() : 0.0f;
+            const uint64_t ashes = stats ? static_cast<uint64_t>(std::max(0, stats->RunAshes)) : 0ULL;
+            const bool victory = (director && director->IsVictory());
+            auto& session = RunSessionManager::Get();
+            session.BankRunSummary(elapsed, session.EnemiesSlain, session.DominoKills, ashes, victory);
+            OpenSummaryOverlay(*scene, elapsed, session.EnemiesSlain, session.DominoKills, ashes, victory);
+        }
+    }
+
+    [[nodiscard]] bool IsSummaryOpen() const noexcept { return m_SummaryOpen; }
+    [[nodiscard]] Engine::UILabel* GetSummaryLabel() const noexcept { return m_SummaryLabel; }
+
+    void TriggerRetryRun() {
+        CloseSummary();
+        auto& session = RunSessionManager::Get();
+        session.ResetRunTelemetry();
+        const uint64_t seed = session.NextRunSeed++;
+        Engine::SceneManager::TransitionToScene([seed]() {
+            auto runScene = Sandbox::AlphaRunScene::Create(seed);
+            Sandbox::AlphaRunScene::BindRuntimeGameplayScripts(runScene);
+            return runScene;
+        }, 0.45f);
+    }
+
+    void TriggerReturnToSanctuary() {
+        CloseSummary();
+        Engine::SceneManager::TransitionToScene([]() {
+            return Sandbox::AlphaRunScene::CreateSanctuaryHubScene();
+        }, 0.45f);
+    }
+
+    void OnDestroy() override {
+        if (m_SummaryOpen) {
+            Engine::Time::SetTimeScale(1.0f);
         }
     }
 
@@ -329,7 +372,74 @@ private:
         return nullptr;
     }
 
+    void OpenSummaryOverlay(Engine::Scene& scene,
+                            float survivalSec,
+                            uint32_t enemiesSlain,
+                            uint32_t dominoKills,
+                            uint64_t ashesEarned,
+                            bool victory) {
+        m_SummaryOpen = true;
+        Engine::Time::SetTimeScale(0.0f);
+
+        m_SummaryRoot = scene.CreateGameObject("RunSummaryOverlay");
+        auto* panel = m_SummaryRoot->AddComponent<Engine::UIPanel>();
+        panel->useRectTransform = true;
+        panel->rectTransform.Anchor = Engine::UIAnchor::Center;
+        panel->rectTransform.Pivot = { 0.5f, 0.5f };
+        panel->rectTransform.Size = { 460.0f, 320.0f };
+        panel->rectTransform.ZOrder = 230;
+        panel->color = { 0.07f, 0.06f, 0.11f, 0.94f };
+
+        char buf[192];
+        const int mins = static_cast<int>(survivalSec) / 60;
+        const int secs = static_cast<int>(survivalSec) % 60;
+        std::snprintf(buf, sizeof(buf),
+                      "%s | Time %02d:%02d | Slain %u | Domino %u | Ashes +%llu",
+                      victory ? "DAWN BREAK VICTORY" : "EXTINGUISHED",
+                      mins, secs, enemiesSlain, dominoKills, static_cast<unsigned long long>(ashesEarned));
+
+        m_SummaryLabel = m_SummaryRoot->AddComponent<Engine::UILabel>();
+        m_SummaryLabel->text = buf;
+        m_SummaryLabel->scale = 0.85f;
+
+        auto makeBtn = [&](const char* name, float xOffset, const std::string& label, std::function<void()> onClick) {
+            auto* bGo = scene.CreateGameObject(name);
+            bGo->GetTransform()->SetParent(m_SummaryRoot->GetTransform(), false);
+            auto* p = bGo->AddComponent<Engine::UIPanel>();
+            p->useRectTransform = true;
+            p->rectTransform.Anchor = Engine::UIAnchor::Center;
+            p->rectTransform.Pivot = { 0.5f, 0.5f };
+            p->rectTransform.AnchoredOffset = { xOffset, -90.0f };
+            p->rectTransform.Size = { 180.0f, 42.0f };
+            p->rectTransform.ZOrder = 231;
+            p->color = { 0.28f, 0.22f, 0.34f, 0.95f };
+            auto* l = bGo->AddComponent<Engine::UILabel>();
+            l->text = label;
+            l->scale = 0.80f;
+            auto* btn = bGo->AddComponent<Engine::UIButtonComponent>();
+            btn->OnClick = std::move(onClick);
+        };
+
+        makeBtn("Btn_RetryRun", -105.0f, "Retry Run", [this]() { TriggerRetryRun(); });
+        makeBtn("Btn_ReturnSanctuary", 105.0f, "Return to Sanctuary", [this]() { TriggerReturnToSanctuary(); });
+    }
+
+    void CloseSummary() {
+        m_SummaryOpen = false;
+        Engine::Time::SetTimeScale(1.0f);
+        if (m_SummaryRoot) {
+            if (auto* scene = m_SummaryRoot->GetScene()) {
+                scene->DestroyGameObject(m_SummaryRoot);
+            }
+            m_SummaryRoot = nullptr;
+            m_SummaryLabel = nullptr;
+        }
+    }
+
     bool m_Built = false;
+    bool m_SummaryOpen = false;
+    Engine::GameObject* m_SummaryRoot = nullptr;
+    Engine::UILabel* m_SummaryLabel = nullptr;
     float m_PulseTime = 0.0f;
     Engine::UIPanel* m_HealthBar = nullptr;
     Engine::UILabel* m_HealthLabel = nullptr;

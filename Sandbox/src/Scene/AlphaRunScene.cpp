@@ -19,11 +19,13 @@
 #include "Engine/Terrain/TerrainChunkManager.h"
 #include "Scripts/AlphaHUDController.h"
 #include "Scripts/ArenaStreamingDriver.h"
-#include "Scripts/FireHazardComponent.h"
 #include "Scripts/PlayerController.h"
 #include "Scripts/PlayerStatsComponent.h"
 #include "Scripts/RuneCasterComponent.h"
 #include "Scripts/RunProgressionComponent.h"
+#include "Scripts/RunSessionManager.h"
+#include "Scripts/RunSummaryController.h"
+#include "Scripts/SanctuaryHubComponents.h"
 #include "Scripts/StructurePlacerComponent.h"
 #include "Scripts/TorchComponent.h"
 #include "Scripts/WaveDirectorComponent.h"
@@ -244,9 +246,6 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
             if (auto* chunkMgr = goPtr->GetComponent<Engine::TerrainChunkManager>()) {
                 chunkMgr->AutoStreamWithCamera = false;
             }
-            if (!goPtr->GetComponent<FireHazardComponent>()) {
-                goPtr->AddComponent<FireHazardComponent>();
-            }
         }
         if (goPtr->GetName() == "Player") {
             if (auto* rb = goPtr->GetComponent<Engine::Rigidbody2D>()) {
@@ -292,6 +291,8 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
                     break;
                 }
             }
+
+            RunSessionManager::Get().ApplyRootUpgradesToPlayer(*goPtr);
         }
     }
 
@@ -305,6 +306,48 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
     }
 
     BindHarvestableProps(*runtimeScene);
+}
+
+std::shared_ptr<Engine::Scene> AlphaRunScene::CreateSanctuaryHubScene() {
+    auto hub = std::make_shared<Engine::Scene>("SanctuaryHub");
+    if (!Engine::GameplayData::IsInitialized()) {
+        Engine::GameplayData::Init("Sandbox/assets/data");
+    }
+    RunSessionManager::Get().LoadOrCreateProfile(0);
+
+    auto* sunGo = hub->CreateGameObject("SanctuarySun");
+    auto* sun = sunGo->AddComponent<Engine::DirectionalLightComponent>();
+    sun->SunIntensity = 0.85f;
+    sun->SunColor = { 1.0f, 0.90f, 0.72f };
+
+    auto* player = hub->CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->GetTransform()->position = { 0.0f, 0.0f, 2.5f };
+    auto* rb = player->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    player->AddComponent<Engine::BoxCollider2D>()->size = { 0.55f, 0.45f };
+    player->AddComponent<PlayerController>();
+    player->AddComponent<PlayerStatsComponent>();
+    player->AddComponent<WeaponController>();
+    player->AddComponent<RuneCasterComponent>();
+
+    auto addStation = [&](const char* name, SanctuaryStationKind kind, glm::vec3 pos) {
+        auto* stGo = hub->CreateGameObject(name);
+        stGo->GetTransform()->position = pos;
+        auto* st = stGo->AddComponent<SanctuaryStationComponent>();
+        st->Kind = kind;
+        return stGo;
+    };
+
+    addStation("Weapon Rack", SanctuaryStationKind::WeaponRack, { -3.5f, 0.0f, 0.5f });
+    addStation("Rune Pedestal", SanctuaryStationKind::RunePedestal, { 3.5f, 0.0f, 0.5f });
+    addStation("Root Altar", SanctuaryStationKind::RootAltar, { 0.0f, 0.0f, -1.5f });
+    addStation("Northern Umbral Gate", SanctuaryStationKind::UmbralGate, { 0.0f, 0.0f, -5.5f });
+
+    auto* titleGo = hub->CreateGameObject("TitleOverlay");
+    titleGo->AddComponent<TitleOverlayComponent>()->Kind = SanctuaryStationKind::TitleOverlay;
+
+    return hub;
 }
 
 } // namespace Sandbox
