@@ -20,6 +20,7 @@
 #include "Engine/Terrain/TerrainComponent.h"
 #include "Engine/Scene/Components/LightComponents.h"
 #include "Scene/AlphaRunScene.h"
+#include "Scripts/AlphaHUDController.h"
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/CombatTargetComponent.h"
 #include "Scripts/DeployableStructures.h"
@@ -1472,6 +1473,68 @@ TEST(SandboxUnitTest, RunProgressionDrafts3DistinctWeightedCardsAndAppliesSynerg
     EXPECT_GT(torch->Fuel, 50.0f);
 
     scene.OnRuntimeStop();
+    Engine::Time::Reset();
+}
+
+TEST(SandboxUnitTest, AlphaHUDUpdatesBarsClockMinimapAndBossBar) {
+    Engine::Time::Reset();
+    auto scene = Sandbox::AlphaRunScene::Create(777ULL);
+    ASSERT_NE(scene, nullptr);
+    Sandbox::AlphaRunScene::BindRuntimeGameplayScripts(scene);
+
+    AlphaHUDController* hud = nullptr;
+    WaveDirectorComponent* director = nullptr;
+    Engine::GameObject* player = nullptr;
+    TorchComponent* torch = nullptr;
+
+    for (const auto& go : scene->GetGameObjects()) {
+        if (!go) continue;
+        if (auto* h = go->GetComponent<AlphaHUDController>()) hud = h;
+        if (auto* d = go->GetComponent<WaveDirectorComponent>()) director = d;
+        if (go->GetName() == "Player") player = go.get();
+        if (auto* t = go->GetComponent<TorchComponent>()) torch = t;
+    }
+    ASSERT_NE(hud, nullptr);
+    ASSERT_NE(director, nullptr);
+    ASSERT_NE(player, nullptr);
+    ASSERT_NE(torch, nullptr);
+
+    auto* stats = player->GetComponent<PlayerStatsComponent>();
+    ASSERT_NE(stats, nullptr);
+    stats->HP = 50.0f;
+    stats->Wood = 12;
+    stats->RunAshes = 40;
+    torch->Fuel = 15.0f; // Ash Frenzy
+    torch->BaseBurnRate = 0.0f;
+
+    scene->OnRuntimeStart();
+    scene->UpdateRuntime(1.0f / 60.0f);
+
+    ASSERT_NE(hud->GetHealthBar(), nullptr);
+    ASSERT_NE(hud->GetTorchBar(), nullptr);
+    ASSERT_NE(hud->GetRuneCooldownPanel(), nullptr);
+    ASSERT_NE(hud->GetMinimap(), nullptr);
+    ASSERT_NE(hud->GetRadialWheel(), nullptr);
+
+    EXPECT_FLOAT_EQ(hud->GetHealthBar()->fillAmount, 0.50f);
+    EXPECT_FLOAT_EQ(hud->GetTorchBar()->fillAmount, 0.15f);
+    EXPECT_GT(hud->GetTorchBar()->color.r, 0.8f);
+    EXPECT_LT(hud->GetTorchBar()->color.g, 0.4f); // Crimson Ash Frenzy tint
+    EXPECT_EQ(hud->GetPhaseLabel()->text, "Dusk");
+    EXPECT_NE(hud->GetResourcesLabel()->text.find("Wood: 12"), std::string::npos);
+
+    // MinimapFogSystem explored origin and registered Sanctuary Brazier pin
+    ASSERT_NE(hud->GetMinimap()->fogSystem, nullptr);
+    EXPECT_TRUE(hud->GetMinimap()->fogSystem->IsDiscovered({ 0.0f, 2.5f }));
+    EXPECT_GE(hud->GetMinimap()->fogSystem->GetActivePins().size(), 1u);
+
+    // Advance WaveDirector to Umbral Surge -> Apex Wendigo Boss Bar appears
+    director->AdvanceClockForTest(166.0f);
+    scene->UpdateRuntime(1.0f / 60.0f);
+    EXPECT_EQ(hud->GetPhaseLabel()->text, "Umbral Surge");
+    EXPECT_FLOAT_EQ(hud->GetBossBar()->fillAmount, 1.0f);
+
+    scene->OnRuntimeStop();
     Engine::Time::Reset();
 }
 

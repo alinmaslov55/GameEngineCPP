@@ -17,6 +17,7 @@
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
+#include "Scripts/AlphaHUDController.h"
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/FireHazardComponent.h"
 #include "Scripts/PlayerController.h"
@@ -228,12 +229,16 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
     }
 
     bool hasWaveDirector = false;
+    bool hasAlphaHUD = false;
     for (const auto& goPtr : runtimeScene->GetGameObjects()) {
         if (!goPtr) {
             continue;
         }
         if (goPtr->GetComponent<WaveDirectorComponent>()) {
             hasWaveDirector = true;
+        }
+        if (goPtr->GetComponent<AlphaHUDController>()) {
+            hasAlphaHUD = true;
         }
         if (goPtr->GetName() == "Terrain") {
             if (auto* chunkMgr = goPtr->GetComponent<Engine::TerrainChunkManager>()) {
@@ -293,6 +298,10 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
     if (!hasWaveDirector) {
         auto* directorGo = runtimeScene->CreateGameObject("WaveDirector");
         directorGo->AddComponent<WaveDirectorComponent>();
+    }
+    if (!hasAlphaHUD) {
+        auto* hudGo = runtimeScene->CreateGameObject("AlphaHUD");
+        hudGo->AddComponent<AlphaHUDController>();
     }
 
     BindHarvestableProps(*runtimeScene);
