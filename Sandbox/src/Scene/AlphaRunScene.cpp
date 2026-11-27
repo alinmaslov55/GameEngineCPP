@@ -19,6 +19,7 @@
 #include "Engine/Terrain/TerrainChunkManager.h"
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/PlayerController.h"
+#include "Scripts/PlayerStatsComponent.h"
 #include "Scripts/WeaponController.h"
 
 namespace Sandbox {
@@ -236,6 +237,9 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
             if (!goPtr->GetComponent<PlayerController>()) {
                 goPtr->AddComponent<PlayerController>();
             }
+            if (!goPtr->GetComponent<PlayerStatsComponent>()) {
+                goPtr->AddComponent<PlayerStatsComponent>();
+            }
             if (!goPtr->GetComponent<WeaponController>()) {
                 goPtr->AddComponent<WeaponController>();
             }
@@ -255,6 +259,8 @@ void AlphaRunScene::BindRuntimeGameplayScripts(const std::shared_ptr<Engine::Sce
             EnsureChildSocket(*runtimeScene, *goPtr, "WeaponSocket");
         }
     }
+
+    BindHarvestableProps(*runtimeScene);
 }
 
 } // namespace Sandbox

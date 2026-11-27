@@ -2,12 +2,29 @@
 #define SANDBOX_ARENASTREAMINGDRIVER_H
 
 #include "Engine/Scene/Component.h"
+#include "Engine/Scene/EntityTag.h"
 #include "Engine/Scene/GameObject.h"
 #include "Engine/Scene/Scene.h"
 #include "Engine/Scene/Transform.h"
 #include "Engine/Terrain/TerrainChunkManager.h"
+#include "Scripts/HarvestableComponent.h"
 
 namespace Sandbox {
+
+/// @brief Attaches HarvestableComponent to any HarvestableTree or DestructibleProp in the scene.
+inline void BindHarvestableProps(Engine::Scene& scene) {
+    for (const auto& goPtr : scene.GetGameObjects()) {
+        if (!goPtr || goPtr->IsPendingDestroy()) {
+            continue;
+        }
+        const auto tag = goPtr->GetTag();
+        if (tag == Engine::EntityTag::HarvestableTree || tag == Engine::EntityTag::DestructibleProp) {
+            if (!goPtr->GetComponent<HarvestableComponent>()) {
+                goPtr->AddComponent<HarvestableComponent>();
+            }
+        }
+    }
+}
 
 /// @brief Drives TerrainChunkManager streaming from the Player's world XZ position each frame.
 class ArenaStreamingDriver final : public Engine::Component {
@@ -29,6 +46,7 @@ public:
                 break;
             }
         }
+        BindHarvestableProps(*scene);
     }
 };
 

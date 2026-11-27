@@ -17,8 +17,11 @@
 #include "Scene/AlphaRunScene.h"
 #include "Scripts/ArenaStreamingDriver.h"
 #include "Scripts/CombatTargetComponent.h"
+#include "Scripts/HarvestableComponent.h"
 #include "Scripts/KineticBowlingComponent.h"
+#include "Scripts/PickupComponent.h"
 #include "Scripts/PlayerController.h"
+#include "Scripts/PlayerStatsComponent.h"
 #include "Scripts/CameraController.h"
 #include "Scripts/SplinterProjectileComponent.h"
 #include "Scripts/WeaponController.h"
@@ -431,6 +434,99 @@ TEST(SandboxUnitTest, AlphaRunSceneStreamsBiomesOnPlayerMovement) {
                 streamedChunk->State == Engine::ChunkLoadState::ReadyForGpuUpload);
 
     scene->OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, HarvestablePropShakesAndDropsBouncingPickupsOnFell) {
+    Engine::Scene scene("HarvestableTestScene");
+
+    auto* pine = scene.CreateGameObject("Procedural Pine");
+    pine->SetTag(Engine::EntityTag::HarvestableTree);
+    pine->SetLayer(Engine::EntityLayer::Environment);
+    pine->GetTransform()->position = { 2.0f, 0.0f, 0.0f };
+    auto* col = pine->AddComponent<Engine::BoxCollider2D>();
+    col->size = { 0.55f, 0.45f };
+    col->CategoryBits = Engine::PhysicsLayer::Environment;
+    auto* harvestable = pine->AddComponent<HarvestableComponent>();
+    harvestable->DefaultTreeHealth = 30.0f;
+
+    scene.OnRuntimeStart();
+
+    auto* target = pine->GetComponent<CombatTargetComponent>();
+    ASSERT_NE(target, nullptr);
+    target->ResetHealth(30.0f);
+
+    // Chipping hit shakes and emits wood-chip particles without felling
+    EXPECT_TRUE(target->ApplyDamage(10.0f));
+    EXPECT_FALSE(harvestable->IsFelled());
+    EXPECT_NE(pine->GetComponent<Engine::SquashStretchComponent>(), nullptr);
+    EXPECT_NE(pine->GetComponent<Engine::ParticleSystem>(), nullptr);
+
+    // Lethal hit fells tree and spawns 2-4 bouncing PickupComponent entities
+    EXPECT_TRUE(target->ApplyDamage(25.0f));
+    EXPECT_TRUE(harvestable->IsFelled());
+
+    const auto pickups = scene.FindGameObjectsWithTag(Engine::EntityTag::ResourcePickup);
+    EXPECT_GE(pickups.size(), 2u);
+    EXPECT_LE(pickups.size(), 4u);
+    for (Engine::GameObject* p : pickups) {
+        ASSERT_NE(p, nullptr);
+        EXPECT_EQ(p->GetLayer(), Engine::EntityLayer::Pickup);
+        auto* pCol = p->GetComponent<Engine::CircleCollider2D>();
+        ASSERT_NE(pCol, nullptr);
+        EXPECT_TRUE(pCol->IsSensor);
+        EXPECT_EQ(pCol->CategoryBits, Engine::PhysicsLayer::Pickup);
+        auto* pRb = p->GetComponent<Engine::Rigidbody2D>();
+        ASSERT_NE(pRb, nullptr);
+        EXPECT_FLOAT_EQ(pRb->GroundRestitutionY, 0.45f);
+        EXPECT_GE(pRb->VerticalVelocity, 4.5f);
+        EXPECT_LE(pRb->VerticalVelocity, 6.5f);
+    }
+
+    // Dissolve finishes within 0.30s and removes felled tree
+    for (int i = 0; i < 20; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+    EXPECT_EQ(scene.FindGameObjectsWithTag(Engine::EntityTag::HarvestableTree).size(), 0u);
+
+    scene.OnRuntimeStop();
+}
+
+TEST(SandboxUnitTest, PickupCollectionGrantsWoodAshAndHeal) {
+    Engine::Scene scene("PickupCollectionTestScene");
+
+    auto* player = scene.CreateGameObject("Player");
+    player->SetTag(Engine::EntityTag::Player);
+    player->SetLayer(Engine::EntityLayer::Player);
+    player->GetTransform()->position = { 0.0f, 0.0f, 0.0f };
+    auto* rb = player->AddComponent<Engine::Rigidbody2D>();
+    rb->Type = Engine::Rigidbody2D::BodyType::Dynamic;
+    auto* col = player->AddComponent<Engine::CircleCollider2D>();
+    col->Radius = 0.5f;
+    col->CategoryBits = Engine::PhysicsLayer::Player;
+    auto* stats = player->AddComponent<PlayerStatsComponent>();
+    stats->MaxHP = 100.0f;
+    stats->HP = 60.0f;
+    stats->AshAttractionRange = 6.0f;
+
+    scene.OnRuntimeStart();
+
+    // 1. WoodLog collected on overlap (+1 Wood)
+    PickupComponent::SpawnPickup(scene, PickupKind::WoodLog, { 0.0f, 0.2f, 0.0f }, { 0.0f, 0.0f }, 4.5f);
+    // 2. CrimsonBerry collected on overlap (+20 HP)
+    PickupComponent::SpawnPickup(scene, PickupKind::CrimsonBerry, { 0.0f, 0.2f, 0.0f }, { 0.0f, 0.0f }, 4.5f);
+    // 3. AshEmber spawned at 3.2m magnetically accelerates to player (+XP, +RunAshes)
+    PickupComponent::SpawnPickup(scene, PickupKind::AshEmber, { 3.2f, 0.2f, 0.0f }, { 0.0f, 0.0f }, 4.5f);
+
+    for (int i = 0; i < 90; ++i) {
+        scene.UpdateRuntime(1.0f / 60.0f);
+    }
+
+    EXPECT_EQ(stats->Wood, 1);
+    EXPECT_FLOAT_EQ(stats->HP, 80.0f);
+    EXPECT_GT(stats->XP, 0);
+    EXPECT_GT(stats->RunAshes, 0);
+
+    scene.OnRuntimeStop();
 }
 
 } // namespace
